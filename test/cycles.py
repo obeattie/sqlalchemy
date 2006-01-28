@@ -40,7 +40,13 @@ class CycleTest(AssertMixin):
         m2.add_property('c1s', relation(m1, primaryjoin=t2.c.c2==t1.c.c1, uselist=True))
         a = C1()
         b = C2()
+        c = C1()
+        d = C2()
+        e = C2()
+        f = C2()
         a.c2s.append(b)
+        d.c1s.append(c)
+        b.c1s.append(c)
         objectstore.commit()
         
 if __name__ == "__main__":
