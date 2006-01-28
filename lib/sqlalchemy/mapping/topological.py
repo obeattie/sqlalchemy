@@ -47,7 +47,7 @@ class QueueDependencySorter(object):
             self.edges = {}
             self.dependencies = {}
             self.children = []
-            self.cycles = []
+            self.cycles = None
         def __str__(self):
             return self.safestr()
         def safestr(self, indent=0):
@@ -89,7 +89,7 @@ class QueueDependencySorter(object):
                 if allow_self_cycles:
                     n = nodes[t[0]]
                     n.circular = True
-                    n.cycles.append(n)
+                    n.cycles = Set([n])
                     continue
                 else:
                     raise "Self-referential dependency detected " + repr(t)
@@ -112,10 +112,12 @@ class QueueDependencySorter(object):
                 if allow_all_cycles:
                     cycle = self._find_cycle(edges)
                     lead = cycle[0][0]
+                    lead.circular = True
+                    lead.cycles = Set()
                     for edge in cycle:
                         n = self._remove_edge(edges, edge)
-                        lead.cycles.append(edge[0])
-                        lead.cycles.append(edge[1])
+                        lead.cycles.add(edge[0])
+                        lead.cycles.add(edge[1])
                         if n is not None:
                             queue.append(n)
                             if n is not lead:
