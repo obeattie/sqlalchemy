@@ -539,7 +539,7 @@ class UOWTask(object):
             rec.childtask = childtask
         if isdelete:
             rec.isdelete = True
-        if mapper:
+        if mapper and mapper is not self.mapper:
             rec.mapper = mapper
 
     def delete(self, obj):
@@ -555,10 +555,8 @@ class UOWTask(object):
             self.circular.execute(trans)
             return
 
-        if self.mapper is not None:
-            self.mapper.save_obj(self.tosave_objects(), trans)
-        for rec in self.tosave_elements_mapper():
-            rec.mapper.save_obj([rec.obj], trans)
+        for mapper, obj in self.tosave_objects(False).iteritems():
+            mapper.save_obj(obj, trans)
         for dep in self.save_dependencies():
             dep.execute(trans, delete=False)
         for element in self.tosave_elements():
@@ -571,23 +569,28 @@ class UOWTask(object):
         for element in self.todelete_elements():
             if element.childtask is not None:
                 element.childtask.execute(trans)
-        if self.mapper is not None:
-            self.mapper.delete_obj(self.todelete_objects(), trans)
-        for rec in self.todelete_elements_mapper():
-            rec.mapper.delete_obj([rec.obj], trans)
+        for mapper, obj in self.tosave_objects(True).iteritems():
+            mapper.delete_obj(obj, trans)
 
     def tosave_elements(self):
         return [rec for rec in self.objects.values() if not rec.isdelete]
     def todelete_elements(self):
         return [rec for rec in self.objects.values() if rec.isdelete]
-    def tosave_elements_mapper(self):
-        return [rec for rec in self.objects.values() if not rec.isdelete and rec.mapper is not None]
-    def todelete_elements_mapper(self):
-        return [rec for rec in self.objects.values() if rec.isdelete and rec.mapper is not None]
-    def tosave_objects(self):
-        return [o for o, rec in self.objects.iteritems() if o is not None and not rec.listonly and not rec.isdelete and rec.mapper is None]
-    def todelete_objects(self):
-        return [o for o, rec in self.objects.iteritems() if o is not None and not rec.listonly and rec.isdelete and rec.mapper is None]
+    def tosave_objects(self, isdelete=False):
+        d = {}
+        for o, rec in self.objects.iteritems():
+            if rec.listonly or rec.isdelete is not isdelete:
+                continue
+            mapper = rec.mapper or self.mapper
+            #if mapper is None:
+            #    raise "No mapper to save ", o
+            try:
+                l = d[mapper]
+            except KeyError:
+                l = []
+                d[mapper] = l
+            l.append(o)
+        return d
     def save_dependencies(self):
         return [dep for dep in self.dependencies if not dep.isdeletefrom]
     def delete_dependencies(self):
@@ -688,23 +691,16 @@ class UOWTask(object):
 
         def make_task_tree(node, parenttask):
             t = objecttotask[node.item]
-            print "pt", parenttask
-            print "t", t
             parenttask.append(node.item, t.parent.objects[node.item].listonly, t, isdelete=t.parent.objects[node.item].isdelete, mapper=t.mapper)
-#            parenttask.mapper = t.mapper
-#            parenttask.append(None, True, t, False)
- #           t.append(node.item, t.parent.objects[node.item].listonly, isdelete=t.parent.objects[node.item].isdelete)
-            
             if dependencies.has_key(node.item):
                 for depprocessor, deptask in dependencies[node.item].iteritems():
- #                   t.dependencies.append(depprocessor.branch(deptask))
                     parenttask.dependencies.append(depprocessor.branch(deptask))
             for n in node.children:
                 t2 = make_task_tree(n, t)
             return t
         
         # this is the new "circular" UOWTask which will execute in place of "self"
-        t = UOWTask(None, None)
+        t = UOWTask(None, self.mapper)
 
         # stick the non-circular dependencies and child tasks onto the new
         # circular UOWTask
