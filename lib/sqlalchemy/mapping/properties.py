@@ -533,7 +533,6 @@ class PropertyLoader(MapperProperty):
                             # for a cyclical task, this registration is handled by the objectstore
                             uowcommit.register_object(child, isdelete=self.private)
 
-                
     def _synchronize(self, obj, child, associationrow, clearkeys):
         if self.direction == PropertyLoader.ONETOMANY:
             source = obj
