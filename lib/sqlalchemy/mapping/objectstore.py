@@ -348,6 +348,13 @@ class UOWTransaction(object):
         mapper = object_mapper(obj)
         self.mappers.append(mapper)
         task = self.get_task_by_mapper(mapper)
+        
+        # for a cyclical task, things need to be sorted out already,
+        # so this object should have already been added to the appropriate sub-task
+        # can put an assertion here to make sure....
+        if task.circular:
+            return
+            
         if obj not in task.objects:
             self.__modified = True
         task.append(obj, listonly, isdelete=isdelete, **kwargs)
@@ -520,21 +527,20 @@ class UOWTask(object):
         self.objects = util.OrderedDict()
         self.dependencies = []
         self.circular = None
+        self.postcircular = None
         self.childtasks = []
         #print "NEW TASK", repr(self)
         
     def is_empty(self):
         return len(self.objects) == 0 and len(self.dependencies) == 0 and len(self.childtasks) == 0
             
-    def append(self, obj, listonly = False, childtask = None, isdelete = False, mapper=None):
+    def append(self, obj, listonly = False, childtask = None, isdelete = False):
         """appends an object to this task, to be either saved or deleted depending on the
         'isdelete' attribute of this UOWTask.  'listonly' indicates that the object should
         only be processed as a dependency and not actually saved/deleted. if the object
         already exists with a 'listonly' flag of False, it is kept as is. 'childtask' is used
         internally when creating a hierarchical list of self-referential tasks, to assign
-        dependent operations at the per-object instead of per-task level. 'mapper' indicates
-        that the given mapper should be used to save/delete this object rather than the mapper
-        attached to this UOWTask."""
+        dependent operations at the per-object instead of per-task level. """
         try:
             rec = self.objects[obj]
         except KeyError:
@@ -546,8 +552,6 @@ class UOWTask(object):
             rec.childtask = childtask
         if isdelete:
             rec.isdelete = True
-        if mapper and mapper is not self.mapper:
-            rec.mapper = mapper
 
     def delete(self, obj):
         try:
@@ -562,8 +566,7 @@ class UOWTask(object):
             self.circular.execute(trans)
             return
 
-        for mapper, obj in self.tosave_objects(False).iteritems():
-            mapper.save_obj(obj, trans)
+        self.mapper.save_obj(self.tosave_objects(False), trans)
         for dep in self.save_dependencies():
             dep.execute(trans, delete=False)
         for element in self.tosave_elements():
@@ -576,28 +579,14 @@ class UOWTask(object):
         for element in self.todelete_elements():
             if element.childtask is not None:
                 element.childtask.execute(trans)
-        for mapper, obj in self.tosave_objects(True).iteritems():
-            mapper.delete_obj(obj, trans)
+        self.mapper.delete_obj(self.tosave_objects(True), trans)
 
     def tosave_elements(self):
         return [rec for rec in self.objects.values() if not rec.isdelete]
     def todelete_elements(self):
         return [rec for rec in self.objects.values() if rec.isdelete]
     def tosave_objects(self, isdelete=False):
-        d = {}
-        for o, rec in self.objects.iteritems():
-            if rec.listonly or rec.isdelete is not isdelete:
-                continue
-            mapper = rec.mapper or self.mapper
-            #if mapper is None:
-            #    raise "No mapper to save ", o
-            try:
-                l = d[mapper]
-            except KeyError:
-                l = []
-                d[mapper] = l
-            l.append(o)
-        return d
+        return [rec.obj for rec in self.objects.values() if not rec.listonly and rec.isdelete is isdelete]
     def save_dependencies(self):
         return [dep for dep in self.dependencies if not dep.isdeletefrom]
     def delete_dependencies(self):
@@ -680,7 +669,10 @@ class UOWTask(object):
                         childlist = childlist.added_items()
                     for o in childlist:
                         if not o in childtask.objects:
-                            continue
+                            print "parent", obj, "not in task objects", o
+                            childtask.append(o, isdelete=isdelete and dep.processor.private)
+                            get_object_task(childtask, o)
+                            #continue
                         whosdep = dep.whose_dependent_on_who(obj, o)
                         if whosdep is not None:
                             tuples.append(whosdep)
@@ -699,16 +691,24 @@ class UOWTask(object):
 
         def make_task_tree(node, parenttask):
             t = objecttotask[node.item]
-            t.append(node.item, t.parent.objects[node.item].listonly, isdelete=t.parent.objects[node.item].isdelete)
-            parenttask.childtasks.append(t)
-#            parenttask.append(node.item, t.parent.objects[node.item].listonly, t, isdelete=t.parent.objects[node.item].isdelete, mapper=t.mapper)
+            can_add_to_parent = t.mapper is parenttask.mapper
+            if can_add_to_parent:
+                parenttask.append(node.item, t.parent.objects[node.item].listonly, isdelete=t.parent.objects[node.item].isdelete, childtask=t)
+            else:
+                t.append(node.item, t.parent.objects[node.item].listonly, isdelete=t.parent.objects[node.item].isdelete)
+                parenttask.childtasks.append(t)
             if dependencies.has_key(node.item):
                 for depprocessor, deptask in dependencies[node.item].iteritems():
-#                    parenttask.dependencies.append(depprocessor.branch(deptask))
-                    t.dependencies.append(depprocessor.branch(deptask))
+                    if can_add_to_parent:
+                        parenttask.dependencies.append(depprocessor.branch(deptask))
+                    else:
+                        t.dependencies.append(depprocessor.branch(deptask))
             for n in node.children:
                 t2 = make_task_tree(n, t)
-            t.dependencies += [d.branch(t) for d in extradep.get(t.mapper, [])]
+            if can_add_to_parent:
+                parenttask.dependencies += [d.branch(parenttask) for d in extradep.get(t.mapper, [])]
+            else:
+                t.dependencies += [d.branch(t) for d in extradep.get(t.mapper, [])]
             return t
         
         # this is the new "circular" UOWTask which will execute in place of "self"

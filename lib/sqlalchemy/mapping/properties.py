@@ -523,12 +523,14 @@ class PropertyLoader(MapperProperty):
                 for child in childlist.added_items():
                     self._synchronize(obj, child, None, False)
                     if self.direction == PropertyLoader.ONETOMANY:
+                        # for a cyclical task, this registration is handled by the objectstore
                         uowcommit.register_object(child)
                 if self.direction != PropertyLoader.MANYTOONE or len(childlist.added_items()) == 0:
                     for child in childlist.deleted_items():
                         if not self.private:
                             self._synchronize(obj, child, None, True)
                         if self.direction == PropertyLoader.ONETOMANY:
+                            # for a cyclical task, this registration is handled by the objectstore
                             uowcommit.register_object(child, isdelete=self.private)
 
                 
