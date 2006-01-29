@@ -353,11 +353,8 @@ class PropertyLoader(MapperProperty):
         The Task objects in the objectstore module treat it just like
         any other Mapper, but in fact it only serves as a "dependency" placeholder
         for the many-to-many update task."""
-        def __init__(self, parent):
-            self.parent = parent
-
-        mapper = property(lambda s: s.parent.mapper)
-        
+        def __init__(self, mapper):
+            self.mapper = mapper
         def save_obj(self, *args, **kwargs):
             pass
         def delete_obj(self, *args, **kwargs):
@@ -378,7 +375,7 @@ class PropertyLoader(MapperProperty):
             # association/parent->stub->self, then we process the child
             # elments after the 'stub' save, which is before our own
             # mapper's save.
-            stub = PropertyLoader.MapperStub(self)
+            stub = PropertyLoader.MapperStub(self.association)
             uowcommit.register_dependency(self.parent, stub)
             uowcommit.register_dependency(self.association, stub)
             uowcommit.register_dependency(stub, self.mapper)
@@ -396,7 +393,7 @@ class PropertyLoader(MapperProperty):
                 # if we are the "backref" half of a two-way backref 
                 # relationship, let the other mapper handle inserting the rows
                 return
-            stub = PropertyLoader.MapperStub(self)
+            stub = PropertyLoader.MapperStub(self.mapper)
             uowcommit.register_dependency(self.parent, stub)
             uowcommit.register_dependency(self.mapper, stub)
             uowcommit.register_processor(stub, self, self.parent, False)

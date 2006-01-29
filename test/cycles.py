@@ -115,15 +115,17 @@ class CycleWDepsTest(AssertMixin):
         global t3
         t1 = Table('t1', testbase.db, 
             Column('c1', Integer, primary_key=True),
-            Column('c2', Integer, ForeignKey('t2.c1')),
+            Column('t2id', Integer, ForeignKey('t2.c1')),
+            Column('data', String(20))
         )
         t2 = Table('t2', testbase.db,
             Column('c1', Integer, primary_key=True),
-            Column('c2', Integer),
+            Column('t1id', Integer),
+            Column('data', String(20))
         )
         t2.create()
         t1.create()
-        t2.c.c2.append_item(ForeignKey('t1.c1'))
+        t2.c.t1id.append_item(ForeignKey('t1.c1'))
         t3 = Table('t1_data', testbase.db, 
             Column('c1', Integer, primary_key=True),
             Column('t1id', Integer, ForeignKey('t1.c1')),
@@ -136,31 +138,30 @@ class CycleWDepsTest(AssertMixin):
         clear_mappers()
 
     def testcycle(self):
-        class C1(object):pass
-        class C2(object):pass
-        class C1Data(object):
-            def __init__(self, data=None):
-                self.data = data
-                
+        class C1(Tester):pass
+        class C2(Tester):pass
+        class C1Data(Tester):pass
+
         m2 = mapper(C2, t2)
         m1 = mapper(C1, t1, properties = {
-            'c2s' : relation(m2, primaryjoin=t1.c.c2==t2.c.c1, uselist=True),
-            'data' : relation(C1Data, t3)
+            'c2s' : relation(m2, primaryjoin=t2.c.t1id==t1.c.c1, uselist=True),
+            'c1datas' : relation(C1Data, t3)
         })
-        m2.add_property('c1s', relation(m1, primaryjoin=t2.c.c2==t1.c.c1, uselist=True))
-        
-        a = C1()
-        b = C2()
-        c = C1()
-        d = C2()
-        e = C2()
-        f = C2()
+        m2.add_property('c1s', relation(m1, primaryjoin=t1.c.t2id==t2.c.c1, uselist=True))
+            
+        a = C1('c1 a')
+        b = C2('c2 b')
+        c = C1('c1 c')
+        d = C2('c2 d')
+        e = C2('c2 e')
+        f = C2('c2 f')
         a.c2s.append(b)
-        d.c1s.append(c)
         b.c1s.append(c)
-        a.data.append(C1Data('c1data1'))
-        a.data.append(C1Data('c1data2'))
-        c.data.append(C1Data('c1data3'))
+        d.c1s.append(a)
+        d.c1s.append(c)
+        a.c1datas.append(C1Data('c1data1'))
+        a.c1datas.append(C1Data('c1data2'))
+        c.c1datas.append(C1Data('c1data3'))
         objectstore.commit()
 
         objectstore.delete(d)

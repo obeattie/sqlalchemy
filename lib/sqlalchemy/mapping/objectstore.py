@@ -623,7 +623,7 @@ class UOWTask(object):
         
         # dependency processors that arent part of the "circular" thing
         # get put here
-        extradep = util.HashSet()
+        extradep = {}
 
         def get_object_task(parent, obj):
             try:
@@ -656,7 +656,8 @@ class UOWTask(object):
         for task in cycles:
             for dep in task.dependencies:
                 if dep.targettask not in cycles or trans.get_task_by_mapper(dep.processor.mapper) not in cycles:
-                    extradep.append(dep)
+                    l = extradep.setdefault(task.mapper, [])
+                    l.append(dep)
                     continue
                 l = deps_by_targettask.setdefault(dep.targettask, [])
                 l.append(dep)
@@ -665,22 +666,24 @@ class UOWTask(object):
             for taskelement in task.objects.values():
                 obj = taskelement.obj
                 #print "OBJ", repr(obj), "TASK", repr(task)
-                objecttask = get_object_task(task, obj)
+                get_object_task(task, obj)
                 for dep in deps_by_targettask[task]:
                     (processor, targettask, isdelete) = (dep.processor, dep.targettask, dep.isdeletefrom)
                     if taskelement.isdelete is not dep.isdeletefrom:
                         continue
                     #print "GETING LIST OFF PROC", processor.key, "OBJ", repr(obj)
                     childlist = dep.get_object_dependencies(obj, trans, passive = True)
+                    childtask = trans.get_task_by_mapper(processor.mapper)
                     if isdelete:
                         childlist = childlist.unchanged_items() + childlist.deleted_items()
                     else:
                         childlist = childlist.added_items()
                     for o in childlist:
+                        if not o in childtask.objects:
+                            continue
                         whosdep = dep.whose_dependent_on_who(obj, o)
                         if whosdep is not None:
                             tuples.append(whosdep)
-                            print "new tuple", whosdep
                             if whosdep[0] is obj:
                                 get_dependency_task(whosdep[0], dep).append(whosdep[0], isdelete=isdelete)
                             else:
@@ -692,16 +695,20 @@ class UOWTask(object):
         if head is None:
             return None
 
-        print str(head)
+        #print str(head)
 
         def make_task_tree(node, parenttask):
             t = objecttotask[node.item]
-            parenttask.append(node.item, t.parent.objects[node.item].listonly, t, isdelete=t.parent.objects[node.item].isdelete, mapper=t.mapper)
+            t.append(node.item, t.parent.objects[node.item].listonly, isdelete=t.parent.objects[node.item].isdelete)
+            parenttask.childtasks.append(t)
+#            parenttask.append(node.item, t.parent.objects[node.item].listonly, t, isdelete=t.parent.objects[node.item].isdelete, mapper=t.mapper)
             if dependencies.has_key(node.item):
                 for depprocessor, deptask in dependencies[node.item].iteritems():
-                    parenttask.dependencies.append(depprocessor.branch(deptask))
+#                    parenttask.dependencies.append(depprocessor.branch(deptask))
+                    t.dependencies.append(depprocessor.branch(deptask))
             for n in node.children:
                 t2 = make_task_tree(n, t)
+            t.dependencies += [d.branch(t) for d in extradep.get(t.mapper, [])]
             return t
         
         # this is the new "circular" UOWTask which will execute in place of "self"
@@ -709,7 +716,6 @@ class UOWTask(object):
 
         # stick the non-circular dependencies and child tasks onto the new
         # circular UOWTask
-        t.dependencies += [d for d in extradep]
         t.childtasks = self.childtasks
         make_task_tree(head, t)
         return t
