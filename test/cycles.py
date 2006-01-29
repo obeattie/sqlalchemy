@@ -7,8 +7,62 @@ import testbase
 from tables import *
 import tables
 
+objectstore.LOG = True
 
+class Tester(object):
+    def __init__(self, data=None):
+        self.data = data
+        print repr(self) + " (%d)" % (id(self))
+    def __repr__(self):
+        return "%s(%s)" % (self.__class__.__name__, repr(self.data))
+        
+class SelfCycleTest(AssertMixin):
+    """tests a self-referential mapper, with an additional list of child objects."""
+    def setUpAll(self):
+        testbase.db.tables.clear()
+        global t1
+        global t2
+        t1 = Table('t1', testbase.db, 
+            Column('c1', Integer, primary_key=True),
+            Column('parent_c1', Integer, ForeignKey('t1.c1')),
+            Column('data', String(20))
+        )
+        t2 = Table('t2', testbase.db,
+            Column('c1', Integer, primary_key=True),
+            Column('c1id', Integer, ForeignKey('t1.c1')),
+            Column('data', String(20))
+        )
+        t1.create()
+        t2.create()
+    def tearDownAll(self):
+        t1.drop()    
+        t2.drop()
+    def setUp(self):
+        objectstore.clear()
+        clear_mappers()
+    
+    def testcycle(self):
+        class C1(Tester):
+            pass
+        class C2(Tester):
+            pass
+        
+        m1 = mapper(C1, t1, properties = {
+            'c1s' : relation(C1),
+            'c2s' : relation(C2, t2)
+        })
+
+        a = C1('head c1')
+        a.c1s.append(C1('child1'))
+        a.c1s.append(C1('child2'))
+        a.c1s[0].c1s.append(C1('subchild1'))
+        a.c1s[0].c1s.append(C1('subchild2'))
+        a.c1s[1].c2s.append(C2('child2 data1'))
+        a.c1s[1].c2s.append(C2('child2 data2'))
+        objectstore.commit()
+        
 class CycleTest(AssertMixin):
+    """tests two mappers with a bi-directional dependency"""
     def setUpAll(self):
         testbase.db.tables.clear()
         global t1
@@ -53,6 +107,7 @@ class CycleTest(AssertMixin):
         objectstore.commit()
 
 class CycleWDepsTest(AssertMixin):
+    """tests two mappers with a bi-directional dependency, and child objects on one of them"""
     def setUpAll(self):
         testbase.db.tables.clear()
         global t1
@@ -108,6 +163,9 @@ class CycleWDepsTest(AssertMixin):
         c.data.append(C1Data('c1data3'))
         objectstore.commit()
 
+        objectstore.delete(d)
+        objectstore.delete(c)
+        objectstore.commit()
         
 if __name__ == "__main__":
     testbase.main()        

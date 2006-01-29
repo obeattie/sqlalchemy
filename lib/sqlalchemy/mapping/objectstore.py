@@ -22,7 +22,7 @@ from sets import *
 __all__ = ['get_id_key', 'get_row_key', 'commit', 'update', 'clear', 'delete', 
         'begin', 'has_key', 'has_instance', 'UnitOfWork']
 
-LOG = True
+LOG = False
 
 def get_id_key(ident, class_, table):
     """returns an identity-map key for use in storing/retrieving an item from the identity
@@ -348,12 +348,15 @@ class UOWTransaction(object):
         mapper = object_mapper(obj)
         self.mappers.append(mapper)
         task = self.get_task_by_mapper(mapper)
+        if obj not in task.objects:
+            self.__modified = True
         task.append(obj, listonly, isdelete=isdelete, **kwargs)
 
     def unregister_object(self, obj):
         mapper = object_mapper(obj)
         task = self.get_task_by_mapper(mapper)
         task.delete(obj)
+        self.__modified = True
         
     def get_task_by_mapper(self, mapper):
         """every individual mapper involved in the transaction has a single
@@ -370,6 +373,7 @@ class UOWTransaction(object):
         """called by mapper.PropertyLoader to register the objects handled by
         one mapper being dependent on the objects handled by another."""
         self.dependencies[(mapper, dependency)] = True
+        self.__modified = True
 
     def register_processor(self, mapper, processor, mapperfrom, isdeletefrom):
         """called by mapper.PropertyLoader to register itself as a "processor", which
@@ -379,10 +383,11 @@ class UOWTransaction(object):
         # when the task from "mapper" executes, take the objects from the task corresponding
         # to "mapperfrom"'s list of save/delete objects, and send them to "processor"
         # for dependency processing
-        print "registerprocessor", str(mapper), repr(processor.key), str(mapperfrom), repr(isdeletefrom)
+        #print "registerprocessor", str(mapper), repr(processor.key), str(mapperfrom), repr(isdeletefrom)
         task = self.get_task_by_mapper(mapper)
         targettask = self.get_task_by_mapper(mapperfrom)
         task.dependencies.append(UOWDependencyProcessor(processor, targettask, isdeletefrom))
+        self.__modified = True
 
     def register_saved_history(self, listobj):
         self.saved_histories.append(listobj)
@@ -392,6 +397,7 @@ class UOWTransaction(object):
             task.mapper.register_dependencies(self)
 
         head = self._sort_dependencies()
+        self.__modified = False
         if LOG or echo:
             if head is None:
                 print "Task dump: None"
@@ -400,8 +406,10 @@ class UOWTransaction(object):
         if head is not None:
             head.execute(self)
         if LOG or echo:
-            if head is not None:
+            if self.__modified and head is not None:
                 print "\nAfter Execute:\n" + head.dump()
+            else:
+                print "\nExecute complete (no post-exec changes)\n"
             
     def post_exec(self):
         """after an execute/commit is completed, all of the objects and lists that have
@@ -442,12 +450,11 @@ class UOWTransaction(object):
             if node is None:
                 return None
             task = get_task(node)
-            if node.circular:
+            if node.cycles is not None:
                 tasks = []
                 for n in node.cycles:
                     tasks.append(get_task(n))
                 task.circular = task._sort_circular_dependencies(self, tasks)
-                task.iscircular = True
             for child in node.children:
                 t = sort_hier(child)
                 if t is not None:
@@ -460,7 +467,7 @@ class UOWTransaction(object):
             bymapper[task.mapper] = task
     
         head = DependencySorter(self.dependencies, mappers).sort(allow_all_cycles=True)
-        print str(head)
+        #print str(head)
         task = sort_hier(head)
         return task
 
@@ -512,7 +519,6 @@ class UOWTask(object):
         self.mapper = mapper
         self.objects = util.OrderedDict()
         self.dependencies = []
-        self.iscircular = False
         self.circular = None
         self.childtasks = []
         #print "NEW TASK", repr(self)
@@ -638,7 +644,7 @@ class UOWTask(object):
             try:
                 l = dp[depprocessor]
             except KeyError:
-                l = UOWTask(None, None)
+                l = UOWTask(None, depprocessor.targettask.mapper)
                 dp[depprocessor] = l
             return l
 
@@ -654,19 +660,17 @@ class UOWTask(object):
                     continue
                 l = deps_by_targettask.setdefault(dep.targettask, [])
                 l.append(dep)
-                
-        
+
         for task in cycles:
-            print "cycle task", task
             for taskelement in task.objects.values():
                 obj = taskelement.obj
-                print "OBJ", repr(obj), "TASK", repr(task)
+                #print "OBJ", repr(obj), "TASK", repr(task)
                 objecttask = get_object_task(task, obj)
                 for dep in deps_by_targettask[task]:
                     (processor, targettask, isdelete) = (dep.processor, dep.targettask, dep.isdeletefrom)
                     if taskelement.isdelete is not dep.isdeletefrom:
                         continue
-                    print "GETING LIST OFF PROC", processor.key, "OBJ", repr(obj)
+                    #print "GETING LIST OFF PROC", processor.key, "OBJ", repr(obj)
                     childlist = dep.get_object_dependencies(obj, trans, passive = True)
                     if isdelete:
                         childlist = childlist.unchanged_items() + childlist.deleted_items()
@@ -674,9 +678,9 @@ class UOWTask(object):
                         childlist = childlist.added_items()
                     for o in childlist:
                         whosdep = dep.whose_dependent_on_who(obj, o)
-                        print "got whosdep", whosdep
                         if whosdep is not None:
                             tuples.append(whosdep)
+                            print "new tuple", whosdep
                             if whosdep[0] is obj:
                                 get_dependency_task(whosdep[0], dep).append(whosdep[0], isdelete=isdelete)
                             else:
@@ -727,7 +731,15 @@ class UOWTask(object):
                 val = [t for t in proc.targettask.objects.values() if not t.isdelete]
 
             buf.write(_indent() + "  |\n")
-            buf.write(_indent() + "  |- UOWDependencyProcessor(%d) %s on %s %s\n" % (id(proc), repr(proc.processor.key), (proc.isdeletefrom and "to delete" or "saved"), _repr_task(proc.targettask)))
+            buf.write(_indent() + "  |- UOWDependencyProcessor(%d) %s attribute on %s (%s)\n" % (
+                id(proc), 
+                repr(proc.processor.key), 
+                    (proc.isdeletefrom and 
+                        "%s's to be deleted" % _repr_task_class(proc.targettask) 
+                        or "saved %s's" % _repr_task_class(proc.targettask)), 
+                _repr_task(proc.targettask))
+            )
+            
             if len(val) == 0:
                 buf.write(_indent() + "  |       |-" + "(no objects)\n")
             for v in val:
@@ -748,7 +760,11 @@ class UOWTask(object):
             else:
                 name = '(none)'
             return ("UOWTask(%d) '%s'" % (id(task), name))
-
+        def _repr_task_class(task):
+            if task.mapper is not None and task.mapper.__class__.__name__ == 'Mapper':
+                return task.mapper.class_.__name__
+            else:
+                return '(none)'
 
         def _repr(obj):
             return "%s(%d)" % (obj.__class__.__name__, id(obj))
