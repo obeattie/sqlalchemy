@@ -347,16 +347,21 @@ class PropertyLoader(MapperProperty):
                 uow.register_deleted(child)
 
     class MapperStub(object):
-      """poses as a Mapper representing the association table in a many-to-many
-      join, when performing a commit().  
-      
-      The Task objects in the objectstore module treat it just like
-      any other Mapper, but in fact it only serves as a "dependency" placeholder
-      for the many-to-many update task."""
-      def save_obj(self, *args, **kwargs):
-        pass
-      def delete_obj(self, *args, **kwargs):
-        pass
+        """poses as a Mapper representing the association table in a many-to-many
+        join, when performing a commit().  
+
+        The Task objects in the objectstore module treat it just like
+        any other Mapper, but in fact it only serves as a "dependency" placeholder
+        for the many-to-many update task."""
+        def __init__(self, parent):
+            self.parent = parent
+
+        mapper = property(lambda s: s.parent.mapper)
+        
+        def save_obj(self, *args, **kwargs):
+            pass
+        def delete_obj(self, *args, **kwargs):
+            pass
         
     def register_dependencies(self, uowcommit):
         """tells a UOWTransaction what mappers are dependent on which, with regards
@@ -373,7 +378,7 @@ class PropertyLoader(MapperProperty):
             # association/parent->stub->self, then we process the child
             # elments after the 'stub' save, which is before our own
             # mapper's save.
-            stub = PropertyLoader.MapperStub()
+            stub = PropertyLoader.MapperStub(self)
             uowcommit.register_dependency(self.parent, stub)
             uowcommit.register_dependency(self.association, stub)
             uowcommit.register_dependency(stub, self.mapper)
@@ -391,7 +396,7 @@ class PropertyLoader(MapperProperty):
                 # if we are the "backref" half of a two-way backref 
                 # relationship, let the other mapper handle inserting the rows
                 return
-            stub = PropertyLoader.MapperStub()
+            stub = PropertyLoader.MapperStub(self)
             uowcommit.register_dependency(self.parent, stub)
             uowcommit.register_dependency(self.mapper, stub)
             uowcommit.register_processor(stub, self, self.parent, False)
@@ -410,13 +415,16 @@ class PropertyLoader(MapperProperty):
         return uowcommit.uow.attributes.get_history(obj, self.key, passive = passive)
 
     def whose_dependent_on_who(self, obj1, obj2):
+        """given an object pair assuming obj2 is a child of obj1, returns a tuple
+        with the dependent object second, or None if they are equal.  
+        used by objectstore's object-level topoligical sort."""
         if obj1 is obj2:
             return None
         elif self.direction == PropertyLoader.ONETOMANY:
             return (obj1, obj2)
         else:
             return (obj2, obj1)
-            
+
     def process_dependencies(self, task, deplist, uowcommit, delete = False):
         #print self.mapper.table.name + " " + self.key + " " + repr(len(deplist)) + " process_dep isdelete " + repr(delete) + " direction " + repr(self.direction)
 

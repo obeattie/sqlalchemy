@@ -460,6 +460,7 @@ class UOWTransaction(object):
             bymapper[task.mapper] = task
     
         head = DependencySorter(self.dependencies, mappers).sort(allow_all_cycles=True)
+        print str(head)
         task = sort_hier(head)
         return task
 
@@ -641,10 +642,14 @@ class UOWTask(object):
                 dp[depprocessor] = l
             return l
 
+        # work out a list of all the "dependency processors" that 
+        # represent objects that have to be dependency sorted at the 
+        # per-object level.  all other dependency processors go in
+        # "extradep."
         deps_by_targettask = {}
         for task in cycles:
             for dep in task.dependencies:
-                if dep.targettask not in cycles:
+                if dep.targettask not in cycles or trans.get_task_by_mapper(dep.processor.mapper) not in cycles:
                     extradep.append(dep)
                     continue
                 l = deps_by_targettask.setdefault(dep.targettask, [])
@@ -657,12 +662,8 @@ class UOWTask(object):
                 obj = taskelement.obj
                 print "OBJ", repr(obj), "TASK", repr(task)
                 objecttask = get_object_task(task, obj)
-#                for dep in task.dependencies:
                 for dep in deps_by_targettask[task]:
                     (processor, targettask, isdelete) = (dep.processor, dep.targettask, dep.isdeletefrom)
-                    #if dep.targettask not in cycles:
-                    #    extradep.append(dep)
-                    #    continue
                     if taskelement.isdelete is not dep.isdeletefrom:
                         continue
                     print "GETING LIST OFF PROC", processor.key, "OBJ", repr(obj)
