@@ -645,6 +645,7 @@ class UOWTask(object):
         for task in cycles:
             for dep in task.dependencies:
                 if dep.targettask not in cycles or trans.get_task_by_mapper(dep.processor.mapper) not in cycles:
+                    print "extradep", id(dep), dep.processor.key, dep.targettask, dep.isdeletefrom
                     l = extradep.setdefault(task.mapper, [])
                     l.append(dep)
                     continue
@@ -669,7 +670,7 @@ class UOWTask(object):
                         childlist = childlist.added_items()
                     for o in childlist:
                         if not o in childtask.objects:
-                            print "parent", obj, "not in task objects", o
+                        #    print "parent", obj, "not in task objects", o
                             childtask.append(o, isdelete=isdelete and dep.processor.private)
                             get_object_task(childtask, o)
                             #continue
@@ -689,7 +690,8 @@ class UOWTask(object):
 
         #print str(head)
 
-        def make_task_tree(node, parenttask):
+        def make_task_tree(node, parenttask, flag=False):
+            """takes a dependency-sorted tree of objects and creates a tree of UOWTasks"""
             t = objecttotask[node.item]
             can_add_to_parent = t.mapper is parenttask.mapper
             if can_add_to_parent:
@@ -703,10 +705,16 @@ class UOWTask(object):
                         parenttask.dependencies.append(depprocessor.branch(deptask))
                     else:
                         t.dependencies.append(depprocessor.branch(deptask))
+            f = False
             for n in node.children:
-                t2 = make_task_tree(n, t)
+                t2 = make_task_tree(n, t, f)
+                if t.mapper is t2.mapper:
+                    f = True
+            # propigate non-cyclical dependencies to the tree
+            # if we are adding to the parent, use the "flag" to insure we add them only once
             if can_add_to_parent:
-                parenttask.dependencies += [d.branch(parenttask) for d in extradep.get(t.mapper, [])]
+                if not flag:
+                    parenttask.dependencies += [d.branch(parenttask) for d in extradep.get(parenttask.mapper, [])]
             else:
                 t.dependencies += [d.branch(t) for d in extradep.get(t.mapper, [])]
             return t

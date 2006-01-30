@@ -131,6 +131,10 @@ class CycleWDepsTest(AssertMixin):
             Column('t1id', Integer, ForeignKey('t1.c1')),
             Column('data', String(20)))
         t3.create()
+    def tearDownAll(self):
+        t3.drop()
+        t2.drop()
+        t1.drop()    
         
     def setUp(self):
         objectstore.clear()
