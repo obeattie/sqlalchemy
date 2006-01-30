@@ -708,17 +708,15 @@ class UOWTask(object):
                 t2 = make_task_tree(n, t)
 
             # propigate non-cyclical dependencies to the tree
-            if not getattr(parenttask, '_init_noncyc_deps', False):
-                parenttask.dependencies += [d.branch(parenttask) for d in extradep.get(parenttask.mapper, [])]
-                parenttask._init_noncyc_deps = True
-
-            # propigate non-cyclical dependencies to the tree
-            # if we are adding to the parent, use the "flag" to insure we add them only once
-#            if can_add_to_parent:
-#                if not flag:
-#                    parenttask.dependencies += [d.branch(parenttask) for d in extradep.get(parenttask.mapper, [])]
- #           else:
- #               t.dependencies += [d.branch(t) for d in extradep.get(t.mapper, [])]
+            if can_add_to_parent:
+                if not getattr(parenttask, '_init_noncyc_deps', False):
+                    parenttask.dependencies += [d.branch(parenttask) for d in extradep.get(parenttask.mapper, [])]
+                    parenttask._init_noncyc_deps = True
+            else:
+                if not getattr(t, '_init_noncyc_deps', False):
+                    t.dependencies += [d.branch(t) for d in extradep.get(t.mapper, [])]
+                    t._init_noncyc_deps = True
+                
             return t
         
         # this is the new "circular" UOWTask which will execute in place of "self"

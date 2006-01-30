@@ -35,8 +35,8 @@ class SelfCycleTest(AssertMixin):
         t1.create()
         t2.create()
     def tearDownAll(self):
-        t1.drop()    
         t2.drop()
+        t1.drop()    
     def setUp(self):
         objectstore.clear()
         clear_mappers()
@@ -133,8 +133,8 @@ class CycleWDepsTest(AssertMixin):
         t3.create()
     def tearDownAll(self):
         t3.drop()
-        t2.drop()
         t1.drop()    
+        t2.drop()
         
     def setUp(self):
         objectstore.clear()
