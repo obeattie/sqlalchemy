@@ -596,13 +596,12 @@ class UOWTask(object):
     def _sort_circular_dependencies(self, trans, cycles):
         """for a single task, creates a hierarchical tree of "subtasks" which associate
         specific dependency actions with individual objects.  This is used for a
-        "circular" task, or a task where elements
+        "cyclical" task, or a task where elements
         of its object list contain dependencies on each other.
         
         this is not the normal case; this logic only kicks in when something like 
         a hierarchical tree is being represented."""
 
-        
         allobjects = []
         for task in cycles:
             allobjects += task.objects.keys()
@@ -612,7 +611,7 @@ class UOWTask(object):
 
         cycles = Set(cycles)
         
-        # dependency processors that arent part of the "circular" thing
+        # dependency processors that arent part of the cyclical thing
         # get put here
         extradeplist = []
 
@@ -638,7 +637,6 @@ class UOWTask(object):
                 l = UOWTask(None, depprocessor.targettask.mapper)
                 dp[depprocessor] = l
             return l
-
 
         # work out a list of all the "dependency processors" that 
         # represent objects that have to be dependency sorted at the 
@@ -672,10 +670,8 @@ class UOWTask(object):
                     
                     # list of dependent objects from this object
                     childlist = dep.get_object_dependencies(obj, trans, passive = True)
-                    
                     # the task corresponding to the processor's objects
                     childtask = trans.get_task_by_mapper(processor.mapper)
-                    
                     # is this dependency involved in one of the cycles ?
                     cyclicaldep = dep.targettask in cycles and trans.get_task_by_mapper(dep.processor.mapper) in cycles
                     if isdelete:
@@ -731,6 +727,7 @@ class UOWTask(object):
             for n in node.children:
                 t2 = make_task_tree(n, t)
             return t
+
         # this is the new "circular" UOWTask which will execute in place of "self"
         t = UOWTask(None, self.mapper)
 
