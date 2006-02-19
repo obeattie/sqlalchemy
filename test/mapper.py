@@ -615,11 +615,13 @@ class EagerTest(MapperSuperTest):
 
     def testdouble(self):
         """tests eager loading with two relations simulatneously, from the same table.  """
+        openorders = alias(orders, 'openorders')
+        closedorders = alias(orders, 'closedorders')
         ordermapper = mapper(Order, orders)
         m = mapper(User, users, properties = dict(
             addresses = relation(mapper(Address, addresses), lazy = False),
-            open_orders = relation(ordermapper, primaryjoin = and_(orders.c.isopen == 1, users.c.user_id==orders.c.user_id), lazy = False),
-            closed_orders = relation(ordermapper, primaryjoin = and_(orders.c.isopen == 0, users.c.user_id==orders.c.user_id), lazy = False)
+            open_orders = relation(mapper(Order, openorders), primaryjoin = and_(openorders.c.isopen == 1, users.c.user_id==openorders.c.user_id), lazy = False),
+            closed_orders = relation(mapper(Order, closedorders), primaryjoin = and_(closedorders.c.isopen == 0, users.c.user_id==closedorders.c.user_id), lazy = False)
         ))
         l = m.select()
         self.assert_result(l, User,

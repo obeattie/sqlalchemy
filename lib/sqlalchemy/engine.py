@@ -661,7 +661,6 @@ class ResultProxy:
             for item in metadata:
                 # sqlite possibly prepending table name to colnames so strip
                 colname = item[0].split('.')[-1].lower()
-                print "metacolname", colname
                 if typemap is not None:
                     rec = (typemap.get(colname, types.NULLTYPE), i)
                 else:
@@ -676,7 +675,6 @@ class ResultProxy:
 
     def _get_col(self, row, key):
         if isinstance(key, schema.Column) or isinstance(key, sql.ColumnElement):
-            print "der", key._label
             try:
                 rec = self.props[key._label.lower()]
             except KeyError:

@@ -248,10 +248,12 @@ class Column(SchemaItem):
         self.default = kwargs.pop('default', None)
         self.foreign_key = None
         self._orig = None
+        self._parent = None
         if len(kwargs):
             raise ArgumentError("Unknown arguments passed to Column: " + repr(kwargs.keys()))
         
     original = property(lambda s: s._orig or s)
+    parent = property(lambda s:s._parent or s)
     engine = property(lambda s: s.table.engine)
      
     def __repr__(self):
@@ -307,6 +309,7 @@ class Column(SchemaItem):
         c = Column(name or self.name, self.type, fk, self.default, key = name or self.key, primary_key = self.primary_key, nullable = self.nullable, hidden = self.hidden)
         c.table = selectable
         c._orig = self.original
+        c._parent = self
         if not c.hidden:
             selectable.columns[c.key] = c
             if self.primary_key:

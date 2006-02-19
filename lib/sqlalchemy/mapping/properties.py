@@ -761,13 +761,16 @@ class EagerLoader(PropertyLoader):
             self.eagerprimary.accept_visitor(aliasizer)
         
         if self.order_by:
+            print "LALA"
             self.eager_order_by = [o.copy_container() for o in util.to_list(self.order_by)]
             for i in range(0, len(self.eager_order_by)):
                 if isinstance(self.eager_order_by[i], schema.Column):
                     self.eager_order_by[i] = self.eagertarget._get_col_by_original(self.eager_order_by[i])
+                    print "derp", self.eager_order_by[i]
                 else:
                     self.eager_order_by[i].accept_visitor(aliasizer)
         else:
+            print "HOHO"
             self.eager_order_by = self.order_by
 
         eagerprops = []
@@ -818,7 +821,15 @@ class EagerLoader(PropertyLoader):
 
         if self.eager_order_by:
             statement.order_by(*util.to_list(self.eager_order_by))
-            
+        elif statement.order_by:
+ #           for i in range(0, len(statement.order_by)):
+ #               if isinstance(statement.order_by[i], schema.Column):
+ #                   statement.order_by[i] = self.eagertarget._get_col_by_original(statement.order_by[i])
+ #               else:
+  #                  pass
+#                    statement.order_by[i].accept_visitor(aliasizer)
+            print "YUP OB", statement.order_by
+                
         statement.append_from(statement._outerjoin)
         for key, value in self.mapper.props.iteritems():
             value.setup(key, statement, eagertable=self.eagertarget)
@@ -847,8 +858,7 @@ class EagerLoader(PropertyLoader):
         """gets an instance from a row, via this EagerLoader's mapper."""
         fakerow = util.DictDecorator(row)
         for c in self.eagertarget.c:
-            # TODO - c.original wont work if the original selectable is an Alias
-            fakerow[c.original] = row[c]
+            fakerow[c.parent] = row[c]
         row = fakerow
         return self.mapper._instance(row, imap, result_list)
 

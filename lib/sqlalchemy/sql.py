@@ -522,6 +522,7 @@ class ColumnElement(Selectable, CompareMixin):
     primary_key = property(lambda self:getattr(self, '_primary_key', False))
     foreign_key = property(lambda self:getattr(self, '_foreign_key', False))
     original = property(lambda self:getattr(self, '_original', self))
+    parent = property(lambda self:getattr(self, '_parent', self))
     columns = property(lambda self:[self])
     def _make_proxy(self, selectable, name=None):
         """creates a new ColumnElement representing this ColumnElement as it appears in the select list
@@ -904,13 +905,17 @@ class Join(FromClause):
         
 class Alias(FromClause):
     def __init__(self, selectable, alias = None):
-        while isinstance(selectable, Alias):
-            selectable = selectable.selectable
+        baseselectable = selectable
+        while isinstance(baseselectable, Alias):
+            baseselectable = baseselectable.selectable
+        self.original = baseselectable
         self.selectable = selectable
         if alias is None:
-            n = getattr(selectable, 'name')
+            n = getattr(self.original, 'name')
             if n is None:
                 n = 'anon'
+            elif len(n) > 15:
+                n = n[0:15]
             alias = n + "_" + hex(random.randint(0, 65535))[2:]
         self.name = alias
         self.id = self.name
@@ -949,6 +954,7 @@ class Label(ColumnElement):
     key = property(lambda s: s.name)
     _label = property(lambda s: s.name)
     original = property(lambda s:s.obj.original)
+    parent = property(lambda s:s.obj.parent)
     def accept_visitor(self, visitor):
         self.obj.accept_visitor(visitor)
         visitor.visit_label(self)
@@ -1009,7 +1015,8 @@ class ColumnImpl(ColumnElement):
 
     engine = property(lambda s: s.column.engine)
     default_label = property(lambda s:s._label)
-    original = property(lambda self:self.column)
+    original = property(lambda self:self.column.original)
+    parent = property(lambda self:self.column.parent)
     columns = property(lambda self:[self.column])
     
     def label(self, name):
