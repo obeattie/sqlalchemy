@@ -747,31 +747,23 @@ class EagerLoader(PropertyLoader):
         self.eagertarget = self.target.alias()
         if self.secondary:
             self.eagersecondary = self.secondary.alias()
-            aliasizer = Aliasizer(self.target, aliases={
+            self.aliasizer = Aliasizer(self.target, self.secondary, aliases={
                     self.target:self.eagertarget,
                     self.secondary:self.eagersecondary
                     })
-            self.eagersecondary = self.secondaryjoin.copy_container()
-            self.eagersecondary.accept_visitor(aliasizer)
+            self.eagersecondaryjoin = self.secondaryjoin.copy_container()
+            self.eagersecondaryjoin.accept_visitor(self.aliasizer)
             self.eagerprimary = self.primaryjoin.copy_container()
-            self.eagerprimary.accept_visitor(aliasizer)
+            self.eagerprimary.accept_visitor(self.aliasizer)
         else:
-            aliasizer = Aliasizer(self.target, aliases={self.target:self.eagertarget})
+            self.aliasizer = Aliasizer(self.target, aliases={self.target:self.eagertarget})
             self.eagerprimary = self.primaryjoin.copy_container()
-            self.eagerprimary.accept_visitor(aliasizer)
+            self.eagerprimary.accept_visitor(self.aliasizer)
         
         if self.order_by:
-            print "LALA"
-            self.eager_order_by = [o.copy_container() for o in util.to_list(self.order_by)]
-            for i in range(0, len(self.eager_order_by)):
-                if isinstance(self.eager_order_by[i], schema.Column):
-                    self.eager_order_by[i] = self.eagertarget._get_col_by_original(self.eager_order_by[i])
-                    print "derp", self.eager_order_by[i]
-                else:
-                    self.eager_order_by[i].accept_visitor(aliasizer)
+            self.eager_order_by = self._aliasize_orderby(self.order_by)
         else:
-            print "HOHO"
-            self.eager_order_by = self.order_by
+            self.eager_order_by = None
 
         eagerprops = []
         for key, prop in self.mapper.props.iteritems():
@@ -800,8 +792,19 @@ class EagerLoader(PropertyLoader):
                     print "new eagertqarget", p.eagertarget.name, (p.secondary and p.secondary.name or "none"), p.parent.table.name
             finally:
                 del recursion_stack[self.target]
-
-            
+                
+    def _aliasize_orderby(self, orderby, copy=True):
+        if copy:
+            orderby = [o.copy_container() for o in util.to_list(orderby)]
+        else:
+            orderby = util.to_list(orderby)
+        for i in range(0, len(orderby)):
+            if isinstance(orderby[i], schema.Column):
+                orderby[i] = self.eagertarget._get_col_by_original(orderby[i])
+            else:
+                orderby[i].accept_visitor(self.aliasizer)
+        return orderby
+        
     def setup(self, key, statement, eagertable=None, **options):
         """add a left outer join to the statement thats being constructed"""
 
@@ -811,9 +814,9 @@ class EagerLoader(PropertyLoader):
             towrap = self.parent.table
 
         if self.secondaryjoin is not None:
-            statement._outerjoin = sql.outerjoin(towrap, self.secondary, self.eagerprimary).outerjoin(self.eagertarget, self.eagersecondary)
+            statement._outerjoin = sql.outerjoin(towrap, self.eagersecondary, self.eagerprimary).outerjoin(self.eagertarget, self.eagersecondaryjoin)
             if self.order_by is False and self.secondary.default_order_by() is not None:
-                statement.order_by(*self.secondary.default_order_by())
+                statement.order_by(*self.eagersecondary.default_order_by())
         else:
             statement._outerjoin = towrap.outerjoin(self.eagertarget, self.eagerprimary)
             if self.order_by is False and self.eagertarget.default_order_by() is not None:
@@ -821,14 +824,8 @@ class EagerLoader(PropertyLoader):
 
         if self.eager_order_by:
             statement.order_by(*util.to_list(self.eager_order_by))
-        elif statement.order_by:
- #           for i in range(0, len(statement.order_by)):
- #               if isinstance(statement.order_by[i], schema.Column):
- #                   statement.order_by[i] = self.eagertarget._get_col_by_original(statement.order_by[i])
- #               else:
-  #                  pass
-#                    statement.order_by[i].accept_visitor(aliasizer)
-            print "YUP OB", statement.order_by
+        elif getattr(statement, 'order_by_clause', None):
+            self._aliasize_orderby(statement.order_by_clause, False)
                 
         statement.append_from(statement._outerjoin)
         for key, value in self.mapper.props.iteritems():
@@ -935,28 +932,26 @@ class Aliasizer(sql.ClauseVisitor):
         for t in tables:
             self.tables[t] = t
         self.binary = None
-        self.match = False
         self.aliases = kwargs.get('aliases', {})
-
     def get_alias(self, table):
         try:
             return self.aliases[table]
         except:
             return self.aliases.setdefault(table, sql.alias(table))
-
     def visit_compound(self, compound):
-        for i in range(0, len(compound.clauses)):
-            if isinstance(compound.clauses[i], schema.Column) and self.tables.has_key(compound.clauses[i].table):
-                compound.clauses[i] = self.get_alias(compound.clauses[i].table)._get_col_by_original(compound.clauses[i])
-                self.match = True
-
+        self.visit_clauselist(compound)
+    def visit_clauselist(self, clist):
+        for i in range(0, len(clist.clauses)):
+            if isinstance(clist.clauses[i], schema.Column) and self.tables.has_key(clist.clauses[i].table):
+                orig = clist.clauses[i]
+                clist.clauses[i] = self.get_alias(clist.clauses[i].table)._get_col_by_original(clist.clauses[i])
+                if clist.clauses[i] is None:
+                    raise "cant get orig for " + str(orig) + " against table " + orig.table.name + " " + self.get_alias(orig.table).name
     def visit_binary(self, binary):
         if isinstance(binary.left, schema.Column) and self.tables.has_key(binary.left.table):
             binary.left = self.get_alias(binary.left.table)._get_col_by_original(binary.left)
-            self.match = True
         if isinstance(binary.right, schema.Column) and self.tables.has_key(binary.right.table):
             binary.right = self.get_alias(binary.right.table)._get_col_by_original(binary.right)
-            self.match = True
 
 class BinaryVisitor(sql.ClauseVisitor):
     def __init__(self, func):

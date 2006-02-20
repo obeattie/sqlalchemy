@@ -372,7 +372,7 @@ class ForeignKey(SchemaItem):
         
     def references(self, table):
         """returns True if the given table is referenced by this ForeignKey."""
-        return table._get_col_by_original(self.column) is not None
+        return table._get_col_by_original(self.column, False) is not None
         
     def _init_column(self):
         # ForeignKey inits its remote column as late as possible, so tables can

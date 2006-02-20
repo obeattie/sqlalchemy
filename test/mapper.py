@@ -538,7 +538,7 @@ class EagerTest(MapperSuperTest):
         self.assert_result(l, User, *user_all_result)
         objectstore.clear()
         m = mapper(Item, orderitems, is_primary=True, properties = dict(
-                keywords = relation(mapper(Keyword, keywords), itemkeywords, lazy = False),
+                keywords = relation(mapper(Keyword, keywords), itemkeywords, lazy = False, order_by=[keywords.c.keyword_id]),
             ))
         l = m.select((Item.c.item_name=='item 2') | (Item.c.item_name=='item 5') | (Item.c.item_name=='item 3'), order_by=[Item.c.item_id], limit=2)        
         self.assert_result(l, Item, *[item_keyword_result[1], item_keyword_result[2]])
@@ -660,7 +660,7 @@ class EagerTest(MapperSuperTest):
         items = orderitems
         
         m = mapper(Item, items, properties = dict(
-                keywords = relation(mapper(Keyword, keywords), itemkeywords, lazy=False),
+                keywords = relation(mapper(Keyword, keywords), itemkeywords, lazy=False, order_by=[keywords.c.keyword_id]),
             ))
         l = m.select()
         self.assert_result(l, Item, *item_keyword_result)
@@ -679,7 +679,7 @@ class EagerTest(MapperSuperTest):
 
         m = mapper(Item, items, 
             properties = dict(
-                keywords = relation(mapper(Keyword, keywords), itemkeywords, lazy = False),
+                keywords = relation(mapper(Keyword, keywords), itemkeywords, lazy = False, order_by=[keywords.c.keyword_id]),
             ))
 
         m = mapper(Order, orders, properties = dict(
