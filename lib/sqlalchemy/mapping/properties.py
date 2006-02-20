@@ -766,32 +766,34 @@ class EagerLoader(PropertyLoader):
             self.eager_order_by = None
 
         eagerprops = []
+        # create a new "eager chain", starting from this eager loader and descending downwards
+        # through all sub-eagerloaders.  this will copy all those eagerloaders and have them set up
+        # aliases distinct to this eager chain.  if a recursive relationship to any of the tables is detected,
+        # the chain will terminate by copying that eager loader into a lazy loader.
         for key, prop in self.mapper.props.iteritems():
             if isinstance(prop, EagerLoader):
                 eagerprops.append(prop)
         if len(eagerprops):
-            recursion_stack[self.target] = True
+            recursion_stack[self.parent.table] = True
             self.mapper = self.mapper.copy()
             try:
                 for prop in eagerprops:
+                    if recursion_stack.has_key(prop.target):
+                        # recursion - set the relationship as a LazyLoader
+                        p = EagerLazyOption(None, False).create_prop(self.mapper, prop.key)
+                        continue
                     p = prop.copy()
                     p.use_alias=True
-
                     self.mapper.props[prop.key] = p
-
-                    print "we are:", id(self), self.target.name, (self.secondary and self.secondary.name or "None"), self.parent.table.name
-                    print "prop is",id(prop), prop.target.name, (prop.secondary and prop.secondary.name or "None"), prop.parent.table.name
-                    if recursion_stack.has_key(prop.target):
-                        raise ArgumentError("Circular eager load relationship detected on " + str(self.mapper) + " " + key + repr(self.mapper.props))
-
+                    #print "we are:", id(self), self.target.name, (self.secondary and self.secondary.name or "None"), self.parent.table.name
+                    #print "prop is",id(prop), prop.target.name, (prop.secondary and prop.secondary.name or "None"), prop.parent.table.name
                     p.do_init_subclass(prop.key, prop.parent, recursion_stack)
-
                     p.eagerprimary = p.eagerprimary.copy_container()
                     aliasizer = Aliasizer(p.parent.table, aliases={p.parent.table:self.eagertarget})
                     p.eagerprimary.accept_visitor(aliasizer)
-                    print "new eagertqarget", p.eagertarget.name, (p.secondary and p.secondary.name or "none"), p.parent.table.name
+                    #print "new eagertqarget", p.eagertarget.name, (p.secondary and p.secondary.name or "none"), p.parent.table.name
             finally:
-                del recursion_stack[self.target]
+                del recursion_stack[self.parent.table]
                 
     def _aliasize_orderby(self, orderby, copy=True):
         if copy:
@@ -881,6 +883,7 @@ class GenericOption(MapperOption):
     def create_prop(self, mapper, key):
         kwargs = util.constructor_args(oldprop)
         mapper.set_property(key, class_(**kwargs ))
+
             
 class EagerLazyOption(GenericOption):
     """an option that switches a PropertyLoader to be an EagerLoader or LazyLoader"""
