@@ -107,7 +107,7 @@ class PropertyLoader(MapperProperty):
 
     """describes an object property that holds a single item or list of items that correspond
     to a related database table."""
-    def __init__(self, argument, secondary, primaryjoin, secondaryjoin, foreignkey=None, uselist=None, private=False, association=None, use_alias=False, selectalias=None, order_by=False, attributeext=None, backref=None, is_backref=False, post_update=False):
+    def __init__(self, argument, secondary, primaryjoin, secondaryjoin, foreignkey=None, uselist=None, private=False, association=None, use_alias=None, selectalias=None, order_by=False, attributeext=None, backref=None, is_backref=False, post_update=False):
         self.uselist = uselist
         self.argument = argument
         self.secondary = secondary
@@ -127,11 +127,10 @@ class PropertyLoader(MapperProperty):
             
         self.private = private
         self.association = association
-        if isinstance(selectalias, str):
-            print "'selectalias' argument to property is deprecated.  please use 'use_alias=True'"
-            self.use_alias = True
-        else:
-            self.use_alias = use_alias
+        if selectalias is not None:
+            print "'selectalias' argument to relation() is deprecated.  eager loads automatically alias-ize tables now."
+        if use_alias is not None:
+            print "'use_alias' argument to relation() is deprecated.  eager loads automatically alias-ize tables now."
         self.order_by = order_by
         self.attributeext=attributeext
         self.backref = backref
@@ -289,7 +288,6 @@ class PropertyLoader(MapperProperty):
         elif self.association is not None:
             c = self.mapper._get_criterion(key, value) & self.primaryjoin
             return c.copy_container()
-
         return None
 
     def register_deleted(self, obj, uow):
@@ -783,7 +781,6 @@ class EagerLoader(PropertyLoader):
                         p = EagerLazyOption(None, False).create_prop(self.mapper, prop.key)
                         continue
                     p = prop.copy()
-                    p.use_alias=True
                     self.mapper.props[prop.key] = p
                     #print "we are:", id(self), self.target.name, (self.secondary and self.secondary.name or "None"), self.parent.table.name
                     #print "prop is",id(prop), prop.target.name, (prop.secondary and prop.secondary.name or "None"), prop.parent.table.name
@@ -907,10 +904,6 @@ class EagerLazyOption(GenericOption):
         newprop = class_.__new__(class_)
         newprop.__dict__.update(oldprop.__dict__)
         newprop.do_init_subclass(key, mapper)
-        if self.kwargs.get('selectalias', None):
-            newprop.use_alias = True
-        elif self.kwargs.get('use_alias', None) is not None:
-            newprop.use_alias = self.kwargs['use_alias']
         mapper.set_property(key, newprop)
 
 class DeferredOption(GenericOption):

@@ -1153,10 +1153,11 @@ class SelectBaseMixin(object):
         if not hasattr(self, attribute):
             l = ClauseList(*clauses)
             setattr(self, attribute, l)
-            #self.append_clause(prefix, l)
         else:
             getattr(self, attribute).clauses  += clauses
     def _get_clauses(self):
+        # TODO: this is a little stupid.  make ORDER BY/GROUP BY keywords handled by 
+        # the compiler, make group_by_clause/order_by_clause regular attributes
         x =[]
         if getattr(self, 'group_by_clause', None):
             x.append(("GROUP BY", self.group_by_clause))
