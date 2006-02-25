@@ -123,7 +123,8 @@ class Table(sql.TableClause, SchemaItem):
             self.fullname = "%s.%s" % (self.schema, self.name)
         else:
             self.fullname = self.name
-
+        self.kwargs = kwargs
+        
     def __repr__(self):
         return "Table(%s)" % string.join(
         [repr(self.name)] + [repr(self.engine)] +
@@ -141,10 +142,9 @@ class Table(sql.TableClause, SchemaItem):
         """clears out the columns and other properties of this Table, and reloads them from the 
         given argument list.  This is used with the "redefine" keyword argument sent to the
         metaclass constructor."""
-        self.columns = OrderedProperties()
-        self.c = self.columns
-        self.foreign_keys = []
-        self.primary_key = []
+        self._clear()
+        
+        print "RELOAD VALUES", args
         self._init_items(*args)
 
     def append_item(self, item):
@@ -162,11 +162,11 @@ class Table(sql.TableClause, SchemaItem):
     def _set_parent(self, schema):
         schema.tables[self.name] = self
         self.schema = schema
-    def accept_visitor(self, visitor): 
+    def accept_schema_visitor(self, visitor): 
         """traverses the given visitor across the Column objects inside this Table,
         then calls the visit_table method on the visitor."""
         for c in self.columns:
-            c.accept_visitor(visitor)
+            c.accept_schema_visitor(visitor)
         return visitor.visit_table(self)
     def deregister(self):
         """removes this table from it's engines table registry.  this does not
@@ -237,10 +237,6 @@ class Column(sql.ColumnClause, SchemaItem):
         if len(kwargs):
             raise ArgumentError("Unknown arguments passed to Column: " + repr(kwargs.keys()))
 
-        if self.default is not None:
-            self.default = ColumnDefault(self.default)
-            self.default._set_parent(self)
-
     primary_key = AttrProp('_primary_key')
     foreign_key = AttrProp('_foreign_key')
     original = property(lambda s: s._orig or s)
@@ -301,13 +297,13 @@ class Column(sql.ColumnClause, SchemaItem):
             c._init_items(fk)
         return c
 
-    def accept_visitor(self, visitor):
+    def accept_schema_visitor(self, visitor):
         """traverses the given visitor to this Column's default and foreign key object,
         then calls visit_column on the visitor."""
         if self.default is not None:
-            self.default.accept_visitor(visitor)
+            self.default.accept_schema_visitor(visitor)
         if self.foreign_key is not None:
-            self.foreign_key.accept_visitor(visitor)
+            self.foreign_key.accept_schema_visitor(visitor)
         visitor.visit_column(self)
 
 
@@ -367,7 +363,7 @@ class ForeignKey(SchemaItem):
             
     column = property(lambda s: s._init_column())
 
-    def accept_visitor(self, visitor):
+    def accept_schema_visitor(self, visitor):
         """calls the visit_foreign_key method on the given visitor."""
         visitor.visit_foreign_key(self)
         
@@ -393,7 +389,7 @@ class PassiveDefault(DefaultGenerator):
     """a default that takes effect on the database side"""
     def __init__(self, arg):
         self.arg = arg
-    def accept_visitor(self, visitor):
+    def accept_schema_visitor(self, visitor):
         return visitor.visit_passive_default(self)
     def __repr__(self):
         return "PassiveDefault(%s)" % repr(self.arg)
@@ -403,7 +399,7 @@ class ColumnDefault(DefaultGenerator):
     a callable function, or a SQL clause."""
     def __init__(self, arg):
         self.arg = arg
-    def accept_visitor(self, visitor):
+    def accept_schema_visitor(self, visitor):
         """calls the visit_column_default method on the given visitor."""
         return visitor.visit_column_default(self)
     def __repr__(self):
@@ -422,7 +418,7 @@ class Sequence(DefaultGenerator):
              ["%s=%s" % (k, repr(getattr(self, k))) for k in ['start', 'increment', 'optional']]
             , ',')
     
-    def accept_visitor(self, visitor):
+    def accept_schema_visitor(self, visitor):
         """calls the visit_seauence method on the given visitor."""
         return visitor.visit_sequence(self)
 
@@ -447,6 +443,7 @@ class Index(SchemaItem):
         self.unique = kw.pop('unique', False)
         self._init_items()
 
+    engine = property(lambda s:s.table.engine)
     def _init_items(self):
         # make sure all columns are from the same table
         # FIXME: and no column is repeated
@@ -461,12 +458,12 @@ class Index(SchemaItem):
                                                            column.table,
                                                            self.table))
     def create(self):
-       self._engine.create(self.index)
+       self.engine.create(self)
     def drop(self):
-       self._engine.drop(self.index)
+       self.engine.drop(self)
     def execute(self):
        self.create()
-    def accept_visitor(self, visitor):
+    def accept_schema_visitor(self, visitor):
         visitor.visit_index(self)
     def __str__(self):
         return repr(self)

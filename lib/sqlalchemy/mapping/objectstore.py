@@ -194,11 +194,11 @@ class Session(object):
             u.register_new(instance)
         return instance
 
-def get_id_key(ident, class_, table):
-    return Session.get_id_key(ident, class_, table)
+def get_id_key(ident, class_):
+    return Session.get_id_key(ident, class_)
 
-def get_row_key(row, class_, table, primary_key):
-    return Session.get_row_key(row, class_, table, primary_key)
+def get_row_key(row, class_, primary_key):
+    return Session.get_row_key(row, class_, primary_key)
 
 def begin():
     """begins a new UnitOfWork transaction.  the next commit will affect only

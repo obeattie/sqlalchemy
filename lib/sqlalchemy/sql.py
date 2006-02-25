@@ -916,7 +916,6 @@ class Alias(FromClause):
         return self.selectable.columns
 
     def accept_visitor(self, visitor):
-        print "SEL", repr(self.selectable)
         self.selectable.accept_visitor(visitor)
         visitor.visit_alias(self)
 
@@ -1025,6 +1024,16 @@ class TableClause(FromClause):
     foreign_keys = property(lambda s:s._foreign_keys)
     original_columns = property(_orig_columns)
     oid_column = property(_oid_col)
+
+    def _clear(self):
+        """clears all attributes on this TableClause so that new items can be added again"""
+        self.columns.clear()
+        self.foreign_keys[:] = []
+        self.primary_key[:] = []
+        try:
+            delattr(self, '_orig_cols')
+        except AttributeError:
+            pass
 
     def accept_visitor(self, visitor):
         visitor.visit_table(self)
@@ -1304,7 +1313,6 @@ class UpdateBase(ClauseElement):
             elif _is_literal(value):
                 if _is_literal(key):
                     col = self.table.c[key]
-                    print "COL", col
                 else:
                     col = key
                 try:

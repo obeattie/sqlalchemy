@@ -79,9 +79,10 @@ class OrderedProperties(object):
     def __setattr__(self, key, object):
         if not hasattr(self, key):
             self._list.append(key)
-    
         self.__dict__[key] = object
-    
+    def clear(self):
+        for key in self._list[:]:
+            del self[key]
 class RecursionStack(object):
     """a thread-local stack used to detect recursive object traversals."""
     def __init__(self):

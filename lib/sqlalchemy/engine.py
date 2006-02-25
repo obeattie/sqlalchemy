@@ -130,7 +130,7 @@ class DefaultRunner(schema.SchemaVisitor):
 
     def get_column_default(self, column):
         if column.default is not None:
-            return column.default.accept_visitor(self)
+            return column.default.accept_schema_visitor(self)
         else:
             return None
 
@@ -295,11 +295,11 @@ class SQLEngine(schema.SchemaEngine):
         
     def create(self, entity, **params):
         """creates a table or index within this engine's database connection given a schema.Table object."""
-        entity.accept_visitor(self.schemagenerator(**params))
+        entity.accept_schema_visitor(self.schemagenerator(**params))
 
     def drop(self, entity, **params):
         """drops a table or index within this engine's database connection given a schema.Table object."""
-        entity.accept_visitor(self.schemadropper(**params))
+        entity.accept_schema_visitor(self.schemadropper(**params))
 
     def compile(self, statement, parameters, **kwargs):
         """given a sql.ClauseElement statement plus optional bind parameters, creates a new

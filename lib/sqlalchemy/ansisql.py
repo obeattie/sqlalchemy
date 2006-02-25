@@ -35,7 +35,7 @@ class ANSISQLEngine(sqlalchemy.engine.SQLEngine):
     def dbapi(self):
         return None
 
-class ANSICompiler(sql.Compiled, schema.SchemaVisitor):
+class ANSICompiler(sql.Compiled):
     """default implementation of Compiled, which compiles ClauseElements into ANSI-compliant SQL strings."""
     def __init__(self, engine, statement, parameters=None, typemap=None, **kwargs):
         """constructs a new ANSICompiler object.
@@ -392,8 +392,8 @@ class ANSICompiler(sql.Compiled, schema.SchemaVisitor):
                 self.visit_insert_sequence(c, seq)
         vis = DefaultVisitor()
         for c in insert_stmt.table.c:
-            if (self.parameters is None or self.parameters.get(c.key, None) is None):
-                c.accept_visitor(vis)
+            if (isinstance(c, schema.SchemaItem) and (self.parameters is None or self.parameters.get(c.key, None) is None)):
+                c.accept_schema_visitor(vis)
         
         self.isinsert = True
         colparams = self._get_colparams(insert_stmt)

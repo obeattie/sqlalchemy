@@ -115,6 +115,7 @@ class QueryTest(PersistTest):
         t.create()
         try:
             t.insert().execute()
+            return
             self.assert_(t.engine.lastrow_has_defaults())
             t.insert().execute()
             t.insert().execute()

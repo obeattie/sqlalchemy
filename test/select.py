@@ -1,9 +1,9 @@
 
 from sqlalchemy import *
 import sqlalchemy.ansisql as ansisql
-#import sqlalchemy.databases.postgres as postgres
-#import sqlalchemy.databases.oracle as oracle
-#import sqlalchemy.databases.sqlite as sqlite
+import sqlalchemy.databases.postgres as postgres
+import sqlalchemy.databases.oracle as oracle
+import sqlalchemy.databases.sqlite as sqlite
 
 db = ansisql.engine()
 
