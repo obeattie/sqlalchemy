@@ -174,7 +174,7 @@ def bindparam(key, value = None, type=None):
     An optional default value can be specified by the value parameter, and the optional type parameter
     is a sqlalchemy.types.TypeEngine object which indicates bind-parameter and result-set translation for
     this bind parameter."""
-    if isinstance(key, schema.Column):
+    if isinstance(key, ColumnClause):
         return BindParamClause(key.name, value, type=key.type)
     else:
         return BindParamClause(key, value, type=type)
@@ -953,7 +953,7 @@ class ColumnClause(ColumnElement):
     in two modes, one where its just any text that will be placed into the select statement,
     and "column" mode, where it represents a column attached to a table."""
     def __init__(self, text, selectable=None):
-        self.text = text
+        self.key = self.name = self.text = text
         self.table = selectable
         self.type = sqltypes.NullTypeEngine()
     def _get_label(self):
@@ -961,8 +961,6 @@ class ColumnClause(ColumnElement):
             return self.table.name + "_" + self.text
         else:
             return self.text
-    name = property(lambda self:self.text)
-    key = property(lambda self:self.text)
     _label = property(_get_label)
     default_label = property(lambda s:s._label)
     def accept_visitor(self, visitor): 
@@ -981,11 +979,15 @@ class ColumnClause(ColumnElement):
         c = ColumnClause(name or self.text, selectable)
         selectable.columns[c.key] = c
         return c
+    def _compare_type(self, obj):
+        return self.type
+    def _group_parenthesized(self):
+        return False
 
 class TableClause(FromClause):
     def __init__(self, name, *columns):
         super(TableClause, self).__init__(name)
-        self.name = self.id = name
+        self.name = self.id = self.fullname = name
         self._columns = util.OrderedProperties()
         self._foreign_keys = []
         self._primary_key = []
@@ -1181,6 +1183,9 @@ class Select(SelectBaseMixin, FromClause):
             self.is_where = is_where
         def visit_compound_select(self, cs):
             self.visit_select(cs)
+        # TODO: visit_column, visit_table arent from this module
+        def visit_column(self, c):pass
+        def visit_table(self, c):pass
         def visit_select(self, select):
             if select is self.select:
                 return
@@ -1300,6 +1305,7 @@ class UpdateBase(ClauseElement):
             elif _is_literal(value):
                 if _is_literal(key):
                     col = self.table.c[key]
+                    print "COL", col
                 else:
                     col = key
                 try:
@@ -1307,6 +1313,9 @@ class UpdateBase(ClauseElement):
                 except KeyError:
                     del parameters[key]
         return parameters
+
+    def _find_engine(self):
+        return self._engine
         
 
 class Insert(UpdateBase):

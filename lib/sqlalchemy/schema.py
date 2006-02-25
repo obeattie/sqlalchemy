@@ -117,7 +117,7 @@ class Table(sql.TableClause, SchemaItem):
         
         """
         super(Table, self).__init__(name)
-        self.engine = engine
+        self._engine = engine
         self.schema = kwargs.pop('schema', None)
         if self.schema is not None:
             self.fullname = "%s.%s" % (self.schema, self.name)
@@ -153,7 +153,7 @@ class Table(sql.TableClause, SchemaItem):
     
     def append_column(self, column):
         if not column.hidden:
-            self._columns[column.key] = self
+            self._columns[column.key] = column
         if column.primary_key:
             self.primary_key.append(column)
         column.table = self
@@ -227,11 +227,11 @@ class Column(sql.ColumnClause, SchemaItem):
         super(Column, self).__init__(name, None)
         self.args = args
         self.key = kwargs.pop('key', name)
-        self.primary_key = kwargs.pop('primary_key', False)
+        self._primary_key = kwargs.pop('primary_key', False)
         self.nullable = kwargs.pop('nullable', not self.primary_key)
         self.hidden = kwargs.pop('hidden', False)
         self.default = kwargs.pop('default', None)
-        self.foreign_key = None
+        self._foreign_key = None
         self._orig = None
         self._parent = None
         if len(kwargs):
@@ -242,11 +242,13 @@ class Column(sql.ColumnClause, SchemaItem):
             self.default._set_parent(self)
 
         self._init_items(*self.args)
-        
+
+    primary_key = AttrProp('_primary_key')
+    foreign_key = AttrProp('_foreign_key')
     original = property(lambda s: s._orig or s)
     parent = property(lambda s:s._parent or s)
     engine = property(lambda s: s.table.engine)
-    columns = property(lambda self:[self.column])
+    columns = property(lambda self:[self])
 
     def __repr__(self):
        return "Column(%s)" % string.join(
