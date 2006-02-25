@@ -493,7 +493,7 @@ class SchemaEngine(object):
         raise NotImplementedError()
         
 class SchemaVisitor(sql.ClauseVisitor):
-    """base class for an object that traverses across Schema structures."""
+    """defines the visiting for SchemaItem objects"""
     def visit_schema(self, schema):
         """visit a generic SchemaItem"""
         pass

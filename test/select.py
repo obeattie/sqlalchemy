@@ -10,6 +10,10 @@ db = ansisql.engine()
 from testbase import PersistTest
 import unittest, re
 
+# the select test now tests almost completely with TableClause/ColumnClause objects,
+# which are free-roaming table/column objects not attached to any database.  
+# so SQLAlchemy's SQL construction engine can be used with no database dependencies at all.
+
 table1 = table('mytable', 
     column('myid'),
     column('name'),

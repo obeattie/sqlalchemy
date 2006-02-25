@@ -161,11 +161,13 @@ def label(name, obj):
     return Label(name, obj)
     
 def column(text, table=None, type=None):
-    """returns a textual column clause, relative to a table.  this differs from using straight text
-    or text() in that the column is treated like a regular column, i.e. gets added to a Selectable's list of columns."""
+    """returns a textual column clause, relative to a table.  this is also the primitive version of
+    a schema.Column which is a subclass. """
     return ColumnClause(text, table, type)
 
 def table(name, *columns):
+    """returns a table clause.  this is a primitive version of the schema.Table object, which is a subclass
+    of this object."""
     return TableClause(name, *columns)
     
 def bindparam(key, value = None, type=None):
@@ -192,7 +194,7 @@ def text(text, engine=None, *args, **kwargs):
     text - the text of the SQL statement to be created.  use :<param> to specify
     bind parameters; they will be compiled to their engine-specific format.
 
-    engine - the engine to be used for this text query.  Alternatively, call the
+    engine - an optional engine to be used for this text query.  Alternatively, call the
     text() method off the engine directly.
 
     bindparams - a list of bindparam() instances which can be used to define the
@@ -230,8 +232,7 @@ def is_column(col):
     return isinstance(col, ColumnElement)
 
 class ClauseVisitor(object):
-    """builds upon SchemaVisitor to define the visiting of SQL statement elements in 
-    addition to Schema elements."""
+    """Defines the visiting of ClauseElements."""
     def visit_column(self, column):pass
     def visit_table(self, column):pass
     def visit_fromclause(self, fromclause):pass
@@ -348,6 +349,9 @@ class ClauseElement(object):
         return False
 
     def _find_engine(self):
+        """default strategy for locating an engine within the clause element.
+        relies upon a local engine property, or looks in the "from" objects which 
+        ultimately have to contain Tables or TableClauses. """
         try:
             if self._engine is not None:
                 return self._engine
@@ -362,7 +366,7 @@ class ClauseElement(object):
         else:
             return None
             
-    engine = property(lambda s: s._find_engine())
+    engine = property(lambda s: s._find_engine(), doc="attempts to locate a SQLEngine within this ClauseElement structure, or returns None if none found.")
     
     def compile(self, engine = None, parameters = None, typemap=None):
         """compiles this SQL expression using its underlying SQLEngine to produce
@@ -373,16 +377,13 @@ class ClauseElement(object):
             engine = self.engine
 
         if engine is None:
-            raise InvalidRequestError("no SQLEngine could be located within this ClauseElement.")
+            import sqlalchemy.ansisql as ansisql
+            engine = ansisql.engine()
 
         return engine.compile(self, parameters=parameters, typemap=typemap)
 
     def __str__(self):
-        e = self.engine
-        if e is None:
-            import sqlalchemy.ansisql as ansisql
-            e = ansisql.engine()
-        return str(self.compile(e))
+        return str(self.compile())
         
     def execute(self, *multiparams, **params):
         """compiles and executes this SQL expression using its underlying SQLEngine. the
@@ -418,6 +419,7 @@ class ClauseElement(object):
         return not_(self)
 
 class CompareMixin(object):
+    """defines comparison operations for ClauseElements."""
     def __lt__(self, other):
         return self._compare('<', other)
     def __le__(self, other):
@@ -493,18 +495,14 @@ class Selectable(ClauseElement):
 
     def accept_visitor(self, visitor):
         raise NotImplementedError(repr(self))
-
     def is_selectable(self):
         return True
-
     def select(self, whereclauses = None, **params):
         return select([self], whereclauses, **params)
-
     def _group_parenthesized(self):
         """indicates if this Selectable requires parenthesis when grouped into a compound
         statement"""
         return True
-
 
 class ColumnElement(Selectable, CompareMixin):
     """represents a column element within the list of a Selectable's columns.  Provides 
@@ -856,13 +854,9 @@ class Join(FromClause):
             return and_(*crit)
             
     def _group_parenthesized(self):
-        """indicates if this Selectable requires parenthesis when grouped into a compound
-        statement"""
         return True
-
     def select(self, whereclauses = None, **params):
         return select([self.left, self.right], whereclauses, from_obj=[self], **params)
-
     def accept_visitor(self, visitor):
         self.left.accept_visitor(visitor)
         self.right.accept_visitor(visitor)
@@ -948,9 +942,8 @@ class Label(ColumnElement):
         return self.obj._make_proxy(selectable, name=self.name)
      
 class ColumnClause(ColumnElement):
-    """represents a textual column clause in a SQL statement.  ColumnClause operates
-    in two modes, one where its just any text that will be placed into the select statement,
-    and "column" mode, where it represents a column attached to a table."""
+    """represents a textual column clause in a SQL statement.  May or may not
+    be bound to an underlying Selectable."""
     def __init__(self, text, selectable=None, type=None):
         self.key = self.name = self.text = text
         self.table = selectable
@@ -961,7 +954,6 @@ class ColumnClause(ColumnElement):
         else:
             return self.text
     _label = property(_get_label)
-    default_label = property(lambda s:s._label)
     def accept_visitor(self, visitor): 
         visitor.visit_column(self)
     def _get_from_objects(self):
