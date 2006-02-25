@@ -312,18 +312,6 @@ class Compiled(ClauseVisitor):
         
 class ClauseElement(object):
     """base class for elements of a programmatically constructed SQL expression."""
-    def hash_key(self):
-        """returns a string that uniquely identifies the concept this ClauseElement
-        represents.
-
-        two ClauseElements can have the same value for hash_key() iff they both correspond to
-        the exact same generated SQL.  This allows the hash_key() values of a collection of
-        ClauseElements to be constructed into a larger identifying string for the purpose of
-        caching a SQL expression.
-
-        Note that since ClauseElements may be mutable, the hash_key() value is subject to
-        change if the underlying structure of the ClauseElement changes.""" 
-        raise NotImplementedError(repr(self))
     def _get_from_objects(self):
         """returns objects represented in this ClauseElement that should be added to the
         FROM list of a query."""
@@ -557,8 +545,6 @@ class FromClause(Selectable):
             return [self.oid_column]    
         else:
             return self.primary_key
-    def hash_key(self):
-        return "FromClause(%s, %s)" % (repr(self.id), repr(self.from_name))
     def accept_visitor(self, visitor): 
         visitor.visit_fromclause(self)
     def count(self, whereclause=None, **params):
@@ -632,8 +618,6 @@ class BindParamClause(ClauseElement, CompareMixin):
         visitor.visit_bindparam(self)
     def _get_from_objects(self):
         return []
-    def hash_key(self):
-        return "BindParam(%s, %s, %s)" % (repr(self.key), repr(self.value), repr(self.shortname))
     def typeprocess(self, value, engine):
         return self._get_convert_type(engine).convert_bind_param(value, engine)
     def compare(self, other):
@@ -679,8 +663,6 @@ class TextClause(ClauseElement):
         for item in self.bindparams.values():
             item.accept_visitor(visitor)
         visitor.visit_textclause(self)
-    def hash_key(self):
-        return "TextClause(%s)" % repr(self.text)
     def _get_from_objects(self):
         return []
 
@@ -691,8 +673,6 @@ class Null(ClauseElement):
         visitor.visit_null(self)
     def _get_from_objects(self):
         return []
-    def hash_key(self):
-        return "Null"
 
 class ClauseList(ClauseElement):
     """describes a list of clauses.  by default, is comma-separated, 
@@ -703,8 +683,6 @@ class ClauseList(ClauseElement):
             if c is None: continue
             self.append(c)
         self.parens = kwargs.get('parens', False)
-    def hash_key(self):
-        return string.join([c.hash_key() for c in self.clauses], ",")
     def copy_container(self):
         clauses = [clause.copy_container() for clause in self.clauses]
         return ClauseList(parens=self.parens, *clauses)
@@ -758,8 +736,6 @@ class CompoundClause(ClauseList):
         for c in self.clauses:
             f += c._get_from_objects()
         return f
-    def hash_key(self):
-        return string.join([c.hash_key() for c in self.clauses], self.operator or " ")
     def compare(self, other):
         """compares this CompoundClause to the given item.  
         
@@ -799,8 +775,6 @@ class Function(ClauseList, ColumnElement):
         return BindParamClause(self.name, obj, shortname=self.name, type=self.type)
     def select(self):
         return select([self])
-    def hash_key(self):
-        return self.name + "(" + string.join([c.hash_key() for c in self.clauses], ", ") + ")"
     def _compare_type(self, obj):
         return self.type
                 
@@ -816,8 +790,6 @@ class BinaryClause(ClauseElement):
         return BinaryClause(self.left.copy_container(), self.right.copy_container(), self.operator)
     def _get_from_objects(self):
         return self.left._get_from_objects() + self.right._get_from_objects()
-    def hash_key(self):
-        return self.left.hash_key() + (self.operator or " ") + self.right.hash_key()
     def accept_visitor(self, visitor):
         self.left.accept_visitor(visitor)
         self.right.accept_visitor(visitor)
@@ -888,9 +860,6 @@ class Join(FromClause):
         statement"""
         return True
 
-    def hash_key(self):
-        return "Join(%s, %s, %s, %s)" % (repr(self.left.hash_key()), repr(self.right.hash_key()), repr(self.onclause.hash_key()), repr(self.isouter))
-
     def select(self, whereclauses = None, **params):
         return select([self.left, self.right], whereclauses, from_obj=[self], **params)
 
@@ -946,10 +915,8 @@ class Alias(FromClause):
     def _exportable_columns(self):
         return self.selectable.columns
 
-    def hash_key(self):
-        return "Alias(%s, %s)" % (self.selectable.hash_key(), repr(self.name))
-
     def accept_visitor(self, visitor):
+        print "SEL", repr(self.selectable)
         self.selectable.accept_visitor(visitor)
         visitor.visit_alias(self)
 
@@ -980,15 +947,11 @@ class Label(ColumnElement):
         return self.obj._get_from_objects()
     def _make_proxy(self, selectable, name = None):
         return self.obj._make_proxy(selectable, name=self.name)
-        
-    def hash_key(self):
-        return "Label(%s, %s)" % (self.name, self.obj.hash_key())
      
 class ColumnClause(ColumnElement):
     """represents a textual column clause in a SQL statement.  ColumnClause operates
     in two modes, one where its just any text that will be placed into the select statement,
     and "column" mode, where it represents a column attached to a table."""
-
     def __init__(self, text, selectable=None):
         self.text = text
         self.table = selectable
@@ -1002,19 +965,13 @@ class ColumnClause(ColumnElement):
     key = property(lambda self:self.text)
     _label = property(_get_label)
     default_label = property(lambda s:s._label)
-    
     def accept_visitor(self, visitor): 
         visitor.visit_columnclause(self)
-
-    def hash_key(self):
-        if self.table is not None:
-            return "ColumnClause(%s, %s)" % (self.text, util.hash_key(self.table))
-        else:
-            return "ColumnClause(%s)" % self.text
-
     def _get_from_objects(self):
-        return []
-
+        if self.table is not None:
+            return [self.table]
+        else:
+            return []
     def _bind_param(self, obj):
         if self.table.name is None:
             return BindParamClause(self.text, obj, shortname=self.text, type=self.type)
@@ -1030,6 +987,8 @@ class TableClause(FromClause):
         super(TableClause, self).__init__(name)
         self.name = self.id = name
         self._columns = util.OrderedProperties()
+        self._foreign_keys = []
+        self._primary_key = []
         for c in columns:
             self.append_column(c)
 
@@ -1037,11 +996,13 @@ class TableClause(FromClause):
         self._columns[c.text] = c
         c.table = self
     def _oid_col(self):
+        if self.engine is None:
+            return None
         # OID remains a little hackish so far
         if not hasattr(self, '_oid_column'):
             if self.engine.oid_column_name() is not None:
-                self._oid_column = schema.Column(self.table.engine.oid_column_name(), sqltypes.Integer, hidden=True)
-                self._oid_column._set_parent(self.table)
+                self._oid_column = schema.Column(self.engine.oid_column_name(), sqltypes.Integer, hidden=True)
+                self._oid_column._set_parent(self)
             else:
                 self._oid_column = None
         return self._oid_column
@@ -1061,8 +1022,10 @@ class TableClause(FromClause):
     primary_key = property(lambda s:s._primary_key)
     foreign_keys = property(lambda s:s._foreign_keys)
     original_columns = property(_orig_columns)
-            
+    oid_column = property(_oid_col)
 
+    def accept_visitor(self, visitor):
+        visitor.visit_tableclause(self)
     def _exportable_columns(self):
         raise NotImplementedError()
     def _group_parenthesized(self):
@@ -1071,7 +1034,7 @@ class TableClause(FromClause):
         for f in self._get_from_objects():
             data.setdefault(f.id, f)
         if asfrom:
-            data[self.id] = self.table
+            data[self.id] = self
     def count(self, whereclause=None, **params):
         return select([func.count(1).label('count')], whereclause, from_obj=[self], **params)
     def join(self, right, *args, **kwargs):
@@ -1143,11 +1106,6 @@ class CompoundSelect(SelectBaseMixin, FromClause):
         order_by = kwargs.get('order_by', None)
         if order_by:
             self.order_by(*order_by)
-    def hash_key(self):
-        return "CompoundSelect(%s)" % string.join(
-            [util.hash_key(s) for s in self.selects] + 
-            ["%s=%s" % (k, repr(getattr(self, k))) for k in ['use_labels', 'keyword']],
-            ",")
     def _exportable_columns(self):
         return self.selects[0].columns
     def _proxy_column(self, column):
@@ -1240,7 +1198,6 @@ class Select(SelectBaseMixin, FromClause):
         for f in column._get_from_objects():
             f.accept_visitor(self._correlator)
         column._process_from_dict(self._froms, False)
-        
     def _exportable_columns(self):
         return self._raw_columns
     def _proxy_column(self, column):
@@ -1265,24 +1222,6 @@ class Select(SelectBaseMixin, FromClause):
 
     _hash_recursion = util.RecursionStack()
     
-    def hash_key(self):
-        # selects call alot of stuff so we do some "recursion checking"
-        # to eliminate loops
-        if Select._hash_recursion.push(self):
-            return "recursive_select()"
-        try:
-            return "Select(%s)" % string.join(
-                [
-                    "columns=" + string.join([util.hash_key(c) for c in self._raw_columns],','),
-                    "where=" + util.hash_key(self.whereclause),
-                    "from=" + string.join([util.hash_key(f) for f in self.froms],','),
-                    "having=" + util.hash_key(self.having),
-                    "clauses=" + string.join([util.hash_key(c) for c in self.clauses], ',')
-                ] + ["%s=%s" % (k, repr(getattr(self, k))) for k in ['use_labels', 'distinct', 'limit', 'offset']], ","
-            ) 
-        finally:
-            Select._hash_recursion.pop(self)
-        
     def clear_from(self, id):
         self.append_from(FromClause(from_name = None, from_key = id))
         
@@ -1294,7 +1233,7 @@ class Select(SelectBaseMixin, FromClause):
         fromclause._process_from_dict(self._froms, True)
 
     def _get_froms(self):
-        return [f for f in self._froms.values() if self._correlated is None or not self._correlated.has_key(f.id)]
+        return [f for f in self._froms.values() if f is not self and (self._correlated is None or not self._correlated.has_key(f.id))]
     froms = property(lambda s: s._get_froms())
 
     def accept_visitor(self, visitor):
@@ -1340,9 +1279,6 @@ class Select(SelectBaseMixin, FromClause):
 class UpdateBase(ClauseElement):
     """forms the base for INSERT, UPDATE, and DELETE statements."""
     
-    def hash_key(self):
-        return str(id(self))
-        
     def _process_colparams(self, parameters):
         """receives the "values" of an INSERT or UPDATE statement and constructs
         appropriate ind parameters."""

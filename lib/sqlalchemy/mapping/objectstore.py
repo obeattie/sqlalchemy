@@ -48,7 +48,7 @@ class Session(object):
             self.hash_key = hash_key
         _sessions[self.hash_key] = self
         
-    def get_id_key(ident, class_, table):
+    def get_id_key(ident, class_):
         """returns an identity-map key for use in storing/retrieving an item from the identity
         map, given a tuple of the object's primary key values.
 
@@ -62,10 +62,10 @@ class Session(object):
         selectable - a Selectable object which represents all the object's column-based fields.
         this Selectable may be synonymous with the table argument or can be a larger construct
         containing that table. return value: a tuple object which is used as an identity key. """
-        return (class_, table.hash_key(), tuple(ident))
+        return (class_, tuple(ident))
     get_id_key = staticmethod(get_id_key)
 
-    def get_row_key(row, class_, table, primary_key):
+    def get_row_key(row, class_, primary_key):
         """returns an identity-map key for use in storing/retrieving an item from the identity
         map, given a result set row.
 
@@ -80,7 +80,7 @@ class Session(object):
         this Selectable may be synonymous with the table argument or can be a larger construct
         containing that table. return value: a tuple object which is used as an identity key.
         """
-        return (class_, table.hash_key(), tuple([row[column] for column in primary_key]))
+        return (class_, tuple([row[column] for column in primary_key]))
     get_row_key = staticmethod(get_row_key)
 
     class SessionTrans(object):

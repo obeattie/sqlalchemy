@@ -32,9 +32,6 @@ class SchemaItem(object):
     def _set_parent(self, parent):
         """a child item attaches itself to its parent via this method."""
         raise NotImplementedError()
-    def hash_key(self):
-        """returns a string that identifies this SchemaItem uniquely"""
-        return "%s(%d)" % (self.__class__.__name__, id(self))
     def __repr__(self):
         return "%s()" % self.__class__.__name__
 
@@ -120,8 +117,6 @@ class Table(sql.TableClause, SchemaItem):
         
         """
         super(Table, self).__init__(name)
-        self._foreign_keys = []
-        self._primary_key = []
         self.engine = engine
         self.schema = kwargs.pop('schema', None)
         if self.schema is not None:
@@ -141,12 +136,6 @@ class Table(sql.TableClause, SchemaItem):
             return self.name
         else:
             return self.schema + "." + self.name
-        
-    def hash_key(self):
-        return "Table(%s)" % string.join(
-        [repr(self.name)] + [self.engine.hash_key()] +
-        ["%s=%s" % (k, repr(getattr(self, k))) for k in ['schema']], ','
-        )
         
     def reload_values(self, *args):
         """clears out the columns and other properties of this Table, and reloads them from the 
@@ -259,9 +248,6 @@ class Column(sql.ColumnClause, SchemaItem):
     engine = property(lambda s: s.table.engine)
     columns = property(lambda self:[self.column])
 
-    def _get_from_objects(self):
-        return [self.table]
-     
     def __repr__(self):
        return "Column(%s)" % string.join(
         [repr(self.name)] + [repr(self.type)] +

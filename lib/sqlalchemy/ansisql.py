@@ -357,6 +357,7 @@ class ANSICompiler(sql.Compiled):
         self.strings[table] = ""
         
     def visit_tableclause(self, table):
+        print "HI"
         self.froms[table] = table.name
         self.strings[table] = ""
 
