@@ -13,7 +13,7 @@ from exceptions import *
 import string, re, random
 types = __import__('types')
 
-__all__ = ['text', 'column', 'func', 'select', 'update', 'insert', 'delete', 'join', 'and_', 'or_', 'not_', 'union', 'union_all', 'desc', 'asc', 'outerjoin', 'alias', 'subquery', 'literal', 'bindparam', 'exists']
+__all__ = ['text', 'table', 'column', 'func', 'select', 'update', 'insert', 'delete', 'join', 'and_', 'or_', 'not_', 'union', 'union_all', 'desc', 'asc', 'outerjoin', 'alias', 'subquery', 'literal', 'bindparam', 'exists']
 
 def desc(column):
     """returns a descending ORDER BY clause element, e.g.:
@@ -160,11 +160,13 @@ def label(name, obj):
     """returns a Label object for the given selectable, used in the column list for a select statement."""
     return Label(name, obj)
     
-def column(table, text):
+def column(text, table=None):
     """returns a textual column clause, relative to a table.  this differs from using straight text
-    or text() in that the column is treated like a regular column, i.e. gets added to a Selectable's list
-    of columns."""
+    or text() in that the column is treated like a regular column, i.e. gets added to a Selectable's list of columns."""
     return ColumnClause(text, table)
+
+def table(name, *columns):
+    return TableClause(name, *columns)
     
 def bindparam(key, value = None, type=None):
     """creates a bind parameter clause with the given key.  
@@ -222,15 +224,16 @@ def _compound_select(keyword, *selects, **kwargs):
     return CompoundSelect(keyword, *selects, **kwargs)
 
 def _is_literal(element):
-    return not isinstance(element, ClauseElement) and not isinstance(element, schema.SchemaItem)
+    return not isinstance(element, ClauseElement)
 
 def is_column(col):
-    return isinstance(col, schema.Column) or isinstance(col, ColumnElement)
+    return isinstance(col, ColumnElement)
 
-class ClauseVisitor(schema.SchemaVisitor):
+class ClauseVisitor(object):
     """builds upon SchemaVisitor to define the visiting of SQL statement elements in 
     addition to Schema elements."""
     def visit_columnclause(self, column):pass
+    def visit_tableclause(self, column):pass
     def visit_fromclause(self, fromclause):pass
     def visit_bindparam(self, bindparam):pass
     def visit_textclause(self, textclause):pass
@@ -363,6 +366,8 @@ class ClauseElement(object):
         except AttributeError:
             pass
         for f in self._get_from_objects():
+            if f is self:
+                continue
             engine = f.engine
             if engine is not None: 
                 return engine
@@ -980,17 +985,23 @@ class Label(ColumnElement):
         return "Label(%s, %s)" % (self.name, self.obj.hash_key())
      
 class ColumnClause(ColumnElement):
-    """represents a textual column clause in a SQL statement. allows the creation
-    of an additional ad-hoc column that is compiled against a particular table."""
+    """represents a textual column clause in a SQL statement.  ColumnClause operates
+    in two modes, one where its just any text that will be placed into the select statement,
+    and "column" mode, where it represents a column attached to a table."""
 
     def __init__(self, text, selectable=None):
         self.text = text
         self.table = selectable
         self.type = sqltypes.NullTypeEngine()
-
+    def _get_label(self):
+        if self.table is not None:
+            return self.table.name + "_" + self.text
+        else:
+            return self.text
     name = property(lambda self:self.text)
     key = property(lambda self:self.text)
-    _label = property(lambda self:self.text)
+    _label = property(_get_label)
+    default_label = property(lambda s:s._label)
     
     def accept_visitor(self, visitor): 
         visitor.visit_columnclause(self)
@@ -1014,78 +1025,26 @@ class ColumnClause(ColumnElement):
         selectable.columns[c.key] = c
         return c
 
-class ColumnImpl(ColumnElement):
-    """gets attached to a schema.Column object."""
-    
-    def __init__(self, column):
-        self.column = column
-        self.name = column.name
-        
-        if column.table.name:
-            self._label = column.table.name + "_" + self.column.name
-        else:
-            self._label = self.column.name
+class TableClause(FromClause):
+    def __init__(self, name, *columns):
+        super(TableClause, self).__init__(name)
+        self.name = self.id = name
+        self._columns = util.OrderedProperties()
+        for c in columns:
+            self.append_column(c)
 
-    engine = property(lambda s: s.column.engine)
-    default_label = property(lambda s:s._label)
-    original = property(lambda self:self.column.original)
-    parent = property(lambda self:self.column.parent)
-    columns = property(lambda self:[self.column])
-    
-    def label(self, name):
-        return Label(name, self.column)
-        
-    def copy_container(self):
-        return self.column
-
-    def compare(self, other):
-        """compares this ColumnImpl's column to the other given Column"""
-        return self.column is other
-        
-    def _group_parenthesized(self):
-        return False
-        
-    def _get_from_objects(self):
-        return [self.column.table]
-    
-    def _bind_param(self, obj):
-        if self.column.table.name is None:
-            return BindParamClause(self.name, obj, shortname = self.name, type = self.column.type)
-        else:
-            return BindParamClause(self.column.table.name + "_" + self.name, obj, shortname = self.name, type = self.column.type)
-    def _compare_self(self):
-        """allows ColumnImpl to return its Column object for usage in ClauseElements, all others to
-        just return self"""
-        return self.column
-    def _compare_type(self, obj):
-        return self.column.type
-        
-    def compile(self, engine = None, parameters = None, typemap=None):
-        if engine is None:
-            engine = self.engine
-        if engine is None:
-            raise InvalidRequestError("no SQLEngine could be located within this ClauseElement.")
-        return engine.compile(self.column, parameters=parameters, typemap=typemap)
-
-class TableImpl(FromClause):
-    """attached to a schema.Table to provide it with a Selectable interface
-    as well as other functions
-    """
-
-    def __init__(self, table):
-        self.table = table
-        self.id = self.table.name
-
+    def append_column(self, c):
+        self._columns[c.text] = c
+        c.table = self
     def _oid_col(self):
         # OID remains a little hackish so far
         if not hasattr(self, '_oid_column'):
-            if self.table.engine.oid_column_name() is not None:
+            if self.engine.oid_column_name() is not None:
                 self._oid_column = schema.Column(self.table.engine.oid_column_name(), sqltypes.Integer, hidden=True)
                 self._oid_column._set_parent(self.table)
             else:
                 self._oid_column = None
         return self._oid_column
-
     def _orig_columns(self):
         try:
             return self._orig_cols
@@ -1097,47 +1056,40 @@ class TableImpl(FromClause):
             if oid is not None:
                 self._orig_cols[oid.original] = oid
             return self._orig_cols
-            
-    oid_column = property(_oid_col)
-    engine = property(lambda s: s.table.engine)
-    columns = property(lambda self: self.table.columns)
-    primary_key = property(lambda self:self.table.primary_key)
-    foreign_keys = property(lambda self:self.table.foreign_keys)
+    columns = property(lambda s:s._columns)
+    c = property(lambda s:s._columns)
+    primary_key = property(lambda s:s._primary_key)
+    foreign_keys = property(lambda s:s._foreign_keys)
     original_columns = property(_orig_columns)
+            
 
     def _exportable_columns(self):
         raise NotImplementedError()
-        
     def _group_parenthesized(self):
         return False
-
     def _process_from_dict(self, data, asfrom):
         for f in self._get_from_objects():
             data.setdefault(f.id, f)
         if asfrom:
             data[self.id] = self.table
     def count(self, whereclause=None, **params):
-        return select([func.count(1).label('count')], whereclause, from_obj=[self.table], **params)
+        return select([func.count(1).label('count')], whereclause, from_obj=[self], **params)
     def join(self, right, *args, **kwargs):
-        return Join(self.table, right, *args, **kwargs)
+        return Join(self, right, *args, **kwargs)
     def outerjoin(self, right, *args, **kwargs):
-        return Join(self.table, right, isouter = True, *args, **kwargs)
+        return Join(self, right, isouter = True, *args, **kwargs)
     def alias(self, name=None):
-        return Alias(self.table, name)
+        return Alias(self, name)
     def select(self, whereclause = None, **params):
-        return select([self.table], whereclause, **params)
+        return select([self], whereclause, **params)
     def insert(self, values = None):
-        return insert(self.table, values=values)
+        return insert(self, values=values)
     def update(self, whereclause = None, values = None):
-        return update(self.table, whereclause, values)
+        return update(self, whereclause, values)
     def delete(self, whereclause = None):
-        return delete(self.table, whereclause)
-    def create(self, **params):
-        self.table.engine.create(self.table)
-    def drop(self, **params):
-        self.table.engine.drop(self.table)
+        return delete(self, whereclause)
     def _get_from_objects(self):
-        return [self.table]
+        return [self]
 
 class SelectBaseMixin(object):
     """base class for Select and CompoundSelects"""
@@ -1457,25 +1409,3 @@ class Delete(UpdateBase):
             self.whereclause.accept_visitor(visitor)
         visitor.visit_delete(self)
 
-class IndexImpl(ClauseElement):
-
-    def __init__(self, index):
-        self.index = index
-        self.name = index.name
-        self._engine = self.index.table.engine
-
-    table = property(lambda s: s.index.table)
-    columns = property(lambda s: s.index.columns)
-        
-    def hash_key(self):
-        return self.index.hash_key()
-    def accept_visitor(self, visitor):
-        visitor.visit_index(self.index)
-    def compare(self, other):
-        return self.index is other
-    def create(self):
-        self._engine.create(self.index)
-    def drop(self):
-        self._engine.drop(self.index)
-    def execute(self):
-        self.create()

@@ -1,60 +1,61 @@
 
 from sqlalchemy import *
 import sqlalchemy.ansisql as ansisql
-import sqlalchemy.databases.postgres as postgres
-import sqlalchemy.databases.oracle as oracle
-import sqlalchemy.databases.sqlite as sqlite
+#import sqlalchemy.databases.postgres as postgres
+#import sqlalchemy.databases.oracle as oracle
+#import sqlalchemy.databases.sqlite as sqlite
 
 db = ansisql.engine()
 
 from testbase import PersistTest
 import unittest, re
 
-
-table = Table('mytable', db,
-    Column('myid', Integer, key = 'id'),
-    Column('name', String, key = 'name'),
-    Column('description', String, key = 'description'),
+table1 = table('mytable', 
+    column('myid'),
+    column('name'),
+    column('description'),
 )
 
-table2 = Table(
-    'myothertable', db,
-    Column('otherid', Integer, key='id'),
-    Column('othername', String, key='name'),
+table2 = table(
+    'myothertable', 
+    column('otherid'),
+    column('othername'),
 )
 
-table3 = Table(
-    'thirdtable', db,
-    Column('userid', Integer, key='id'),
-    Column('otherstuff', Integer),
+table3 = table(
+    'thirdtable', 
+    column('userid'),
+    column('otherstuff'),
 )
 
-table4 = Table(
-    'remotetable', db,
-    Column('rem_id', Integer, primary_key=True),
-    Column('datatype_id', Integer),
-    Column('value', String(20)),
-    schema = 'remote_owner'
+table4 = table(
+    'remotetable',
+    column('rem_id'),
+    column('datatype_id'),
+    column('value'),
+#    schema = 'remote_owner'
 )
 
-users = Table('users', db,
-    Column('user_id', Integer, primary_key = True),
-    Column('user_name', String(40)),
-    Column('password', String(10)),
+users = table('users', 
+    column('user_id'),
+    column('user_name'),
+    column('password'),
 )
 
-addresses = Table('addresses', db,
-    Column('address_id', Integer, primary_key = True),
-    Column('user_id', Integer, ForeignKey("users.user_id")),
-    Column('street', String(100)),
-    Column('city', String(80)),
-    Column('state', String(2)),
-    Column('zip', String(10))
+addresses = table('addresses', 
+    column('address_id'),
+    column('user_id'),
+    column('street'),
+    column('city'),
+    column('state'),
+    column('zip')
 )
 
 
 class SQLTest(PersistTest):
     def runtest(self, clause, result, engine = None, params = None, checkparams = None):
+        if engine is None:
+            engine = db
         c = clause.compile(engine, params)
         self.echo("\nSQL String:\n" + str(c) + repr(c.get_params()))
         self.echo("\nHash Key:\n" + clause.hash_key())
@@ -67,12 +68,10 @@ class SQLTest(PersistTest):
                 self.assert_(c.get_params() == checkparams, "params dont match")
             
 class SelectTest(SQLTest):
-
-
     def testtableselect(self):
-        self.runtest(table.select(), "SELECT mytable.myid, mytable.name, mytable.description FROM mytable")
+        self.runtest(table1.select(), "SELECT mytable.myid, mytable.name, mytable.description FROM mytable")
 
-        self.runtest(select([table, table2]), "SELECT mytable.myid, mytable.name, mytable.description, myothertable.otherid, \
+        self.runtest(select([table1, table2]), "SELECT mytable.myid, mytable.name, mytable.description, myothertable.otherid, \
 myothertable.othername FROM mytable, myothertable")
 
     def testsubquery(self):
@@ -83,37 +82,37 @@ myothertable.othername FROM mytable, myothertable")
         #    """"""
         #)
 
-        s = select([table], table.c.name == 'jack')
+        s = select([table1], table1.c.name == 'jack')
         print [key for key in s.c.keys()]
         self.runtest(
             select(
                 [s],
-                s.c.id == 7
+                s.c.myid == 7
             )
             ,
-        "SELECT id, name, description FROM (SELECT mytable.myid AS id, mytable.name AS name, mytable.description AS description FROM mytable WHERE mytable.name = :mytable_name) WHERE id = :id")
+        "SELECT myid, name, description FROM (SELECT mytable.myid AS myid, mytable.name AS name, mytable.description AS description FROM mytable WHERE mytable.name = :mytable_name) WHERE myid = :myid")
         
-        sq = select([table])
+        sq = select([table1])
         self.runtest(
             sq.select(),
-            "SELECT id, name, description FROM (SELECT mytable.myid AS id, mytable.name AS name, mytable.description AS description FROM mytable)"
+            "SELECT myid, name, description FROM (SELECT mytable.myid AS myid, mytable.name AS name, mytable.description AS description FROM mytable)"
         )
         
         sq = subquery(
             'sq',
-            [table],
+            [table1],
         )
 
         self.runtest(
-            sq.select(sq.c.id == 7), 
-            "SELECT sq.id, sq.name, sq.description FROM \
-(SELECT mytable.myid AS id, mytable.name AS name, mytable.description AS description FROM mytable) AS sq WHERE sq.id = :sq_id"
+            sq.select(sq.c.myid == 7), 
+            "SELECT sq.myid, sq.name, sq.description FROM \
+(SELECT mytable.myid AS myid, mytable.name AS name, mytable.description AS description FROM mytable) AS sq WHERE sq.myid = :sq_myid"
         )
         
         sq = subquery(
             'sq',
-            [table, table2],
-            and_(table.c.id ==7, table2.c.id==table.c.id),
+            [table1, table2],
+            and_(table1.c.myid ==7, table2.c.otherid==table1.c.myid),
             use_labels = True
         )
         
@@ -140,14 +139,14 @@ sq.myothertable_othername AS sq_myothertable_othername FROM (" + sqstring + ") A
         
     def testand(self):
         self.runtest(
-            select(['*'], and_(table.c.id == 12, table.c.name=='asdf', table2.c.name == 'foo', "sysdate() = today()")), 
+            select(['*'], and_(table1.c.id == 12, table1.c.name=='asdf', table2.c.name == 'foo', "sysdate() = today()")), 
             "SELECT * FROM mytable, myothertable WHERE mytable.myid = :mytable_myid AND mytable.name = :mytable_name AND myothertable.othername = :myothertable_othername AND sysdate() = today()"
         )
 
     def testor(self):
         self.runtest(
             select([table], and_(
-                table.c.id == 12,
+                table1.c.id == 12,
                 or_(table2.c.name=='asdf', table2.c.name == 'foo', table2.c.id == 9),
                 "sysdate() = today()", 
             )),
@@ -157,7 +156,7 @@ sq.myothertable_othername AS sq_myothertable_othername FROM (" + sqstring + ") A
 
     def testoperators(self):
         self.runtest(
-            table.select((table.c.id != 12) & ~(table.c.name=='john')), 
+            table1.select((table1.c.id != 12) & ~(table1.c.name=='john')), 
             "SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE mytable.myid != :mytable_myid AND NOT (mytable.name = :mytable_name)"
         )
         
@@ -167,7 +166,7 @@ sq.myothertable_othername AS sq_myothertable_othername FROM (" + sqstring + ") A
 
     def testmultiparam(self):
         self.runtest(
-            select(["*"], or_(table.c.id == 12, table.c.id=='asdf', table.c.id == 'foo')), 
+            select(["*"], or_(table1.c.id == 12, table1.c.id=='asdf', table1.c.id == 'foo')), 
             "SELECT * FROM mytable WHERE mytable.myid = :mytable_myid OR mytable.myid = :mytable_myid_1 OR mytable.myid = :mytable_myid_2"
         )
 
@@ -187,15 +186,15 @@ sq.myothertable_othername AS sq_myothertable_othername FROM (" + sqstring + ") A
             "SELECT myothertable.othername, count(myothertable.otherid) FROM myothertable GROUP BY myothertable.othername ORDER BY myothertable.othername"
         )
     def testalias(self):
-        # test the alias for a table.  column names stay the same, table name "changes" to "foo".
+        # test the alias for a table1.  column names stay the same, table name "changes" to "foo".
         self.runtest(
         select([alias(table, 'foo')])
         ,"SELECT foo.myid, foo.name, foo.description FROM mytable AS foo")
     
         # create a select for a join of two tables.  use_labels means the column names will have
         # labels tablename_columnname, which become the column keys accessible off the Selectable object.
-        # also, only use one column from the second table and all columns from the first table.
-        q = select([table, table2.c.id], table.c.id == table2.c.id, use_labels = True)
+        # also, only use one column from the second table and all columns from the first table1.
+        q = select([table, table2.c.id], table1.c.id == table2.c.id, use_labels = True)
         
         # make an alias of the "selectable".  column names stay the same (i.e. the labels), table name "changes" to "t2view".
         a = alias(q, 't2view')
@@ -269,7 +268,7 @@ WHERE mytable.myid = myothertable.otherid) AS t2view WHERE t2view.mytable_myid =
             and_(
                 "foo.id = foofoo(lala)",
                 "datetime(foo) = Today",
-                table.c.id == table2.c.id,
+                table1.c.id == table2.c.id,
             )
         ), 
         "SELECT mytable.myid, mytable.name, mytable.description, myothertable.otherid, sysdate(), foo, bar, lala \
@@ -288,12 +287,12 @@ FROM mytable, myothertable WHERE foo.id = foofoo(lala) AND datetime(foo) = Today
             "SELECT :literal + :literal_1 FROM mytable", engine=db)
 
     def testfunction(self):
-        self.runtest(func.lala(3, 4, literal("five"), table.c.id) * table2.c.id, 
+        self.runtest(func.lala(3, 4, literal("five"), table1.c.id) * table2.c.id, 
             "lala(:lala, :lala_1, :literal, mytable.myid) * myothertable.otherid", engine=db)
 
     def testjoin(self):
         self.runtest(
-            join(table2, table, table.c.id == table2.c.id).select(),
+            join(table2, table, table1.c.id == table2.c.id).select(),
             "SELECT myothertable.otherid, myothertable.othername, mytable.myid, mytable.name, \
 mytable.description FROM myothertable JOIN mytable ON mytable.myid = myothertable.otherid"
         )
@@ -301,15 +300,15 @@ mytable.description FROM myothertable JOIN mytable ON mytable.myid = myothertabl
         self.runtest(
             select(
              [table],
-                from_obj = [join(table, table2, table.c.id == table2.c.id)]
+                from_obj = [join(table, table2, table1.c.id == table2.c.id)]
             ),
         "SELECT mytable.myid, mytable.name, mytable.description FROM mytable JOIN myothertable ON mytable.myid = myothertable.otherid")
 
         self.runtest(
             select(
-                [join(join(table, table2, table.c.id == table2.c.id), table3, table.c.id == table3.c.id)
+                [join(join(table, table2, table1.c.id == table2.c.id), table3, table1.c.id == table3.c.id)
             ]),
-            "SELECT mytable.myid, mytable.name, mytable.description, myothertable.otherid, myothertable.othername, thirdtable.userid, thirdtable.otherstuff FROM mytable JOIN myothertable ON mytable.myid = myothertable.otherid JOIN thirdtable ON mytable.myid = thirdtable.userid"
+            "SELECT mytable.myid, mytable.name, mytable.description, myothertable.otherid, myothertable.othername, thirdtable1.userid, thirdtable1.otherstuff FROM mytable JOIN myothertable ON mytable.myid = myothertable.otherid JOIN thirdtable ON mytable.myid = thirdtable1.userid"
         )
         
         self.runtest(
@@ -321,24 +320,24 @@ mytable.description FROM myothertable JOIN mytable ON mytable.myid = myothertabl
         self.runtest(
                 select([table, table2, table3],
                 
-                from_obj = [join(table, table2, table.c.id == table2.c.id).outerjoin(table3, table.c.id==table3.c.id)]
+                from_obj = [join(table, table2, table1.c.id == table2.c.id).outerjoin(table3, table1.c.id==table3.c.id)]
                 
-                #from_obj = [outerjoin(join(table, table2, table.c.id == table2.c.id), table3, table.c.id==table3.c.id)]
+                #from_obj = [outerjoin(join(table, table2, table1.c.id == table2.c.id), table3, table1.c.id==table3.c.id)]
                 )
-                ,"SELECT mytable.myid, mytable.name, mytable.description, myothertable.otherid, myothertable.othername, thirdtable.userid, thirdtable.otherstuff FROM mytable JOIN myothertable ON mytable.myid = myothertable.otherid LEFT OUTER JOIN thirdtable ON mytable.myid = thirdtable.userid"
+                ,"SELECT mytable.myid, mytable.name, mytable.description, myothertable.otherid, myothertable.othername, thirdtable1.userid, thirdtable1.otherstuff FROM mytable JOIN myothertable ON mytable.myid = myothertable.otherid LEFT OUTER JOIN thirdtable ON mytable.myid = thirdtable1.userid"
             )
         self.runtest(
                 select([table, table2, table3],
-                from_obj = [outerjoin(table, join(table2, table3, table2.c.id == table3.c.id), table.c.id==table2.c.id)]
+                from_obj = [outerjoin(table, join(table2, table3, table2.c.id == table3.c.id), table1.c.id==table2.c.id)]
                 )
-                ,"SELECT mytable.myid, mytable.name, mytable.description, myothertable.otherid, myothertable.othername, thirdtable.userid, thirdtable.otherstuff FROM mytable LEFT OUTER JOIN (myothertable JOIN thirdtable ON myothertable.otherid = thirdtable.userid) ON mytable.myid = myothertable.otherid"
+                ,"SELECT mytable.myid, mytable.name, mytable.description, myothertable.otherid, myothertable.othername, thirdtable1.userid, thirdtable1.otherstuff FROM mytable LEFT OUTER JOIN (myothertable JOIN thirdtable ON myothertable.otherid = thirdtable1.userid) ON mytable.myid = myothertable.otherid"
             )
             
     def testunion(self):
             x = union(
-                  select([table], table.c.id == 5),
-                  select([table], table.c.id == 12),
-                  order_by = [table.c.id],
+                  select([table], table1.c.id == 5),
+                  select([table], table1.c.id == 12),
+                  order_by = [table1.c.id],
             )
   
             self.runtest(x, "SELECT mytable.myid, mytable.name, mytable.description \
@@ -355,7 +354,7 @@ FROM mytable WHERE mytable.myid = :mytable_myid_1 ORDER BY mytable.myid")
             ,
             "SELECT mytable.myid, mytable.name, mytable.description \
 FROM mytable UNION SELECT myothertable.otherid, myothertable.othername \
-FROM myothertable UNION SELECT thirdtable.userid, thirdtable.otherstuff FROM thirdtable")
+FROM myothertable UNION SELECT thirdtable1.userid, thirdtable1.otherstuff FROM thirdtable")
             
             
     def testouterjoin(self):
@@ -367,12 +366,12 @@ FROM myothertable UNION SELECT thirdtable.userid, thirdtable.otherstuff FROM thi
         query = select(
                 [table, table2],
                 and_(
-                    table.c.name == 'fred',
-                    table.c.id == 10,
+                    table1.c.name == 'fred',
+                    table1.c.id == 10,
                     table2.c.name != 'jack',
                     "EXISTS (select yay from foo where boo = lar)"
                 ),
-                from_obj = [ outerjoin(table, table2, table.c.id == table2.c.id) ]
+                from_obj = [ outerjoin(table, table2, table1.c.id == table2.c.id) ]
                 )
                 
         self.runtest(query, 
@@ -394,8 +393,8 @@ myothertable.othername != :myothertable_othername AND EXISTS (select yay from fo
     def testbindparam(self):
         self.runtest(select(
                     [table, table2],
-                    and_(table.c.id == table2.c.id,
-                    table.c.name == bindparam('mytablename'),
+                    and_(table1.c.id == table2.c.id,
+                    table1.c.name == bindparam('mytablename'),
                     )
                 ),
                 "SELECT mytable.myid, mytable.name, mytable.description, myothertable.otherid, myothertable.othername \
@@ -404,22 +403,22 @@ FROM mytable, myothertable WHERE mytable.myid = myothertable.otherid AND mytable
 
         # check that the bind params sent along with a compile() call
         # get preserved when the params are retreived later
-        s = select([table], table.c.id == bindparam('test'))
+        s = select([table], table1.c.id == bindparam('test'))
         c = s.compile(parameters = {'test' : 7})
         self.assert_(c.get_params() == {'test' : 7})
 
     def testcorrelatedsubquery(self):
         self.runtest(
-            table.select(table.c.id == select([table2.c.id], table.c.name == table2.c.name)),
+            table1.select(table1.c.id == select([table2.c.id], table1.c.name == table2.c.name)),
             "SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE mytable.myid = (SELECT myothertable.otherid AS id FROM myothertable WHERE mytable.name = myothertable.othername)"
         )
 
         self.runtest(
-            table.select(exists([1], table2.c.id == table.c.id)),
+            table1.select(exists([1], table2.c.id == table1.c.id)),
             "SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE EXISTS (SELECT 1 FROM myothertable WHERE myothertable.otherid = mytable.myid)"
         )
 
-        talias = table.alias('ta')
+        talias = table1.alias('ta')
         s = subquery('sq2', [talias], exists([1], table2.c.id == talias.c.id))
         self.runtest(
             select([s, table])
@@ -431,21 +430,21 @@ FROM mytable, myothertable WHERE mytable.myid = myothertable.otherid AND mytable
             """SELECT users.user_id, users.user_name, users.password, s.street FROM users, (SELECT addresses.street AS street FROM addresses WHERE addresses.user_id = users.user_id) AS s""")
 
     def testin(self):
-        self.runtest(select([table], table.c.id.in_(1, 2, 3)),
+        self.runtest(select([table], table1.c.id.in_(1, 2, 3)),
         "SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE mytable.myid IN (:mytable_myid, :mytable_myid_1, :mytable_myid_2)")
 
-        self.runtest(select([table], table.c.id.in_(select([table2.c.id]))),
+        self.runtest(select([table], table1.c.id.in_(select([table2.c.id]))),
         "SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE mytable.myid IN (SELECT myothertable.otherid AS id FROM myothertable)")
     
     def testlateargs(self):
         """tests that a SELECT clause will have extra "WHERE" clauses added to it at compile time if extra arguments
         are sent"""
         
-        self.runtest(table.select(), "SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE mytable.name = :mytable_name AND mytable.myid = :mytable_myid", params={'id':'3', 'name':'jack'})
+        self.runtest(table1.select(), "SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE mytable.name = :mytable_name AND mytable.myid = :mytable_myid", params={'id':'3', 'name':'jack'})
 
-        self.runtest(table.select(table.c.name=='jack'), "SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE mytable.myid = :mytable_myid AND mytable.name = :mytable_name", params={'id':'3'})
+        self.runtest(table1.select(table1.c.name=='jack'), "SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE mytable.myid = :mytable_myid AND mytable.name = :mytable_name", params={'id':'3'})
 
-        self.runtest(table.select(table.c.name=='jack'), "SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE mytable.myid = :mytable_myid AND mytable.name = :mytable_name", params={'id':'3', 'name':'fred'})
+        self.runtest(table1.select(table1.c.name=='jack'), "SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE mytable.myid = :mytable_myid AND mytable.name = :mytable_name", params={'id':'3', 'name':'fred'})
         
 class CRUDTest(SQLTest):
     def testinsert(self):
@@ -455,7 +454,7 @@ class CRUDTest(SQLTest):
         # insert with user-supplied bind params for specific columns,
         # cols provided literally
         self.runtest(
-            insert(table, {table.c.id : bindparam('userid'), table.c.name : bindparam('username')}), 
+            insert(table, {table1.c.id : bindparam('userid'), table1.c.name : bindparam('username')}), 
             "INSERT INTO mytable (myid, name) VALUES (:userid, :username)")
         
         # insert with user-supplied bind params for specific columns, cols
@@ -473,13 +472,13 @@ class CRUDTest(SQLTest):
         )
         
     def testupdate(self):
-        self.runtest(update(table, table.c.id == 7), "UPDATE mytable SET name=:name WHERE mytable.myid = :mytable_myid", params = {table.c.name:'fred'})
-        self.runtest(update(table, table.c.id == 7), "UPDATE mytable SET name=:name WHERE mytable.myid = :mytable_myid", params = {'name':'fred'})
-        self.runtest(update(table, values = {table.c.name : table.c.id}), "UPDATE mytable SET name=mytable.myid")
-        self.runtest(update(table, whereclause = table.c.name == bindparam('crit'), values = {table.c.name : 'hi'}), "UPDATE mytable SET name=:name WHERE mytable.name = :crit", params = {'crit' : 'notthere'})
-        self.runtest(update(table, table.c.id == 12, values = {table.c.name : table.c.id}), "UPDATE mytable SET name=mytable.myid, description=:description WHERE mytable.myid = :mytable_myid", params = {'description':'test'})
-        self.runtest(update(table, table.c.id == 12, values = {table.c.id : 9}), "UPDATE mytable SET myid=:myid, description=:description WHERE mytable.myid = :mytable_myid", params = {'mytable_myid': 12, 'myid': 9, 'description': 'test'})
-        s = table.update(table.c.id == 12, values = {table.c.name : 'lala'})
+        self.runtest(update(table, table1.c.id == 7), "UPDATE mytable SET name=:name WHERE mytable.myid = :mytable_myid", params = {table1.c.name:'fred'})
+        self.runtest(update(table, table1.c.id == 7), "UPDATE mytable SET name=:name WHERE mytable.myid = :mytable_myid", params = {'name':'fred'})
+        self.runtest(update(table, values = {table1.c.name : table1.c.id}), "UPDATE mytable SET name=mytable.myid")
+        self.runtest(update(table, whereclause = table1.c.name == bindparam('crit'), values = {table1.c.name : 'hi'}), "UPDATE mytable SET name=:name WHERE mytable.name = :crit", params = {'crit' : 'notthere'})
+        self.runtest(update(table, table1.c.id == 12, values = {table1.c.name : table1.c.id}), "UPDATE mytable SET name=mytable.myid, description=:description WHERE mytable.myid = :mytable_myid", params = {'description':'test'})
+        self.runtest(update(table, table1.c.id == 12, values = {table1.c.id : 9}), "UPDATE mytable SET myid=:myid, description=:description WHERE mytable.myid = :mytable_myid", params = {'mytable_myid': 12, 'myid': 9, 'description': 'test'})
+        s = table1.update(table1.c.id == 12, values = {table1.c.name : 'lala'})
         print str(s)
         c = s.compile(parameters = {'mytable_id':9,'name':'h0h0'})
         print str(c)
@@ -487,25 +486,25 @@ class CRUDTest(SQLTest):
         
     def testupdateexpression(self):
         self.runtest(update(table, 
-            (table.c.id == func.hoho(4)) &
-            (table.c.name == literal('foo') + table.c.name + literal('lala')),
+            (table1.c.id == func.hoho(4)) &
+            (table1.c.name == literal('foo') + table1.c.name + literal('lala')),
             values = {
-            table.c.name : table.c.name + "lala",
-            table.c.id : func.do_stuff(table.c.id, literal('hoho'))
+            table1.c.name : table1.c.name + "lala",
+            table1.c.id : func.do_stuff(table1.c.id, literal('hoho'))
             }), "UPDATE mytable SET myid=(do_stuff(mytable.myid, :literal_2)), name=(mytable.name + :mytable_name) WHERE mytable.myid = hoho(:hoho) AND mytable.name = :literal + mytable.name + :literal_1")
         
     def testcorrelatedupdate(self):
         # test against a straight text subquery
-        u = update(table, values = {table.c.name : text("select name from mytable where id=mytable.id")})
+        u = update(table, values = {table1.c.name : text("select name from mytable where id=mytable.id")})
         self.runtest(u, "UPDATE mytable SET name=(select name from mytable where id=mytable.id)")
         
         # test against a regular constructed subquery
-        s = select([table2], table2.c.id == table.c.id)
-        u = update(table, table.c.name == 'jack', values = {table.c.name : s})
+        s = select([table2], table2.c.id == table1.c.id)
+        u = update(table, table1.c.name == 'jack', values = {table1.c.name : s})
         self.runtest(u, "UPDATE mytable SET name=(SELECT myothertable.otherid, myothertable.othername FROM myothertable WHERE myothertable.otherid = mytable.myid) WHERE mytable.name = :mytable_name")
         
     def testdelete(self):
-        self.runtest(delete(table, table.c.id == 7), "DELETE FROM mytable WHERE mytable.myid = :mytable_myid")
+        self.runtest(delete(table, table1.c.id == 7), "DELETE FROM mytable WHERE mytable.myid = :mytable_myid")
         
 class SchemaTest(SQLTest):
     def testselect(self):
@@ -518,7 +517,7 @@ class SchemaTest(SQLTest):
 
     def testalias(self):
         a = alias(table4, 'remtable')
-        self.runtest(a.select(a.c.datatype_id==7), "SELECT remtable.rem_id, remtable.datatype_id, remtable.value FROM remote_owner.remotetable AS remtable WHERE remtable.datatype_id = :remtable_datatype_id")
+        self.runtest(a.select(a.c.datatype_id==7), "SELECT remtable1.rem_id, remtable1.datatype_id, remtable1.value FROM remote_owner.remotetable AS remtable WHERE remtable1.datatype_id = :remtable_datatype_id")
         
     def testupdate(self):
         self.runtest(table4.update(table4.c.value=='test', values={table4.c.datatype_id:12}), "UPDATE remote_owner.remotetable SET datatype_id=:datatype_id WHERE remotetable.value = :remotetable_value")

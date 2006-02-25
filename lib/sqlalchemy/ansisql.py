@@ -257,11 +257,11 @@ class ANSICompiler(sql.Compiled):
                         l = co.label(co._label)
                         l.accept_visitor(self)
                         inner_columns[co._label] = l
-                    elif select.issubquery and isinstance(co, Column):
+                    elif select.issubquery and isinstance(co, sql.ColumnClause) and co.table is not None:
                         # SQLite doesnt like selecting from a subquery where the column
                         # names look like table.colname, so add a label synonomous with
                         # the column name
-                        l = co.label(co.key)
+                        l = co.label(co.text)
                         l.accept_visitor(self)
                         inner_columns[self.get_str(l.obj)] = l
                     else:
@@ -354,6 +354,10 @@ class ANSICompiler(sql.Compiled):
 
     def visit_table(self, table):
         self.froms[table] = table.fullname
+        self.strings[table] = ""
+        
+    def visit_tableclause(self, table):
+        self.froms[table] = table.name
         self.strings[table] = ""
 
     def visit_join(self, join):

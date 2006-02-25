@@ -2,8 +2,8 @@ import unittest
 import StringIO
 import sqlalchemy.engine as engine
 import re, sys
-import sqlalchemy.databases.sqlite as sqlite
-import sqlalchemy.databases.postgres as postgres
+#import sqlalchemy.databases.sqlite as sqlite
+#import sqlalchemy.databases.postgres as postgres
 #import sqlalchemy.databases.mysql as mysql
 
 echo = True
