@@ -224,7 +224,7 @@ class Column(sql.ColumnClause, SchemaItem):
         column, which generally isnt in column lists.
         """
         name = str(name) # in case of incoming unicode
-        super(Column, self).__init__(name, None)
+        super(Column, self).__init__(name, None, type)
         self.args = args
         self.key = kwargs.pop('key', name)
         self._primary_key = kwargs.pop('primary_key', False)
@@ -240,8 +240,6 @@ class Column(sql.ColumnClause, SchemaItem):
         if self.default is not None:
             self.default = ColumnDefault(self.default)
             self.default._set_parent(self)
-
-        self._init_items(*self.args)
 
     primary_key = AttrProp('_primary_key')
     foreign_key = AttrProp('_foreign_key')
@@ -337,7 +335,7 @@ class ForeignKey(SchemaItem):
         elif self._colspec.table.schema is not None:
             return "%s.%s.%s" % (self._colspec.table.schema, self._colspec.table.name, self._colspec.column.key)
         else:
-            return "%s.%s" % (self._colspec.table.name, self._colspec.column.key)
+            return "%s.%s" % (self._colspec.table.name, self._colspec.key)
         
     def references(self, table):
         """returns True if the given table is referenced by this ForeignKey."""
@@ -497,7 +495,7 @@ class SchemaEngine(object):
         objects."""
         raise NotImplementedError()
         
-class SchemaVisitor(object):
+class SchemaVisitor(sql.ClauseVisitor):
     """base class for an object that traverses across Schema structures."""
     def visit_schema(self, schema):
         """visit a generic SchemaItem"""

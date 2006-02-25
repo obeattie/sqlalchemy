@@ -35,7 +35,7 @@ class ANSISQLEngine(sqlalchemy.engine.SQLEngine):
     def dbapi(self):
         return None
 
-class ANSICompiler(sql.Compiled):
+class ANSICompiler(sql.Compiled, schema.SchemaVisitor):
     """default implementation of Compiled, which compiles ClauseElements into ANSI-compliant SQL strings."""
     def __init__(self, engine, statement, parameters=None, typemap=None, **kwargs):
         """constructs a new ANSICompiler object.
@@ -152,16 +152,11 @@ class ANSICompiler(sql.Compiled):
             # if we are within a visit to a Select, set up the "typemap"
             # for this column which is used to translate result set values
             self.typemap.setdefault(column.key.lower(), column.type)
-        if column.table.name is None:
+        if column.table is not None and column.table.name is None:
             self.strings[column] = column.name
         else:
             self.strings[column] = "%s.%s" % (column.table.name, column.name)
 
-    def visit_columnclause(self, column):
-        if column.table is not None and column.table.name is not None:
-            self.strings[column] = "%s.%s" % (column.table.name, column.text)
-        else:
-            self.strings[column] = column.text
 
     def visit_fromclause(self, fromclause):
         self.froms[fromclause] = fromclause.from_name
@@ -263,7 +258,6 @@ class ANSICompiler(sql.Compiled):
                         # SQLite doesnt like selecting from a subquery where the column
                         # names look like table.colname, so add a label synonomous with
                         # the column name
-                        print "ALALA", co.text, repr(co.table)
                         l = co.label(co.text)
                         l.accept_visitor(self)
                         inner_columns[self.get_str(l.obj)] = l
@@ -358,10 +352,6 @@ class ANSICompiler(sql.Compiled):
     def visit_table(self, table):
         self.froms[table] = table.fullname
         self.strings[table] = ""
-        
-    def visit_tableclause(self, table):
-        self.froms[table] = table.name
-        self.strings[table] = ""
 
     def visit_join(self, join):
         # TODO: ppl are going to want RIGHT, FULL OUTER and NATURAL joins.
@@ -394,8 +384,6 @@ class ANSICompiler(sql.Compiled):
     def visit_insert(self, insert_stmt):
         # set up a call for the defaults and sequences inside the table
         class DefaultVisitor(schema.SchemaVisitor):
-            def visit_columnclause(s, c):
-                self.visit_insert_column(c)
             def visit_column(s, c):
                 self.visit_insert_column(c)
             def visit_column_default(s, cd):
@@ -468,16 +456,13 @@ class ANSICompiler(sql.Compiled):
         else:
             parameters = self.parameters.copy()
 
-        print "stmt", repr(stmt)
         if stmt.parameters is not None:
             for k, v in stmt.parameters.iteritems():
-                print "k", k, "v", repr(v)
                 parameters.setdefault(k, v)
 
         # now go thru compiled params, get the Column object for each key
         d = {}
         for key, value in parameters.iteritems():
-            print "key", key, "value", repr(value)
             if isinstance(key, sql.ColumnClause):
                 d[key] = value
             else:

@@ -160,10 +160,10 @@ def label(name, obj):
     """returns a Label object for the given selectable, used in the column list for a select statement."""
     return Label(name, obj)
     
-def column(text, table=None):
+def column(text, table=None, type=None):
     """returns a textual column clause, relative to a table.  this differs from using straight text
     or text() in that the column is treated like a regular column, i.e. gets added to a Selectable's list of columns."""
-    return ColumnClause(text, table)
+    return ColumnClause(text, table, type)
 
 def table(name, *columns):
     return TableClause(name, *columns)
@@ -232,8 +232,8 @@ def is_column(col):
 class ClauseVisitor(object):
     """builds upon SchemaVisitor to define the visiting of SQL statement elements in 
     addition to Schema elements."""
-    def visit_columnclause(self, column):pass
-    def visit_tableclause(self, column):pass
+    def visit_column(self, column):pass
+    def visit_table(self, column):pass
     def visit_fromclause(self, fromclause):pass
     def visit_bindparam(self, bindparam):pass
     def visit_textclause(self, textclause):pass
@@ -952,10 +952,10 @@ class ColumnClause(ColumnElement):
     """represents a textual column clause in a SQL statement.  ColumnClause operates
     in two modes, one where its just any text that will be placed into the select statement,
     and "column" mode, where it represents a column attached to a table."""
-    def __init__(self, text, selectable=None):
+    def __init__(self, text, selectable=None, type=None):
         self.key = self.name = self.text = text
         self.table = selectable
-        self.type = sqltypes.NullTypeEngine()
+        self.type = type or sqltypes.NullTypeEngine()
     def _get_label(self):
         if self.table is not None:
             return self.table.name + "_" + self.text
@@ -964,7 +964,7 @@ class ColumnClause(ColumnElement):
     _label = property(_get_label)
     default_label = property(lambda s:s._label)
     def accept_visitor(self, visitor): 
-        visitor.visit_columnclause(self)
+        visitor.visit_column(self)
     def _get_from_objects(self):
         if self.table is not None:
             return [self.table]
@@ -1027,7 +1027,7 @@ class TableClause(FromClause):
     oid_column = property(_oid_col)
 
     def accept_visitor(self, visitor):
-        visitor.visit_tableclause(self)
+        visitor.visit_table(self)
     def _exportable_columns(self):
         raise NotImplementedError()
     def _group_parenthesized(self):
@@ -1183,7 +1183,6 @@ class Select(SelectBaseMixin, FromClause):
             self.is_where = is_where
         def visit_compound_select(self, cs):
             self.visit_select(cs)
-        # TODO: visit_column, visit_table arent from this module
         def visit_column(self, c):pass
         def visit_table(self, c):pass
         def visit_select(self, select):
