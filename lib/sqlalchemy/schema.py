@@ -78,7 +78,9 @@ class TableSingleton(type):
 
         
 class Table(sql.TableClause, SchemaItem):
-    """represents a relational database table.  
+    """represents a relational database table.  This subclasses sql.TableClause to provide
+    a table that is "wired" to an engine.  Whereas TableClause represents a table as its 
+    used in a SQL expression, Table represents a table as its created in the database.  
     
     Be sure to look at sqlalchemy.sql.TableImpl for additional methods defined on a Table."""
     __metaclass__ = TableSingleton
@@ -191,7 +193,8 @@ class Table(sql.TableClause, SchemaItem):
             return Table(self.name, engine, schema=schema, *args)
 
 class Column(sql.ColumnClause, SchemaItem):
-    """represents a column in a database table."""
+    """represents a column in a database table.  this is a subclass of sql.ColumnClause and
+    represents an actual existing table in the database, in a similar fashion as TableClause/Table."""
     def __init__(self, name, type, *args, **kwargs):
         """constructs a new Column object.  Arguments are:
         
@@ -476,17 +479,6 @@ class Index(SchemaItem):
 class SchemaEngine(object):
     """a factory object used to create implementations for schema objects.  This object
     is the ultimate base class for the engine.SQLEngine class."""
-    def tableimpl(self, table):
-        """returns a new implementation object for a Table (usually sql.TableImpl)"""
-        raise NotImplementedError()
-    def columnimpl(self, column):
-        """returns a new implementation object for a Column (usually sql.ColumnImpl)"""
-        raise NotImplementedError()
-    def indeximpl(self, index):
-        """returns a new implementation object for an Index (usually
-        sql.IndexImpl)
-        """
-        raise NotImplementedError()
     def reflecttable(self, table):
         """given a table, will query the database and populate its Column and ForeignKey 
         objects."""
