@@ -181,7 +181,6 @@ class Session(object):
             return None
         key = getattr(instance, '_instance_key', None)
         mapper = object_mapper(instance)
-        key = (key[0], mapper.table.hash_key(), key[2])
         u = self.uow
         if key is not None:
             if u.identity_map.has_key(key):
