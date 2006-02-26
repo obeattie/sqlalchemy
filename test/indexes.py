@@ -16,9 +16,9 @@ class IndexTest(testbase.AssertMixin):
     def test_index_create(self):
         employees = Table('employees', testbase.db,
                           Column('id', Integer, primary_key=True),
-                          Column('first_name', String),
-                          Column('last_name', String),
-                          Column('email_address', String))
+                          Column('first_name', String(30)),
+                          Column('last_name', String(30)),
+                          Column('email_address', String(30)))
         employees.create()
         self.created.append(employees)
         

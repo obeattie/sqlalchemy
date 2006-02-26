@@ -85,8 +85,8 @@ class CycleTest(AssertMixin):
         t1.create()
         t2.c.c2.append_item(ForeignKey('t1.c1'))
     def tearDownAll(self):
-        t2.drop()
         t1.drop()    
+        t2.drop()
     def setUp(self):
         objectstore.clear()
         #objectstore.LOG = True
@@ -192,13 +192,13 @@ class CycleTest2(AssertMixin):
          Column('person_id', Integer),
          )
 
-        person.create()
         ball.create()
+        person.create()
         ball.c.person_id.append_item(ForeignKey('person.id'))
         
     def tearDownAll(self):
-        ball.drop()
         person.drop()
+        ball.drop()
         
     def setUp(self):
         objectstore.clear()
@@ -228,6 +228,34 @@ class CycleTest2(AssertMixin):
         p.balls.append(b)
         objectstore.commit()
 
+    def testrowcycle(self):
+        """tests a cycle between two rows"""
+        class Person(object):
+         pass
+
+        class Ball(object):
+         pass
+
+        Ball.mapper = mapper(Ball, ball)
+        Person.mapper = mapper(Person, person, properties= dict(
+         balls = relation(Ball.mapper, primaryjoin=ball.c.person_id==person.c.id, foreignkey=ball.c.person_id, post_update=False, private=True),
+         favorateBall = relation(Ball.mapper, primaryjoin=person.c.favoriteBall_id==ball.c.id, foreignkey=person.c.favoriteBall_id, post_update=True),
+         )
+        )
+
+        print str(Person.mapper.props['balls'].primaryjoin)
+
+        b = Ball()
+        p = Person()
+        p.balls.append(b)
+        p.balls.append(Ball())
+        p.balls.append(Ball())
+        p.balls.append(Ball())
+        p.favorateBall = b
+        objectstore.commit()
+        
+        objectstore.delete(p)
+        objectstore.commit()
 
         
 if __name__ == "__main__":

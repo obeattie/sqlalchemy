@@ -7,7 +7,6 @@ import testbase
 from tables import *
 import tables
 
-
 class HistoryTest(AssertMixin):
     def setUpAll(self):
         db.echo = False
@@ -72,21 +71,110 @@ class HistoryTest(AssertMixin):
         u = m.select()[0]
         print u.addresses[0].user
 
+class SessionTest(AssertMixin):
+    def setUpAll(self):
+        db.echo = False
+        users.create()
+        db.echo = testbase.echo
+    def tearDownAll(self):
+        db.echo = False
+        users.drop()
+        db.echo = testbase.echo
+    def setUp(self):
+        objectstore.get_session().clear()
+        clear_mappers()
+        tables.user_data()
+        #db.echo = "debug"
+    def tearDown(self):
+        tables.delete_user_data()
+        
+    def test_nested_begin_commit(self):
+        """test nested session.begin/commit"""
+        class User(object):pass
+        m = mapper(User, users)
+        def name_of(id):
+            return users.select(users.c.user_id == id).execute().fetchone().user_name
+        name1 = "Oliver Twist"
+        name2 = 'Mr. Bumble'
+        self.assert_(name_of(7) != name1, msg="user_name should not be %s" % name1)
+        self.assert_(name_of(8) != name2, msg="user_name should not be %s" % name2)
+        s = objectstore.get_session()
+        trans = s.begin()
+        trans2 = s.begin()
+        m.get(7).user_name = name1
+        trans3 = s.begin()
+        m.get(8).user_name = name2
+        trans3.commit()
+        s.commit() # should do nothing
+        self.assert_(name_of(7) != name1, msg="user_name should not be %s" % name1)
+        self.assert_(name_of(8) != name2, msg="user_name should not be %s" % name2)
+        trans2.commit()
+        s.commit()  # should do nothing
+        self.assert_(name_of(7) != name1, msg="user_name should not be %s" % name1)
+        self.assert_(name_of(8) != name2, msg="user_name should not be %s" % name2)
+        trans.commit()
+        self.assert_(name_of(7) == name1, msg="user_name should be %s" % name1)
+        self.assert_(name_of(8) == name2, msg="user_name should be %s" % name2)
+
+    def test_nested_rollback(self):
+        class User(object):pass
+        m = mapper(User, users)
+        def name_of(id):
+            return users.select(users.c.user_id == id).execute().fetchone().user_name
+        name1 = "Oliver Twist"
+        name2 = 'Mr. Bumble'
+        self.assert_(name_of(7) != name1, msg="user_name should not be %s" % name1)
+        self.assert_(name_of(8) != name2, msg="user_name should not be %s" % name2)
+        s = objectstore.get_session()
+        trans = s.begin()
+        trans2 = s.begin()
+        m.get(7).user_name = name1
+        trans3 = s.begin()
+        m.get(8).user_name = name2
+        trans3.rollback()
+        self.assert_(name_of(7) != name1, msg="user_name should not be %s" % name1)
+        self.assert_(name_of(8) != name2, msg="user_name should not be %s" % name2)
+        trans2.commit()
+        self.assert_(name_of(7) != name1, msg="user_name should not be %s" % name1)
+        self.assert_(name_of(8) != name2, msg="user_name should not be %s" % name2)
+        trans.commit()
+        self.assert_(name_of(7) != name1, msg="user_name should not be %s" % name1)
+        self.assert_(name_of(8) != name2, msg="user_name should not be %s" % name2)
+
 class PKTest(AssertMixin):
     def setUpAll(self):
         db.echo = False
-        self.table = Table(
+        global table
+        global table2
+        global table3
+        table = Table(
             'multi', db, 
             Column('multi_id', Integer, Sequence("multi_id_seq", optional=True), primary_key=True),
             Column('multi_rev', Integer, primary_key=True),
             Column('name', String(50), nullable=False),
             Column('value', String(100))
         )
-        self.table.create()
+        
+        table2 = Table('multi2', db,
+            Column('pk_col_1', String(30), primary_key=True),
+            Column('pk_col_2', String(30), primary_key=True),
+            Column('data', String(30), )
+            )
+        table3 = Table('multi3', db,
+            Column('pri_code', String(30), key='primary', primary_key=True),
+            Column('sec_code', String(30), key='secondary', primary_key=True),
+            Column('date_assigned', Date, key='assigned', primary_key=True),
+            Column('data', String(30), )
+            )
+        table.create()
+        table2.create()
+        table3.create()
         db.echo = testbase.echo
     def tearDownAll(self):
         db.echo = False
-        self.table.drop()
+        table.drop()
+        table2.drop()
+        table3.drop()
         db.echo = testbase.echo
     def setUp(self):
         objectstore.clear()
@@ -94,7 +182,7 @@ class PKTest(AssertMixin):
     def testprimarykey(self):
         class Entry(object):
             pass
-        Entry.mapper = mapper(Entry, self.table)
+        Entry.mapper = mapper(Entry, table)
         e = Entry()
         e.name = 'entry1'
         e.value = 'this is entry 1'
@@ -103,7 +191,77 @@ class PKTest(AssertMixin):
         objectstore.clear()
         e2 = Entry.mapper.get(e.multi_id, 2)
         self.assert_(e is not e2 and e._instance_key == e2._instance_key)
+    def testmanualpk(self):
+        class Entry(object):
+            pass
+        Entry.mapper = mapper(Entry, table2)
+        e = Entry()
+        e.pk_col_1 = 'pk1'
+        e.pk_col_2 = 'pk1_related'
+        e.data = 'im the data'
+        objectstore.commit()
+    def testkeypks(self):
+        import datetime
+        class Entity(object):
+            pass
+        Entity.mapper = mapper(Entity, table3)
+        e = Entity()
+        e.primary = 'pk1'
+        e.secondary = 'pk2'
+        e.assigned = datetime.date.today()
+        e.data = 'some more data'
+        objectstore.commit()
         
+class DefaultTest(AssertMixin):
+    def setUpAll(self):
+        #db.echo = 'debug'
+        use_string_defaults = db.engine.__module__.endswith('postgres') or db.engine.__module__.endswith('oracle') or db.engine.__module__.endswith('sqlite')
+
+        if use_string_defaults:
+            hohotype = String(30)
+            self.hohoval = "im hoho"
+            self.althohoval = "im different hoho"
+        else:
+            hohotype = Integer
+            self.hohoval = 9
+            self.althohoval = 15
+        self.table = Table('default_test', db,
+        Column('id', Integer, Sequence("dt_seq", optional=True), primary_key=True),
+        Column('hoho', hohotype, PassiveDefault(str(self.hohoval))),
+        Column('counter', Integer, PassiveDefault("7")),
+        Column('foober', String(30), default="im foober")
+        )
+        self.table.create()
+    def tearDownAll(self):
+        self.table.drop()
+    def testbasic(self):
+        
+        class Hoho(object):pass
+        assign_mapper(Hoho, self.table)
+        h1 = Hoho(hoho=self.althohoval)
+        h2 = Hoho(counter=12)
+        h3 = Hoho(hoho=self.althohoval, counter=12)
+        h4 = Hoho()
+        h5 = Hoho(foober='im the new foober')
+        objectstore.commit()
+        self.assert_(h1.hoho==self.althohoval)
+        self.assert_(h3.hoho==self.althohoval)
+        self.assert_(h2.hoho==h4.hoho==h5.hoho==self.hohoval)
+        self.assert_(h3.counter == h2.counter == 12)
+        self.assert_(h1.counter ==  h4.counter==h5.counter==7)
+        self.assert_(h2.foober == h3.foober == h4.foober == 'im foober')
+        self.assert_(h5.foober=='im the new foober')
+        objectstore.clear()
+        l = Hoho.mapper.select()
+        (h1, h2, h3, h4, h5) = l
+        self.assert_(h1.hoho==self.althohoval)
+        self.assert_(h3.hoho==self.althohoval)
+        self.assert_(h2.hoho==h4.hoho==h5.hoho==self.hohoval)
+        self.assert_(h3.counter == h2.counter == 12)
+        self.assert_(h1.counter ==  h4.counter==h5.counter==7)
+        self.assert_(h2.foober == h3.foober == h4.foober == 'im foober')
+        self.assert_(h5.foober=='im the new foober')
+            
 class SaveTest(AssertMixin):
 
     def setUpAll(self):
@@ -739,11 +897,9 @@ class SaveTest(AssertMixin):
         m1 = mapper(User, users, is_primary=True)
         
         m2 = mapper(Address, addresses, properties = dict(
-            user = relation(m1, lazy = False)
+            user = relation(m1, lazy = False, backref='addresses')
         ), is_primary=True)
         
-        # "live" means, when "addresses" is accessed, do a DB call every time
-        m1.add_property('addresses', relation(m2, private=True, lazy=True, live=True))
  
         u = User()
         print repr(u.addresses)
@@ -805,6 +961,9 @@ class SaveTest2(AssertMixin):
             Column('email_address', String(20)),
             redefine=True
         )
+        x = sql.Join(self.users, self.addresses)
+#        raise repr(self.users) + repr(self.users.primary_key)
+#        raise repr(self.addresses) + repr(self.addresses.foreign_keys)
         self.users.create()
         self.addresses.create()
         db.echo = testbase.echo

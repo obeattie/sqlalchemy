@@ -27,32 +27,28 @@ __all__ = ['get_id_key', 'get_row_key', 'is_dirty', 'import_instance', 'commit',
 LOG = False
     
 class Session(object):
-    """a scope-managed proxy to UnitOfWork instances.  Operations are delegated
-    to UnitOfWork objects which are accessed via a sqlalchemy.util.ScopedRegistry object.  
-    The registry is capable of maintaining object instances on a thread-local, 
-    per-application, or custom user-defined basis."""
+    """Maintains a UnitOfWork instance, including transaction state."""
     
-    def __init__(self, uow=None, registry=None, hash_key=None):
+    def __init__(self, nest_transactions=False, hash_key=None):
         """Initialize the objectstore with a UnitOfWork registry.  If called
         with no arguments, creates a single UnitOfWork for all operations.
         
-        registry - a sqlalchemy.util.ScopedRegistry to produce UnitOfWork instances.
-        This argument should not be used with the uow argument.
-        uow - a UnitOfWork to use for all operations.  this argument should not be
-        used with the registry argument.
+        nest_transactions - indicates begin/commit statements can be executed in a
+        "nested", defaults to False which indicates "only commit on the outermost begin/commit"
         hash_key - the hash_key used to identify objects against this session, which 
         defaults to the id of the Session instance.
-        
         """
-        if registry is None:
-            if uow is None:
-                uow = UnitOfWork(self)
-            self.registry = util.ScopedRegistry(lambda:uow, 'application')
+        self.uow = UnitOfWork()
+        self.parent_uow = None
+        self.begin_count = 0
+        self.nest_transactions = nest_transactions
+        if hash_key is None:
+            self.hash_key = id(self)
         else:
-            self.registry = registry
-        self._hash_key = hash_key
-
-    def get_id_key(ident, class_, table):
+            self.hash_key = hash_key
+        _sessions[self.hash_key] = self
+        
+    def get_id_key(ident, class_):
         """returns an identity-map key for use in storing/retrieving an item from the identity
         map, given a tuple of the object's primary key values.
 
@@ -66,10 +62,10 @@ class Session(object):
         selectable - a Selectable object which represents all the object's column-based fields.
         this Selectable may be synonymous with the table argument or can be a larger construct
         containing that table. return value: a tuple object which is used as an identity key. """
-        return (class_, table.hash_key(), tuple(ident))
+        return (class_, tuple(ident))
     get_id_key = staticmethod(get_id_key)
 
-    def get_row_key(row, class_, table, primary_key):
+    def get_row_key(row, class_, primary_key):
         """returns an identity-map key for use in storing/retrieving an item from the identity
         map, given a result set row.
 
@@ -84,32 +80,93 @@ class Session(object):
         this Selectable may be synonymous with the table argument or can be a larger construct
         containing that table. return value: a tuple object which is used as an identity key.
         """
-        return (class_, table.hash_key(), tuple([row[column] for column in primary_key]))
+        return (class_, tuple([row[column] for column in primary_key]))
     get_row_key = staticmethod(get_row_key)
-    
-    def _set_uow(self, uow):
-        self.registry.set(uow)
-    uow = property(lambda s:s.registry(), _set_uow, doc="Returns a scope-specific UnitOfWork object for this session.")
-    
-    hash_key = property(lambda s:s._hash_key or id(s))
 
-    def bind_to(self, obj):
+    class SessionTrans(object):
+        """returned by Session.begin(), denotes a transactionalized UnitOfWork instance.
+        call commit() on this to commit the transaction."""
+        def __init__(self, parent, uow, isactive):
+            self.__parent = parent
+            self.__isactive = isactive
+            self.__uow = uow
+        isactive = property(lambda s:s.__isactive, doc="True if this SessionTrans is the 'active' transaction marker, else its a no-op.")
+        parent = property(lambda s:s.__parent, doc="returns the parent Session of this SessionTrans object.")
+        uow = property(lambda s:s.__uow, doc="returns the parent UnitOfWork corresponding to this transaction.")
+        def begin(self):
+            """calls begin() on the underlying Session object, returning a new no-op SessionTrans object."""
+            return self.parent.begin()
+        def commit(self):
+            """commits the transaction noted by this SessionTrans object."""
+            self.__parent._trans_commit(self)
+            self.__isactive = False
+        def rollback(self):
+            """rolls back the current UnitOfWork transaction, in the case that begin()
+            has been called.  The changes logged since the begin() call are discarded."""
+            self.__parent._trans_rollback(self)
+            self.__isactive = False
+
+    def begin(self):
+        """begins a new UnitOfWork transaction and returns a tranasaction-holding
+        object.  commit() or rollback() should be called on the returned object.
+        commit() on the Session will do nothing while a transaction is pending, and further
+        calls to begin() will return no-op transactional objects."""
+        if self.parent_uow is not None:
+            return Session.SessionTrans(self, self.uow, False)
+        self.parent_uow = self.uow
+        self.uow = UnitOfWork(identity_map = self.uow.identity_map)
+        return Session.SessionTrans(self, self.uow, True)
+    
+    def _trans_commit(self, trans):
+        if trans.uow is self.uow and trans.isactive:
+            try:
+                self.uow.commit()
+            finally:
+                self.uow = self.parent_uow
+                self.parent_uow = None
+    def _trans_rollback(self, trans):
+        if trans.uow is self.uow:
+            self.uow = self.parent_uow
+            self.parent_uow = None
+                        
+    def commit(self, *objects):
+        """commits the current UnitOfWork transaction.  called with
+        no arguments, this is only used
+        for "implicit" transactions when there was no begin().
+        if individual objects are submitted, then only those objects are committed, and the 
+        begin/commit cycle is not affected."""
+        # if an object list is given, commit just those but dont
+        # change begin/commit status
+        if len(objects):
+            self.uow.commit(*objects)
+            return
+        if self.parent_uow is None:
+            self.uow.commit()
+
+    def register_clean(self, obj):
+        self._bind_to(obj)
+        self.uow.register_clean(obj)
+        
+    def register_new(self, obj):
+        self._bind_to(obj)
+        self.uow.register_new(obj)
+
+    def _bind_to(self, obj):
         """given an object, binds it to this session.  changes on the object will affect
         the currently scoped UnitOfWork maintained by this session."""
         obj._sa_session_id = self.hash_key
 
     def __getattr__(self, key):
         """proxy other methods to our underlying UnitOfWork"""
-        return getattr(self.registry(), key)
+        return getattr(self.uow, key)
 
     def clear(self):
-        self.registry.clear()
+        self.uow = UnitOfWork()
 
-    def delete(*obj):
+    def delete(self, *obj):
         """registers the given objects as to be deleted upon the next commit"""
-        u = registry()
         for o in obj:
-            u.register_deleted(o)
+            self.uow.register_deleted(o)
         
     def import_instance(self, instance):
         """places the given instance in the current thread's unit of work context,
@@ -124,78 +181,83 @@ class Session(object):
             return None
         key = getattr(instance, '_instance_key', None)
         mapper = object_mapper(instance)
-        key = (key[0], mapper.table.hash_key(), key[2])
-        u = self.registry()
+        u = self.uow
         if key is not None:
             if u.identity_map.has_key(key):
                 return u.identity_map[key]
             else:
                 instance._instance_key = key
                 u.identity_map[key] = instance
-                self.bind_to(instance)
+                self._bind_to(instance)
         else:
             u.register_new(instance)
         return instance
-    
 
-def get_id_key(ident, class_, table):
-    return Session.get_id_key(ident, class_, table)
+def get_id_key(ident, class_):
+    return Session.get_id_key(ident, class_)
 
-def get_row_key(row, class_, table, primary_key):
-    return Session.get_row_key(row, class_, table, primary_key)
+def get_row_key(row, class_, primary_key):
+    return Session.get_row_key(row, class_, primary_key)
 
 def begin():
     """begins a new UnitOfWork transaction.  the next commit will affect only
     objects that are created, modified, or deleted following the begin statement."""
-    session().begin()
+    return get_session().begin()
 
 def commit(*obj):
     """commits the current UnitOfWork transaction.  if a transaction was begun 
     via begin(), commits only those objects that were created, modified, or deleted
     since that begin statement.  otherwise commits all objects that have been
-    changed."""
-    session().commit(*obj)
+    changed.
+    
+    if individual objects are submitted, then only those objects are committed, and the 
+    begin/commit cycle is not affected."""
+    get_session().commit(*obj)
 
 def clear():
     """removes all current UnitOfWorks and IdentityMaps for this thread and 
     establishes a new one.  It is probably a good idea to discard all
     current mapped object instances, as they are no longer in the Identity Map."""
-    session().clear()
+    get_session().clear()
 
 def delete(*obj):
     """registers the given objects as to be deleted upon the next commit"""
-    s = session()
-    for o in obj:
-        s.register_deleted(o)
+    s = get_session().delete(*obj)
 
 def has_key(key):
     """returns True if the current thread-local IdentityMap contains the given instance key"""
-    return session().has_key(key)
+    return get_session().has_key(key)
 
 def has_instance(instance):
     """returns True if the current thread-local IdentityMap contains the given instance"""
-    return session().has_instance(instance)
+    return get_session().has_instance(instance)
 
 def is_dirty(obj):
     """returns True if the given object is in the current UnitOfWork's new or dirty list,
     or if its a modified list attribute on an object."""
-    return session().is_dirty(obj)
+    return get_session().is_dirty(obj)
 
 def instance_key(instance):
     """returns the IdentityMap key for the given instance"""
-    return session().instance_key(instance)
+    return get_session().instance_key(instance)
 
 def import_instance(instance):
-    return session().import_instance(instance)
+    return get_session().import_instance(instance)
 
+class UOWProperty(attributes.SmartProperty):
+    def __init__(self, class_, *args, **kwargs):
+        super(UOWProperty, self).__init__(*args, **kwargs)
+        self.class_ = class_
+    property = property(lambda s:class_mapper(s.class_).props[s.key], doc="returns the MapperProperty object associated with this property")
+    
 class UOWListElement(attributes.ListElement):
     def __init__(self, obj, key, data=None, deleteremoved=False, **kwargs):
         attributes.ListElement.__init__(self, obj, key, data=data, **kwargs)
         self.deleteremoved = deleteremoved
     def list_value_changed(self, obj, key, item, listval, isdelete):
-        sess = session(obj)
+        sess = get_session(obj)
         if not isdelete and sess.deleted.contains(item):
-            raise "re-inserting a deleted value into a list"
+            raise InvalidRequestError("re-inserting a deleted value into a list")
         sess.modified_lists.append(self)
         if self.deleteremoved and isdelete:
             sess.register_deleted(item)
@@ -211,23 +273,20 @@ class UOWAttributeManager(attributes.AttributeManager):
         
     def value_changed(self, obj, key, value):
         if hasattr(obj, '_instance_key'):
-            session(obj).register_dirty(obj)
+            get_session(obj).register_dirty(obj)
         else:
-            session(obj).register_new(obj)
+            get_session(obj).register_new(obj)
+            
+    def create_prop(self, class_, key, uselist, **kwargs):
+        return UOWProperty(class_, self, key, uselist)
 
     def create_list(self, obj, key, list_, **kwargs):
         return UOWListElement(obj, key, list_, **kwargs)
         
 class UnitOfWork(object):
-    def __init__(self, session, parent=None, is_begun=False):
-        self.session = session
-        self.is_begun = is_begun
-        if is_begun:
-            self.begin_count = 1
-        else:
-            self.begin_count = 0
-        if parent is not None:
-            self.identity_map = parent.identity_map
+    def __init__(self, identity_map=None):
+        if identity_map is not None:
+            self.identity_map = identity_map
         else:
             self.identity_map = weakref.WeakValueDictionary()
             
@@ -236,7 +295,6 @@ class UnitOfWork(object):
         self.dirty = util.HashSet()
         self.modified_lists = util.HashSet()
         self.deleted = util.HashSet()
-        self.parent = parent
 
     def get(self, class_, *id):
         """given a class and a list of primary key values in their table-order, locates the mapper 
@@ -300,12 +358,10 @@ class UnitOfWork(object):
         if not hasattr(obj, '_instance_key'):
             mapper = object_mapper(obj)
             obj._instance_key = mapper.instance_key(obj)
-        self.session.bind_to(obj)
         self._put(obj._instance_key, obj)
         self.attributes.commit(obj)
         
     def register_new(self, obj):
-        self.session.bind_to(obj)
         self.new.append(obj)
         
     def register_dirty(self, obj):
@@ -330,19 +386,7 @@ class UnitOfWork(object):
         except KeyError:
             pass
             
-    # TODO: tie in register_new/register_dirty with table transaction begins ?
-    def begin(self):
-        if self.is_begun:
-            self.begin_count += 1
-            return
-        u = UnitOfWork(self.session, parent=self, is_begun=True)
-        self.session.registry.set(u)
-        
     def commit(self, *objects):
-        if self.is_begun:
-            self.begin_count -= 1
-            if self.begin_count > 0:
-                return
         commit_context = UOWTransaction(self)
 
         if len(objects):
@@ -389,27 +433,16 @@ class UnitOfWork(object):
         except:
             for e in engines:
                 e.rollback()
-            if self.parent:
-                self.rollback()
             raise
         for e in engines:
             e.commit()
             
         commit_context.post_exec()
         
-        if self.parent:
-            self.session.registry.set(self.parent)
 
     def rollback_object(self, obj):
+        """'rolls back' the attributes that have been changed on an object instance."""
         self.attributes.rollback(obj)
-
-    def rollback(self):
-        if not self.is_begun:
-            raise "UOW transaction is not begun"
-        # roll back attributes ?  nah....
-        #for obj in self.deleted + self.dirty + self.new:
-        #    self.attributes.rollback(obj)
-        self.session.registry.set(self.parent)
             
 class UOWTransaction(object):
     """handles the details of organizing and executing transaction tasks 
@@ -422,8 +455,9 @@ class UOWTransaction(object):
         self.dependencies = {}
         self.tasks = {}
         self.saved_histories = util.HashSet()
-
-    def register_object(self, obj, isdelete = False, listonly = False, **kwargs):
+        self.__modified = False
+        
+    def register_object(self, obj, isdelete = False, listonly = False, postupdate=False, **kwargs):
         """adds an object to this UOWTransaction to be updated in the database.
 
         'isdelete' indicates whether the object is to be deleted or saved (update/inserted).
@@ -436,21 +470,25 @@ class UOWTransaction(object):
         # things can get really confusing if theres duplicate instances floating around,
         # so make sure everything is OK
         if hasattr(obj, '_instance_key') and not self.uow.identity_map.has_key(obj._instance_key):
-            raise "Detected a mapped object not present in the current thread's Identity Map: '%s'.  Use objectstore.import_instance() to place deserialized instances or instances from other threads" % repr(obj._instance_key)
+            raise InvalidRequestError("Detected a mapped object not present in the current thread's Identity Map: '%s'.  Use objectstore.import_instance() to place deserialized instances or instances from other threads" % repr(obj._instance_key))
             
         mapper = object_mapper(obj)
         self.mappers.append(mapper)
         task = self.get_task_by_mapper(mapper)
         
+        if postupdate:
+            mod = task.append_postupdate(obj)
+            self.__modified = self.__modified or mod
+            return
+            
         # for a cyclical task, things need to be sorted out already,
         # so this object should have already been added to the appropriate sub-task
         # can put an assertion here to make sure....
         if task.circular:
             return
             
-        if obj not in task.objects:
-            self.__modified = True
-        task.append(obj, listonly, isdelete=isdelete, **kwargs)
+        mod = task.append(obj, listonly, isdelete=isdelete, **kwargs)
+        self.__modified = self.__modified or mod
 
     def unregister_object(self, obj):
         mapper = object_mapper(obj)
@@ -633,16 +671,24 @@ class UOWTask(object):
         dependent operations at the per-object instead of per-task level. """
         try:
             rec = self.objects[obj]
+            retval = False
         except KeyError:
             rec = UOWTaskElement(obj)
             self.objects[obj] = rec
+            retval = True
         if not listonly:
             rec.listonly = False
         if childtask:
             rec.childtasks.append(childtask)
         if isdelete:
             rec.isdelete = True
-
+        return retval
+    
+    def append_postupdate(self, obj):
+        # postupdates are UPDATED immeditely (for now)
+        self.mapper.save_obj([obj], self.uowtransaction, postupdate=True)
+        return True
+            
     def delete(self, obj):
         try:
             del self.objects[obj]
@@ -942,6 +988,9 @@ class UOWTask(object):
         for child in self.childtasks:
             header(buf, _indent() + "  |- Child tasks\n")
             child._dump(buf, indent + 1)
+#        for obj in self.postupdate:
+#            header(buf, _indent() + "  |- Post Update objects\n")
+#            buf.write(_repr(obj) + "\n")
         for element in self.todelete_elements():
             for task in element.childtasks:
                 header(buf, _indent() + "  |- Delete subelements of UOWTaskElement(%s)\n" % id(element))
@@ -968,22 +1017,22 @@ class UOWTask(object):
 
 class DependencySorter(topological.QueueDependencySorter):
     pass
-        
+
 def mapper(*args, **params):
     return sqlalchemy.mapperlib.mapper(*args, **params)
 
 def object_mapper(obj):
     return sqlalchemy.mapperlib.object_mapper(obj)
 
+def class_mapper(class_):
+    return sqlalchemy.mapperlib.class_mapper(class_)
+
 global_attributes = UOWAttributeManager()
 
-thread_session = Session(registry=util.ScopedRegistry(lambda: UnitOfWork(thread_session), "thread"), hash_key='thread')
-uow = thread_session.registry # Note: this is not a UnitOfWork, it is a ScopedRegistry that manages UnitOfWork objects
+session_registry = util.ScopedRegistry(Session) # Default session registry
+_sessions = weakref.WeakValueDictionary() # all referenced sessions (including user-created)
 
-_sessions = weakref.WeakValueDictionary()
-_sessions[thread_session.hash_key] = thread_session
-
-def session(obj=None):
+def get_session(obj=None):
     # object-specific session ?
     if obj is not None:
         # does it have a hash key ?
@@ -993,25 +1042,30 @@ def session(obj=None):
             try:
                 return _sessions[hashkey]
             except KeyError:
-                # oh, its gone, nevermind
-                pass
+                raise InvalidRequestError("Session '%s' referenced by object '%s' no longer exists" % (hashkey, repr(obj)))
 
-    try:
-        # have a thread-locally defined session (via using_session) ?
-        return _sessions[thread.get_ident()]
-    except KeyError:
-        # nope, return the regular session
-        return thread_session
+    return session_registry()
+
+uow = get_session # deprecated
+
+def push_session(sess):
+    old = _sessions.get(thread.get_ident(), None)
+    sess._previous = old
+    _sessions[sess.hash_key] = sess
+    _sessions[thread.get_ident()] = sess
+    
+def pop_session():
+    sess = _sessions[thread.get_ident()]
+    old = sess._previous
+    sess._previous = None
+    _sessions[old.hash_key] = old
+    _sessions[thread.get_ident()] = old
+    return old
     
 def using_session(sess, func):
-    old = _sessions.get(thread.get_ident(), None)
+    push_session(sess)
     try:
-        _sessions[sess.hash_key] = sess
-        _sessions[thread.get_ident()] = sess
         return func()
     finally:
-        if old is not None:
-            _session[thread.get_ident()] = old
-        else:
-            del _session[thread.get_ident()]
+        pop_session()
 

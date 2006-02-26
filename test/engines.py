@@ -13,6 +13,25 @@ import unittest, re
 class EngineTest(PersistTest):
     def testbasic(self):
         # really trip it up with a circular reference
+        
+        use_function_defaults = testbase.db.engine.__module__.endswith('postgres') or testbase.db.engine.__module__.endswith('oracle')
+        
+        use_string_defaults = use_function_defaults or testbase.db.engine.__module__.endswith('sqlite')
+
+        if use_function_defaults:
+            defval = func.current_date()
+            deftype = Date
+        else:
+            defval = "3"
+            deftype = Integer
+
+        if use_string_defaults:
+            deftype2 = String
+            defval2 = "im a default"
+        else:
+            deftype2 = Integer
+            defval2 = "15"
+            
         users = Table('engine_users', testbase.db,
             Column('user_id', INT, primary_key = True),
             Column('user_name', VARCHAR(20), nullable = False),
@@ -25,6 +44,9 @@ class EngineTest(PersistTest):
             Column('test6', DateTime, nullable = False),
             Column('test7', String),
             Column('test8', Binary),
+            Column('test_passivedefault', deftype, PassiveDefault(defval)),
+            Column('test_passivedefault2', Integer, PassiveDefault("5")),
+            Column('test_passivedefault3', deftype2, PassiveDefault(defval2)),
             Column('test9', Binary(100)),
             mysql_engine='InnoDB'
         )
@@ -139,7 +161,7 @@ class EngineTest(PersistTest):
         
             print repr(table)
             self.assert_(isinstance(table.c.col1.type, Integer))
-            self.assert_(table.c.col2.type.is_unicode)
+            self.assert_(isinstance(table.c.col2.type, Unicode))
             self.assert_(isinstance(table.c.col4.type, String))
         finally:
             table.drop()

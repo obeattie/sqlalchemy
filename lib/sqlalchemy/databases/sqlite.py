@@ -12,6 +12,7 @@ import sqlalchemy.engine as engine
 import sqlalchemy.schema as schema
 import sqlalchemy.ansisql as ansisql
 import sqlalchemy.types as sqltypes
+from sqlalchemy.exceptions import *
 from sqlalchemy.ansisql import *
 import datetime,time
 
@@ -20,7 +21,10 @@ pysqlite2_timesupport = False   # Change this if the init.d guys ever get around
 try:
     from pysqlite2 import dbapi2 as sqlite
 except:
-    sqlite = None
+    try:
+        sqlite = __import__('sqlite') # skip ourselves
+    except:
+        sqlite = None
 
 class SLNumeric(sqltypes.Numeric):
     def get_col_spec(self):
@@ -120,7 +124,7 @@ def descriptor():
 class SQLiteSQLEngine(ansisql.ANSISQLEngine):
     def __init__(self, opts, **params):
         if sqlite is None:
-            raise "Couldn't import pysqlite2"
+            raise ArgumentError("Couldn't import sqlite or pysqlite2")
         self.filename = opts.pop('filename', ':memory:')
         self.opts = opts or {}
         params['poolclass'] = sqlalchemy.pool.SingletonThreadPool
@@ -148,8 +152,8 @@ class SQLiteSQLEngine(ansisql.ANSISQLEngine):
     def dbapi(self):
         return sqlite
 
-    def schemagenerator(self, proxy, **params):
-        return SQLiteSchemaGenerator(proxy, **params)
+    def schemagenerator(self, **params):
+        return SQLiteSchemaGenerator(self, **params)
 
     def reflecttable(self, table):
         c = self.execute("PRAGMA table_info(" + table.name + ")", {})
@@ -226,6 +230,10 @@ class SQLiteCompiler(ansisql.ANSICompiler):
 class SQLiteSchemaGenerator(ansisql.ANSISchemaGenerator):
     def get_column_specification(self, column, override_pk=False, **kwargs):
         colspec = column.name + " " + column.type.get_col_spec()
+        default = self.get_column_default_string(column)
+        if default is not None:
+            colspec += " DEFAULT " + default
+
         if not column.nullable:
             colspec += " NOT NULL"
         if column.primary_key and not override_pk:

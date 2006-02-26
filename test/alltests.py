@@ -3,6 +3,8 @@ import unittest
 
 testbase.echo = False
 
+#test
+
 def suite():
     modules_to_test = (
         # core utilities
@@ -15,8 +17,9 @@ def suite():
         
         # schema/tables
         'engines', 
-        'types',
-        
+        'testtypes',
+        'indexes',
+
         # SQL syntax
         'select',
         'selectable',
@@ -38,14 +41,14 @@ def suite():
         
         # more select/persistence, backrefs
         'manytomany',
-        #'onetoone',
+        'onetoone',
+        'inheritance',
         
         # extensions
         'proxy_engine',
-        'wsgi_test',
+        #'wsgi_test',
         
         )
-
     alltests = unittest.TestSuite()
     for module in map(__import__, modules_to_test):
         alltests.addTest(unittest.findTestCases(module, suiteClass=None))

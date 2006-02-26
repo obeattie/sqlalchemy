@@ -4,7 +4,7 @@
 # This module is part of SQLAlchemy and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
-import sys, StringIO, string, types, re
+import sys, StringIO, string, types, re, datetime
 
 import sqlalchemy.sql as sql
 import sqlalchemy.engine as engine
@@ -40,6 +40,13 @@ class MSDate(sqltypes.Date):
 class MSTime(sqltypes.Time):
     def get_col_spec(self):
         return "TIME"
+    def convert_result_value(self, value, engine):
+        # convert from a timedelta value
+        if value is not None:
+            return datetime.time(value.seconds/60/60, value.seconds/60%60, value.seconds - (value.seconds/60*60))
+        else:
+            return None
+            
 class MSText(sqltypes.TEXT):
     def get_col_spec(self):
         return "TEXT"
@@ -124,16 +131,14 @@ class MySQLEngine(ansisql.ANSISQLEngine):
     def supports_sane_rowcount(self):
         return False
 
-    def tableimpl(self, table, **kwargs):
-        """returns a new sql.TableImpl object to correspond to the given Table object."""
-        mysql_engine = kwargs.pop('mysql_engine', None)
-        return MySQLTableImpl(table, mysql_engine=mysql_engine)
-
     def compiler(self, statement, bindparams, **kwargs):
         return MySQLCompiler(self, statement, bindparams, **kwargs)
 
-    def schemagenerator(self, proxy, **params):
-        return MySQLSchemaGenerator(proxy, **params)
+    def schemagenerator(self, **params):
+        return MySQLSchemaGenerator(self, **params)
+
+    def schemadropper(self, **params):
+        return MySQLSchemaDropper(self, **params)
 
     def get_default_schema_name(self):
         if not hasattr(self, '_default_schema_name'):
@@ -165,7 +170,7 @@ class MySQLEngine(ansisql.ANSISQLEngine):
         #ischema.reflecttable(self, table, ischema_names, use_mysql=True)
         
         tabletype, foreignkeyD = self.moretableinfo(table=table)
-        table._impl.mysql_engine = tabletype
+        table.kwargs['mysql_engine'] = tabletype
         
         c = self.execute("describe " + table.name, {})
         while True:
@@ -225,15 +230,14 @@ class MySQLEngine(ansisql.ANSISQLEngine):
         return (tabletype, foreignkeyD)
         
 
-class MySQLTableImpl(sql.TableImpl):
-    """attached to a schema.Table to provide it with a Selectable interface
-    as well as other functions
-    """
-    def __init__(self, table, mysql_engine=None):
-        super(MySQLTableImpl, self).__init__(table)
-        self.mysql_engine = mysql_engine
-
 class MySQLCompiler(ansisql.ANSICompiler):
+
+    def visit_function(self, func):
+        if len(func.clauses):
+            super(MySQLCompiler, self).visit_function(func)
+        else:
+            self.strings[func] = func.name
+
     def limit_clause(self, select):
         text = ""
         if select.limit is not None:
@@ -248,6 +252,9 @@ class MySQLCompiler(ansisql.ANSICompiler):
 class MySQLSchemaGenerator(ansisql.ANSISchemaGenerator):
     def get_column_specification(self, column, override_pk=False, first_pk=False):
         colspec = column.name + " " + column.type.get_col_spec()
+        default = self.get_column_default_string(column)
+        if default is not None:
+            colspec += " DEFAULT " + default
 
         if not column.nullable:
             colspec += " NOT NULL"
@@ -257,12 +264,17 @@ class MySQLSchemaGenerator(ansisql.ANSISchemaGenerator):
             if first_pk and isinstance(column.type, types.Integer):
                 colspec += " AUTO_INCREMENT"
         if column.foreign_key:
-            colspec += ", FOREIGN KEY (%s) REFERENCES %s(%s)" % (column.name, column.column.foreign_key.column.table.name, column.column.foreign_key.column.name) 
+            colspec += ", FOREIGN KEY (%s) REFERENCES %s(%s)" % (column.name, column.foreign_key.column.table.name, column.foreign_key.column.name) 
         return colspec
 
     def post_create_table(self, table):
-        if table.mysql_engine is not None:
-            return " ENGINE=%s" % table.mysql_engine
+        mysql_engine = table.kwargs.get('mysql_engine', None)
+        if mysql_engine is not None:
+            return " ENGINE=%s" % mysql_engine
         else:
             return ""
 
+class MySQLSchemaDropper(ansisql.ANSISchemaDropper):
+    def visit_index(self, index):
+        self.append("\nDROP INDEX " + index.name + " ON " + index.table.name)
+        self.execute()

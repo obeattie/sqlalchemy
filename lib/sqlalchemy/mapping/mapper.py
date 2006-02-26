@@ -9,6 +9,7 @@ import sqlalchemy.sql as sql
 import sqlalchemy.schema as schema
 import sqlalchemy.engine as engine
 import sqlalchemy.util as util
+from sqlalchemy.exceptions import *
 import objectstore
 import sys
 import weakref
@@ -47,7 +48,7 @@ class Mapper(object):
         self._options = {}
         
         if not issubclass(class_, object):
-            raise TypeError("Class '%s' is not a new-style class" % class_.__name__)
+            raise ArgumentError("Class '%s' is not a new-style class" % class_.__name__)
             
         if isinstance(table, sql.Select):
             # some db's, noteably postgres, dont want to select from a select
@@ -55,7 +56,7 @@ class Mapper(object):
             # the configured properties on the mapper are not matched against the alias 
             # we make, theres workarounds but it starts to get really crazy (its crazy enough
             # the SQL that gets generated) so just require an alias
-            raise TypeError("Mapping against a Select object requires that it has a name.  Use an alias to give it a name, i.e. s = select(...).alias('myselect')")
+            raise ArgumentError("Mapping against a Select object requires that it has a name.  Use an alias to give it a name, i.e. s = select(...).alias('myselect')")
         else:
             self.table = table
 
@@ -87,7 +88,7 @@ class Mapper(object):
                 except KeyError:
                     l = self.pks_by_table.setdefault(t, util.HashSet(ordered=True))
                 if not len(t.primary_key):
-                    raise ValueError("Table " + t.name + " has no primary key columns. Specify primary_key argument to mapper.")
+                    raise ArgumentError("Table " + t.name + " has no primary key columns. Specify primary_key argument to mapper.")
                 for k in t.primary_key:
                     l.append(k)
 
@@ -110,14 +111,14 @@ class Mapper(object):
                     try:
                         prop = self.table._get_col_by_original(prop)
                     except KeyError:
-                        raise ValueError("Column '%s' is not represented in mapper's table" % prop._label)
+                        raise ArgumentError("Column '%s' is not represented in mapper's table" % prop._label)
                     self.columns[key] = prop
                     prop = ColumnProperty(prop)
                 elif isinstance(prop, list) and sql.is_column(prop[0]):
                     try:
                         prop = [self.table._get_col_by_original(p) for p in prop]
                     except KeyError, e:
-                        raise ValueError("Column '%s' is not represented in mapper's table" % e.args[0])
+                        raise ArgumentError("Column '%s' is not represented in mapper's table" % e.args[0])
                     self.columns[key] = prop[0]
                     prop = ColumnProperty(*prop)
                 self.props[key] = prop
@@ -143,7 +144,7 @@ class Mapper(object):
                 prop.columns.append(column)
             else:
                 if not allow_column_override:
-                    raise ValueError("WARNING: column '%s' not being added due to property '%s'.  Specify 'allow_column_override=True' to mapper() to ignore this condition." % (column.key, repr(prop)))
+                    raise ArgumentError("WARNING: column '%s' not being added due to property '%s'.  Specify 'allow_column_override=True' to mapper() to ignore this condition." % (column.key, repr(prop)))
                 else:
                     continue
         
@@ -166,17 +167,23 @@ class Mapper(object):
         if inherits is not None:
             for key, prop in inherits.props.iteritems():
                 if not self.props.has_key(key):
-                    self.props[key] = prop._copy()
+                    self.props[key] = prop.copy()
                     self.props[key].parent = self
                     self.props[key].key = None  # force re-init
 
-        for key, prop in self.props.iteritems():
+        l = [(key, prop) for key, prop in self.props.iteritems()]
+        for key, prop in l:
             if getattr(prop, 'key', None) is None:
                 prop.init(key, self)
 
     engines = property(lambda s: [t.engine for t in s.tables])
 
     def add_property(self, key, prop):
+        """adds an additional property to this mapper.  this is the same as if it were 
+        specified within the 'properties' argument to the constructor.  if the named
+        property already exists, this will replace it.  Useful for
+        circular relationships, or overriding the parameters of auto-generated properties
+        such as backreferences."""
         if sql.is_column(prop):
             self.columns[key] = prop
             prop = ColumnProperty(prop)
@@ -189,7 +196,6 @@ class Mapper(object):
         
     def __str__(self):
         return "Mapper|" + self.class_.__name__ + "|" + self.primarytable.name
-        
     
     def _is_primary_mapper(self):
         return mapper_registry.get(self.class_, None) is self
@@ -205,7 +211,7 @@ class Mapper(object):
             oldinit = self.class_.__init__
             def init(self, *args, **kwargs):
                 nohist = kwargs.pop('_mapper_nohistory', False)
-                session = kwargs.pop('_sa_session', objectstore.session())
+                session = kwargs.pop('_sa_session', objectstore.get_session())
                 if oldinit is not None:
                     try:
                         oldinit(self, *args, **kwargs)
@@ -221,7 +227,6 @@ class Mapper(object):
     def set_property(self, key, prop):
         self.props[key] = prop
         prop.init(key, self)
-
     
     def instances(self, cursor, *mappers, **kwargs):
         limit = kwargs.get('limit', None)
@@ -246,7 +251,7 @@ class Mapper(object):
                 
         # store new stuff in the identity map
         for value in imap.values():
-            objectstore.session().register_clean(value)
+            objectstore.get_session().register_clean(value)
 
         if len(mappers):
             return [result] + otherresults
@@ -257,19 +262,19 @@ class Mapper(object):
         """returns an instance of the object based on the given identifier, or None
         if not found.  The *ident argument is a 
         list of primary key columns in the order of the table def's primary key columns."""
-        key = objectstore.get_id_key(ident, self.class_, self.primarytable)
+        key = objectstore.get_id_key(ident, self.class_)
         #print "key: " + repr(key) + " ident: " + repr(ident)
         return self._get(key, ident)
         
     def _get(self, key, ident=None):
         try:
-            return objectstore.session()._get(key)
+            return objectstore.get_session()._get(key)
         except KeyError:
             if ident is None:
                 ident = key[2]
             i = 0
             params = {}
-            for primary_key in self.pks_by_table[self.primarytable]:
+            for primary_key in self.pks_by_table[self.table]:
                 params["pk_"+primary_key.key] = ident[i]
                 i += 1
             try:
@@ -279,7 +284,7 @@ class Mapper(object):
 
         
     def identity_key(self, *primary_key):
-        return objectstore.get_id_key(tuple(primary_key), self.class_, self.primarytable)
+        return objectstore.get_id_key(tuple(primary_key), self.class_)
     
     def instance_key(self, instance):
         return self.identity_key(*[self._getattrbycolumn(instance, column) for column in self.pks_by_table[self.table]])
@@ -360,7 +365,7 @@ class Mapper(object):
                 continue
             c = self._get_criterion(key, value)
             if c is None:
-                raise "Cant find criterion for property '"+ key + "'"
+                raise InvalidRequestError("Cant find criterion for property '"+ key + "'")
             if clause is None:
                 clause = c
             else:                
@@ -450,9 +455,9 @@ class Mapper(object):
         except KeyError:
             try:
                 prop = self.props[column.key]
-                raise "Column '%s.%s' is not available, due to conflicting property '%s':%s" % (column.table.name, column.name, column.key, repr(prop))
+                raise InvalidRequestError("Column '%s.%s' is not available, due to conflicting property '%s':%s" % (column.table.name, column.name, column.key, repr(prop)))
             except KeyError:
-                raise "No column %s.%s is configured on mapper %s..." % (column.table.name, column.name, str(self))
+                raise InvalidRequestError("No column %s.%s is configured on mapper %s..." % (column.table.name, column.name, str(self)))
         return prop[0]
         
     def _getattrbycolumn(self, obj, column):
@@ -463,7 +468,7 @@ class Mapper(object):
         self.columntoproperty[column.original][0].setattr(obj, value)
 
         
-    def save_obj(self, objects, uow):
+    def save_obj(self, objects, uow, postupdate=False):
         """called by a UnitOfWork object to save objects, which involves either an INSERT or
         an UPDATE statement for each table used by this mapper, for each element of the
         list."""
@@ -494,10 +499,14 @@ class Mapper(object):
                 #print "SAVE_OBJ we are Mapper(" + str(id(self)) + ") obj: " +  obj.__class__.__name__ + repr(id(obj))
                 params = {}
 
-                isinsert = not hasattr(obj, "_instance_key")
+                # 'postupdate' means a PropertyLoader is telling us, "yes I know you 
+                # already inserted/updated this row but I need you to UPDATE one more 
+                # time"
+                isinsert = not postupdate and not hasattr(obj, "_instance_key")
                 if isinsert:
                     self.extension.before_insert(self, obj)
-
+                else:
+                    self.extension.before_update(self, obj)
                 hasdata = False
                 for col in table.columns:
                     if self.pks_by_table[table].contains(col):
@@ -507,7 +516,8 @@ class Mapper(object):
                             # matching the bindparam we are creating below, i.e. "<tablename>_<colname>"
                             params[col.table.name + "_" + col.key] = self._getattrbycolumn(obj, col)
                         else:
-                            # doing an INSERT? if the primary key values are not populated,
+                            # doing an INSERT, primary key col ? 
+                            # if the primary key values are not populated,
                             # leave them out of the INSERT altogether, since PostGres doesn't want
                             # them to be present for SERIAL to take effect.  A SQLEngine that uses
                             # explicit sequences will put them back in if they are needed
@@ -528,15 +538,21 @@ class Mapper(object):
                                     params[col.key] = a[0]
                                     hasdata = True
                         else:
-                            # doing an INSERT ? add the attribute's value to the 
-                            # bind parameters
-                            params[col.key] = self._getattrbycolumn(obj, col)
+                            # doing an INSERT, non primary key col ? 
+                            # add the attribute's value to the 
+                            # bind parameters, unless its None and the column has a 
+                            # default.  if its None and theres no default, we still might
+                            # not want to put it in the col list but SQLIte doesnt seem to like that
+                            # if theres no columns at all
+                            value = self._getattrbycolumn(obj, col)
+                            if col.default is None or value is not None:
+                                params[col.key] = value
 
                 if not isinsert:
                     if hasdata:
                         # if none of the attributes changed, dont even
                         # add the row to be updated.
-                        update.append(params)
+                        update.append((obj, params))
                 else:
                     insert.append((obj, params))
             if len(update):
@@ -546,10 +562,12 @@ class Mapper(object):
                 statement = table.update(clause)
                 rows = 0
                 for rec in update:
-                    c = statement.execute(rec)
+                    (obj, params) = rec
+                    c = statement.execute(params)
+                    self.extension.after_update(self, obj)
                     rows += c.cursor.rowcount
                 if table.engine.supports_sane_rowcount() and rows != len(update):
-                    raise "ConcurrencyError - updated rowcount %d does not match number of objects updated %d" % (rows, len(update))
+                    raise CommitError("ConcurrencyError - updated rowcount %d does not match number of objects updated %d" % (rows, len(update)))
             if len(insert):
                 statement = table.insert()
                 for rec in insert:
@@ -569,8 +587,8 @@ class Mapper(object):
                             clause.clauses.append(p == self._getattrbycolumn(obj, p))
                         row = table.select(clause).execute().fetchone()
                         for c in table.c:
-                            if self._getattrbycolumn(obj, col) is None:
-                                self._setattrbycolumn(obj, col, row[c])
+                            if self._getattrbycolumn(obj, c) is None:
+                                self._setattrbycolumn(obj, c, row[c])
                     self.extension.after_insert(self, obj)
                     
     def delete_obj(self, objects, uow):
@@ -596,7 +614,7 @@ class Mapper(object):
                 statement = table.delete(clause)
                 c = statement.execute(*delete)
                 if table.engine.supports_sane_rowcount() and c.rowcount != len(delete):
-                    raise "ConcurrencyError - updated rowcount %d does not match number of objects updated %d" % (c.cursor.rowcount, len(delete))
+                    raise CommitError("ConcurrencyError - updated rowcount %d does not match number of objects updated %d" % (c.cursor.rowcount, len(delete)))
 
     def _has_pks(self, table):
         try:
@@ -665,7 +683,7 @@ class Mapper(object):
         return statement
         
     def _identity_key(self, row):
-        return objectstore.get_row_key(row, self.class_, self.identitytable, self.pks_by_table[self.table])
+        return objectstore.get_row_key(row, self.class_, self.pks_by_table[self.table])
 
     def _instance(self, row, imap, result = None, populate_existing = False):
         """pulls an object instance from the given row and appends it to the given result
@@ -677,8 +695,8 @@ class Mapper(object):
         # including modifying any of its related items lists, as its already
         # been exposed to being modified by the application.
         identitykey = self._identity_key(row)
-        if objectstore.session().has_key(identitykey):
-            instance = objectstore.session()._get(identitykey)
+        if objectstore.get_session().has_key(identitykey):
+            instance = objectstore.get_session()._get(identitykey)
 
             isnew = False
             if populate_existing:
@@ -734,7 +752,7 @@ class MapperProperty(object):
         """called when the mapper receives a row.  instance is the parent instance
         corresponding to the row. """
         raise NotImplementedError()
-    def _copy(self):
+    def copy(self):
         raise NotImplementedError()
     def get_criterion(self, key, value):
         """Returns a WHERE clause suitable for this MapperProperty corresponding to the 
@@ -752,15 +770,24 @@ class MapperProperty(object):
     def setup(self, key, statement, **options):
         """called when a statement is being constructed.  """
         return self
-    
     def init(self, key, parent):
         """called when the MapperProperty is first attached to a new parent Mapper."""
+        self.key = key
+        self.parent = parent
+        self.do_init(key, parent)
+    def do_init(self, key, parent):
+        """template method for subclasses"""
         pass
     def register_deleted(self, object, uow):
         """called when the instance is being deleted"""
         pass
     def register_dependencies(self, *args, **kwargs):
         pass
+    def is_primary(self):
+        """a return value of True indicates we are the primary MapperProperty for this loader's
+        attribute on our mapper's class.  It means we can set the object's attribute behavior
+        at the class level.  otherwise we have to set attribute behavior on a per-instance level."""
+        return self.parent._is_primary_mapper()
 
 class MapperOption(object):
     """describes a modification to a Mapper in the context of making a copy
@@ -834,6 +861,14 @@ class MapperExtension(object):
         this is a good place to set up primary key values and such that arent handled otherwise."""
         if self.next is not None:
             self.next.before_insert(mapper, instance)
+    def before_update(self, mapper, instance):
+        """called before an object instnace is UPDATED"""
+        if self.next is not None:
+            self.next.before_update(mapper, instance)
+    def after_update(self, mapper, instance):
+        """called after an object instnace is UPDATED"""
+        if self.next is not None:
+            self.next.after_update(mapper, instance)
     def after_insert(self, mapper, instance):
         """called after an object instance has been INSERTed"""
         if self.next is not None:
@@ -859,6 +894,22 @@ def hash_key(obj):
         return obj.hash_key()
     else:
         return repr(obj)
+        
+def object_mapper(object):
+    """given an object, returns the primary Mapper associated with the object
+    or the object's class."""
+    return class_mapper(object.__class__)
+
+def class_mapper(class_):
+    """given a class, returns the primary Mapper associated with the class."""
+    return mapper_registry[class_]
+    try:
+        return mapper_registry[class_]
+    except KeyError:
+        pass
+    except AttributeError:
+        pass
+    raise InvalidRequestError("Class '%s' has no mapper associated with it" % class_.__name__)
     
 
 

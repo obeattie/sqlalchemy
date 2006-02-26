@@ -55,6 +55,7 @@ colspecs = {
     sqltypes.Integer : OracleInteger,
     sqltypes.Smallinteger : OracleSmallInteger,
     sqltypes.Numeric : OracleNumeric,
+    sqltypes.Float : OracleNumeric,
     sqltypes.DateTime : OracleDateTime,
     sqltypes.Date : OracleDateTime,
     sqltypes.String : OracleString,
@@ -104,10 +105,10 @@ class OracleSQLEngine(ansisql.ANSISQLEngine):
     def compiler(self, statement, bindparams, **kwargs):
         return OracleCompiler(self, statement, bindparams, use_ansi=self._use_ansi, **kwargs)
 
-    def schemagenerator(self, proxy, **params):
-        return OracleSchemaGenerator(proxy, **params)
-    def schemadropper(self, proxy, **params):
-        return OracleSchemaDropper(proxy, **params)
+    def schemagenerator(self, **params):
+        return OracleSchemaGenerator(self, **params)
+    def schemadropper(self, **params):
+        return OracleSchemaDropper(self, **params)
     def defaultrunner(self, proxy):
         return OracleDefaultRunner(self, proxy)
         
@@ -178,7 +179,13 @@ class OracleCompiler(ansisql.ANSICompiler):
             self.strings[column] = "%s.%s(+)" % (column.table.name, column.name)
         else:
             self.strings[column] = "%s.%s" % (column.table.name, column.name)
-        
+       
+    def visit_function(self, func):
+        if len(func.clauses):
+            super(OracleCompiler, self).visit_function(func)
+        else:
+            self.strings[func] = func.name
+ 
     def visit_insert(self, insert):
         """inserts are required to have the primary keys be explicitly present.
          mapper will by default not put them in the insert statement to comply
@@ -205,9 +212,10 @@ class OracleCompiler(ansisql.ANSICompiler):
             if hasattr(select, "order_by_clause"):
                 orderby = self.strings[select.order_by_clause]
             else:
-                orderby = "rowid ASC"
+                # TODO: try to get "oid_column" to be used here
+                orderby = "%s.rowid ASC" % select.froms[0].id
             select.append_column(sql.ColumnClause("ROW_NUMBER() OVER (ORDER BY %s)" % orderby).label("ora_rn"))
-            limitselect = select.select()
+            limitselect = sql.select([c for c in select.c if c.key!='ora_rn'])
             if select.offset is not None:
                 limitselect.append_whereclause("ora_rn>%d" % select.offset)
                 if select.limit is not None:
@@ -227,6 +235,9 @@ class OracleSchemaGenerator(ansisql.ANSISchemaGenerator):
     def get_column_specification(self, column, override_pk=False, **kwargs):
         colspec = column.name
         colspec += " " + column.type.get_col_spec()
+        default = self.get_column_default_string(column)
+        if default is not None:
+            colspec += " DEFAULT " + default
 
         if not column.nullable:
             colspec += " NOT NULL"

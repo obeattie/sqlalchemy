@@ -34,12 +34,12 @@ class ProxyEngineTest1(PersistTest):
         users.create()
         assign_mapper(User, users)
         try:
-            objectstore.begin()
+            trans = objectstore.begin()
 
             user = User()
             user.user_name='fred'
             user.password='*'
-            objectstore.commit()
+            trans.commit()
 
             # select
             sqluser = User.select_by(user_name='fred')[0]
@@ -83,7 +83,7 @@ class ThreadProxyTest(PersistTest):
                     module_engine.connect(db_uri)
                     users.create()
                     try:
-                        objectstore.begin()
+                        trans  = objectstore.begin()
 
                         all = User.select()[:]
                         assert all == []
@@ -91,7 +91,7 @@ class ThreadProxyTest(PersistTest):
                         u = User()
                         u.user_name = uname
                         u.password = 'whatever'
-                        objectstore.commit()
+                        trans.commit()
 
                         names = [ us.user_name for us in User.select() ]
                         assert names == [ uname ]
@@ -241,20 +241,22 @@ class ProxyEngineTest2(PersistTest):
 
         engine.connect(testbase.db_uri)
         dogs.create()
+        try:
+            spot = Dog()
+            spot.breed = 'beagle'
+            spot.name = 'Spot'
 
-        spot = Dog()
-        spot.breed = 'beagle'
-        spot.name = 'Spot'
-
-        rover = Dog()
-        rover.breed = 'spaniel'
-        rover.name = 'Rover'
+            rover = Dog()
+            rover.breed = 'spaniel'
+            rover.name = 'Rover'
         
-        objectstore.commit()
+            objectstore.commit()
         
-        assert spot.dog_id > 0, "Spot did not get an id"
-        assert rover.dog_id != spot.dog_id
-        
+            assert spot.dog_id > 0, "Spot did not get an id"
+            assert rover.dog_id != spot.dog_id
+        finally:
+            dogs.drop()
+            
     def  test_type_proxy_schema_gen(self):
         from sqlalchemy.databases.postgres import PGSchemaGenerator
 
@@ -268,7 +270,7 @@ class ProxyEngineTest2(PersistTest):
         # answer
         engine.connect('postgres://database=test&port=5432&host=127.0.0.1&user=scott&password=tiger')
 
-        sg = PGSchemaGenerator(engine.proxy())
+        sg = PGSchemaGenerator(engine)
         id_spec = sg.get_column_specification(lizards.c.id)
         assert id_spec == 'id SERIAL NOT NULL PRIMARY KEY'
         

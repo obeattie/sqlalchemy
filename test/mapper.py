@@ -99,6 +99,13 @@ class MapperTest(MapperSuperTest):
         self.assert_result(l, User, *[{'user_id':8}])
 
         l = m.select_by(User.c.user_name=='fred', addresses.c.email_address!='ed@bettyboop.com', user_id=9)
+
+    def testprops(self):
+        """tests the various attributes of the properties attached to classes"""
+        m = mapper(User, users, properties = {
+            'addresses' : relation(mapper(Address, addresses))
+        })
+        self.assert_(User.addresses.property is m.props['addresses'])
         
     def testload(self):
         """tests loading rows with a mapper and producing object instances"""
@@ -148,10 +155,10 @@ class MapperTest(MapperSuperTest):
         # assert that overriding a column raises an error
         try:
             m = mapper(User, users, properties = {
-                    'user_name' : relation(Address, addresses),
+                    'user_name' : relation(mapper(Address, addresses)),
                 })
-            self.assert_(False, "should have raised ValueError")
-        except ValueError, e:
+            self.assert_(False, "should have raised ArgumentError")
+        except ArgumentError, e:
             self.assert_(True)
             
         # assert that allow_column_override cancels the error
@@ -246,6 +253,29 @@ class PropertyTest(MapperSuperTest):
         objectstore.clear()
         au = AddressUser.mapper.get_by(user_name='jack')
         self.assert_(au.email_address == 'jack@gmail.com')
+
+    def testinherits2(self):
+        class _Order(object):
+            pass
+        class _Address(object):
+            pass
+        class AddressUser(_Address):
+            pass
+        assign_mapper(_Order, orders)
+        assign_mapper(_Address, addresses)
+        assign_mapper(AddressUser, users, inherits = _Address.mapper,
+            properties = {
+                'orders' : relation(_Order.mapper, lazy=False)
+            })
+        l = AddressUser.mapper.select()
+        jack = l[0]
+        self.assert_(jack.user_name=='jack')
+        jack.email_address = 'jack@gmail.com'
+        objectstore.commit()
+        objectstore.clear()
+        au = AddressUser.mapper.get_by(user_name='jack')
+        self.assert_(au.email_address == 'jack@gmail.com')
+            
 
 class DeferredTest(MapperSuperTest):
 
@@ -531,7 +561,7 @@ class EagerTest(MapperSuperTest):
         self.assert_result(l, User, *user_all_result)
         objectstore.clear()
         m = mapper(Item, orderitems, is_primary=True, properties = dict(
-                keywords = relation(mapper(Keyword, keywords), itemkeywords, lazy = False),
+                keywords = relation(mapper(Keyword, keywords), itemkeywords, lazy = False, order_by=[keywords.c.keyword_id]),
             ))
         l = m.select((Item.c.item_name=='item 2') | (Item.c.item_name=='item 5') | (Item.c.item_name=='item 3'), order_by=[Item.c.item_id], limit=2)        
         self.assert_result(l, Item, *[item_keyword_result[1], item_keyword_result[2]])
@@ -610,6 +640,7 @@ class EagerTest(MapperSuperTest):
         """tests eager loading with two relations simulatneously, from the same table.  """
         openorders = alias(orders, 'openorders')
         closedorders = alias(orders, 'closedorders')
+        ordermapper = mapper(Order, orders)
         m = mapper(User, users, properties = dict(
             addresses = relation(mapper(Address, addresses), lazy = False),
             open_orders = relation(mapper(Order, openorders), primaryjoin = and_(openorders.c.isopen == 1, users.c.user_id==openorders.c.user_id), lazy = False),
@@ -652,7 +683,7 @@ class EagerTest(MapperSuperTest):
         items = orderitems
         
         m = mapper(Item, items, properties = dict(
-                keywords = relation(mapper(Keyword, keywords), itemkeywords, lazy=False),
+                keywords = relation(mapper(Keyword, keywords), itemkeywords, lazy=False, order_by=[keywords.c.keyword_id]),
             ))
         l = m.select()
         self.assert_result(l, Item, *item_keyword_result)
@@ -671,7 +702,7 @@ class EagerTest(MapperSuperTest):
 
         m = mapper(Item, items, 
             properties = dict(
-                keywords = relation(mapper(Keyword, keywords), itemkeywords, lazy = False),
+                keywords = relation(mapper(Keyword, keywords), itemkeywords, lazy = False, order_by=[keywords.c.keyword_id]),
             ))
 
         m = mapper(Order, orders, properties = dict(

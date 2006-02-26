@@ -16,20 +16,19 @@ A SQLEngine is provided to an application as a subclass that is specific to a pa
 of DBAPI, and is the central switching point for abstracting different kinds of database
 behavior into a consistent set of behaviors.  It provides a variety of factory methods 
 to produce everything specific to a certain kind of database, including a Compiler, 
-schema creation/dropping objects, and TableImpl and ColumnImpl objects to augment the
-behavior of table metadata objects.
+schema creation/dropping objects.
 
 The term "database-specific" will be used to describe any object or function that has behavior
 corresponding to a particular vendor, such as mysql-specific, sqlite-specific, etc.
 """
 
-import sqlalchemy.schema as schema
 import sqlalchemy.pool
-import sqlalchemy.util as util
-import sqlalchemy.sql as sql
-import StringIO, sys, re
+import schema
+import exceptions
+import util
+import sql
 import sqlalchemy.types as types
-import sqlalchemy.databases
+import StringIO, sys, re
 
 __all__ = ['create_engine', 'engine_descriptors']
 
@@ -103,13 +102,13 @@ def engine_descriptors():
     
 class SchemaIterator(schema.SchemaVisitor):
     """a visitor that can gather text into a buffer and execute the contents of the buffer."""
-    def __init__(self, sqlproxy, **params):
+    def __init__(self, engine, **params):
         """initializes this SchemaIterator and initializes its buffer.
         
         sqlproxy - a callable function returned by SQLEngine.proxy(), which executes a
         statement plus optional parameters.
         """
-        self.sqlproxy = sqlproxy
+        self.engine = engine
         self.buffer = StringIO.StringIO()
 
     def append(self, s):
@@ -120,7 +119,7 @@ class SchemaIterator(schema.SchemaVisitor):
         """executes the contents of the SchemaIterator's buffer using its sql proxy and
         clears out the buffer."""
         try:
-            return self.sqlproxy(self.buffer.getvalue())
+            return self.engine.execute(self.buffer.getvalue(), None)
         finally:
             self.buffer.truncate(0)
 
@@ -131,7 +130,7 @@ class DefaultRunner(schema.SchemaVisitor):
 
     def get_column_default(self, column):
         if column.default is not None:
-            return column.default.accept_visitor(self)
+            return column.default.accept_schema_visitor(self)
         else:
             return None
 
@@ -236,7 +235,7 @@ class SQLEngine(schema.SchemaEngine):
             self.bindtemplate = "%%(%s)s"
             self.positional = True
         else:
-            raise "Unsupported paramstyle '%s'" % self._paramstyle
+            raise DBAPIError("Unsupported paramstyle '%s'" % self._paramstyle)
         
     def type_descriptor(self, typeobj):
         """provides a database-specific TypeEngine object, given the generic object
@@ -250,21 +249,17 @@ class SQLEngine(schema.SchemaEngine):
         """returns a sql.text() object for performing literal queries."""
         return sql.text(text, engine=self, *args, **kwargs)
         
-    def schemagenerator(self, proxy, **params):
+    def schemagenerator(self, **params):
         """returns a schema.SchemaVisitor instance that can generate schemas, when it is
-        invoked to traverse a set of schema objects.  The 
-        "proxy" argument is a callable will execute a given string SQL statement
-        and a dictionary or list of parameters.  
+        invoked to traverse a set of schema objects. 
         
         schemagenerator is called via the create() method.
         """
         raise NotImplementedError()
 
-    def schemadropper(self, proxy, **params):
+    def schemadropper(self, **params):
         """returns a schema.SchemaVisitor instance that can drop schemas, when it is
-        invoked to traverse a set of schema objects.  The 
-        "proxy" argument is a callable will execute a given string SQL statement
-        and a dictionary or list of parameters.  
+        invoked to traverse a set of schema objects. 
         
         schemagenerator is called via the drop() method.
         """
@@ -300,11 +295,12 @@ class SQLEngine(schema.SchemaEngine):
         
     def create(self, entity, **params):
         """creates a table or index within this engine's database connection given a schema.Table object."""
-        entity.accept_visitor(self.schemagenerator(self.proxy(), **params))
+        entity.accept_schema_visitor(self.schemagenerator(**params))
+        return entity
 
     def drop(self, entity, **params):
         """drops a table or index within this engine's database connection given a schema.Table object."""
-        entity.accept_visitor(self.schemadropper(self.proxy(), **params))
+        entity.accept_schema_visitor(self.schemadropper(**params))
 
     def compile(self, statement, parameters, **kwargs):
         """given a sql.ClauseElement statement plus optional bind parameters, creates a new
@@ -318,20 +314,6 @@ class SQLEngine(schema.SchemaEngine):
     def reflecttable(self, table):
         """given a Table object, reflects its columns and properties from the database."""
         raise NotImplementedError()
-
-    def tableimpl(self, table, **kwargs):
-        """returns a new sql.TableImpl object to correspond to the given Table object.
-        A TableImpl provides SQL statement builder operations on a Table metadata object, 
-        and a subclass of this object may be provided by a SQLEngine subclass to provide
-        database-specific behavior."""
-        return sql.TableImpl(table)
-
-    def columnimpl(self, column):
-        """returns a new sql.ColumnImpl object to correspond to the given Column object.
-        A ColumnImpl provides SQL statement builder operations on a Column metadata object, 
-        and a subclass of this object may be provided by a SQLEngine subclass to provide
-        database-specific behavior."""
-        return sql.ColumnImpl(column)
 
     def indeximpl(self, index):
         """returns a new sql.IndexImpl object to correspond to the given Index
@@ -376,12 +358,6 @@ class SQLEngine(schema.SchemaEngine):
     def do_commit(self, connection):
         """implementations might want to put logic here for turning autocommit on/off, etc."""
         connection.commit()
-
-    def proxy(self, **kwargs):
-        """provides a callable that will execute the given string statement and parameters.
-        The statement and parameters should be in the format specific to the particular database;
-        i.e. named or positional."""
-        return lambda s, p = None: self.execute(s, p, **kwargs)
 
     def connection(self):
         """returns a managed DBAPI connection from this SQLEngine's connection pool."""
@@ -473,16 +449,16 @@ class SQLEngine(schema.SchemaEngine):
                 for c in compiled.statement.table.c:
                     if isinstance(c.default, schema.PassiveDefault):
                         self.context.lastrow_has_defaults = True
-                    if not param.has_key(c.key) or param[c.key] is None:
+                    if not param.has_key(c.name) or param[c.name] is None:
                         newid = drunner.get_column_default(c)
                         if newid is not None:
-                            param[c.key] = newid
+                            param[c.name] = newid
                             if c.primary_key:
-                                last_inserted_ids.append(param[c.key])
+                                last_inserted_ids.append(param[c.name])
                         elif c.primary_key:
                             need_lastrowid = True
                     elif c.primary_key:
-                        last_inserted_ids.append(param[c.key])
+                        last_inserted_ids.append(param[c.name])
                 if need_lastrowid:
                     self.context.last_inserted_ids = None
                 else:
@@ -556,7 +532,7 @@ class SQLEngine(schema.SchemaEngine):
                 else:
                     parameters = parameters.values()
 
-            self.execute(statement, parameters, connection=connection, cursor=cursor)        
+            self.execute(statement, parameters, connection=connection, cursor=cursor, return_raw=True)        
             return cursor
 
         self.pre_exec(proxy, compiled, parameters, **kwargs)
@@ -565,7 +541,7 @@ class SQLEngine(schema.SchemaEngine):
         self.post_exec(proxy, compiled, parameters, **kwargs)
         return ResultProxy(cursor, self, typemap=compiled.typemap)
 
-    def execute(self, statement, parameters, connection=None, cursor=None, echo=None, typemap=None, commit=False, **kwargs):
+    def execute(self, statement, parameters, connection=None, cursor=None, echo=None, typemap=None, commit=False, return_raw=False, **kwargs):
         """executes the given string-based SQL statement with the given parameters.  
 
         The parameters can be a dictionary or a list, or a list of dictionaries or lists, depending
@@ -616,13 +592,16 @@ class SQLEngine(schema.SchemaEngine):
         except:
             self.do_rollback(connection)
             raise
-        return ResultProxy(cursor, self, typemap=typemap)
+        if return_raw:
+            return cursor
+        else:
+            return ResultProxy(cursor, self, typemap=typemap)
 
     def _execute(self, c, statement, parameters):
-        #try:
-        c.execute(statement, parameters)
-        #except:
-        #    raise "OK ERROR " + statement + " " + repr(parameters)
+        try:
+            c.execute(statement, parameters)
+        except Exception, e:
+            raise exceptions.SQLError(statement, parameters, e)
         self.context.rowcount = c.rowcount
     def _executemany(self, c, statement, parameters):
         c.executemany(statement, parameters)
@@ -652,7 +631,7 @@ class ResultProxy:
         def __init__(self, key):
             self.key = key
         def convert_result_value(self, arg, engine):
-            raise "Ambiguous column name '%s' in result set! try 'use_labels' option on select statement." % (self.key)
+            raise InvalidRequestError("Ambiguous column name '%s' in result set! try 'use_labels' option on select statement." % (self.key))
     
     def __init__(self, cursor, engine, typemap = None):
         """ResultProxy objects are constructed via the execute() method on SQLEngine."""
@@ -673,7 +652,7 @@ class ResultProxy:
                 else:
                     rec = (types.NULLTYPE, i)
                 if rec[0] is None:
-                    raise "None for metadata " + colname
+                    raise DBAPIError("None for metadata " + colname)
                 if self.props.setdefault(colname, rec) is not rec:
                     self.props[colname] = (ResultProxy.AmbiguousColumn(colname), 0)
                 self.keys.append(colname)

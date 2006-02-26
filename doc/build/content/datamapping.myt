@@ -58,6 +58,7 @@ UPDATE users SET user_name=:user_name
         
         
     </&>
+    <&|doclib.myt:item, name="attaching", description="Attaching Mappers to their Class"&>
     <p>For convenience's sake, the Mapper can be attached as an attribute on the class itself as well:</p>
         <&|formatting.myt:code&>
             User.mapper = mapper(User, users)
@@ -70,6 +71,25 @@ UPDATE users SET user_name=:user_name
         userlist = User.select_by(user_id=12)
     </&>
     <p>Other methods of associating mappers and finder methods with their corresponding classes, such as via common base classes or mixins, can be devised as well.  SQLAlchemy does not aim to dictate application architecture and will always allow the broadest variety of architectural patterns, but may include more helper objects and suggested architectures in the future.</p>
+    </&>
+    <&|doclib.myt:item, name="overriding", description="Overriding Properties"&>
+    <p>A common request is the ability to create custom class properties that override the behavior of setting/getting an attribute.  Currently, the easiest way to do this in SQLAlchemy is just how its done normally; define your attribute with a different name, such as "_attribute", and use a property to get/set its value.  The mapper just needs to be told of the special name:</p>
+    <&|formatting.myt:code&>
+        class MyClass(object):
+            def _set_email(self, email):
+                self._email = email
+            def _get_email(self, email):
+                return self._email
+            email = property(_get_email, _set_email)
+            
+        m = mapper(MyClass, mytable, properties = {
+                # map the '_email' attribute to the "email" column
+                # on the table
+                '_email': mytable.c.email
+        })
+    </&>
+    <p>In a later release, SQLAlchemy will also allow _get_email and _set_email to be attached directly to the "email" property created by the mapper, and will also allow this association to occur via decorators.</p>
+    </&>
 </&>
 <&|doclib.myt:item, name="selecting", description="Selecting from a Mapper" &>
     <p>There are a variety of ways to select from a mapper.  These range from minimalist to explicit.  Below is a synopsis of the these methods:</p>
@@ -230,23 +250,13 @@ INSERT INTO users (user_name, password) VALUES (:user_name, :password)
                     self.state = state
                     self.zip = zip
         </&>
-<p>And then a Mapper that will define a relationship of the User and the Address classes to each other as well as their table metadata.  We will add an additional mapper keyword argument <span class="codeline">properties</span> which is a dictionary relating the name of an object property to a database relationship, in this case a <span class="codeline">relation</span> object which will define a new mapper for the Address class:</p>
+<p>And then a Mapper that will define a relationship of the User and the Address classes to each other as well as their table metadata.  We will add an additional mapper keyword argument <span class="codeline">properties</span> which is a dictionary relating the name of an object property to a database relationship, in this case a <span class="codeline">relation</span> object against a newly defined  mapper for the Address class:</p>
         <&|formatting.myt:code&>
             User.mapper = mapper(User, users, properties = {
-                                'addresses' : relation(Address, addresses)
+                                'addresses' : relation(mapper(Address, addresses))
                             }
                           )
         </&>
-<p>Alternatively, the Address mapper can be defined separately.  This allows the mappers of various objects to be combined in any number of ways at runtime:
-        <&|formatting.myt:code&>
-            Address.mapper = mapper(Address, addresses)
-            User.mapper = mapper(User, users, properties = {
-                                'addresses' : relation(Address.mapper)
-                            }
-                          )
-        </&>
-
-</p>
 <p>Lets do some operations with these classes and see what happens:</p>
 
         <&|formatting.myt:code&>
@@ -289,7 +299,7 @@ VALUES (:user_id, :street, :city, :state, :zip)
 
         <&|formatting.myt:code&>
             User.mapper = mapper(User, users, properties = {
-                                'addresses' : relation(Address, addresses, private=True)
+                                'addresses' : relation(mapper(Address, addresses), private=True)
                             }
                           )
             del u.addresses[1]
@@ -310,8 +320,9 @@ DELETE FROM addresses WHERE addresses.address_id = :address_id
 <&|doclib.myt:item, name="backreferences", description="Useful Feature: Backreferences" &>
 <p>By creating relations with the <span class="codeline">backref</span> keyword, a bi-directional relationship can be created which will keep both ends of the relationship updated automatically, even without any database queries being executed.  Below, the User mapper is created with an "addresses" property, and the corresponding Address mapper receives a "backreference" to the User object via the property name "user":
         <&|formatting.myt:code&>
+            Address.mapper = mapper(Address, addresses)
             User.mapper = mapper(User, users, properties = {
-                                'addresses' : relation(Address, addresses, backref='user')
+                                'addresses' : relation(Address.mapper, backref='user')
                             }
                           )
 
@@ -379,7 +390,7 @@ the name is "pluralized", which currently is based on the English language (i.e.
         <&|formatting.myt:code&>
             # define a mapper
             User.mapper = mapper(User, users, properties = {
-                              'addresses' : relation(Address, addresses, private=True)
+                              'addresses' : relation(mapper(Address, addresses), private=True)
                             })
         
             # select users where username is 'jane', get the first element of the list
@@ -447,8 +458,9 @@ ORDER BY users.oid
         <p>With just a single parameter "lazy=False" specified to the relation object, the parent and child SQL queries can be joined together.
 
         <&|formatting.myt:code&>
+    Address.mapper = mapper(Address, addresses)
     User.mapper = mapper(User, users, properties = {
-                        'addresses' : relation(Address, addresses, lazy=False)
+                        'addresses' : relation(Address.mapper, lazy=False)
                     }
                   )
 
@@ -495,7 +507,7 @@ ORDER BY users.oid, addresses.oid
         <&|formatting.myt:code&>
           # user mapper with lazy addresses
           User.mapper = mapper(User, users, properties = {
-                                 'addresses' : relation(Address, addresses)
+                                 'addresses' : relation(mapper(Address, addresses))
                              }
                     )
                     
@@ -543,10 +555,13 @@ ORDER BY users.oid, addresses.oid
         class UserPrefs(object):
             pass
         UserPrefs.mapper = mapper(UserPrefs, prefs)
-    
+        
+        # address mapper
+        Address.mapper = mapper(Address, addresses)
+        
         # make a new mapper referencing everything.
         m = mapper(User, users, properties = dict(
-            addresses = relation(Address, addresses, lazy=True, private=True),
+            addresses = relation(Address.mapper, lazy=True, private=True),
             preferences = relation(UserPrefs.mapper, lazy=False, private=True),
         ))
         
@@ -598,8 +613,8 @@ VALUES (:address_id, :user_id, :email_address)
         <&|formatting.myt:code&>
     articles = Table('articles', engine,
         Column('article_id', Integer, primary_key = True),
-        Column('article_headline', String(150), key='headline'),
-        Column('article_body', TEXT, key='body'),
+        Column('headline', String(150), key='headline'),
+        Column('body', TEXT, key='body'),
     )
 
     keywords = Table('keywords', engine,
@@ -615,15 +630,15 @@ VALUES (:address_id, :user_id, :email_address)
     # class definitions
     class Keyword(object):
         def __init__(self, name = None):
-            self.name = name
+            self.keyword_name = name
 
     class Article(object):
         pass
-        
+    
     # define a mapper that does many-to-many on the 'itemkeywords' association 
     # table
     Article.mapper = mapper(Article, articles, properties = dict(
-            keywords = relation(Keyword, keywords, itemkeywords, lazy=False)
+            keywords = relation(mapper(Keyword, keywords), itemkeywords, lazy=False)
             )
         )
 
@@ -651,7 +666,7 @@ INSERT INTO article_keywords (article_id, keyword_id) VALUES (:article_id, :keyw
 [{'keyword_id': 1, 'article_id': 1}, {'keyword_id': 2, 'article_id': 1}]
 </&>
     # select articles based on a keyword.  select_by will handle the extra joins.
-    <&formatting.myt:poplink&>articles = Article.mapper.select_by(keyword='politics')
+    <&formatting.myt:poplink&>articles = Article.mapper.select_by(keyword_name='politics')
 <&|formatting.myt:codepopper, link="sql" &>
 SELECT articles.article_id AS articles_article_id, 
 articles.article_headline AS articles_article_headline, 
@@ -718,6 +733,9 @@ INSERT INTO article_keywords (article_id, keyword_id) VALUES (:article_id, :keyw
             class KeywordAssociation(object):
                 pass
 
+            # mapper for KeywordAssociation
+            KeywordAssociation.mapper = mapper(KeywordAssociation, itemkeywords)
+            
             # mappers for Users, Keywords
             User.mapper = mapper(User, users)
             Keyword.mapper = mapper(Keyword, keywords)
@@ -726,11 +744,11 @@ INSERT INTO article_keywords (article_id, keyword_id) VALUES (:article_id, :keyw
             # eager loading.  but the user who added each keyword, we usually dont need so specify 
             # lazy loading for that.
             m = mapper(Article, articles, properties=dict(
-                keywords = relation(KeywordAssociation, itemkeywords, lazy=False, association=Keyword, 
+                keywords = relation(KeywordAssociation.mapper, lazy=False, association=Keyword, 
                     primary_key = [itemkeywords.c.article_id, itemkeywords.c.keyword_id],
                     properties={
-                        'keyword' : relation(Keyword, lazy = False),
-                        'user' : relation(User, lazy = True)
+                        'keyword' : relation(Keyword, lazy = False), # uses primary Keyword mapper
+                        'user' : relation(User, lazy = True) # uses primary User mapper
                     }
                 )
                 )

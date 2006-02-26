@@ -16,40 +16,37 @@
     </ul></p>
     </&>
     <&|doclib.myt:item, name="getting", description="Accessing UnitOfWork Instances" &>
-    <p>To get a hold of the current unit of work, its available inside a thread local registry object (an instance of <span class="codeline">sqlalchemy.util.ScopedRegistry</span>) in the objectstore package:</p>
+    <p>The current unit of work is accessed via the Session interface.  The Session is available in a thread-local context from the objectstore module as follows:</p>
         <&|formatting.myt:code&>
-            u = objectstore.uow()
+            # get the current thread's session
+            s = objectstore.get_session()
         </&>
-    <p>You can also construct your own UnitOfWork object.  However, to get your mappers to talk to it, it has to be placed in the current thread-local scope:</p>
+    <p>The Session object acts as a proxy to an underlying UnitOfWork object.  Common methods include commit(), begin(), clear(), and delete().  Most of these methods are available at the module level in the objectstore module, which operate upon the Session returned by the get_session() function.
+    </p>
+    <p>To clear out the current thread's UnitOfWork, which has the effect of discarding the Identity Map and the lists of all objects that have been modified, just issue a clear:
+    </p>
     <&|formatting.myt:code&>
-        u = objectstore.UnitOfWork()
-        objectstore.uow.set(u)
+        # via module
+        objectstore.clear()
+        
+        # or via Session
+        objectstore.get_session().clear()
     </&>
-    <p>Whatever unit of work is present in the registry can be cleared out, which will create a new one upon the next access:</p>
-    <&|formatting.myt:code&>
-        objectstore.uow.clear()
-    </&>
-    <p>The uow attribute also can be made to use "application" scope, instead of "thread" scope, meaning all threads will access the same instance of UnitOfWork:</p>
-    <&|formatting.myt:code&>
-        objectstore.uow.defaultscope = 'application'
-    </&>
-    <p>Although theres not much advantage to doing so, and also would make mapper usage not thread safe.</p>
-    
-    <p>The objectstore package includes many module-level methods which all operate upon the current UnitOfWork object.  These include begin(), commit(), clear(), delete(), has_key(), and import_instance(), which are described below.</p>
+    <p>This is the easiest way to "start fresh", as in a web application that wants to have a newly loaded graph of objects on each request.  Any object instances before the clear operation should be discarded.</p>
     </&>
     <&|doclib.myt:item, name="begincommit", description="Begin/Commit" &>
     <p>The current thread's UnitOfWork object keeps track of objects that are modified.  It maintains the following lists:</p>
     <&|formatting.myt:code&>
         # new objects that were just constructed
-        objectstore.uow().new
+        objectstore.get_session().new
         
         # objects that exist in the database, that were modified
-        objectstore.uow().dirty
+        objectstore.get_session().dirty
         
         # objects that have been marked as deleted via objectstore.delete()
-        objectstore.uow().deleted
+        objectstore.get_session().deleted
     </&>
-    <p>To commit the changes stored in those lists, just issue a commit.  This can be called via <span class="codeline">objectstore.uow().commit()</span>, or through the module-level convenience method in the objectstore module:</p>
+    <p>To commit the changes stored in those lists, just issue a commit.  This can be called via <span class="codeline">objectstore.session().commit()</span>, or through the module-level convenience method in the objectstore module:</p>
     <&|formatting.myt:code&>
         objectstore.commit()
     </&>
@@ -63,27 +60,27 @@
     <&|formatting.myt:code&>
         objectstore.commit(myobj1, myobj2, ...)
     </&>
-    <p>This feature should be used carefully, as it may result in an inconsistent save state between dependent objects (it should manage to locate loaded dependencies and save those also, but it hasnt been tested much).</p>
+    <p>Committing just a subset of instances should be used carefully, as it may result in an inconsistent save state between dependent objects (it should manage to locate loaded dependencies and save those also, but it hasnt been tested much).</p>
     
     <&|doclib.myt:item, name="begin", description="Controlling Scope with begin()" &>
-    
+    <p><b>status</b> - release 0.1.1/SVN head</p>
     <p>The "scope" of the unit of work commit can be controlled further by issuing a begin().  A begin operation constructs a new UnitOfWork object and sets it as the currently used UOW.  It maintains a reference to the original UnitOfWork as its "parent", and shares the same "identity map" of objects that have been loaded from the database within the scope of the parent UnitOfWork.  However, the "new", "dirty", and "deleted" lists are empty.  This has the effect that only changes that take place after the begin() operation get logged to the current UnitOfWork, and therefore those are the only changes that get commit()ted.  When the commit is complete, the "begun" UnitOfWork removes itself and places the parent UnitOfWork as the current one again.</p>
+<p>The begin() method returns a transactional object, upon which you can call commit() or rollback().  <b>Only this transactional object controls the transaction</b> - commit() upon the Session will do nothing until commit() or rollback() is called upon the transactional object.</p>
     <&|formatting.myt:code&>
         # modify an object
         myobj1.foo = "something new"
         
         # begin an objectstore scope
-        # this is equivalent to objectstore.uow().begin()
-        objectstore.begin()
+        # this is equivalent to objectstore.get_session().begin()
+        trans = objectstore.begin()
         
         # modify another object
         myobj2.lala = "something new"
         
         # only 'myobj2' is saved
-        objectstore.commit()
+        trans.commit()
     </&>
-    <p>As always, the actual database transaction begin/commit occurs entirely within the objectstore.commit() operation.</p>
-    <p>At the moment, begin/commit supports the same "nesting" behavior as the SQLEngine (note this behavior is not the original "nested" behavior), meaning that repeated calls to begin() will increment a counter, which is not released until that same number of commit() statements occur.</p>
+    <p>begin/commit supports the same "nesting" behavior as the SQLEngine (note this behavior is not the original "nested" behavior), meaning that many begin() calls can be made, but only the outermost transactional object will actually perform a commit().  Similarly, calls to the commit() method on the Session, which might occur in function calls within the transaction, will not do anything; this allows an external function caller to control the scope of transactions used within the functions.</p>
     </&>
     <&|doclib.myt:item, name="transactionnesting", description="Nesting UnitOfWork in a Database Transaction" &>
     <p>The UOW commit operation places its INSERT/UPDATE/DELETE operations within the scope of a database transaction controlled by a SQLEngine:
@@ -169,6 +166,100 @@
     </&>
 <p>Note that the import_instance() function will either mark the deserialized object as the official copy in the current identity map, which includes updating its _identity_key with the current application's class instance, or it will discard it and return the corresponding object that was already present.</p>
     </&>
-    <&|doclib.myt:item, name="rollback", description="Rollback" &>
+
+    <&|doclib.myt:item, name="advscope", description="Advanced UnitOfWork Management"&>
+
+    <&|doclib.myt:item, name="object", description="Per-Object Sessions" &>
+    <p><b>status</b> - 'using' function not yet released</p>
+    <p>Sessions can be created on an ad-hoc basis and used for individual groups of objects and operations.  This has the effect of bypassing the entire "global"/"threadlocal" UnitOfWork system and explicitly using a particular Session:</p>
+    <&|formatting.myt:code&>
+        # make a new Session with a global UnitOfWork
+        s = objectstore.Session()
+        
+        # make objects bound to this Session
+        x = MyObj(_sa_session=s)
+        
+        # perform mapper operations bound to this Session
+        # (this function coming soon)
+        r = MyObj.mapper.using(s).select_by(id=12)
+            
+        # get the session that corresponds to an instance
+        s = objectstore.get_session(x)
+        
+        # commit 
+        s.commit()
+
+        # perform a block of operations with this session set within the current scope
+        objectstore.push_session(s)
+        try:
+            r = mapper.select_by(id=12)
+            x = new MyObj()
+            objectstore.commit()
+        finally:
+            objectstore.pop_session()
+    </&>
+    </&>
+
+    <&|doclib.myt:item, name="scope", description="Custom Session Objects/Custom Scopes" &>
+
+    <p>For users who want to make their own Session subclass, or replace the algorithm used to return scoped Session objects (i.e. the objectstore.get_session() method):</p>
+    <&|formatting.myt:code&>
+        # make a new Session
+        s = objectstore.Session()
+        
+        # set it as the current thread-local session
+        objectstore.session_registry.set(s)
+
+        # set the objectstore's session registry to a different algorithm
+        
+        def create_session():
+            """creates new sessions"""
+            return objectstore.Session()
+        def mykey():
+            """creates contextual keys to store scoped sessions"""
+            return "mykey"
+            
+        objectstore.session_registry = sqlalchemy.util.ScopedRegistry(createfunc=create_session, scopefunc=mykey)
+    </&>
+    </&>
+
+    <&|doclib.myt:item, name="logging", description="Analyzing Object Commits" &>
+    <p>The objectstore module can log an extensive display of its "commit plans", which is a graph of its internal representation of objects before they are committed to the database.  To turn this logging on:
+    <&|formatting.myt:code&>
+        # make an engine with echo_uow
+        engine = create_engine('myengine...', echo_uow=True)
+        
+        # globally turn on echo
+        objectstore.LOG = True
+    </&>
+    <p>Commits will then dump to the standard output displays like the following:</p>
+    <&|formatting.myt:code, syntaxtype=None&>
+    Task dump:
+     UOWTask(6034768) 'User/users/6015696'
+      |
+      |- Save elements
+      |- Save: UOWTaskElement(6034800): User(6016624) (save)
+      |
+      |- Save dependencies
+      |- UOWDependencyProcessor(6035024) 'addresses' attribute on saved User's (UOWTask(6034768) 'User/users/6015696')
+      |       |-UOWTaskElement(6034800): User(6016624) (save)
+      |
+      |- Delete dependencies
+      |- UOWDependencyProcessor(6035056) 'addresses' attribute on User's to be deleted (UOWTask(6034768) 'User/users/6015696')
+      |       |-(no objects)
+      |
+      |- Child tasks
+      |- UOWTask(6034832) 'Address/email_addresses/6015344'
+      |   |
+      |   |- Save elements
+      |   |- Save: UOWTaskElement(6034864): Address(6034384) (save)
+      |   |- Save: UOWTaskElement(6034896): Address(6034256) (save)
+      |   |----
+      | 
+      |----
+    </&>
+    <p>The above graph can be read straight downwards to determine the order of operations.  It indicates "save User 6016624, process each element in the 'addresses' list on User 6016624, save Address 6034384, Address 6034256".
+    </&>
+    
     </&>
 </&>

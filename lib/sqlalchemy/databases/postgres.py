@@ -11,8 +11,9 @@ import sqlalchemy.engine as engine
 import sqlalchemy.schema as schema
 import sqlalchemy.ansisql as ansisql
 import sqlalchemy.types as sqltypes
+from sqlalchemy.exceptions import *
 from sqlalchemy import *
-import sqlalchemy.databases.information_schema as ischema
+import information_schema as ischema
 
 try:
     import psycopg2 as psycopg
@@ -43,7 +44,10 @@ class PG1DateTime(sqltypes.DateTime):
     def convert_bind_param(self, value, engine):
         # TODO: perform appropriate postgres1 conversion between Python DateTime/MXDateTime
         # this one doesnt seem to work with the "emulation" mode
-        return psycopg.TimestampFromMx(value)
+        if value is not None:
+            return psycopg.TimestampFromMx(value)
+        else:
+            return None
     def convert_result_value(self, value, engine):
         # TODO: perform appropriate postgres1 conversion between Python DateTime/MXDateTime
         return value
@@ -56,20 +60,26 @@ class PG1Date(sqltypes.Date):
     def convert_bind_param(self, value, engine):
         # TODO: perform appropriate postgres1 conversion between Python DateTime/MXDateTime
         # this one doesnt seem to work with the "emulation" mode
-        return psycopg.DateFromMx(value)
+        if value is not None:
+            return psycopg.DateFromMx(value)
+        else:
+            return None
     def convert_result_value(self, value, engine):
         # TODO: perform appropriate postgres1 conversion between Python DateTime/MXDateTime
         return value
     def get_col_spec(self):
         return "DATE"
-class PG2Time(sqltypes.Date):
+class PG2Time(sqltypes.Time):
     def get_col_spec(self):
         return "TIME"
-class PG1Time(sqltypes.Date):
+class PG1Time(sqltypes.Time):
     def convert_bind_param(self, value, engine):
         # TODO: perform appropriate postgres1 conversion between Python DateTime/MXDateTime
         # this one doesnt seem to work with the "emulation" mode
-        return psycopg.TimeFromMx(value)
+        if value is not None:
+            return psycopg.TimeFromMx(value)
+        else:
+            return None
     def convert_result_value(self, value, engine):
         # TODO: perform appropriate postgres1 conversion between Python DateTime/MXDateTime
         return value
@@ -156,7 +166,7 @@ class PGSQLEngine(ansisql.ANSISQLEngine):
         self.use_oids = use_oids
         if module is None:
             if psycopg is None:
-                raise "Couldnt locate psycopg1 or psycopg2: specify postgres module argument"
+                raise ArgumentError("Couldnt locate psycopg1 or psycopg2: specify postgres module argument")
             self.module = psycopg
         else:
             self.module = module
@@ -186,17 +196,14 @@ class PGSQLEngine(ansisql.ANSISQLEngine):
         else:
             return sqltypes.adapt_type(typeobj, pg1_colspecs)
 
-    def last_inserted_ids(self):
-        return self.context.last_inserted_ids
-
     def compiler(self, statement, bindparams, **kwargs):
         return PGCompiler(self, statement, bindparams, **kwargs)
 
-    def schemagenerator(self, proxy, **params):
-        return PGSchemaGenerator(proxy, **params)
+    def schemagenerator(self, **params):
+        return PGSchemaGenerator(self, **params)
 
-    def schemadropper(self, proxy, **params):
-        return PGSchemaDropper(proxy, **params)
+    def schemadropper(self, **params):
+        return PGSchemaDropper(self, **params)
 
     def defaultrunner(self, proxy):
         return PGDefaultRunner(self, proxy)
@@ -207,7 +214,10 @@ class PGSQLEngine(ansisql.ANSISQLEngine):
         return self._default_schema_name
         
     def last_inserted_ids(self):
-        return self.context.last_inserted_ids
+        if self.context.last_inserted_ids is None:
+            raise InvalidRequestError("no INSERT executed, or cant use cursor.lastrowid without Postgres OIDs enabled")
+        else:
+            return self.context.last_inserted_ids
 
     def oid_column_name(self):
         if self.use_oids:
@@ -221,7 +231,8 @@ class PGSQLEngine(ansisql.ANSISQLEngine):
     def post_exec(self, proxy, compiled, parameters, **kwargs):
         if getattr(compiled, "isinsert", False) and self.context.last_inserted_ids is None:
             if not self.use_oids:
-                raise "cant use cursor.lastrowid without OIDs enabled"
+                pass
+                # will raise invalid error when they go to get them
             else:
                 table = compiled.statement.table
                 cursor = proxy()
@@ -254,6 +265,12 @@ class PGSQLEngine(ansisql.ANSISQLEngine):
 
 class PGCompiler(ansisql.ANSICompiler):
 
+    def visit_function(self, func):
+        if len(func.clauses):
+            super(PGCompiler, self).visit_function(func)
+        else:
+            self.strings[func] = func.name
+        
     def visit_insert_column(self, column):
         # Postgres advises against OID usage and turns it off in 8.1,
         # effectively making cursor.lastrowid
@@ -271,23 +288,31 @@ class PGCompiler(ansisql.ANSICompiler):
                 text += " \n LIMIT ALL"
             text += " OFFSET " + str(select.offset)
         return text
+
+    def binary_operator_string(self, binary):
+        if isinstance(binary.type, sqltypes.String) and binary.operator == '+':
+            return '||'
+        else:
+            return ansisql.ANSICompiler.binary_operator_string(self, binary)        
         
 class PGSchemaGenerator(ansisql.ANSISchemaGenerator):
+        
     def get_column_specification(self, column, override_pk=False, **kwargs):
         colspec = column.name
-        if isinstance(column.default, schema.PassiveDefault):
-            colspec += " DEFAULT " + column.default.text
-        elif column.primary_key and isinstance(column.type, types.Integer) and (column.default is None or (isinstance(column.default, schema.Sequence) and column.default.optional)):
+        if column.primary_key and isinstance(column.type, types.Integer) and (column.default is None or (isinstance(column.default, schema.Sequence) and column.default.optional)):
             colspec += " SERIAL"
         else:
             colspec += " " + column.type.get_col_spec()
+            default = self.get_column_default_string(column)
+            if default is not None:
+                colspec += " DEFAULT " + default
 
         if not column.nullable:
             colspec += " NOT NULL"
         if column.primary_key and not override_pk:
             colspec += " PRIMARY KEY"
         if column.foreign_key:
-            colspec += " REFERENCES %s(%s)" % (column.column.foreign_key.column.table.fullname, column.column.foreign_key.column.name) 
+            colspec += " REFERENCES %s(%s)" % (column.foreign_key.column.table.fullname, column.foreign_key.column.name) 
         return colspec
 
     def visit_sequence(self, sequence):
@@ -303,12 +328,19 @@ class PGSchemaDropper(ansisql.ANSISchemaDropper):
 
 class PGDefaultRunner(ansisql.ANSIDefaultRunner):
     def get_column_default(self, column):
-        if column.primary_key and isinstance(column.type, types.Integer) and (column.default is None or (isinstance(column.default, schema.Sequence) and column.default.optional)):
-            c = self.proxy("select nextval('%s_%s_seq')" % (column.table.name, column.name))
-            return c.fetchone()[0]
+        if column.primary_key:
+            # passive defaults on primary keys have to be overridden
+            if isinstance(column.default, schema.PassiveDefault):
+                c = self.proxy("select %s" % column.default.arg)
+                return c.fetchone()[0]
+            elif isinstance(column.type, types.Integer) and (column.default is None or (isinstance(column.default, schema.Sequence) and column.default.optional)):
+                c = self.proxy("select nextval('%s_%s_seq')" % (column.table.name, column.name))
+                return c.fetchone()[0]
+            else:
+                return ansisql.ANSIDefaultRunner.get_column_default(self, column)
         else:
             return ansisql.ANSIDefaultRunner.get_column_default(self, column)
-    
+        
     def visit_sequence(self, seq):
         if not seq.optional:
             c = self.proxy("select nextval('%s')" % seq.name)

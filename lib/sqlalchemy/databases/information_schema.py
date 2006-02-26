@@ -3,6 +3,7 @@ import sqlalchemy.engine as engine
 import sqlalchemy.schema as schema
 import sqlalchemy.ansisql as ansisql
 import sqlalchemy.types as sqltypes
+from sqlalchemy.exceptions import *
 from sqlalchemy import *
 from sqlalchemy.ansisql import *
 
@@ -31,6 +32,7 @@ gen_columns = schema.Table("columns", generic_engine,
     Column("character_maximum_length", Integer),
     Column("numeric_precision", Integer),
     Column("numeric_scale", Integer),
+    Column("column_default", Integer),
     schema="information_schema")
     
 gen_constraints = schema.Table("table_constraints", generic_engine,
@@ -69,7 +71,7 @@ class ISchema(object):
             try:
                 gen_tbl = globals()['gen_'+name]
             except KeyError:
-                raise AttributeError('information_schema table %s not found' % name)
+                raise ArgumentError('information_schema table %s not found' % name)
             self.cache[name] = gen_tbl.toengine(self.engine)
         return self.cache[name]
 
@@ -109,15 +111,16 @@ def reflecttable(engine, table, ischema_names, use_mysql=False):
         row = c.fetchone()
         if row is None:
             break
-#        print "row! " + repr(row)
+        #print "row! " + repr(row)
  #       continue
-        (name, type, nullable, charlen, numericprec, numericscale) = (
+        (name, type, nullable, charlen, numericprec, numericscale, default) = (
             row[columns.c.column_name], 
             row[columns.c.data_type], 
             row[columns.c.is_nullable] == 'YES', 
             row[columns.c.character_maximum_length],
             row[columns.c.numeric_precision],
             row[columns.c.numeric_scale],
+            row[columns.c.column_default]
             )
 
         args = []
@@ -127,13 +130,14 @@ def reflecttable(engine, table, ischema_names, use_mysql=False):
         coltype = ischema_names[type]
         #print "coltype " + repr(coltype) + " args " +  repr(args)
         coltype = coltype(*args)
-        table.append_item(schema.Column(name, coltype, nullable = nullable))
+        colargs= []
+        if default is not None:
+            colargs.append(PassiveDefault(sql.text(default, escape=False)))
+        table.append_item(schema.Column(name, coltype, nullable=nullable, *colargs))
 
-    s = select([constraints.c.constraint_name, constraints.c.constraint_type, constraints.c.table_name, key_constraints], use_labels=True)
+    s = select([constraints.c.constraint_name, constraints.c.constraint_type, constraints.c.table_name, key_constraints], use_labels=True, from_obj=[constraints.join(column_constraints, column_constraints.c.constraint_name==constraints.c.constraint_name).join(key_constraints, key_constraints.c.constraint_name==column_constraints.c.constraint_name)])
     if not use_mysql:
         s.append_column(column_constraints)
-        s.append_whereclause(key_constraints.c.constraint_name==column_constraints.c.constraint_name)
-        s.append_whereclause(column_constraints.c.constraint_name==constraints.c.constraint_name)
         s.append_whereclause(constraints.c.table_name==table.name)
         s.append_whereclause(constraints.c.table_schema==current_schema)
         colmap = [constraints.c.constraint_type, key_constraints.c.column_name, column_constraints.c.table_schema, column_constraints.c.table_name, column_constraints.c.column_name]
