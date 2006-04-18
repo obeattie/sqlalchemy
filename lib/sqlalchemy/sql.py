@@ -702,7 +702,8 @@ class TypeClause(ClauseElement):
         self.type = type
     def accept_visitor(self, visitor):
         visitor.visit_typeclause(self)
-               
+    def _get_from_objects(self):
+        return []           
 class TextClause(ClauseElement):
     """represents literal a SQL text fragment.  public constructor is the 
     text() function.  
@@ -917,13 +918,14 @@ class Join(FromClause):
     def __init__(self, left, right, onclause=None, isouter = False):
         self.left = left
         self.right = right
-        
         # TODO: if no onclause, do NATURAL JOIN
         if onclause is None:
             self.onclause = self._match_primaries(left, right)
         else:
             self.onclause = onclause
         self.isouter = isouter
+
+    name = property(lambda self: "Join on %s, %s" % (self.left.name, self.right.name))
 
     def _locate_oid_column(self):
         return self.left.oid_column
