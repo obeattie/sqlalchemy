@@ -465,7 +465,9 @@ class ClauseElement(object):
         the statement.  """
         
         if compiler is None:
-            if engine is not None:
+            if dialect is not None:
+                compiler = dialect.compiler(self, parameters)
+            elif engine is not None:
                 compiler = engine.compiler(self, parameters)
             elif self.engine is not None:
                 compiler = self.engine.compiler(self, parameters)

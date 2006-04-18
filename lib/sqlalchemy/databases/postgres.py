@@ -169,7 +169,7 @@ class PGExecutionContext(default.DefaultExecutionContext):
         return
 
     def post_exec(self, engine, proxy, compiled, parameters, **kwargs):
-        if getattr(compiled, "isinsert", False) and self.context.last_inserted_ids is None:
+        if getattr(compiled, "isinsert", False) and self._last_inserted_ids is None:
             if not engine.dialect.use_oids:
                 pass
                 # will raise invalid error when they go to get them
@@ -178,7 +178,7 @@ class PGExecutionContext(default.DefaultExecutionContext):
                 cursor = proxy()
                 if cursor.lastrowid is not None and table is not None and len(table.primary_key):
                     s = sql.select(table.primary_key, table.oid_column == cursor.lastrowid)
-                    c = s.compile()
+                    c = s.compile(engine=engine)
                     cursor = proxy(str(c), c.get_params())
                     row = cursor.fetchone()
                 self._last_inserted_ids = [v for v in row]
@@ -226,9 +226,9 @@ class PGDialect(ansisql.ANSIDialect):
     def defaultrunner(self, engine, proxy):
         return PGDefaultRunner(engine, proxy)
         
-    def get_default_schema_name(self):
+    def get_default_schema_name(self, connection):
         if not hasattr(self, '_default_schema_name'):
-            self._default_schema_name = text("select current_schema()", self).scalar()
+            self._default_schema_name = connection.scalar("select current_schema()", None)
         return self._default_schema_name
         
     def last_inserted_ids(self):
@@ -257,15 +257,13 @@ class PGDialect(ansisql.ANSIDialect):
     def dbapi(self):
         return self.module
 
-    def reflecttable(self, table):
+    def reflecttable(self, connection, table):
         if self.version == 2:
             ischema_names = pg2_ischema_names
         else:
             ischema_names = pg1_ischema_names
 
-        # give ischema the given table's engine with which to look up 
-        # other tables, not 'self', since it could be a ProxyEngine
-        ischema.reflecttable(table.engine, table, ischema_names)
+        ischema.reflecttable(connection, table, ischema_names)
 
 class PGCompiler(ansisql.ANSICompiler):
         

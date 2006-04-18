@@ -173,7 +173,7 @@ class ANSICompiler(sql.Compiled):
         if column.table is None or column.table.name is None:
             self.strings[column] = column.name
         else:
-            if False and column.table.oid_column is column:
+            if column.table.oid_column is column:
                 n = self.dialect.oid_column_name()
                 if n is not None:
                     self.strings[column] = "%s.%s" % (column.table.name, n)

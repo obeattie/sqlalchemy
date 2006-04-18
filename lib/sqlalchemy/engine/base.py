@@ -79,8 +79,8 @@ class Dialect(sql.AbstractDialect):
         """subclasses override this method to provide the DBAPI module used to establish
         connections."""
         raise NotImplementedError()
-    def get_default_schema_name(self, proxy):
-        """returns the currently selected schema given an execution proxy"""
+    def get_default_schema_name(self, connection):
+        """returns the currently selected schema given an connection"""
         raise NotImplementedError()
     def execution_context(self):
         """returns a new ExecutionContext object."""
@@ -229,7 +229,9 @@ class Connection(object):
     def reflecttable(self, table, **kwargs):
         """reflects the columns in the given table from the database."""
         return self.engine.reflecttable(table, connection=self, **kwargs)
-    
+    def default_schema_name(self):
+        return self.engine.dialect.get_default_schema_name(self)
+        
     def _execute_raw(self, statement, parameters=None, cursor=None, echo=None, context=None, **kwargs):
         if cursor is None:
             cursor = self.connection.cursor()
@@ -255,11 +257,13 @@ class Connection(object):
         try:
             self.engine.dialect.do_execute(c, statement, parameters, context=context)
         except Exception, e:
+            self.engine.dialect.do_rollback(self.connection)
             raise exceptions.SQLError(statement, parameters, e)
     def _executemany(self, c, statement, parameters, context=None):
         try:
             self.engine.dialect.do_executemany(c, statement, parameters, context=context)
         except Exception, e:
+            self.engine.dialect.do_rollback(self.connection)
             raise exceptions.SQLError(statement, parameters, e)
     def proxy(self, statement=None, parameters=None):
         """executes the given statement string and parameter object.
@@ -339,7 +343,6 @@ class ComposedSQLEngine(sql.Engine):
     def text(self, text, *args, **kwargs):
         """returns a sql.text() object for performing literal queries."""
         return sql.text(text, engine=self, *args, **kwargs)
-
 
     def _run_visitor(self, visitorcallable, element, connection=None, **kwargs):
         if connection is None:
