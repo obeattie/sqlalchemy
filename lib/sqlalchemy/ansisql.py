@@ -45,7 +45,7 @@ class ANSIDialect(default.DefaultDialect):
 
 class ANSICompiler(sql.Compiled):
     """default implementation of Compiled, which compiles ClauseElements into ANSI-compliant SQL strings."""
-    def __init__(self, dialect, statement, parameters=None, typemap=None, positional=None, paramstyle=None, **kwargs):
+    def __init__(self, dialect, statement, parameters=None, **kwargs):
         """constructs a new ANSICompiler object.
         
         dialect - Dialect to be used
@@ -63,7 +63,7 @@ class ANSICompiler(sql.Compiled):
         self.wheres = {}
         self.strings = {}
         self.select_stack = []
-        self.typemap = typemap or {}
+        self.typemap = {}
         self.isinsert = False
         self.isupdate = False
         self.bindtemplate = ":%s"

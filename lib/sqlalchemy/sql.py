@@ -456,13 +456,24 @@ class ClauseElement(object):
             return multiparams[0]
         else:
             return params
-    def compile(self, engine=None, parameters=None, typemap=None, compiler=None, dialect=None):
-        """compiles this SQL expression using its underlying Engine to produce
-        a Compiler object.  Alternatively, a Compiler can be provided, or provided via a Dialect.
-        If no Compiler/Dialect/Engine arguments are given and this object is not bound to an Engine, 
-        an ANSICompiler is used with an ANSIDialect.
+    def compile(self, engine=None, parameters=None, compiler=None, dialect=None):
+        """compiles this SQL expression.
+        
+        Uses the given Compiler, or the given Dialect or Engine to create a Compiler.  If no compiler
+        arguments are given, tries to use the underlying Engine this ClauseElement is bound
+        to to create a Compiler, if any.  Finally, if there is no bound Engine, uses an ANSIDialect
+        to create a default Compiler.
+        
         bindparams is a dictionary representing the default bind parameters to be used with 
-        the statement.  """
+        the statement.  if the bindparams is a list, it is assumed to be a list of dictionaries
+        and the first dictionary in the list is used with which to compile against.
+        The bind parameters can in some cases determine the output of the compilation, such as for UPDATE
+        and INSERT statements the bind parameters that are present determine the SET and VALUES clause of 
+        those statements.
+        """
+
+        if (isinstance(parameters, list) or isinstance(parameters, tuple)):
+            parameters = parameters[0]
         
         if compiler is None:
             if dialect is not None:

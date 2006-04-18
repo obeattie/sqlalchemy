@@ -391,8 +391,9 @@ class DeferredTest(MapperSuperTest):
             o2 = l[2]
             print o2.description
 
+        orderby = str(orders.default_order_by()[0].compile(engine=db))
         self.assert_sql(db, go, [
-            ("SELECT orders.order_id AS orders_order_id, orders.user_id AS orders_user_id, orders.isopen AS orders_isopen FROM orders ORDER BY orders.%s" % orders.default_order_by()[0].key, {}),
+            ("SELECT orders.order_id AS orders_order_id, orders.user_id AS orders_user_id, orders.isopen AS orders_isopen FROM orders ORDER BY %s" % orderby, {}),
             ("SELECT orders.description AS orders_description FROM orders WHERE orders.order_id = :orders_order_id", {'orders_order_id':3})
         ])
     
@@ -419,8 +420,10 @@ class DeferredTest(MapperSuperTest):
             l = m.select()
             o2 = l[2]
             print o2.opened, o2.description, o2.userident
+
+        orderby = str(orders.default_order_by()[0].compile(db))
         self.assert_sql(db, go, [
-            ("SELECT orders.order_id AS orders_order_id FROM orders ORDER BY orders.%s" % orders.default_order_by()[0].key, {}),
+            ("SELECT orders.order_id AS orders_order_id FROM orders ORDER BY %s" % orderby, {}),
             ("SELECT orders.user_id AS orders_user_id, orders.description AS orders_description, orders.isopen AS orders_isopen FROM orders WHERE orders.order_id = :orders_order_id", {'orders_order_id':3})
         ])
         
@@ -431,8 +434,10 @@ class DeferredTest(MapperSuperTest):
         def go():
             l = m2.select()
             print l[2].user_id
+            
+        orderby = str(orders.default_order_by()[0].compile(db))
         self.assert_sql(db, go, [
-            ("SELECT orders.order_id AS orders_order_id, orders.description AS orders_description, orders.isopen AS orders_isopen FROM orders ORDER BY orders.%s" % orders.default_order_by()[0].key, {}),
+            ("SELECT orders.order_id AS orders_order_id, orders.description AS orders_description, orders.isopen AS orders_isopen FROM orders ORDER BY %s" % orderby, {}),
             ("SELECT orders.user_id AS orders_user_id FROM orders WHERE orders.order_id = :orders_order_id", {'orders_order_id':3})
         ])
         objectstore.clear()
@@ -441,7 +446,7 @@ class DeferredTest(MapperSuperTest):
             l = m3.select()
             print l[3].user_id
         self.assert_sql(db, go, [
-            ("SELECT orders.order_id AS orders_order_id, orders.user_id AS orders_user_id, orders.description AS orders_description, orders.isopen AS orders_isopen FROM orders ORDER BY orders.%s" % orders.default_order_by()[0].key, {}),
+            ("SELECT orders.order_id AS orders_order_id, orders.user_id AS orders_user_id, orders.description AS orders_description, orders.isopen AS orders_isopen FROM orders ORDER BY %s" % orderby, {}),
         ])
 
     def testdeepoptions(self):

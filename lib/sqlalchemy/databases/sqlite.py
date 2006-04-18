@@ -210,9 +210,6 @@ class SQLiteDialect(ansisql.ANSIDialect):
                 table.columns[col]._set_primary_key()
                     
 class SQLiteCompiler(ansisql.ANSICompiler):
-    def __init__(self, *args, **params):
-        params.setdefault('paramstyle', 'named')
-        ansisql.ANSICompiler.__init__(self, *args, **params)
     def limit_clause(self, select):
         text = ""
         if select.limit is not None:
