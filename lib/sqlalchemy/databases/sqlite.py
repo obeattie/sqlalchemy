@@ -154,8 +154,8 @@ class SQLiteDialect(ansisql.ANSIDialect):
     def push_session(self):
         raise InvalidRequestError("SQLite doesn't support nested sessions")
 
-    def reflecttable(self, table):
-        c = self.execute("PRAGMA table_info(" + table.name + ")", {})
+    def reflecttable(self, connection, table):
+        c = connection.execute("PRAGMA table_info(" + table.name + ")", {})
         while True:
             row = c.fetchone()
             if row is None:
@@ -174,7 +174,7 @@ class SQLiteDialect(ansisql.ANSIDialect):
                 #print "args! " +repr(args)
                 coltype = coltype(*[int(a) for a in args])
             table.append_item(schema.Column(name, coltype, primary_key = primary_key, nullable = nullable))
-        c = self.execute("PRAGMA foreign_key_list(" + table.name + ")", {})
+        c = connection.execute("PRAGMA foreign_key_list(" + table.name + ")", {})
         while True:
             row = c.fetchone()
             if row is None:
@@ -183,10 +183,10 @@ class SQLiteDialect(ansisql.ANSIDialect):
             #print "row! " + repr(row)
             # look up the table based on the given table's engine, not 'self',
             # since it could be a ProxyEngine
-            remotetable = Table(tablename, table.engine, autoload = True)
+            remotetable = schema.Table(tablename, table.metadata, autoload=True, autoload_with=connection)
             table.c[localcol].append_item(schema.ForeignKey(remotetable.c[remotecol]))
         # check for UNIQUE indexes
-        c = self.execute("PRAGMA index_list(" + table.name + ")", {})
+        c = connection.execute("PRAGMA index_list(" + table.name + ")", {})
         unique_indexes = []
         while True:
             row = c.fetchone()
@@ -196,7 +196,7 @@ class SQLiteDialect(ansisql.ANSIDialect):
                 unique_indexes.append(row[1])
         # loop thru unique indexes for one that includes the primary key
         for idx in unique_indexes:
-            c = self.execute("PRAGMA index_info(" + idx + ")", {})
+            c = connection.execute("PRAGMA index_info(" + idx + ")", {})
             cols = []
             while True:
                 row = c.fetchone()

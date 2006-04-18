@@ -72,8 +72,8 @@ class Dialect(sql.AbstractDialect):
 
         compiler is called within the context of the compile() method."""
         raise NotImplementedError()
-    def reflecttable(self, engine, table):
-        """given an Engine and a Table object, reflects its columns and properties from the database."""
+    def reflecttable(self, connection, table):
+        """given an Connection and a Table object, reflects its columns and properties from the database."""
         raise NotImplementedError()
     def dbapi(self):
         """subclasses override this method to provide the DBAPI module used to establish
@@ -211,18 +211,24 @@ class Connection(object):
         proxy(str(compiled), parameters)
         context.post_exec(self.engine, proxy, compiled, parameters, **kwargs)
         return ResultProxy(self.engine, self, cursor, context, typemap=compiled.typemap)
+        
+    # poor man's multimethod/generic function thingy
     executors = {
         sql.ClauseElement : execute_clauseelement,
         sql.Compiled : execute_compiled,
         schema.SchemaItem:execute_default,
         str.__mro__[-2] : execute_text
     }
+    
     def create(self, entity, **kwargs):
         """creates a table or index given an appropriate schema object."""
         return self.engine.create(entity, connection=self, **kwargs)
     def drop(self, entity, **kwargs):
         """drops a table or index given an appropriate schema object."""
         return self.engine.drop(entity, connection=self, **kwargs)
+    def reflecttable(self, table, **kwargs):
+        """reflects the columns in the given table from the database."""
+        return self.engine.reflecttable(table, connection=self, **kwargs)
     
     def _execute_raw(self, statement, parameters=None, cursor=None, echo=None, context=None, **kwargs):
         if cursor is None:
@@ -360,9 +366,17 @@ class ComposedSQLEngine(sql.Engine):
     def connect(self, **kwargs):
         return Connection(self, **kwargs)
         
-    def reflecttable(self, table):
+    def reflecttable(self, table, connection=None):
         """given a Table object, reflects its columns and properties from the database."""
-        self.dialect.reflecttable(self, table)
+        if connection is None:
+            conn = self.connect()
+        else:
+            conn = connection
+        try:
+            self.dialect.reflecttable(conn, table)
+        finally:
+            if connection is None:
+                conn.close()
 
     def raw_connection(self):
         """returns a DBAPI connection."""

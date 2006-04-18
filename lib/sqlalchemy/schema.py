@@ -63,6 +63,7 @@ class TableSingleton(type):
             name = str(name)    # in case of incoming unicode
             schema = kwargs.get('schema', None)
             autoload = kwargs.pop('autoload', False)
+            autoload_with = kwargs.pop('autoload_with', False)
             redefine = kwargs.pop('redefine', False)
             mustexist = kwargs.pop('mustexist', False)
             useexisting = kwargs.pop('useexisting', False)
@@ -83,7 +84,10 @@ class TableSingleton(type):
             # we do it after the table is in the singleton dictionary to support
             # circular foreign keys
             if autoload:
-                metadata.engine.reflecttable(table)
+                if autoload_with:
+                    autoload_with.reflecttable(table)
+                else:
+                    metadata.engine.reflecttable(table)
             # initialize all the column, etc. objects.  done after
             # reflection to allow user-overrides
             table._init_items(*args)

@@ -70,12 +70,12 @@ class RelationTest(testbase.PersistTest):
         global c
         a = A(); a.name = "a1"
         b = B(); b.name = "b1"
+        session.add(a,b)
         c = C(); c.name = "c1"; c.a_row = a
         # we must have more than one d row or it won't fail
         d1 = D(); d1.name = "d1"; d1.b_row = b; d1.c_row = c
         d2 = D(); d2.name = "d2"; d2.b_row = b; d2.c_row = c
         d3 = D(); d3.name = "d3"; d3.b_row = b; d3.c_row = c
-        session.register_new(a,b,c,d1,d2,d3)
         
     def tearDown(self):
         conn = session.connect()

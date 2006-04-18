@@ -185,8 +185,19 @@ class Session(object):
         for o in obj:
             self._bind_to(o)
             self.uow.register_clean(o)
-        
+    
+    def add(self, *obj):
+        """given some objects, if they have no identity they will be registered as new in this session.
+        if they have an identity, its verified that they are already part of this session."""
+        for o in obj:
+            if hasattr(o, '_instance_key'):
+                if not self.uow.has_key(o._instance_key):
+                    raise InvalidRequestError("Instance '%s' is not bound to this Session" % repr(o))
+            else:
+                self.register_new(o)
+            
     def register_new(self, *obj):
+        """registers the given objects as "new" and binds them to this session."""
         for o in obj:
             self._bind_to(o)
             self.uow.register_new(o)

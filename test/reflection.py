@@ -1,8 +1,6 @@
 
 import sqlalchemy.ansisql as ansisql
 import sqlalchemy.databases.postgres as postgres
-import sqlalchemy.databases.oracle as oracle
-import sqlalchemy.databases.sqlite as sqllite
 
 from sqlalchemy import *
 
@@ -14,7 +12,7 @@ class ReflectionTest(PersistTest):
     def testbasic(self):
         # really trip it up with a circular reference
         
-        use_function_defaults = testbase.db.engine.__module__.endswith('postgres') or testbase.db.engine.__module__.endswith('oracle')
+        use_function_defaults = testbase.db.engine.name == 'postgres' or testbase.db.engine.name == 'oracle'
         
         use_string_defaults = use_function_defaults or testbase.db.engine.__module__.endswith('sqlite')
 
@@ -123,9 +121,10 @@ class ReflectionTest(PersistTest):
         table.drop()
     
     def testtoengine(self):
-        db = ansisql.engine()
+        meta = MetaData('md1')
+        meta2 = MetaData('md2')
         
-        table = Table('mytable', db,
+        table = Table('mytable', meta,
             Column('myid', Integer, key = 'id'),
             Column('name', String, key = 'name', nullable=False),
             Column('description', String, key = 'description'),
@@ -133,14 +132,14 @@ class ReflectionTest(PersistTest):
         
         print repr(table)
         
-        pgdb = postgres.engine({})
+        table2 = table.tometadata(meta2)
         
-        pgtable = table.toengine(pgdb)
+        print repr(table2)
         
-        print repr(pgtable)
-        assert pgtable.c.id.nullable 
-        assert not pgtable.c.name.nullable 
-        assert pgtable.c.description.nullable 
+        assert table is not table2
+        assert table2.c.id.nullable 
+        assert not table2.c.name.nullable 
+        assert table2.c.description.nullable 
         
     def testoverride(self):
         table = Table(

@@ -42,7 +42,12 @@ class UOWListElement(attributes.ListElement):
         attributes.ListElement.__init__(self, obj, key, data=data, **kwargs)
         self.deleteremoved = deleteremoved
     def list_value_changed(self, obj, key, item, listval, isdelete):
-        sess = get_session(obj)
+        sess = get_session(obj, raiseerror=True)
+        if sess is None:
+            return
+        # add the child item to this session.  if its already got an identity then its
+        # expected to be there already.
+        sess.add(item)
         if not isdelete and sess.deleted.contains(item):
             #raise InvalidRequestError("re-inserting a deleted value into a list")
             del sess.deleted[item]
@@ -61,10 +66,12 @@ class UOWAttributeManager(attributes.AttributeManager):
         attributes.AttributeManager.__init__(self)
         
     def value_changed(self, obj, key, value):
-        if hasattr(obj, '_instance_key'):
-            get_session(obj).register_dirty(obj)
-        else:
-            get_session(obj).register_new(obj)
+        sess = get_session(obj, raiseerror=False)
+        if sess is not None:
+            if hasattr(obj, '_instance_key'):
+                sess.register_dirty(obj)
+            else:
+                sess.register_new(obj)
             
     def create_prop(self, class_, key, uselist, callable_, **kwargs):
         return UOWProperty(class_, self, key, uselist, callable_, **kwargs)
@@ -174,6 +181,8 @@ class UnitOfWork(object):
         self.attributes.commit(obj)
         
     def register_new(self, obj):
+        if hasattr(obj, '_instance_key'):
+            raise InvalidRequestError("Object '%s' already has an identity - it cant be registered as new" % repr(obj))
         if not self.new.contains(obj):
             self.new.append(obj)
         
