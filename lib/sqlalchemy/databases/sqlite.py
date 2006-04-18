@@ -7,13 +7,9 @@
 
 import sys, StringIO, string, types, re
 
-import sqlalchemy.sql as sql
-import sqlalchemy.engine as engine
-import sqlalchemy.schema as schema
-import sqlalchemy.ansisql as ansisql
+from sqlalchemy import sql, engine, schema, ansisql, exceptions, pool
+import sqlalchemy.engine.default as default
 import sqlalchemy.types as sqltypes
-from sqlalchemy.exceptions import *
-from sqlalchemy.ansisql import *
 import datetime,time
 
 pysqlite2_timesupport = False   # Change this if the init.d guys ever get around to supporting time cols
@@ -38,12 +34,12 @@ class SLSmallInteger(sqltypes.Smallinteger):
 class SLDateTime(sqltypes.DateTime):
     def get_col_spec(self):
         return "TIMESTAMP"
-    def convert_bind_param(self, value, engine):
+    def convert_bind_param(self, value, dialect):
         if value is not None:
             return str(value)
         else:
             return None
-    def _cvt(self, value, engine, fmt):
+    def _cvt(self, value, dialect, fmt):
         if value is None:
             return None
         parts = value.split('.')
@@ -53,20 +49,20 @@ class SLDateTime(sqltypes.DateTime):
         except ValueError:
             (value, microsecond) = (value, 0)
         return time.strptime(value, fmt)[0:6] + (microsecond,)
-    def convert_result_value(self, value, engine):
-        tup = self._cvt(value, engine, "%Y-%m-%d %H:%M:%S")
+    def convert_result_value(self, value, dialect):
+        tup = self._cvt(value, dialect, "%Y-%m-%d %H:%M:%S")
         return tup and datetime.datetime(*tup)
 class SLDate(SLDateTime):
     def get_col_spec(self):
         return "DATE"
-    def convert_result_value(self, value, engine):
-        tup = self._cvt(value, engine, "%Y-%m-%d")
+    def convert_result_value(self, value, dialect):
+        tup = self._cvt(value, dialect, "%Y-%m-%d")
         return tup and datetime.date(*tup[0:3])
 class SLTime(SLDateTime):
     def get_col_spec(self):
         return "TIME"
-    def convert_result_value(self, value, engine):
-        tup = self._cvt(value, engine, "%H:%M:%S")
+    def convert_result_value(self, value, dialect):
+        tup = self._cvt(value, dialect, "%H:%M:%S")
         return tup and datetime.time(*tup[4:7])
 class SLText(sqltypes.TEXT):
     def get_col_spec(self):
@@ -115,9 +111,6 @@ pragma_names = {
 if pysqlite2_timesupport:
     colspecs.update({sqltypes.Time : SLTime})
     pragma_names.update({'TIME' : SLTime})
-    
-def engine(opts, **params):
-    return SQLiteSQLEngine(opts, **params)
 
 def descriptor():
     return {'name':'sqlite',
@@ -125,23 +118,25 @@ def descriptor():
     'arguments':[
         ('filename', "Database Filename",None)
     ]}
-    
-class SQLiteSQLEngine(ansisql.ANSISQLEngine):
-    def __init__(self, opts, **params):
-        if sqlite is None:
-            raise ArgumentError("Couldn't import sqlite or pysqlite2")
-        self.filename = opts.pop('filename', ':memory:')
-        self.opts = opts or {}
-        params['poolclass'] = sqlalchemy.pool.SingletonThreadPool
-        ansisql.ANSISQLEngine.__init__(self, **params)
 
-    def post_exec(self, proxy, compiled, parameters, **kwargs):
+
+class SQLiteExecutionContext(default.DefaultExecutionContext):
+    def post_exec(self, engine, proxy, compiled, parameters, **kwargs):
         if getattr(compiled, "isinsert", False):
-            self.context.last_inserted_ids = [proxy().lastrowid]
-
+            self._last_inserted_ids = [proxy().lastrowid]
+    
+class SQLiteDialect(ansisql.ANSIDialect):
+    def compiler(self, statement, bindparams, **kwargs):
+        return SQLiteCompiler(self, statement, bindparams, **kwargs)
+    def schemagenerator(self, *args, **kwargs):
+        return SQLiteSchemaGenerator(*args, **kwargs)
+    def create_connect_args(self, opts):
+        filename = opts.pop('filename', ':memory:')
+        return ([filename], {})
     def type_descriptor(self, typeobj):
         return sqltypes.adapt_type(typeobj, colspecs)
-        
+    def create_execution_context(self):
+        return SQLiteExecutionContext(self)
     def last_inserted_ids(self):
         return self.context.last_inserted_ids
 
@@ -151,17 +146,13 @@ class SQLiteSQLEngine(ansisql.ANSISQLEngine):
     def connect_args(self):
         return ([self.filename], self.opts)
 
-    def compiler(self, statement, bindparams, **kwargs):
-        return SQLiteCompiler(statement, bindparams, engine=self, **kwargs)
-
     def dbapi(self):
+        if sqlite is None:
+            raise ArgumentError("Couldn't import sqlite or pysqlite2")
         return sqlite
         
     def push_session(self):
         raise InvalidRequestError("SQLite doesn't support nested sessions")
-
-    def schemagenerator(self, **params):
-        return SQLiteSchemaGenerator(self, **params)
 
     def reflecttable(self, table):
         c = self.execute("PRAGMA table_info(" + table.name + ")", {})
@@ -238,7 +229,9 @@ class SQLiteCompiler(ansisql.ANSICompiler):
             return '||'
         else:
             return ansisql.ANSICompiler.binary_operator_string(self, binary)
-        
+
+
+            
 class SQLiteSchemaGenerator(ansisql.ANSISchemaGenerator):
     def get_column_specification(self, column, override_pk=False, **kwargs):
         colspec = column.name + " " + column.type.engine_impl(self.engine).get_col_spec()
@@ -277,4 +270,5 @@ class SQLiteSchemaGenerator(ansisql.ANSISchemaGenerator):
             for index in table.indexes:
                 self.visit_index(index)
 
-        
+dialect = SQLiteDialect
+poolclass = pool.SingletonThreadPool       

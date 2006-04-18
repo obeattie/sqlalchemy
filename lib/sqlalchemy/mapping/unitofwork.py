@@ -235,24 +235,16 @@ class UnitOfWork(object):
             if objset is not None and not objset.contains(obj):
                 continue
             flush_context.register_object(obj, isdelete=True)
-                
-        engines = util.HashSet()
-        for mapper in flush_context.mappers:
-            for e in session.engines(mapper):
-                engines.append(e)
         
-        echo_commit = False        
-        for e in engines:
-            echo_commit = echo_commit or e.echo_uow
-            e.begin()
+        trans = session.create_transaction()
+        flush_context.transaction = trans
+        echo_commit = False
         try:
             flush_context.execute(echo=echo_commit)
+            trans.commit()
         except:
-            for e in engines:
-                e.rollback()
+            trans.rollback()
             raise
-        for e in engines:
-            e.commit()
             
         flush_context.post_exec()
         
@@ -422,6 +414,7 @@ class UOWTransaction(object):
         mappers = util.HashSet()
         for task in self.tasks.values():
             mappers.append(task.mapper)
+    
         head = DependencySorter(self.dependencies, mappers).sort(allow_all_cycles=True)
         #print str(head)
         task = sort_hier(head)

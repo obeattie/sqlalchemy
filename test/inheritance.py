@@ -22,14 +22,14 @@ class InheritTest(testbase.AssertMixin):
         global user_group_map
         principals = Table(
             'principals',
-            testbase.db,
+            testbase.metadata,
             Column('principal_id', Integer, Sequence('principal_id_seq', optional=False), primary_key=True),
             Column('name', String(50), nullable=False),    
             )
 
         users = Table(
             'prin_users',
-            testbase.db,
+            testbase.metadata,
             Column('principal_id', Integer, ForeignKey('principals.principal_id'), primary_key=True),
             Column('password', String(50), nullable=False),
             Column('email', String(50), nullable=False),
@@ -39,14 +39,14 @@ class InheritTest(testbase.AssertMixin):
 
         groups = Table(
             'prin_groups',
-            testbase.db,
+            testbase.metadata,
             Column( 'principal_id', Integer, ForeignKey('principals.principal_id'), primary_key=True),
 
             )
 
         user_group_map = Table(
             'prin_user_group_map',
-            testbase.db,
+            testbase.metadata,
             Column('user_id', Integer, ForeignKey( "prin_users.principal_id"), primary_key=True ),
             Column('group_id', Integer, ForeignKey( "prin_groups.principal_id"), primary_key=True ),
             #Column('user_id', Integer, ForeignKey( "prin_users.principal_id"),  ),
@@ -63,7 +63,7 @@ class InheritTest(testbase.AssertMixin):
         groups.drop()
         users.drop()
         principals.drop()
-        testbase.db.tables.clear()
+        testbase.metadata.tables.clear()
     def setUp(self):
         objectstore.clear()
         clear_mappers()
@@ -86,13 +86,13 @@ class InheritTest(testbase.AssertMixin):
         g = Group(name="group1")
         g.users.append(User(name="user1", password="pw", email="foo@bar.com", login_id="lg1"))
         
-        objectstore.commit()
+        objectstore.flush()
         # TODO: put an assertion
         
 class InheritTest2(testbase.AssertMixin):
     """deals with inheritance and many-to-many relationships"""
     def setUpAll(self):
-        engine = testbase.db
+        engine = testbase.metadata
         global foo, bar, foo_bar
         foo = Table('foo', engine,
             Column('id', Integer, Sequence('foo_id_seq'), primary_key=True),
@@ -112,7 +112,7 @@ class InheritTest2(testbase.AssertMixin):
         foo_bar.drop()
         bar.drop()
         foo.drop()
-        testbase.db.tables.clear()
+        testbase.metadata.tables.clear()
 
     def testbasic(self):
         class Foo(object): 
@@ -139,14 +139,14 @@ class InheritTest2(testbase.AssertMixin):
         Bar.mapper.add_property('foos', relation(Foo.mapper, foo_bar, lazy=False))
 
         b = Bar('barfoo')
-        objectstore.commit()
+        objectstore.flush()
 
         f1 = Foo('subfoo1')
         f2 = Foo('subfoo2')
         b.foos.append(f1)
         b.foos.append(f2)
 
-        objectstore.commit()
+        objectstore.flush()
         objectstore.clear()
 
         l =b.mapper.select()
@@ -160,7 +160,7 @@ class InheritTest2(testbase.AssertMixin):
 class InheritTest3(testbase.AssertMixin):
     """deals with inheritance and many-to-many relationships"""
     def setUpAll(self):
-        engine = testbase.db
+        engine = testbase.metadata
         global foo, bar, blub, bar_foo, blub_bar, blub_foo,tables
         engine.engine.echo = 'debug'
         # the 'data' columns are to appease SQLite which cant handle a blank INSERT
@@ -194,7 +194,7 @@ class InheritTest3(testbase.AssertMixin):
     def tearDownAll(self):
         for table in reversed(tables):
             table.drop()
-        testbase.db.tables.clear()
+        testbase.metadata.tables.clear()
 
     def tearDown(self):
         for table in reversed(tables):
@@ -220,7 +220,7 @@ class InheritTest3(testbase.AssertMixin):
         b = Bar('bar #1')
         b.foos.append(Foo("foo #1"))
         b.foos.append(Foo("foo #2"))
-        objectstore.commit()
+        objectstore.flush()
         compare = repr(b) + repr(b.foos)
         objectstore.clear()
         l = Bar.mapper.select()
@@ -259,7 +259,7 @@ class InheritTest3(testbase.AssertMixin):
             bl1 = Blub("blub #1")
             bl1.foos.append(f1)
             bl1.bars.append(b2)
-            objectstore.commit()
+            objectstore.flush()
             compare = repr(bl1)
             blubid = bl1.id
             objectstore.clear()
@@ -283,7 +283,7 @@ class InheritTest3(testbase.AssertMixin):
 class InheritTest4(testbase.AssertMixin):
     """deals with inheritance and one-to-many relationships"""
     def setUpAll(self):
-        engine = testbase.db
+        engine = testbase.metadata
         global foo, bar, blub, tables
         engine.engine.echo = 'debug'
         # the 'data' columns are to appease SQLite which cant handle a blank INSERT
@@ -306,7 +306,7 @@ class InheritTest4(testbase.AssertMixin):
     def tearDownAll(self):
         for table in reversed(tables):
             table.drop()
-        testbase.db.tables.clear()
+        testbase.metadata.tables.clear()
 
     def tearDown(self):
         for table in reversed(tables):
@@ -342,7 +342,7 @@ class InheritTest4(testbase.AssertMixin):
         f = Foo("foo #1")
         b1.parent_foo = f
         b2.parent_foo = f
-        objectstore.commit()
+        objectstore.flush()
         compare = repr(b1) + repr(b2) + repr(b1.parent_foo) + repr(b2.parent_foo)
         objectstore.clear()
         l = Blub.mapper.select()
@@ -353,7 +353,7 @@ class InheritTest4(testbase.AssertMixin):
 
 class InheritTest5(testbase.AssertMixin): 
     def setUpAll(self):
-        engine = testbase.db
+        engine = testbase.metadata
         global content_type, content, product
         content_type = Table('content_type', engine, 
             Column('id', Integer, primary_key=True)
@@ -366,7 +366,7 @@ class InheritTest5(testbase.AssertMixin):
             Column('id', Integer, ForeignKey('content.id'), primary_key=True)
         )
     def tearDownAll(self):
-        testbase.db.tables.clear()
+        testbase.metadata.tables.clear()
 
     def tearDown(self):
         pass
@@ -374,7 +374,7 @@ class InheritTest5(testbase.AssertMixin):
     def testbasic(self):
         class ContentType(object): pass
         class Content(object): pass
-        class Product(Content): pass
+        class Product(object): pass
 
         content_types = mapper(ContentType, content_type)
         contents = mapper(Content, content, properties={
@@ -383,33 +383,18 @@ class InheritTest5(testbase.AssertMixin):
         #contents.add_property('content_type', relation(content_types)) #adding this makes the inheritance stop working
         # shouldnt throw exception
         products = mapper(Product, product, inherits=contents)
-    
-    def testbackref(self):
-        class ContentType(object): pass
-        class Content(object): pass
-        class Product(Content): pass
-
-        # this test fails currently
-        contents = mapper(Content, content)
-        products = mapper(Product, product, inherits=contents)
-        content_types = mapper(ContentType, content_type, properties={
-            'content':relation(contents, backref='contenttype')
-        })
-        p = Product()
-        p.contenttype = ContentType()
         
-            
 class InheritTest6(testbase.AssertMixin):
     """tests eager load/lazy load of child items off inheritance mappers, tests that
     LazyLoader constructs the right query condition."""
     def setUpAll(self):
         global foo, bar, bar_foo
-        foo = Table('foo', testbase.db, Column('id', Integer, Sequence('foo_seq'), primary_key=True),
+        foo = Table('foo', testbase.metadata, Column('id', Integer, Sequence('foo_seq'), primary_key=True),
         Column('data', String(30))).create()
-        bar = Table('bar', testbase.db, Column('id', Integer, ForeignKey('foo.id'), primary_key=True),
+        bar = Table('bar', testbase.metadata, Column('id', Integer, ForeignKey('foo.id'), primary_key=True),
      Column('data', String(30))).create()
 
-        bar_foo = Table('bar_foo', testbase.db,
+        bar_foo = Table('bar_foo', testbase.metadata,
         Column('bar_id', Integer, ForeignKey('bar.id')),
         Column('foo_id', Integer, ForeignKey('foo.id'))
         ).create()

@@ -1,11 +1,13 @@
 Database Engines {@name=dbengine}
-================
+============================
 
-A database engine is a subclass of `sqlalchemy.engine.SQLEngine`, and is the starting point for where SQLAlchemy provides a layer of abstraction on top of the various DBAPI2 database modules.  It serves as an abstract factory for database-specific implementation objects as well as a layer of abstraction over the most essential tasks of a database connection, including connecting, executing queries, returning result sets, and managing transactions.
+A database engine is a subclass of `sqlalchemy.engine.Engine`, and is the starting point for where SQLAlchemy provides a layer of abstraction on top of the various DBAPI2 database modules.  It serves as an abstract factory for database-specific implementation objects as well as a layer of abstraction over the most essential tasks of a database connection, including connecting, executing queries, returning result sets, and managing transactions.
     
-The average developer doesn't need to know anything about the interface or workings of a SQLEngine in order to use it.  Simply creating one, and then specifying it when constructing tables and other SQL objects is all that's needed. 
+The average developer doesn't need to know anything about the interface or workings of an Engine in order to use it.  Simply creating one, and then specifying it when constructing tables and other SQL objects is all that's needed. 
     
-A SQLEngine is also a layer of abstraction on top of the connection pooling described in the previous section.  While a DBAPI connection pool can be used explicitly alongside a SQLEngine, its not really necessary.  Once you have a SQLEngine, you can retrieve pooled connections directly from its underlying connection pool via its own `connection()` method.  However, if you're exclusively using SQLALchemy's SQL construction objects and/or object-relational mappers, all the details of connecting are handled by those libraries automatically.
+An Engine is also a layer of abstraction on top of the connection pooling described in the previous section.  Once you have an Engine, you can retrieve pooled connections directly from its underlying connection pool via its own `connection()` method.  However, if you're exclusively using SQLALchemy's SQL construction objects and/or object-relational mappers, all the details of connecting can be handled automatically by *binding* those objects to the Engine.
+
+This binding process is also completely optional, and explicitly managed connections can be used as well.
     
 
 ### Establishing a Database Engine {@name=establishing}

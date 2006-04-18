@@ -145,7 +145,7 @@ class MapperTest(MapperSuperTest):
         # we're changing the database here, so if this test fails in the middle,
         # it'll screw up the other tests which are hardcoded to 7/'jack'
         u.user_name = 'foo'
-        objectstore.commit()
+        objectstore.flush()
         # change the value in the DB
         users.update(users.c.user_id==7, values=dict(user_name='jack')).execute()
         objectstore.expire(u)
@@ -170,7 +170,7 @@ class MapperTest(MapperSuperTest):
         a = Address()
         a.address_id=17  # to work around the hardcoded IDs in this test suite....
         u.addresses.append(a)
-        objectstore.commit()
+        objectstore.flush()
         objectstore.clear()
         u = User.mapper.selectfirst()
         print u.user_name
@@ -234,7 +234,7 @@ class MapperTest(MapperSuperTest):
         for u in l:
             print "User", u.user_id, u.user_name, u.concat, u.count
         #l[1].user_name='asdf'
-        #objectstore.commit()
+        #objectstore.flush()
     
     def testcount(self):
         m = mapper(User, users)
@@ -346,7 +346,7 @@ class PropertyTest(MapperSuperTest):
         jack = l[0]
         self.assert_(jack.user_name=='jack')
         jack.email_address = 'jack@gmail.com'
-        objectstore.commit()
+        objectstore.flush()
         objectstore.clear()
         au = AddressUser.mapper.get_by(user_name='jack')
         self.assert_(au.email_address == 'jack@gmail.com')
@@ -368,7 +368,7 @@ class PropertyTest(MapperSuperTest):
         jack = l[0]
         self.assert_(jack.user_name=='jack')
         jack.email_address = 'jack@gmail.com'
-        objectstore.commit()
+        objectstore.flush()
         objectstore.clear()
         au = AddressUser.mapper.get_by(user_name='jack')
         self.assert_(au.email_address == 'jack@gmail.com')
@@ -404,7 +404,7 @@ class DeferredTest(MapperSuperTest):
         l = m.select()
         o2 = l[2]
         o2.isopen = 1
-        objectstore.commit()
+        objectstore.flush()
         
     def testgroup(self):
         """tests deferred load with a group"""
@@ -701,6 +701,7 @@ class EagerTest(MapperSuperTest):
 
     def testcompile(self):
         """tests deferred operation of a pre-compiled mapper statement"""
+        session = objectstore.Session()
         m = mapper(User, users, properties = dict(
             addresses = relation(mapper(Address, addresses), lazy = False)
         ))
@@ -708,7 +709,7 @@ class EagerTest(MapperSuperTest):
         c = s.compile()
         self.echo("\n" + str(c) + repr(c.get_params()))
         
-        l = m.instances(s.execute(emailad = 'jack@bean.com'))
+        l = m.instances(s.execute(emailad = 'jack@bean.com'), session)
         self.echo(repr(l))
         
     def testmulti(self):

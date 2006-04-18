@@ -28,10 +28,12 @@ class TypeEngine(object):
             return self._impl_dict
     impl_dict = property(_get_impl_dict)
     def engine_impl(self, engine):
+        return self.dialect_impl(engine.dialect)
+    def dialect_impl(self, dialect):
         try:
-            return self.impl_dict[engine]
+            return self.impl_dict[dialect]
         except:
-            return self.impl_dict.setdefault(engine, engine.type_descriptor(self))
+            return self.impl_dict.setdefault(dialect, dialect.type_descriptor(self))
     def _get_impl(self):
         if hasattr(self, '_impl'):
             return self._impl
@@ -42,10 +44,10 @@ class TypeEngine(object):
     impl = property(_get_impl, _set_impl)
     def get_col_spec(self):
         return self.impl.get_col_spec()
-    def convert_bind_param(self, value, engine):
-        return self.impl.convert_bind_param(value, engine)
-    def convert_result_value(self, value, engine):
-        return self.impl.convert_result_value(value, engine)
+    def convert_bind_param(self, value, dialect):
+        return self.impl.convert_bind_param(value, dialect)
+    def convert_result_value(self, value, dialect):
+        return self.impl.convert_result_value(value, dialect)
     def set_impl(self, impltype):
         self.impl = impltype(**self.get_constructor_args())
     def get_constructor_args(self):
@@ -80,9 +82,9 @@ def adapt_type(typeobj, colspecs):
 class NullTypeEngine(TypeEngine):
     def get_col_spec(self):
         raise NotImplementedError()
-    def convert_bind_param(self, value, engine):
+    def convert_bind_param(self, value, dialect):
         return value
-    def convert_result_value(self, value, engine):
+    def convert_result_value(self, value, dialect):
         return value
 
 class TypeDecorator(object):
@@ -95,16 +97,16 @@ class String(TypeEngine):
         self.length = length
     def get_constructor_args(self):
         return {'length':self.length}
-    def convert_bind_param(self, value, engine):
-        if not engine.convert_unicode or value is None or not isinstance(value, unicode):
+    def convert_bind_param(self, value, dialect):
+        if not dialect.convert_unicode or value is None or not isinstance(value, unicode):
             return value
         else:
-            return value.encode(engine.encoding)
-    def convert_result_value(self, value, engine):
-        if not engine.convert_unicode or value is None or isinstance(value, unicode):
+            return value.encode(dialect.encoding)
+    def convert_result_value(self, value, dialect):
+        if not dialect.convert_unicode or value is None or isinstance(value, unicode):
             return value
         else:
-            return value.decode(engine.encoding)
+            return value.decode(dialect.encoding)
     def adapt_args(self):
         if self.length is None:
             return TEXT()
@@ -112,14 +114,14 @@ class String(TypeEngine):
             return self
             
 class Unicode(String):
-    def convert_bind_param(self, value, engine):
+    def convert_bind_param(self, value, dialect):
          if value is not None and isinstance(value, unicode):
-              return value.encode(engine.encoding)
+              return value.encode(dialect.encoding)
          else:
               return value
-    def convert_result_value(self, value, engine):
+    def convert_result_value(self, value, dialect):
          if value is not None and not isinstance(value, unicode):
-             return value.decode(engine.encoding)
+             return value.decode(dialect.encoding)
          else:
              return value
               
@@ -157,9 +159,9 @@ class Time(TypeEngine):
 class Binary(TypeEngine):
     def __init__(self, length=None):
         self.length = length
-    def convert_bind_param(self, value, engine):
-        return engine.dbapi().Binary(value)
-    def convert_result_value(self, value, engine):
+    def convert_bind_param(self, value, dialect):
+        return dialect.dbapi().Binary(value)
+    def convert_result_value(self, value, dialect):
         return value
     def get_constructor_args(self):
         return {'length':self.length}
@@ -168,15 +170,15 @@ class PickleType(Binary):
       def __init__(self, protocol=pickle.HIGHEST_PROTOCOL):
            """allows the pickle protocol to be specified"""
            self.protocol = protocol
-      def convert_result_value(self, value, engine):
+      def convert_result_value(self, value, dialect):
           if value is None:
               return None
-          buf = Binary.convert_result_value(self, value, engine)
+          buf = Binary.convert_result_value(self, value, dialect)
           return pickle.loads(str(buf))
-      def convert_bind_param(self, value, engine):
+      def convert_bind_param(self, value, dialect):
           if value is None:
               return None
-          return Binary.convert_bind_param(self, pickle.dumps(value, self.protocol), engine)
+          return Binary.convert_bind_param(self, pickle.dumps(value, self.protocol), dialect)
       def get_constructor_args(self):
             return {}
 

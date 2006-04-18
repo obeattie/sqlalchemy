@@ -14,26 +14,18 @@ structure with its own clause-specific objects as well as the visitor interface,
 the schema package "plugs in" to the SQL package.
 
 """
+import sqlalchemy
 import sql
 from util import *
 from types import *
-from exceptions import *
+import exceptions
 import copy, re, string
 
 __all__ = ['SchemaItem', 'Table', 'Column', 'ForeignKey', 'Sequence', 'Index',
-           'SchemaEngine', 'SchemaVisitor', 'PassiveDefault', 'ColumnDefault']
+           'MetaData', 'BoundMetaData', 'DynamicMetaData', 'SchemaVisitor', 'PassiveDefault', 'ColumnDefault']
 
-class SchemaMeta(type):
-    """provides universal constructor arguments for all SchemaItems"""
-    def __call__(self, *args, **kwargs):
-        engine = kwargs.pop('engine', None)
-        obj = type.__call__(self, *args, **kwargs)
-        obj._engine = engine
-        return obj
-    
 class SchemaItem(object):
     """base class for items that define a database schema."""
-    __metaclass__ = SchemaMeta
     def _init_items(self, *args):
         for item in args:
             if item is not None:
@@ -43,47 +35,39 @@ class SchemaItem(object):
         raise NotImplementedError()
     def __repr__(self):
         return "%s()" % self.__class__.__name__
-        
-class EngineMixin(object):
-    """a mixin for SchemaItems that provides an "engine" accessor."""
-    def _derived_engine(self):
-        """subclasses override this method to return an AbstractEngine
-        bound to a parent item"""
+    def _derived_metadata(self):
+        """subclasses override this method to return a the MetaData
+        to which this item is bound"""
         return None
     def _get_engine(self):
-        if self._engine is not None:
-            return self._engine
-        else:
-            return self._derived_engine()
-    engine = property(_get_engine)
+        return self._derived_metadata().engine
+    engine = property(lambda s:s._get_engine())
+    metadata = property(lambda s:s._derived_metadata())
     
-def _get_table_key(engine, name, schema):
-    if schema is not None and schema == engine.get_default_schema_name():
-        schema = None
+def _get_table_key(name, schema):
     if schema is None:
         return name
     else:
         return schema + "." + name
         
-class TableSingleton(SchemaMeta):
+class TableSingleton(type):
     """a metaclass used by the Table object to provide singleton behavior."""
-    def __call__(self, name, engine=None, *args, **kwargs):
+    def __call__(self, name, metadata, *args, **kwargs):
         try:
-            if engine is not None and not isinstance(engine, SchemaEngine):
-                args = [engine] + list(args)
-                engine = default_engine
+            if isinstance(metadata, sql.Engine):
+                # backwards compatibility - get a BoundSchema associated with the engine
+                engine = metadata
+                if not hasattr(engine, '_legacy_metadata'):
+                    engine._legacy_metadata = BoundMetaData(engine)
+                metadata = engine._legacy_metadata
             name = str(name)    # in case of incoming unicode
             schema = kwargs.get('schema', None)
             autoload = kwargs.pop('autoload', False)
             redefine = kwargs.pop('redefine', False)
             mustexist = kwargs.pop('mustexist', False)
             useexisting = kwargs.pop('useexisting', False)
-            if not engine:
-                table = type.__call__(self, name, engine, **kwargs)
-                table._init_items(*args)
-                return table
-            key = _get_table_key(engine, name, schema)
-            table = engine.tables[key]
+            key = _get_table_key(name, schema)
+            table = metadata.tables[key]
             if len(args):
                 if redefine:
                     table.reload_values(*args)
@@ -93,20 +77,20 @@ class TableSingleton(SchemaMeta):
         except KeyError:
             if mustexist:
                 raise ArgumentError("Table '%s.%s' not defined" % (schema, name))
-            table = type.__call__(self, name, engine, **kwargs)
-            engine.tables[key] = table
+            table = type.__call__(self, name, metadata, **kwargs)
+            table._set_parent(metadata)
             # load column definitions from the database if 'autoload' is defined
             # we do it after the table is in the singleton dictionary to support
             # circular foreign keys
             if autoload:
-                engine.reflecttable(table)
+                metadata.engine.reflecttable(table)
             # initialize all the column, etc. objects.  done after
             # reflection to allow user-overrides
             table._init_items(*args)
             return table
 
         
-class Table(sql.TableClause, SchemaItem):
+class Table(SchemaItem, sql.TableClause):
     """represents a relational database table.  This subclasses sql.TableClause to provide
     a table that is "wired" to an engine.  Whereas TableClause represents a table as its 
     used in a SQL expression, Table represents a table as its created in the database.  
@@ -114,7 +98,7 @@ class Table(sql.TableClause, SchemaItem):
     Be sure to look at sqlalchemy.sql.TableImpl for additional methods defined on a Table."""
     __metaclass__ = TableSingleton
     
-    def __init__(self, name, engine, **kwargs):
+    def __init__(self, name, metadata, **kwargs):
         """Table objects can be constructed directly.  The init method is actually called via 
         the TableSingleton metaclass.  Arguments are:
         
@@ -122,9 +106,6 @@ class Table(sql.TableClause, SchemaItem):
         This property, along with the "schema", indicates the "singleton identity" of this table.
         Further tables constructed with the same name/schema combination will return the same 
         Table instance.
-        
-        engine : a SchemaEngine instance to provide services to this table.  Usually a subclass of
-        sql.SQLEngine.
         
         *args : should contain a listing of the Column objects for this table.
         
@@ -148,17 +129,18 @@ class Table(sql.TableClause, SchemaItem):
         
         """
         super(Table, self).__init__(name)
-        self._engine = engine
+        self._metadata = metadata
         self.schema = kwargs.pop('schema', None)
         if self.schema is not None:
             self.fullname = "%s.%s" % (self.schema, self.name)
         else:
             self.fullname = self.name
         self.kwargs = kwargs
-        
+    def _derived_metadata(self):
+        return self._metadata
     def __repr__(self):
         return "Table(%s)" % string.join(
-        [repr(self.name)] + [repr(self.engine)] +
+        [repr(self.name)] + [repr(self.metadata)] +
         [repr(x) for x in self.columns] +
         ["%s=%s" % (k, repr(getattr(self, k))) for k in ['schema']]
        , ',\n')
@@ -191,9 +173,9 @@ class Table(sql.TableClause, SchemaItem):
     def append_index(self, index):
         self.indexes[index.name] = index
         
-    def _set_parent(self, schema):
-        schema.tables[self.name] = self
-        self.schema = schema
+    def _set_parent(self, metadata):
+        metadata.tables[self.name] = self
+        self._metadata = metadata
     def accept_schema_visitor(self, visitor): 
         """traverses the given visitor across the Column objects inside this Table,
         then calls the visit_table method on the visitor."""
@@ -227,29 +209,29 @@ class Table(sql.TableClause, SchemaItem):
         return index
     
     def deregister(self):
-        """removes this table from it's engines table registry.  this does not
+        """removes this table from it's metadata.  this does not
         issue a SQL DROP statement."""
-        key = _get_table_key(self.engine, self.name, self.schema)
-        del self.engine.tables[key]
+        key = _get_table_key(self.name, self.schema)
+        del self.metadata.tables[key]
     def create(self, **params):
         self.engine.create(self)
         return self
     def drop(self, **params):
         self.engine.drop(self)
-    def toengine(self, engine, schema=None):
-        """returns a singleton instance of this Table with a different engine"""
+    def tometadata(self, metadata, schema=None):
+        """returns a singleton instance of this Table with a different Schema"""
         try:
             if schema is None:
                 schema = self.schema
-            key = _get_table_key(engine, self.name, schema)
-            return engine.tables[key]
-        except:
+            key = _get_table_key(self.name, schema)
+            return metadata.tables[key]
+        except KeyError:
             args = []
             for c in self.columns:
                 args.append(c.copy())
-            return Table(self.name, engine, schema=schema, *args)
+            return Table(self.name, metadata, schema=schema, *args)
 
-class Column(sql.ColumnClause, SchemaItem):
+class Column(SchemaItem, sql.ColumnClause):
     """represents a column in a database table.  this is a subclass of sql.ColumnClause and
     represents an actual existing table in the database, in a similar fashion as TableClause/Table."""
     def __init__(self, name, type, *args, **kwargs):
@@ -297,7 +279,6 @@ class Column(sql.ColumnClause, SchemaItem):
         order of their creation.
 
         """
-        
         name = str(name) # in case of incoming unicode
         super(Column, self).__init__(name, None, type)
         self.args = args
@@ -321,9 +302,11 @@ class Column(sql.ColumnClause, SchemaItem):
     foreign_key = SimpleProperty('_foreign_key')
     original = property(lambda s: s._orig or s)
     parent = property(lambda s:s._parent or s)
-    engine = property(lambda s: s.table.engine)
     columns = property(lambda self:[self])
 
+    def _derived_metadata(self):
+        return self.table.metadata
+        
     def __repr__(self):
        return "Column(%s)" % string.join(
         [repr(self.name)] + [repr(self.type)] +
@@ -403,7 +386,7 @@ class ForeignKey(SchemaItem):
         """Constructs a new ForeignKey object.  "column" can be a schema.Column
         object representing the relationship, or just its string name given as 
         "tablename.columnname".  schema can be specified as 
-        "schemaname.tablename.columnname" """
+        "schema.tablename.columnname" """
         self._colspec = column
         self._column = None
 
@@ -439,7 +422,7 @@ class ForeignKey(SchemaItem):
                     schema = self.parent.original.table.schema
                 else:
                     (schema,tname,colname) = m.group(1,2,3)
-                table = Table(tname, self.parent.engine, mustexist=True, schema=schema)
+                table = Table(tname, self.parent.metadata, mustexist=True, schema=schema)
                 if colname is None:
                     key = self.parent
                     self._column = table.c[self.parent.key]
@@ -464,20 +447,20 @@ class ForeignKey(SchemaItem):
         self.parent.foreign_key = self
         self.parent.table.foreign_keys.append(self)
 
-class DefaultGenerator(SchemaItem, EngineMixin):
+class DefaultGenerator(SchemaItem):
     """Base class for column "default" values."""
     def __init__(self, for_update=False):
         self.for_update = for_update
-    def _derived_engine(self):
-        return self.column.table.engine
+    def _derived_metadata(self):
+        return self.column.table.metadata
     def _set_parent(self, column):
         self.column = column
         if self.for_update:
             self.column.onupdate = self
         else:
             self.column.default = self
-    def execute(self):
-        return self.accept_schema_visitor(self.engine.defaultrunner(self.engine.proxy))
+    def execute(self, **kwargs):
+        return self.engine.execute_default(self, **kwargs)
     def __repr__(self):
         return "DefaultGenerator()"
 
@@ -532,7 +515,7 @@ class Sequence(DefaultGenerator):
         return visitor.visit_sequence(self)
 
 
-class Index(SchemaItem, EngineMixin):
+class Index(SchemaItem):
     """Represents an index of columns from a database table
     """
     def __init__(self, name, *columns, **kw):
@@ -553,8 +536,8 @@ class Index(SchemaItem, EngineMixin):
         self.unique = kw.pop('unique', False)
         self._init_items(*columns)
 
-    def _derived_engine(self):
-        return self.table.engine
+    def _derived_metadata(self):
+        return self.table.metadata
     def _init_items(self, *args):
         for column in args:
             self.append_column(column)
@@ -594,22 +577,56 @@ class Index(SchemaItem, EngineMixin):
                                                  for c in self.columns]),
                                       (self.unique and ', unique=True') or '')
         
-class SchemaEngine(sql.AbstractEngine):
-    """a factory object used to create implementations for schema objects.  This object
-    is the ultimate base class for the engine.SQLEngine class."""
-
-    def __init__(self):
+class MetaData(SchemaItem):
+    """represents a collection of Tables and their associated schema constructs."""
+    def __init__(self, name=None):
         # a dictionary that stores Table objects keyed off their name (and possibly schema name)
         self.tables = {}
-    def reflecttable(self, table):
-        """given a table, will query the database and populate its Column and ForeignKey 
-        objects."""
-        raise NotImplementedError()
-    def schemagenerator(self, **params):
-        raise NotImplementedError()
-    def schemadropper(self, **params):
-        raise NotImplementedError()
-        
+        self.name = name
+    def is_bound(self):
+        return False
+    def _derived_metadata(self):
+        return self
+    def _get_engine(self):
+        if not self.is_bound():
+            raise exceptions.InvalidRequestError("Schema %s is not bound to any engine" % self.name)
+        return self._engine
+                
+class BoundMetaData(MetaData):
+    """builds upon MetaData to provide the capability to bind to an Engine implementation."""
+    def __init__(self, engine_or_url, name=None, **kwargs):
+        super(BoundMetaData, self).__init__(name)
+        if isinstance(engine_or_url, str):
+            self._engine = sqlalchemy.create_engine(engine_or_url, **kwargs)
+        else:
+            self._engine = engine_or_url
+    def is_bound(self):
+        return True
+
+class DynamicMetaData(MetaData):
+    """builds upon MetaData to provide the capability to bind to multiple Engine implementations
+    on a dynamically alterable, thread-local basis."""
+    def __init__(self, name=None, threadlocal=True):
+        super(DynamicMetaData, self).__init__(name)
+        if threadlocal:
+            self.context = ThreadLocal()
+        else:
+            self.context = self
+        self.__engines = {}
+    def connect(self, engine_or_url, **kwargs):
+        if isinstance(engine_or_url, str):
+            try:
+                self.context._engine = self.__engines[engine_or_url]
+            except KeyError:
+                e = sqlalchemy.create_engine(engine_or_url, **kwargs)
+                self.__engines[engine_or_url] = e
+                self.context._engine = e
+        else:
+            self.context._engine = engine_or_url
+    def is_bound(self):
+        return s.context._engine is not None
+    engine=property(lambda s:s.context._engine)
+            
 class SchemaVisitor(sql.ClauseVisitor):
     """defines the visiting for SchemaItem objects"""
     def visit_schema(self, schema):
@@ -640,5 +657,6 @@ class SchemaVisitor(sql.ClauseVisitor):
         """visit a Sequence."""
         pass
 
-            
+default_metadata = DynamicMetaData('default')
+
             

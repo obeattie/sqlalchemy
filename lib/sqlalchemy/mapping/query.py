@@ -8,16 +8,17 @@
 import objectstore
 import sqlalchemy.sql as sql
 import sqlalchemy.util as util
+from sqlalchemy.exceptions import *
 import mapper
 
 class Query(object):
     """encapsulates the object-fetching operations provided by Mappers."""
-    def __init__(self, mapper, **kwargs):
+    def __init__(self, mapper, session=None, **kwargs):
         self.mapper = mapper
         self.always_refresh = kwargs.pop('always_refresh', self.mapper.always_refresh)
         self.order_by = kwargs.pop('order_by', self.mapper.order_by)
         self.extension = kwargs.pop('extension', self.mapper.extension)
-        self._session = kwargs.pop('session', None)
+        self._session = session
         if not hasattr(mapper, '_get_clause'):
             _get_clause = sql.and_()
             for primary_key in self.mapper.pks_by_table[self.table]:
@@ -146,8 +147,8 @@ class Query(object):
         return self._select_statement(statement, params=params)
 
     def select_text(self, text, **params):
-        t = sql.text(text, engine=self.mapper.primarytable.engine)
-        return self.instances(t.execute(**params))
+        t = sql.text(text)
+        return self.instances(t, params=params)
 
     def __getattr__(self, key):
         if (key.startswith('select_by_')):
@@ -163,8 +164,12 @@ class Query(object):
         else:
             raise AttributeError(key)
 
-    def instances(self, *args, **kwargs):
-        return self.mapper.instances(session=self.session, *args, **kwargs)
+    def instances(self, clauseelement, params=None, *args, **kwargs):
+        result = self.session.execute(self.mapper, clauseelement, params=params)
+        try:
+            return self.mapper.instances(result, self.session, **kwargs)
+        finally:
+            result.close()
         
     def _by_clause(self, *args, **params):
         clause = None
@@ -209,7 +214,7 @@ class Query(object):
         statement.use_labels = True
         if params is None:
             params = {}
-        return self.instances(statement.execute(**params), **kwargs)
+        return self.instances(statement, params=params, **kwargs)
 
     def _should_nest(self, **kwargs):
         """returns True if the given statement options indicate that we should "nest" the

@@ -339,12 +339,18 @@ class Mapper(object):
             objectstore.global_attributes.init_attr(self)
             
             nohist = kwargs.pop('_mapper_nohistory', False)
-            session = kwargs.pop('_sa_session', objectstore.get_session())
-            if not nohist:
-                # register new with the correct session, before the object's 
-                # constructor is called, since further assignments within the
-                # constructor would otherwise bind it to whatever get_session() is.
-                session.register_new(self)
+            if kwargs.has_key('_sa_session'):
+                session = kwargs.pop('_sa_session')
+            else:
+                session = objectstore.get_session(raiseerror=False)
+            if session is not None:
+                if not nohist:
+                    # register new with the correct session, before the object's 
+                    # constructor is called, since further assignments within the
+                    # constructor would otherwise bind it to whatever get_session() is.
+                    session.register_new(self)
+                else:
+                    session._bind_to(self)
             if oldinit is not None:
                 oldinit(self, *args, **kwargs)
         # override oldinit, insuring that its not already one of our
@@ -364,14 +370,11 @@ class Mapper(object):
         self.props[key] = prop
         prop.init(key, self)
     
-    def instances(self, cursor, *mappers, **kwargs):
+    def instances(self, cursor, session, *mappers, **kwargs):
         """given a cursor (ResultProxy) from an SQLEngine, returns a list of object instances
         corresponding to the rows in the cursor."""
         limit = kwargs.get('limit', None)
         offset = kwargs.get('offset', None)
-        session = kwargs.get('session', None)
-        if session is None:
-            session = objectstore.get_session()
         populate_existing = kwargs.get('populate_existing', False)
         
         result = util.HistoryArraySet()
@@ -424,11 +427,7 @@ class Mapper(object):
         return mapper
     
     def using(self, session):
-        """returns a new Query object with the given Session."""
-        if objectstore.get_session() is session:
-            return self.query
-        else:
-            return query.Query(self, session=session)
+        return query.Query(self, session=session)
 
     def options(self, *options, **kwargs):
         """uses this mapper as a prototype for a new mapper with different behavior.
@@ -478,7 +477,8 @@ class Mapper(object):
         """called by a UnitOfWork object to save objects, which involves either an INSERT or
         an UPDATE statement for each table used by this mapper, for each element of the
         list."""
-          
+        
+        connection = uow.transaction.connection(self)
         for table in self.tables:
             #print "SAVE_OBJ table ", table.name
             # looping through our set of tables, which are all "real" tables, as opposed
@@ -510,9 +510,9 @@ class Mapper(object):
                 # time"
                 isinsert = not postupdate and not hasattr(obj, "_instance_key")
                 if isinsert:
-                    self.extension.before_insert(self, obj)
+                    self.extension.before_insert(self, connection, obj)
                 else:
-                    self.extension.before_update(self, obj)
+                    self.extension.before_update(self, connection, obj)
                 hasdata = False
                 for col in table.columns:
                     if col is self.version_id_col:
@@ -579,11 +579,12 @@ class Mapper(object):
                     clause.clauses.append(self.version_id_col == sql.bindparam(self.version_id_col._label))
                 statement = table.update(clause)
                 rows = 0
+                supports_sane_rowcount = True
                 for rec in update:
                     (obj, params) = rec
-                    c = statement.execute(params)
-                    self._postfetch(table, obj, c, c.last_updated_params())
-                    self.extension.after_update(self, obj)
+                    c = connection.execute(statement, params)
+                    self._postfetch(connection, table, obj, c, c.last_updated_params())
+                    self.extension.after_update(self, connection, obj)
                     rows += c.cursor.rowcount
                 if c.supports_sane_rowcount() and rows != len(update):
                     raise CommitError("ConcurrencyError - updated rowcount %d does not match number of objects updated %d" % (rows, len(update)))
@@ -591,7 +592,7 @@ class Mapper(object):
                 statement = table.insert()
                 for rec in insert:
                     (obj, params) = rec
-                    c = statement.execute(**params)
+                    c = connection.execute(statement, params)
                     primary_key = c.last_inserted_ids()
                     if primary_key is not None:
                         i = 0
@@ -600,12 +601,12 @@ class Mapper(object):
                             if self._getattrbycolumn(obj, col) is None:
                                 self._setattrbycolumn(obj, col, primary_key[i])
                             i+=1
-                    self._postfetch(table, obj, c, c.last_inserted_params())
+                    self._postfetch(connection, table, obj, c, c.last_inserted_params())
                     if self._synchronizer is not None:
                         self._synchronizer.execute(obj, obj)
-                    self.extension.after_insert(self, obj)
+                    self.extension.after_insert(self, connection, obj)
 
-    def _postfetch(self, table, obj, resultproxy, params):
+    def _postfetch(self, connection, table, obj, resultproxy, params):
         """after an INSERT or UPDATE, asks the returned result if PassiveDefaults fired off on the database side
         which need to be post-fetched, *or* if pre-exec defaults like ColumnDefaults were fired off
         and should be populated into the instance. this is only for non-primary key columns."""
@@ -613,7 +614,7 @@ class Mapper(object):
             clause = sql.and_()
             for p in self.pks_by_table[table]:
                 clause.clauses.append(p == self._getattrbycolumn(obj, p))
-            row = table.select(clause).execute().fetchone()
+            row = connection.execute(table.select(clause), None).fetchone()
             for c in table.c:
                 if self._getattrbycolumn(obj, c, False) is None:
                     self._setattrbycolumn(obj, c, row[c])
@@ -630,6 +631,9 @@ class Mapper(object):
     def delete_obj(self, objects, uow):
         """called by a UnitOfWork object to delete objects, which involves a
         DELETE statement for each table used by this mapper, for each object in the list."""
+
+        connection = uow.transaction.connection(self)
+        
         for table in util.reversed(self.tables):
             if not self._has_pks(table):
                 continue
@@ -644,7 +648,7 @@ class Mapper(object):
                     params[col.key] = self._getattrbycolumn(obj, col)
                 if self.version_id_col is not None:
                     params[self.version_id_col.key] = self._getattrbycolumn(obj, self.version_id_col)
-                self.extension.before_delete(self, obj)
+                self.extension.before_delete(self, connection, obj)
             if len(delete):
                 clause = sql.and_()
                 for col in self.pks_by_table[table]:
@@ -652,7 +656,7 @@ class Mapper(object):
                 if self.version_id_col is not None:
                     clause.clauses.append(self.version_id_col == sql.bindparam(self.version_id_col.key))
                 statement = table.delete(clause)
-                c = statement.execute(*delete)
+                c = connection.execute(statement, delete)
                 if c.supports_sane_rowcount() and c.rowcount != len(delete):
                     raise CommitError("ConcurrencyError - updated rowcount %d does not match number of objects updated %d" % (c.cursor.rowcount, len(delete)))
 
@@ -901,28 +905,28 @@ class MapperExtension(object):
             return EXT_PASS
         else:
             return self.next.populate_instance(mapper, session, instance, row, identitykey, imap, isnew)
-    def before_insert(self, mapper, instance):
+    def before_insert(self, mapper, connection, instance):
         """called before an object instance is INSERTed into its table.
         
         this is a good place to set up primary key values and such that arent handled otherwise."""
         if self.next is not None:
-            self.next.before_insert(mapper, instance)
-    def before_update(self, mapper, instance):
+            self.next.before_insert(mapper, connection, instance)
+    def before_update(self, mapper, connection, instance):
         """called before an object instnace is UPDATED"""
         if self.next is not None:
-            self.next.before_update(mapper, instance)
-    def after_update(self, mapper, instance):
+            self.next.before_update(mapper, connection, instance)
+    def after_update(self, mapper, connection, instance):
         """called after an object instnace is UPDATED"""
         if self.next is not None:
-            self.next.after_update(mapper, instance)
-    def after_insert(self, mapper, instance):
+            self.next.after_update(mapper, connection, instance)
+    def after_insert(self, mapper, connection, instance):
         """called after an object instance has been INSERTed"""
         if self.next is not None:
-            self.next.after_insert(mapper, instance)
-    def before_delete(self, mapper, instance):
+            self.next.after_insert(mapper, connection, instance)
+    def before_delete(self, mapper, connection, instance):
         """called before an object instance is DELETEed"""
         if self.next is not None:
-            self.next.before_delete(mapper, instance)
+            self.next.before_delete(mapper, connection, instance)
 
 class ClassKey(object):
     """keys a class and an entity name to a mapper, via the mapper_registry"""

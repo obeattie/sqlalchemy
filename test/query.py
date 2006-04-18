@@ -103,8 +103,6 @@ class QueryTest(PersistTest):
 
         
     def testdelete(self):
-        c = db.connection()
-
         self.users.insert().execute(user_id = 7, user_name = 'jack')
         self.users.insert().execute(user_id = 8, user_name = 'fred')
         print repr(self.users.select().execute().fetchall())
@@ -158,10 +156,13 @@ class QueryTest(PersistTest):
         self.users.insert().execute(user_id=1, user_name='foo')
         r = self.users.select().execute().fetchone()
         self.assertEqual(len(r), 2)
+        r.close()
         r = db.execute('select user_name, user_id from query_users', {}).fetchone()
         self.assertEqual(len(r), 2)
+        r.close()
         r = db.execute('select user_name from query_users', {}).fetchone()
         self.assertEqual(len(r), 1)
+        r.close()
         
     def test_column_order_with_simple_query(self):
         # should return values in column definition order
@@ -209,6 +210,7 @@ class QueryTest(PersistTest):
                 self.fail('Should not allow access to private attributes')
             except AttributeError:
                 pass # expected
+            r.close()
         finally:
             shadowed.drop()
         

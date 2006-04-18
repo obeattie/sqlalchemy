@@ -7,20 +7,20 @@ from sqlalchemy.exceptions import *
 from sqlalchemy import *
 from sqlalchemy.ansisql import *
 
-generic_engine = ansisql.engine()
+generic_engine = ansisql.create_engine()
 
 gen_schemata = schema.Table("schemata", generic_engine,
     Column("catalog_name", String),
     Column("schema_name", String),
     Column("schema_owner", String),
-    schema="information_schema")
+    dbschema="information_schema")
 
 gen_tables = schema.Table("tables", generic_engine,
     Column("table_catalog", String),
     Column("table_schema", String),
     Column("table_name", String),
     Column("table_type", String),
-    schema="information_schema")
+    dbschema="information_schema")
 
 gen_columns = schema.Table("columns", generic_engine,
     Column("table_schema", String),
@@ -33,28 +33,28 @@ gen_columns = schema.Table("columns", generic_engine,
     Column("numeric_precision", Integer),
     Column("numeric_scale", Integer),
     Column("column_default", Integer),
-    schema="information_schema")
+    dbschema="information_schema")
     
 gen_constraints = schema.Table("table_constraints", generic_engine,
     Column("table_schema", String),
     Column("table_name", String),
     Column("constraint_name", String),
     Column("constraint_type", String),
-    schema="information_schema")
+    dbschema="information_schema")
 
 gen_column_constraints = schema.Table("constraint_column_usage", generic_engine,
     Column("table_schema", String),
     Column("table_name", String),
     Column("column_name", String),
     Column("constraint_name", String),
-    schema="information_schema")
+    dbschema="information_schema")
 
 gen_key_constraints = schema.Table("key_column_usage", generic_engine,
     Column("table_schema", String),
     Column("table_name", String),
     Column("column_name", String),
     Column("constraint_name", String),
-    schema="information_schema")
+    dbschema="information_schema")
 
 gen_ref_constraints = schema.Table("referential_constraints", generic_engine,
     Column("constraint_catalog", String),
@@ -66,7 +66,7 @@ gen_ref_constraints = schema.Table("referential_constraints", generic_engine,
     Column("match_option", String),
     Column("update_rule", String),
     Column("delete_rule", String),
-    schema="information_schema")
+    dbschema="information_schema")
                                    
 class ISchema(object):
     def __init__(self, engine):

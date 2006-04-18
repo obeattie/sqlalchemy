@@ -40,7 +40,14 @@ class PoolTest(PersistTest):
         self.assert_(connection.cursor() is not None)
         self.assert_(connection is not connection2)
 
-    def testqueuepool(self):
+    def testqueuepool_del(self):
+        self._do_testqueuepool(useclose=False)
+
+    def testqueuepool_close(self):
+        self._do_testqueuepool(useclose=True)
+
+    def _do_testqueuepool(self, useclose=False):
+
         p = pool.QueuePool(creator = lambda: sqlite.connect('foo.db'), pool_size = 3, max_overflow = -1, use_threadlocal = False, echo = False)
     
         def status(pool):
@@ -60,30 +67,64 @@ class PoolTest(PersistTest):
         self.assert_(status(p) == (3,0,2,5))
         c6 = p.connect()
         self.assert_(status(p) == (3,0,3,6))
-        c4 = c3 = c2 = None
+        if useclose:
+            c4.close()
+            c3.close()
+            c2.close()
+        else:
+            c4 = c3 = c2 = None
         self.assert_(status(p) == (3,3,3,3))
-        c1 = c5 = c6 = None
+        if useclose:
+            c1.close()
+            c5.close()
+            c6.close()
+        else:
+            c1 = c5 = c6 = None
         self.assert_(status(p) == (3,3,0,0))
         c1 = p.connect()
         c2 = p.connect()
         self.assert_(status(p) == (3, 1, 0, 2))
-        c2 = None
+        if useclose:
+            c2.close()
+        else:
+            c2 = None
         self.assert_(status(p) == (3, 2, 0, 1))
     
-    def testthreadlocal(self):
+    def testthreadlocal_del(self):
+        self._do_testthreadlocal(useclose=False)
+
+    def testthreadlocal_close(self):
+        self._do_testthreadlocal(useclose=True)
+
+    def _do_testthreadlocal(self, useclose=False):
         for p in (
             pool.QueuePool(creator = lambda: sqlite.connect('foo.db'), pool_size = 3, max_overflow = -1, use_threadlocal = True, echo = False),
             pool.SingletonThreadPool(creator = lambda: sqlite.connect('foo.db'), use_threadlocal = True)
-        ):    
+        ):   
             c1 = p.connect()
             c2 = p.connect()
             self.assert_(c1 is c2)
             c3 = p.unique_connection()
             self.assert_(c3 is not c1)
-            c2 = None
+            if useclose:
+                c2.close()
+            else:
+                c2 = None
             c2 = p.connect()
             self.assert_(c1 is c2)
             self.assert_(c3 is not c1)
+            if useclose:
+                c2.close()
+            else:
+                c2 = None
+                
+            if useclose:
+                c1 = p.connect()
+                c2 = p.connect()
+                c3 = p.connect()
+                c3.close()
+                c2.close()
+                self.assert_(c1.connection is not None)
 
     def tearDown(self):
        pool.clear_managers()

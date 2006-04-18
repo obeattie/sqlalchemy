@@ -45,7 +45,7 @@ class ColumnProperty(MapperProperty):
         # establish a SmartProperty property manager on the object for this key
         if parent._is_primary_mapper():
             #print "regiser col on class %s key %s" % (parent.class_.__name__, key)
-            objectstore.uow().register_attribute(parent.class_, key, uselist = False)
+            objectstore.global_attributes.register_attribute(parent.class_, key, uselist = False)
     def execute(self, session, instance, row, identitykey, imap, isnew):
         if isnew:
             #print "POPULATING OBJ", instance.__class__.__name__, "COL", self.columns[0]._label, "WITH DATA", row[self.columns[0]], "ROW IS A", row.__class__.__name__, "COL ID", id(self.columns[0])
@@ -67,9 +67,13 @@ class DeferredColumnProperty(ColumnProperty):
         # establish a SmartProperty property manager on the object for this key, 
         # containing a callable to load in the attribute
         if self.is_primary():
-            objectstore.uow().register_attribute(parent.class_, key, uselist=False, callable_=lambda i:self.setup_loader(i))
+            objectstore.global_attributes.register_attribute(parent.class_, key, uselist=False, callable_=lambda i:self.setup_loader(i))
     def setup_loader(self, instance):
+        if not self.parent.is_assigned(instance):
+            return object_mapper(instance).props[self.key].setup_loader(instance)
         def lazyload():
+            session = objectstore.get_session(instance)
+            connection = session.connect(self.parent)
             clause = sql.and_()
             try:
                 pk = self.parent.pks_by_table[self.columns[0].table]
@@ -81,17 +85,20 @@ class DeferredColumnProperty(ColumnProperty):
                     return None
                 clause.clauses.append(primary_key == attr)
             
-            if self.group is not None:
-                groupcols = [p for p in self.parent.props.values() if isinstance(p, DeferredColumnProperty) and p.group==self.group]
-                row = sql.select([g.columns[0] for g in groupcols], clause, use_labels=True).execute().fetchone()
-                for prop in groupcols:
-                    if prop is self:
-                        continue
-                    instance.__dict__[prop.key] = row[prop.columns[0]]
-                    objectstore.global_attributes.create_history(instance, prop.key, uselist=False)
-                return row[self.columns[0]]    
-            else:
-                return sql.select([self.columns[0]], clause, use_labels=True).scalar()
+            try:
+                if self.group is not None:
+                    groupcols = [p for p in self.parent.props.values() if isinstance(p, DeferredColumnProperty) and p.group==self.group]
+                    row = connection.execute(sql.select([g.columns[0] for g in groupcols], clause, use_labels=True), None).fetchone()
+                    for prop in groupcols:
+                        if prop is self:
+                            continue
+                        instance.__dict__[prop.key] = row[prop.columns[0]]
+                        objectstore.global_attributes.create_history(instance, prop.key, uselist=False)
+                    return row[self.columns[0]]    
+                else:
+                    return connection.scalar(sql.select([self.columns[0]], clause, use_labels=True),None)
+            finally:
+                connection.close()
         return lazyload
     def setup(self, key, statement, **options):
         pass
@@ -219,7 +226,7 @@ class PropertyLoader(MapperProperty):
         
     def _set_class_attribute(self, class_, key):
         """sets attribute behavior on our target class."""
-        objectstore.uow().register_attribute(class_, key, uselist = self.uselist, deleteremoved = self.private, extension=self.attributeext)
+        objectstore.global_attributes.register_attribute(class_, key, uselist = self.uselist, deleteremoved = self.private, extension=self.attributeext)
         
     def _get_direction(self):
         """determines our 'direction', i.e. do we represent one to many, many to many, etc."""
@@ -412,6 +419,8 @@ class PropertyLoader(MapperProperty):
             uowcommit.register_saved_history(l)
             return l
 
+        connection = uowcommit.transaction.connection(self.mapper)
+        
         # plugin point
         
         if self.direction == PropertyLoader.MANYTOMANY:
@@ -440,10 +449,10 @@ class PropertyLoader(MapperProperty):
                 # TODO: precompile the delete/insert queries and store them as instance variables
                 # on the PropertyLoader
                 statement = self.secondary.delete(sql.and_(*[c == sql.bindparam(c.key) for c in self.secondary.c]))
-                statement.execute(*secondary_delete)
+                connection.execute(statement, secondary_delete)
             if len(secondary_insert):
                 statement = self.secondary.insert()
-                statement.execute(*secondary_insert)
+                connection.execute(statement, secondary_insert)
         elif self.direction == PropertyLoader.MANYTOONE and delete:
             if self.private:
                 for obj in deplist:

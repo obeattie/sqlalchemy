@@ -1,0 +1,582 @@
+from sqlalchemy import exceptions, sql, schema, util, types
+import StringIO, sys, re
+
+class ConnectionProvider(object):
+    """defines an interface that returns raw Connection objects (or compatible)."""
+    def get_connection(self):
+        """this method should return a Connection or compatible object from a DBAPI which
+        also contains a close() method.  
+        It is not defined what context this connection belongs to.  It may be newly connected, 
+        returned from a pool, part of some other kind of context such as thread-local,
+        or can be a fixed member of this object."""
+        raise NotImplementedError()
+    def dispose(self):
+        """releases all resources corresponding to this ConnectionProvider, such 
+        as any underlying connection pools."""
+        raise NotImplementedError()
+
+class Dialect(sql.AbstractDialect):
+    """Adds behavior to the execution of queries to provide 
+    support for column defaults, differences between paramstyles, quirks between post-execution behavior, 
+    and a general consistentization of the behavior of various DBAPIs. 
+    
+    The Dialect should also implement the following two attributes:
+    
+    positional - True if the paramstyle for this Dialect is positional
+    paramstyle - the paramstyle to be used (some DBAPIs support multiple paramstyles)
+    convert_unicode - True if unicode conversion should be applied to all str types
+    encoding - type of encoding to use for unicode, usually defaults to 'utf-8'
+    """
+    def create_connect_args(self, opts):
+        """given a dictionary of key-valued connect parameters, returns a tuple 
+        consisting of a *args/**kwargs suitable to send directly to the dbapi's connect function.
+        The connect args will have any number of the following keynames:  host, hostname, database, dbanme,
+        user,username, password, pw, passwd, filename."""
+        raise NotImplementedError()
+    def convert_compiled_params(self, parameters):
+        """given a sql.ClauseParameters object, returns an array or dictionary suitable to pass 
+        directly to this Dialect's DBAPI's execute method."""
+    def type_descriptor(self, typeobj):
+        """provides a database-specific TypeEngine object, given the generic object
+        which comes from the types module.  Subclasses will usually use the adapt_type()
+        method in the types module to make this job easy."""
+        raise NotImplementedError()
+    def oid_column_name(self):
+        """returns the oid column name for this dialect, or None if the dialect cant/wont support OID/ROWID."""
+        raise NotImplementedError()
+    def supports_sane_rowcount(self):
+        """Provided to indicate when MySQL is being used, which does not have standard behavior
+        for the "rowcount" function on a statement handle.  """
+        raise NotImplementedError()
+    def schemagenerator(self, engine, proxy, **params):
+        """returns a schema.SchemaVisitor instance that can generate schemas, when it is
+        invoked to traverse a set of schema objects. 
+
+        schemagenerator is called via the create() method on Table, Index, and others.
+        """
+        raise NotImplementedError()
+    def schemadropper(self, engine, proxy, **params):
+        """returns a schema.SchemaVisitor instance that can drop schemas, when it is
+        invoked to traverse a set of schema objects. 
+
+        schemagenerator is called via the drop() method on Table, Index, and others.
+        """
+        raise NotImplementedError()
+    def defaultrunner(self, engine, proxy, **params):
+        """returns a schema.SchemaVisitor instances that can execute defaults."""
+        raise NotImplementedError()
+    def compiler(self, statement, parameters):
+        """returns a sql.ClauseVisitor which will produce a string representation of the given
+        ClauseElement and parameter dictionary.  This object is usually a subclass of 
+        ansisql.ANSICompiler.  
+
+        compiler is called within the context of the compile() method."""
+        raise NotImplementedError()
+    def reflecttable(self, engine, table):
+        """given an Engine and a Table object, reflects its columns and properties from the database."""
+        raise NotImplementedError()
+    def dbapi(self):
+        """subclasses override this method to provide the DBAPI module used to establish
+        connections."""
+        raise NotImplementedError()
+    def get_default_schema_name(self, proxy):
+        """returns the currently selected schema given an execution proxy"""
+        raise NotImplementedError()
+    def execution_context(self):
+        """returns a new ExecutionContext object."""
+        raise NotImplementedError()
+    def do_begin(self, connection):
+        """provides an implementation of connection.begin()"""
+        raise NotImplementedError()
+    def do_rollback(self, connection):
+        """provides an implementation of connection.rollback()"""
+        raise NotImplementedError()
+    def do_commit(self, connection):
+        """provides an implementation of connection.commit()"""
+        raise NotImplementedError()
+    def do_executemany(self, cursor, statement, parameters):
+        raise NotImplementedError()
+    def do_execute(self, cursor, statement, parameters):
+        raise NotImplementedError()
+        
+class ExecutionContext(object):
+    """a messenger object for a Dialect that corresponds to a single execution.  The Dialect
+    should provide an ExecutionContext via the create_execution_context() method.  
+    The pre_exec and post_exec methods will be called for compiled statements, afterwhich
+    it is expected that the various methods last_inserted_ids, last_inserted_params, etc.
+    will contain appropriate values, if applicable."""
+    def pre_exec(self, engine, proxy, compiled, parameters, **kwargs):
+        """called before an execution of a compiled statement.  proxy is a callable that
+        takes a string statement and a bind parameter list/dictionary."""
+        raise NotImplementedError()
+    def post_exec(self, engine, proxy, compiled, parameters, **kwargs):
+        """called after the execution of a compiled statement.  proxy is a callable that
+        takes a string statement and a bind parameter list/dictionary."""
+        raise NotImplementedError()
+    def get_rowcount(self, cursor):
+        """returns the count of rows updated/deleted for an UPDATE/DELETE statement"""
+        raise NotImplementedError()
+    def supports_sane_rowcount(self):
+        """Provided to indicate when MySQL is being used, which does not have standard behavior
+        for the "rowcount" function on a statement handle.  """
+        raise NotImplementedError()
+    def last_inserted_ids(self):
+        """returns the list of the primary key values for the last insert statement executed.
+        This does not apply to straight textual clauses; only to sql.Insert objects compiled against 
+        a schema.Table object, which are executed via statement.execute().  The order of items in the 
+        list is the same as that of the Table's 'primary_key' attribute.
+        
+        In some cases, this method may invoke a query back to the database to retrieve the data, based on
+        the "lastrowid" value in the cursor."""
+        raise NotImplementedError()
+    def last_inserted_params(self):
+        """returns a dictionary of the full parameter dictionary for the last compiled INSERT statement,
+        including any ColumnDefaults or Sequences that were pre-executed.  this value is thread-local."""
+        raise NotImplementedError()
+    def last_updated_params(self):
+        """returns a dictionary of the full parameter dictionary for the last compiled UPDATE statement,
+        including any ColumnDefaults that were pre-executed. this value is thread-local."""
+        raise NotImplementedError()
+    def lastrow_has_defaults(self):
+        """returns True if the last row INSERTED via a compiled insert statement contained PassiveDefaults,
+        indicating that the database inserted data beyond that which we gave it. this value is thread-local."""
+        raise NotImplementedError()
+
+class Connection(object):
+    """wraps a DBAPI connection to provide execution support for ClauseElements"""
+    def __init__(self, engine, connection=None, close_with_result=False):
+        self.engine = engine
+        self.connection = connection or engine.raw_connection()
+        self.transaction = None
+        self.close_with_result = close_with_result
+    def _create_transaction(self, parent):
+        return Transaction(self, parent)
+    def connect(self):
+        return self
+    def begin(self):
+        if self.transaction is None:
+            self.transaction = self._create_transaction(None)
+            return self.transaction
+        else:
+            return self._create_transaction(self.transaction)
+    def _autocommit(self, statement):
+        """when no Transaction is present, this is called after executions to provide "autocommit" behavior."""
+        # TODO: have the dialect determine if autocommit can be set on the connection directly without this 
+        # extra step
+        if self.transaction is None and re.match(r'UPDATE|INSERT|CREATE|DELETE|DROP', statement.lstrip().upper()):
+            self.engine.dialect.do_commit(self.connection)
+    def close(self):
+        self.connection.close()
+        self.connection = None
+    def scalar(self, object, parameters, **kwargs):
+        row = self.execute(object, parameters, **kwargs).fetchone()
+        if row is not None:
+            return row[0]
+        else:
+            return None
+    def execute(self, object, parameters=None, **kwargs):
+        return Connection.executors[type(object).__mro__[-2]](self, object, parameters, **kwargs)
+    def execute_text(self, statement, parameters, **kwargs):
+        cursor = self._execute_raw(statement, parameters, **kwargs)
+        return ResultProxy(self.engine, self, cursor)
+    def execute_clauseelement(self, elem, parameters, **kwargs):
+        # TODO: get this into ClauseElement
+        executemany = parameters is not None and (isinstance(parameters, list) or isinstance(parameters, tuple))
+        if executemany:
+            param = parameters[0]
+        else:
+            param = parameters
+        return self.execute_compiled(elem.compile(engine=self.engine, parameters=param, **kwargs), parameters, **kwargs)
+    def execute_default(self, default, parameters=None, **kwargs):
+        return default.accept_schema_visitor(self.engine.dialect.defaultrunner(self.engine, self.proxy, **kwargs))
+    def execute_compiled(self, compiled, parameters, **kwargs):
+        """executes a sql.Compiled object."""
+        cursor = self.connection.cursor()
+        executemany = parameters is not None and (isinstance(parameters, list) or isinstance(parameters, tuple))
+        if executemany:
+            parameters = [compiled.get_params(**m) for m in parameters]
+        elif parameters is not None:
+            parameters = compiled.get_params(**parameters)
+        else:
+            parameters = compiled.get_params()
+        def proxy(statement=None, parameters=None):
+            if statement is None:
+                return cursor
+
+            parameters = self.engine.dialect.convert_compiled_params(parameters)
+            self._execute_raw(statement, parameters, cursor=cursor, context=context)
+            return cursor
+        context = self.engine.dialect.create_execution_context()
+        context.pre_exec(self.engine, proxy, compiled, parameters, **kwargs)
+        proxy(str(compiled), parameters)
+        context.post_exec(self.engine, proxy, compiled, parameters, **kwargs)
+        return ResultProxy(self.engine, self, cursor, context, typemap=compiled.typemap)
+    executors = {
+        sql.ClauseElement : execute_clauseelement,
+        sql.Compiled : execute_compiled,
+        schema.SchemaItem:execute_default,
+        str.__mro__[-2] : execute_text
+    }
+    def create(self, entity, **kwargs):
+        """creates a table or index given an appropriate schema object."""
+        return self.engine.create(entity, connection=self, **kwargs)
+    def drop(self, entity, **kwargs):
+        """drops a table or index given an appropriate schema object."""
+        return self.engine.drop(entity, connection=self, **kwargs)
+    
+    def _execute_raw(self, statement, parameters=None, cursor=None, echo=None, context=None, **kwargs):
+        if cursor is None:
+            cursor = self.connection.cursor()
+        try:
+            if echo is True or self.engine.echo is not False:
+                self.engine.log(statement)
+                self.engine.log(repr(parameters))
+            if parameters is not None and isinstance(parameters, list) and len(parameters) > 0 and (isinstance(parameters[0], list) or isinstance(parameters[0], dict)):
+                self._executemany(cursor, statement, parameters, context=context)
+            else:
+                self._execute(cursor, statement, parameters, context=context)
+            self._autocommit(statement)
+        except:
+            raise
+        return cursor
+
+    def _execute(self, c, statement, parameters, context=None):
+        if parameters is None:
+            if self.engine.dialect.positional:
+                parameters = ()
+            else:
+                parameters = {}
+        try:
+            self.engine.dialect.do_execute(c, statement, parameters, context=context)
+        except Exception, e:
+            raise exceptions.SQLError(statement, parameters, e)
+    def _executemany(self, c, statement, parameters, context=None):
+        try:
+            self.engine.dialect.do_executemany(c, statement, parameters, context=context)
+        except Exception, e:
+            raise exceptions.SQLError(statement, parameters, e)
+    def proxy(self, statement=None, parameters=None):
+        """executes the given statement string and parameter object.
+        the parameter object is expected to be the result of a call to compiled.get_params().
+        This callable is a generic version of a connection/cursor-specific callable that
+        is produced within the execute_compiled method, and is used for objects that require
+        this style of proxy when outside of an execute_compiled method, primarily the DefaultRunner."""
+        parameters = self.engine.dialect.convert_compiled_params(parameters)
+        return self._execute_raw(statement, parameters)
+
+class Transaction(object):
+    """represents a Transaction in progress"""
+    def __init__(self, connection, parent):
+        self.connection = connection
+        self.parent = parent or self
+        self.is_active = True
+        if self.parent is self:
+            self.connection.engine.dialect.do_begin(self.connection.connection)
+            if self.connection.engine.echo:
+                self.connection.engine.log("BEGIN")
+    def rollback(self):
+        if not self.parent.is_active:
+            raise exceptions.InvalidRequestError("This transaction is inactive")
+        if self.parent is self:
+            if self.connection.engine.echo:
+                self.connection.engine.log("ROLLBACK")
+            self.connection.engine.dialect.do_rollback(self.connection.connection)
+            self.is_active = False
+        else:
+            self.parent.rollback()
+    def commit(self):
+        if not self.parent.is_active:
+            raise exceptions.InvalidRequestError("This transaction is inactive")
+        if self.parent is self:
+            if self.connection.engine.echo:
+                self.connection.engine.log("COMMIT")
+            self.connection.engine.dialect.do_commit(self.connection.connection)
+            self.is_active = False
+        
+class ComposedSQLEngine(sql.Engine):
+    """
+    Connects a ConnectionProvider, a Dialect and a CompilerFactory together to 
+    provide a default implementation of SchemaEngine.
+    """
+
+    def __init__(self, connection_provider, dialect, echo=False, logger=None, echo_uow=False, **kwargs):
+        self.connection_provider = connection_provider
+        self.dialect=dialect
+        self.echo = echo
+        # TODO: echo_uow should be only in Session
+        self.echo_uow = echo_uow
+        self.logger = logger or util.Logger(origin='engine')
+
+    def _get_name(self):
+        return sys.modules[self.dialect.__module__].descriptor()['name']
+    name = property(_get_name)
+
+    def dispose(self):
+        self.connection_provider.dispose()
+
+    def create(self, entity, connection=None, **kwargs):
+        """creates a table or index within this engine's database connection given a schema.Table object."""
+        self._run_visitor(self.dialect.schemagenerator, entity, connection=connection, **kwargs)
+    def drop(self, entity, connection=None, **kwargs):
+        """drops a table or index within this engine's database connection given a schema.Table object."""
+        self._run_visitor(self.dialect.schemadropper, entity, connection=connection, **kwargs)
+    def execute_default(self, default, **kwargs):
+        connection = self.connect()
+        try:
+            return connection.execute_default(default, **kwargs)
+        finally:
+            connection.close()
+    
+    def _func(self):
+        return sql.FunctionGenerator(self)
+    func = property(_func)
+    def text(self, text, *args, **kwargs):
+        """returns a sql.text() object for performing literal queries."""
+        return sql.text(text, engine=self, *args, **kwargs)
+
+
+    def _run_visitor(self, visitorcallable, element, connection=None, **kwargs):
+        if connection is None:
+            conn = self.connect()
+        else:
+            conn = connection
+        try:
+            element.accept_visitor(visitorcallable(self, conn.proxy, **kwargs))
+        finally:
+            if connection is None:
+                conn.close()
+
+    def execute(self, *args, **kwargs):
+        connection = self.connect(close_with_result=True)
+        return connection.execute(*args, **kwargs)
+        
+    def execute_compiled(self, compiled, parameters, **kwargs):
+        connection = self.connect(close_with_result=True)
+        return connection.execute_compiled(compiled, parameters, **kwargs)
+        
+    def compiler(self, statement, parameters, **kwargs):
+        return self.dialect.compiler(statement, parameters, engine=self, **kwargs)
+
+    def connect(self, **kwargs):
+        return Connection(self, **kwargs)
+        
+    def reflecttable(self, table):
+        """given a Table object, reflects its columns and properties from the database."""
+        self.dialect.reflecttable(self, table)
+
+    def raw_connection(self):
+        """returns a DBAPI connection."""
+        return self.connection_provider.get_connection()
+
+    def log(self, msg):
+        """logs a message using this SQLEngine's logger stream."""
+        self.logger.write(msg)
+
+class ResultProxy:
+    """wraps a DBAPI cursor object to provide access to row columns based on integer
+    position, case-insensitive column name, or by schema.Column object. e.g.:
+    
+    row = fetchone()
+
+    col1 = row[0]    # access via integer position
+
+    col2 = row['col2']   # access via name
+
+    col3 = row[mytable.c.mycol] # access via Column object.  
+    
+    ResultProxy also contains a map of TypeEngine objects and will invoke the appropriate
+    convert_result_value() method before returning columns.
+    """
+    class AmbiguousColumn(object):
+        def __init__(self, key):
+            self.key = key
+        def convert_result_value(self, arg, engine):
+            raise InvalidRequestError("Ambiguous column name '%s' in result set! try 'use_labels' option on select statement." % (self.key))
+    
+    def __init__(self, engine, connection, cursor, executioncontext=None, typemap=None):
+        """ResultProxy objects are constructed via the execute() method on SQLEngine."""
+        self.connection = connection
+        self.dialect = engine.dialect
+        self.cursor = cursor
+        self.engine = engine
+        self.closed = False
+        self.executioncontext = executioncontext
+        self.echo = engine.echo=="debug"
+        if executioncontext:
+            self.rowcount = executioncontext.get_rowcount(cursor)
+        else:
+            self.rowcount = cursor.rowcount
+        metadata = cursor.description
+        self.props = {}
+        self.keys = []
+        i = 0
+        if metadata is not None:
+            for item in metadata:
+                # sqlite possibly prepending table name to colnames so strip
+                colname = item[0].split('.')[-1].lower()
+                if typemap is not None:
+                    rec = (typemap.get(colname, types.NULLTYPE), i)
+                else:
+                    rec = (types.NULLTYPE, i)
+                if rec[0] is None:
+                    raise DBAPIError("None for metadata " + colname)
+                if self.props.setdefault(colname, rec) is not rec:
+                    self.props[colname] = (ResultProxy.AmbiguousColumn(colname), 0)
+                self.keys.append(colname)
+                #print "COLNAME", colname
+                self.props[i] = rec
+                i+=1
+    def close(self):
+        if not self.closed:
+            self.closed = True
+            if self.connection.close_with_result:
+                self.connection.close()
+    def _get_col(self, row, key):
+        if isinstance(key, schema.Column) or isinstance(key, sql.ColumnElement):
+            try:
+                rec = self.props[key._label.lower()]
+                #print "GOT IT FROM LABEL FOR ", key._label
+            except KeyError:
+                try:
+                    rec = self.props[key.key.lower()]
+                except KeyError:
+                    rec = self.props[key.name.lower()]
+        elif isinstance(key, str):
+            rec = self.props[key.lower()]
+        else:
+            rec = self.props[key]
+        return rec[0].dialect_impl(self.dialect).convert_result_value(row[rec[1]], self.dialect)
+    
+    def __iter__(self):
+        while True:
+            row = self.fetchone()
+            if row is None:
+                raise StopIteration
+            else:
+                yield row
+     
+    def last_inserted_ids(self):
+        return self.executioncontext.last_inserted_ids()
+    def last_updated_params(self):
+        return self.executioncontext.last_updated_params()
+    def last_inserted_params(self):
+        return self.executioncontext.last_inserted_params()
+    def lastrow_has_defaults(self):
+        return self.executioncontext.lastrow_has_defaults()
+    def supports_sane_rowcount(self):
+        return self.executioncontext.supports_sane_rowcount()
+        
+    def fetchall(self):
+        """fetches all rows, just like DBAPI cursor.fetchall()."""
+        l = []
+        while True:
+            v = self.fetchone()
+            if v is None:
+                return l
+            l.append(v)
+            
+    def fetchone(self):
+        """fetches one row, just like DBAPI cursor.fetchone()."""
+        row = self.cursor.fetchone()
+        if row is not None:
+            if self.echo: self.engine.log(repr(row))
+            return RowProxy(self, row)
+        else:
+            self.close()
+            return None
+
+class RowProxy:
+    """proxies a single cursor row for a parent ResultProxy."""
+    def __init__(self, parent, row):
+        """RowProxy objects are constructed by ResultProxy objects."""
+        self.__parent = parent
+        self.__row = row
+    def close(self):
+        self.__parent.close()
+    def __iter__(self):
+        for i in range(0, len(self.__row)):
+            yield self.__parent._get_col(self.__row, i)
+    def __eq__(self, other):
+        return (other is self) or (other == tuple([self.__parent._get_col(self.__row, key) for key in range(0, len(self.__row))]))
+    def __repr__(self):
+        return repr(tuple([self.__parent._get_col(self.__row, key) for key in range(0, len(self.__row))]))
+    def __getitem__(self, key):
+        return self.__parent._get_col(self.__row, key)
+    def __getattr__(self, name):
+        try:
+            return self.__parent._get_col(self.__row, name)
+        except KeyError:
+            raise AttributeError
+    def items(self):
+        return [(key, getattr(self, key)) for key in self.keys()]
+    def keys(self):
+        return self.__parent.keys
+    def values(self): 
+        return list(self)
+    def __len__(self): 
+        return len(self.__row)
+
+class SchemaIterator(schema.SchemaVisitor):
+    """a visitor that can gather text into a buffer and execute the contents of the buffer."""
+    def __init__(self, engine, proxy, **params):
+        self.proxy = proxy
+        self.engine = engine
+        self.buffer = StringIO.StringIO()
+
+    def append(self, s):
+        """appends content to the SchemaIterator's query buffer."""
+        self.buffer.write(s)
+
+    def execute(self):
+        """executes the contents of the SchemaIterator's buffer using its sql proxy and
+        clears out the buffer."""
+        try:
+            return self.proxy(self.buffer.getvalue(), None)
+        finally:
+            self.buffer.truncate(0)
+
+class DefaultRunner(schema.SchemaVisitor):
+    def __init__(self, engine, proxy):
+        self.proxy = proxy
+        self.engine = engine
+
+    def get_column_default(self, column):
+        if column.default is not None:
+            return column.default.accept_schema_visitor(self)
+        else:
+            return None
+
+    def get_column_onupdate(self, column):
+        if column.onupdate is not None:
+            return column.onupdate.accept_schema_visitor(self)
+        else:
+            return None
+
+    def visit_passive_default(self, default):
+        """passive defaults by definition return None on the app side,
+        and are post-fetched to get the DB-side value"""
+        return None
+
+    def visit_sequence(self, seq):
+        """sequences are not supported by default"""
+        return None
+
+    def exec_default_sql(self, default):
+        c = sql.select([default.arg], engine=self.engine).compile()
+        return self.proxy(str(c), c.get_params()).fetchone()[0]
+
+    def visit_column_onupdate(self, onupdate):
+        if isinstance(onupdate.arg, sql.ClauseElement):
+            return self.exec_default_sql(onupdate)
+        elif callable(onupdate.arg):
+            return onupdate.arg()
+        else:
+            return onupdate.arg
+
+    def visit_column_default(self, default):
+        if isinstance(default.arg, sql.ClauseElement):
+            return self.exec_default_sql(default)
+        elif callable(default.arg):
+            return default.arg()
+        else:
+            return default.arg

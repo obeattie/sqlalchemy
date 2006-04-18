@@ -4,7 +4,7 @@
 # This module is part of SQLAlchemy and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
-import datetime, sys, StringIO, string, types, re
+import sys, StringIO, string, types, re
 
 import sqlalchemy.util as util
 import sqlalchemy.sql as sql
@@ -15,11 +15,6 @@ import sqlalchemy.types as sqltypes
 from sqlalchemy.exceptions import *
 from sqlalchemy import *
 import information_schema as ischema
-
-try:
-    import mx.DateTime.DateTime as mxDateTime
-except:
-    mxDateTime = None
 
 try:
     import psycopg2 as psycopg
@@ -47,42 +42,30 @@ class PG2DateTime(sqltypes.DateTime):
     def get_col_spec(self):
         return "TIMESTAMP"
 class PG1DateTime(sqltypes.DateTime):
-    def convert_bind_param(self, value, engine):
+    def convert_bind_param(self, value, dialect):
+        # TODO: perform appropriate postgres1 conversion between Python DateTime/MXDateTime
+        # this one doesnt seem to work with the "emulation" mode
         if value is not None:
-            if isinstance(value, datetime.datetime):
-                seconds = float(str(value.second) + "."
-                                + str(value.microsecond))
-                mx_datetime = mxDateTime(value.year, value.month, value.day,
-                                         value.hour, value.minute,
-                                         seconds)
-                return psycopg.TimestampFromMx(mx_datetime)
             return psycopg.TimestampFromMx(value)
         else:
             return None
-    def convert_result_value(self, value, engine):
-        if value is None:
-            return None
-        second_parts = str(value.second).split(".")
-        seconds = int(second_parts[0])
-        microseconds = int(second_parts[1])
-        return datetime.datetime(value.year, value.month, value.day,
-                                 value.hour, value.minute, seconds,
-                                 microseconds)
-
+    def convert_result_value(self, value, dialect):
+        # TODO: perform appropriate postgres1 conversion between Python DateTime/MXDateTime
+        return value
     def get_col_spec(self):
         return "TIMESTAMP"
 class PG2Date(sqltypes.Date):
     def get_col_spec(self):
         return "DATE"
 class PG1Date(sqltypes.Date):
-    def convert_bind_param(self, value, engine):
+    def convert_bind_param(self, value, dialect):
         # TODO: perform appropriate postgres1 conversion between Python DateTime/MXDateTime
         # this one doesnt seem to work with the "emulation" mode
         if value is not None:
             return psycopg.DateFromMx(value)
         else:
             return None
-    def convert_result_value(self, value, engine):
+    def convert_result_value(self, value, dialect):
         # TODO: perform appropriate postgres1 conversion between Python DateTime/MXDateTime
         return value
     def get_col_spec(self):
@@ -91,14 +74,14 @@ class PG2Time(sqltypes.Time):
     def get_col_spec(self):
         return "TIME"
 class PG1Time(sqltypes.Time):
-    def convert_bind_param(self, value, engine):
+    def convert_bind_param(self, value, dialect):
         # TODO: perform appropriate postgres1 conversion between Python DateTime/MXDateTime
         # this one doesnt seem to work with the "emulation" mode
         if value is not None:
             return psycopg.TimeFromMx(value)
         else:
             return None
-    def convert_result_value(self, value, engine):
+    def convert_result_value(self, value, dialect):
         # TODO: perform appropriate postgres1 conversion between Python DateTime/MXDateTime
         return value
     def get_col_spec(self):
@@ -181,8 +164,27 @@ def descriptor():
         ('host',"Hostname", None),
     ]}
 
-class PGSQLEngine(ansisql.ANSISQLEngine):
-    def __init__(self, opts, module=None, use_oids=False, **params):
+class PGExecutionContext(default.DefaultExecutionContext):
+    def pre_exec(self, engine, proxy, statement, parameters, **kwargs):
+        return
+
+    def post_exec(self, engine, proxy, compiled, parameters, **kwargs):
+        if getattr(compiled, "isinsert", False) and self.context.last_inserted_ids is None:
+            if not engine.dialect.use_oids:
+                pass
+                # will raise invalid error when they go to get them
+            else:
+                table = compiled.statement.table
+                cursor = proxy()
+                if cursor.lastrowid is not None and table is not None and len(table.primary_key):
+                    s = sql.select(table.primary_key, table.oid_column == cursor.lastrowid)
+                    c = s.compile()
+                    cursor = proxy(str(c), c.get_params())
+                    row = cursor.fetchone()
+                self._last_inserted_ids = [v for v in row]
+    
+class PGDialect(ansisql.ANSIDialect):
+    def __init__(self, module=None, use_oids=False, **params):
         self.use_oids = use_oids
         if module is None:
             if psycopg is None:
@@ -198,17 +200,16 @@ class PGSQLEngine(ansisql.ANSISQLEngine):
                 self.version = 1
         except:
             self.version = 1
-        self.opts = self._translate_connect_args(('host', 'database', 'user', 'password'), opts)
-        if self.opts.has_key('port'):
+        ansisql.ANSIDialect.__init__(self, **params)
+
+    def create_connect_args(self, opts):
+        opts = self._translate_connect_args(('host', 'database', 'user', 'password'), opts)
+        if opts.has_key('port'):
             if self.version == 2:
-                self.opts['port'] = int(self.opts['port'])
+                opts['port'] = int(opts['port'])
             else:
-                self.opts['port'] = str(self.opts['port'])
-                
-        ansisql.ANSISQLEngine.__init__(self, **params)
-        
-    def connect_args(self):
-        return [[], self.opts]
+                opts['port'] = str(opts['port'])
+        return ([], opts)
 
     def type_descriptor(self, typeobj):
         if self.version == 2:
@@ -217,16 +218,13 @@ class PGSQLEngine(ansisql.ANSISQLEngine):
             return sqltypes.adapt_type(typeobj, pg1_colspecs)
 
     def compiler(self, statement, bindparams, **kwargs):
-        return PGCompiler(statement, bindparams, engine=self, **kwargs)
-
-    def schemagenerator(self, **params):
-        return PGSchemaGenerator(self, **params)
-
-    def schemadropper(self, **params):
-        return PGSchemaDropper(self, **params)
-
-    def defaultrunner(self, proxy=None):
-        return PGDefaultRunner(self, proxy)
+        return PGCompiler(self, statement, bindparams, **kwargs)
+    def schemagenerator(self, *args, **kwargs):
+        return PGSchemaGenerator(*args, **kwargs)
+    def schemadropper(self, *args, **kwargs):
+        return PGSchemaDropper(*args, **kwargs)
+    def defaultrunner(self, engine, proxy):
+        return PGDefaultRunner(engine, proxy)
         
     def get_default_schema_name(self):
         if not hasattr(self, '_default_schema_name'):
@@ -245,35 +243,16 @@ class PGSQLEngine(ansisql.ANSISQLEngine):
         else:
             return None
 
-    def pre_exec(self, proxy, statement, parameters, **kwargs):
-        return
 
-    def post_exec(self, proxy, compiled, parameters, **kwargs):
-        if getattr(compiled, "isinsert", False) and self.context.last_inserted_ids is None:
-            if not self.use_oids:
-                pass
-                # will raise invalid error when they go to get them
-            else:
-                table = compiled.statement.table
-                cursor = proxy()
-                if cursor.lastrowid is not None and table is not None and len(table.primary_key):
-                    s = sql.select(table.primary_key, table.oid_column == cursor.lastrowid)
-                    c = s.compile()
-                    cursor = proxy(str(c), c.get_params())
-                    row = cursor.fetchone()
-                self.context.last_inserted_ids = [v for v in row]
-
-    def _executemany(self, c, statement, parameters):
+    def do_executemany(self, c, statement, parameters, context=None):
         """we need accurate rowcounts for updates, inserts and deletes.  psycopg2 is not nice enough
         to produce this correctly for an executemany, so we do our own executemany here."""
         rowcount = 0
         for param in parameters:
-            try:
-                c.execute(statement, param)
-            except Exception, e:
-                raise exceptions.SQLError(statement, param, e)
+            c.execute(statement, param)
             rowcount += c.rowcount
-        self.context.rowcount = rowcount
+        if context is not None:
+            context._rowcount = rowcount
 
     def dbapi(self):
         return self.module
@@ -289,7 +268,6 @@ class PGSQLEngine(ansisql.ANSISQLEngine):
         ischema.reflecttable(table.engine, table, ischema_names)
 
 class PGCompiler(ansisql.ANSICompiler):
-
         
     def visit_insert_column(self, column):
         # Postgres advises against OID usage and turns it off in 8.1,
@@ -372,3 +350,5 @@ class PGDefaultRunner(ansisql.ANSIDefaultRunner):
             return c.fetchone()[0]
         else:
             return None
+
+dialect = PGDialect

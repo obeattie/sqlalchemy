@@ -66,7 +66,6 @@ def drop():
     orders.drop()
     addresses.drop()
     users.drop()
-    db.commit()
     
 def delete():
     itemkeywords.delete().execute()
@@ -75,7 +74,6 @@ def delete():
     orders.delete().execute()
     addresses.delete().execute()
     users.delete().execute()
-    db.commit()
     
 def user_data():
     users.insert().execute(
@@ -85,7 +83,6 @@ def user_data():
     )
 def delete_user_data():
     users.delete().execute()
-    db.commit()
         
 def data():
     delete()
@@ -145,7 +142,6 @@ def data():
         dict(keyword_id=6, item_id=3)
     )
 
-    db.commit()
     
 class User(object):
     def __init__(self):

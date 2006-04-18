@@ -72,9 +72,10 @@ class DefaultTest(PersistTest):
         t.delete().execute()
         
     def teststandalone(self):
-        x = t.c.col1.default.execute()
+        c = db.engine.connect()
+        x = c.execute(t.c.col1.default)
         y = t.c.col2.default.execute()
-        z = t.c.col3.default.execute()
+        z = c.execute(t.c.col3.default)
         self.assert_(50 <= x <= 57)
         self.assert_(y == 'imthedefault')
         self.assert_(z == f)
@@ -82,8 +83,8 @@ class DefaultTest(PersistTest):
         self.assert_(5 <= z <= 6)
         
     def testinsert(self):
-        t.insert().execute()
-        self.assert_(t.engine.lastrow_has_defaults())
+        r = t.insert().execute()
+        self.assert_(r.lastrow_has_defaults())
         t.insert().execute()
         t.insert().execute()
 
@@ -93,8 +94,8 @@ class DefaultTest(PersistTest):
         self.assert_(l.fetchall() == [(51, 'imthedefault', f, ts, ts, ctexec), (52, 'imthedefault', f, ts, ts, ctexec), (53, 'imthedefault', f, ts, ts, ctexec)])
 
     def testupdate(self):
-        t.insert().execute()
-        pk = t.engine.last_inserted_ids()[0]
+        r = t.insert().execute()
+        pk = r.last_inserted_ids()[0]
         t.update(t.c.col1==pk).execute(col4=None, col5=None)
         ctexec = currenttime.scalar()
         self.echo("Currenttime "+ repr(ctexec))

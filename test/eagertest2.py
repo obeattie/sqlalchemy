@@ -4,42 +4,42 @@ import unittest, sys, os
 from sqlalchemy import *
 import datetime
 
-db = testbase.db
+metadata = testbase.metadata
 
 class EagerTest(AssertMixin):
     def setUpAll(self):
         objectstore.clear()
         clear_mappers()
-        testbase.db.tables.clear()
+        testbase.metadata.tables.clear()
         
         global companies_table, addresses_table, invoice_table, phones_table, items_table
 
-        companies_table = Table('companies', db,
+        companies_table = Table('companies', metadata,
             Column('company_id', Integer, Sequence('company_id_seq', optional=True), primary_key = True),
             Column('company_name', String(40)),
 
         )
         
-        addresses_table = Table('addresses', db,
+        addresses_table = Table('addresses', metadata,
                                 Column('address_id', Integer, Sequence('address_id_seq', optional=True), primary_key = True),
                                 Column('company_id', Integer, ForeignKey("companies.company_id")),
                                 Column('address', String(40)),
                                 )
 
-        phones_table = Table('phone_numbers', db,
+        phones_table = Table('phone_numbers', metadata,
                                 Column('phone_id', Integer, Sequence('phone_id_seq', optional=True), primary_key = True),
                                 Column('address_id', Integer, ForeignKey('addresses.address_id')),
                                 Column('type', String(20)),
                                 Column('number', String(10)),
                                 )
 
-        invoice_table = Table('invoices', db,
+        invoice_table = Table('invoices', metadata,
                               Column('invoice_id', Integer, Sequence('invoice_id_seq', optional=True), primary_key = True),
                               Column('company_id', Integer, ForeignKey("companies.company_id")),
                               Column('date', DateTime),   
                               )
 
-        items_table = Table('items', db,
+        items_table = Table('items', metadata,
                             Column('item_id', Integer, Sequence('item_id_seq', optional=True), primary_key = True),
                             Column('invoice_id', Integer, ForeignKey('invoices.invoice_id')),
                             Column('code', String(20)),
@@ -110,7 +110,7 @@ class EagerTest(AssertMixin):
         i1.company = c1
 
         
-        objectstore.commit()
+        objectstore.flush()
 
         company_id = c1.company_id
         invoice_id = i1.invoice_id
@@ -205,7 +205,7 @@ class EagerTest(AssertMixin):
 
         c1.addresses.append(a2)
 
-        objectstore.commit()
+        objectstore.flush()
 
         company_id = c1.company_id
         
@@ -234,7 +234,7 @@ class EagerTest(AssertMixin):
         item3.qty = 3
         item3.invoice = i1
 
-        objectstore.commit()
+        objectstore.flush()
 
         invoice_id = i1.invoice_id
 

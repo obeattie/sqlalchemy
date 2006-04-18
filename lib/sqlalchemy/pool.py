@@ -70,30 +70,35 @@ def clear_managers():
 
     
 class Pool(object):
-    def __init__(self, echo = False, use_threadlocal = True, logger=None):
-        self._threadconns = weakref.WeakValueDictionary()
+    def __init__(self, echo = False, use_threadlocal = True, logger=None, **kwargs):
+        self._threadconns = {} #weakref.WeakValueDictionary()
         self._use_threadlocal = use_threadlocal
         self._echo = echo
         self._logger = logger or util.Logger(origin='pool')
     
     def unique_connection(self):
-        return ConnectionFairy(self)
+        return ConnectionFairy(self).checkout()
             
     def connect(self):
         if not self._use_threadlocal:
-            return ConnectionFairy(self)
+            return ConnectionFairy(self).checkout()
             
         try:
-            return self._threadconns[thread.get_ident()]
+            return self._threadconns[thread.get_ident()].checkout()
         except KeyError:
-            agent = ConnectionFairy(self)
+            agent = ConnectionFairy(self).checkout()
             self._threadconns[thread.get_ident()] = agent
             return agent
 
-    def return_conn(self, conn):
+    def return_conn(self, agent):
         if self._echo:
             self.log("return connection to pool")
-        self.do_return_conn(conn)
+        if self._use_threadlocal:
+            try:
+                del self._threadconns[thread.get_ident()]
+            except KeyError:
+                pass
+        self.do_return_conn(agent.connection)
         
     def get(self):
         if self._echo:
@@ -125,6 +130,7 @@ class Pool(object):
 class ConnectionFairy(object):
     def __init__(self, pool, connection=None):
         self.pool = pool
+        self.__counter = 0
         if connection is not None:
             self.connection = connection
         else:
@@ -141,9 +147,20 @@ class ConnectionFairy(object):
         return CursorFairy(self, self.connection.cursor())
     def __getattr__(self, key):
         return getattr(self.connection, key)
+    def checkout(self):
+        if self.connection is None:
+            raise "this connection is closed"
+        self.__counter +=1
+        return self    
+    def close(self):
+        self.__counter -=1
+        if self.__counter == 0:
+            self._close()
     def __del__(self):
+        self._close()
+    def _close(self):
         if self.connection is not None:
-            self.pool.return_conn(self.connection)
+            self.pool.return_conn(self)
             self.pool = None
             self.connection = None
             
@@ -218,13 +235,15 @@ class QueuePool(Pool):
             self._overflow += 1
             return self._creator()
 
-    def __del__(self):
+    def dispose(self):
         while True:
             try:
                 conn = self._pool.get(False)
                 conn.close()
             except Queue.Empty:
                 break
+    def __del__(self):
+        self.dispose()
 
     def status(self):
         tup = (self.size(), self.checkedin(), self.overflow(), self.checkedout())
