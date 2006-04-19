@@ -183,6 +183,7 @@ class Table(SchemaItem, sql.TableClause):
     def accept_schema_visitor(self, visitor): 
         """traverses the given visitor across the Column objects inside this Table,
         then calls the visit_table method on the visitor."""
+        print "TABLE ACCEPT VISITOR, C IS", [c for c in self.columns]
         for c in self.columns:
             c.accept_schema_visitor(visitor)
         return visitor.visit_table(self)

@@ -350,7 +350,7 @@ class ComposedSQLEngine(sql.Engine):
         else:
             conn = connection
         try:
-            element.accept_visitor(visitorcallable(self, conn.proxy, **kwargs))
+            element.accept_schema_visitor(visitorcallable(self, conn.proxy, **kwargs))
         finally:
             if connection is None:
                 conn.close()
