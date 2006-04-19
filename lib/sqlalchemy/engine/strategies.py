@@ -5,7 +5,7 @@ list of available strategies here, or replace one of the existing name.
 this can be accomplished via a mod; see the sqlalchemy/mods package for details."""
 
 import re
-from cgi import parse_qsl
+import cgi
 
 from sqlalchemy.engine import base, default, transactional
 
@@ -100,7 +100,7 @@ def _parse_keyvalue_args(name, opts=None):
     m = re.match( r'(\w+)://(.*)', name)
     if m is not None:
         (name, args) = m.group(1, 2)
-        opts = dict( parse_qsl( args ) )
+        opts = dict( cgi.parse_qsl( args ) )
         return (name, opts)
     else:
         return None

@@ -21,10 +21,13 @@ class Dialect(sql.AbstractDialect):
     and a general consistentization of the behavior of various DBAPIs. 
     
     The Dialect should also implement the following two attributes:
-    
+
     positional - True if the paramstyle for this Dialect is positional
+
     paramstyle - the paramstyle to be used (some DBAPIs support multiple paramstyles)
+
     convert_unicode - True if unicode conversion should be applied to all str types
+
     encoding - type of encoding to use for unicode, usually defaults to 'utf-8'
     """
     def create_connect_args(self, opts):
@@ -143,7 +146,9 @@ class ExecutionContext(object):
         raise NotImplementedError()
 
 class Connection(object):
-    """wraps a DBAPI connection to provide execution support for ClauseElements"""
+    """represents a single DBAPI connection returned from the underlying connection pool.  Provides
+    execution support for string-based SQL statements as well as ClauseElement, Compiled and DefaultGenerator objects.
+    provides a begin method to return Transaction objects."""
     def __init__(self, engine, connection=None, close_with_result=False):
         self.engine = engine
         self.connection = connection or engine.raw_connection()

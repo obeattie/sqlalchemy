@@ -1,5 +1,5 @@
 <%global>
-    import re, types
+    import re, types, string
     def format_paragraphs(text):
         return re.sub(r'([\w ])\n([\w ])', r'\1 \2', text or '', re.S)
 </%global>
@@ -60,7 +60,15 @@
         if isclass:
             description = "Class " + name
             if hasattr(obj, '__mro__'):
-                description += "(" + obj.__mro__[1].__name__ + ")"
+                l = []
+                mro = list(obj.__mro__[1:])
+                mro.reverse()
+                for x in mro:
+                    for y in x.__mro__[1:]:
+                        if y in l:
+                            del l[l.index(y)]
+                    l.insert(0, x)
+                description += "(" + string.join([x.__name__ for x in l], ',') + ")"
         else:
             description = "Module " + name
     </%init>
