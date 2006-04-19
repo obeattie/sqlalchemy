@@ -35,9 +35,9 @@ def teststring(s, name, globs=None, verbose=None, report=True,
     return runner.failures, runner.tries
 
 def replace_file(s, oldfile, newfile):
-    engine = r"(^\s*>>>\s*[a-zA-Z_]\w*\s*=\s*create_engine\('sqlite',\s*\{'filename':\s*')" + oldfile+ "('\}\)$)"
+    engine = r"sqlite:///" + oldfile
     engine = re.compile(engine, re.MULTILINE)
-    s, n = re.subn(engine, r'\1' + newfile + r'\2', s, 1)
+    s, n = re.subn(engine, "sqlite:///" + newfile, s, 1)
     if not n:
         raise ValueError("Couldn't find suitable create_engine call to replace '%s' in it" % oldfile)
     return s
