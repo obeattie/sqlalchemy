@@ -46,16 +46,16 @@ def teststring(s, name, globs=None, verbose=None, report=True,
 
     return runner.failures, runner.tries
 
-def replace_file(s, oldfile, newfile):
-    engine = r"sqlite:///" + oldfile
+def replace_file(s, newfile):
+    engine = r"'(sqlite|postgres|mysql):///.*'"
     engine = re.compile(engine, re.MULTILINE)
-    s, n = re.subn(engine, "sqlite:///" + newfile, s)
+    s, n = re.subn(engine, "'sqlite:///" + newfile + "'", s)
     if not n:
         raise ValueError("Couldn't find suitable create_engine call to replace '%s' in it" % oldfile)
     return s
 
 filename = 'content/tutorial.txt'
 s = open(filename).read()
-s = replace_file(s, 'tutorial.db', ':memory:')
+s = replace_file(s, ':memory:')
 teststring(s, filename)
 

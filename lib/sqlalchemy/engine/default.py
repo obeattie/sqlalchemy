@@ -40,6 +40,7 @@ class DefaultDialect(base.Dialect):
     def __init__(self, default_ordering=False, convert_unicode=False, encoding='utf-8', **kwargs):
         self.default_ordering=default_ordering
         self.convert_unicode = convert_unicode
+        self.supports_autoclose_results = True
         self.encoding = encoding
         self.positional = False
         self.paramstyle = 'named'

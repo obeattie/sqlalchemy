@@ -183,7 +183,6 @@ class Table(SchemaItem, sql.TableClause):
     def accept_schema_visitor(self, visitor): 
         """traverses the given visitor across the Column objects inside this Table,
         then calls the visit_table method on the visitor."""
-        print "TABLE ACCEPT VISITOR, C IS", [c for c in self.columns]
         for c in self.columns:
             c.accept_schema_visitor(visitor)
         return visitor.visit_table(self)
@@ -627,9 +626,15 @@ class DynamicMetaData(MetaData):
                 self.__engines[engine_or_url] = e
                 self.context._engine = e
         else:
+            if not self.__engines.has_key(engine_or_url):
+                self.__engines[engine_or_url] = engine_or_url
             self.context._engine = engine_or_url
     def is_bound(self):
         return s.context._engine is not None
+    def dispose(self):
+        """disposes all Engines to which this DynamicMetaData has been connected."""
+        for e in self.__engines.values():
+            e.dispose()
     engine=property(lambda s:s.context._engine)
             
 class SchemaVisitor(sql.ClauseVisitor):

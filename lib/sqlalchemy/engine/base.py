@@ -26,6 +26,11 @@ class Dialect(sql.AbstractDialect):
 
     paramstyle - the paramstyle to be used (some DBAPIs support multiple paramstyles)
 
+    supports_autoclose_results - usually True; if False, indicates that rows returned by fetchone()
+    might not be just plain tuples, and may be "live" proxy objects which still require the cursor
+    to be open in order to be read (such as pyPgSQL which has active filehandles for BLOBs).  in that
+    case, an auto-closing ResultProxy cannot automatically close itself after results are consumed.
+
     convert_unicode - True if unicode conversion should be applied to all str types
 
     encoding - type of encoding to use for unicode, usually defaults to 'utf-8'
@@ -451,7 +456,7 @@ class ResultProxy:
     def close(self):
         if not self.closed:
             self.closed = True
-            if self.connection.close_with_result:
+            if self.connection.close_with_result and self.dialect.supports_autoclose_results:
                 self.connection.close()
     def _get_col(self, row, key):
         if isinstance(key, schema.Column) or isinstance(key, sql.ColumnElement):
@@ -504,6 +509,9 @@ class ResultProxy:
             if self.echo: self.engine.log(repr(row))
             return RowProxy(self, row)
         else:
+            # controversy!  can we auto-close the cursor after results are consumed ?
+            # what if the returned rows are still hanging around, and are "live" objects 
+            # and not just plain tuples ?
             self.close()
             return None
 

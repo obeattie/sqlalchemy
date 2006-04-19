@@ -1,4 +1,4 @@
-Constructing SQL Queries via Python Expressions
+Constructing SQL Queries via Python Expressions {@name=sqlconstruction}
 ===============================================
 
 *Note:* This section describes how to use SQLAlchemy to construct SQL queries and receive result sets.  It does *not* cover the object relational mapping capabilities of SQLAlchemy; that is covered later on in [datamapping](rel:datamapping).  However, both areas of functionality work similarly in how selection criterion is constructed, so if you are interested just in ORM, you should probably skim through basic [sql_select_whereclause](rel:sql_select_whereclause) construction before moving on.
