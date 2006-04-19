@@ -17,6 +17,11 @@ from sqlalchemy import *
 import information_schema as ischema
 
 try:
+    import mx.DateTime.DateTime as mxDateTime
+except:
+    mxDateTime = None
+
+try:
     import psycopg2 as psycopg
     #import psycopg2.psycopg1 as psycopg
 except:
@@ -43,15 +48,26 @@ class PG2DateTime(sqltypes.DateTime):
         return "TIMESTAMP"
 class PG1DateTime(sqltypes.DateTime):
     def convert_bind_param(self, value, dialect):
-        # TODO: perform appropriate postgres1 conversion between Python DateTime/MXDateTime
-        # this one doesnt seem to work with the "emulation" mode
         if value is not None:
+            if isinstance(value, datetime.datetime):
+                seconds = float(str(value.second) + "."
+                                + str(value.microsecond))
+                mx_datetime = mxDateTime(value.year, value.month, value.day,
+                                         value.hour, value.minute,
+                                         seconds)
+                return psycopg.TimestampFromMx(mx_datetime)
             return psycopg.TimestampFromMx(value)
         else:
             return None
     def convert_result_value(self, value, dialect):
-        # TODO: perform appropriate postgres1 conversion between Python DateTime/MXDateTime
-        return value
+        if value is None:
+            return None
+        second_parts = str(value.second).split(".")
+        seconds = int(second_parts[0])
+        microseconds = int(second_parts[1])
+        return datetime.datetime(value.year, value.month, value.day,
+                                 value.hour, value.minute, seconds,
+                                 microseconds)
     def get_col_spec(self):
         return "TIMESTAMP"
 class PG2Date(sqltypes.Date):
