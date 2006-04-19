@@ -283,50 +283,50 @@ class OneToManyManyToOneTest(AssertMixin):
             ),
             (
                 "INSERT INTO ball (person_id) VALUES (:person_id)",
-                lambda:{'person_id':p.id}
+                lambda ctx:{'person_id':p.id}
             ),
             (
                 "INSERT INTO ball (person_id) VALUES (:person_id)",
-                lambda:{'person_id':p.id}
+                lambda ctx:{'person_id':p.id}
             ),
             (
                 "INSERT INTO ball (person_id) VALUES (:person_id)",
-                lambda:{'person_id':p.id}
+                lambda ctx:{'person_id':p.id}
             ),
             (
                 "INSERT INTO ball (person_id) VALUES (:person_id)",
-                lambda:{'person_id':p.id}
+                lambda ctx:{'person_id':p.id}
             ),
             (
                 "UPDATE person SET favoriteBall_id=:favoriteBall_id WHERE person.id = :person_id",
-                lambda:{'favoriteBall_id':p.favorateBall.id,'person_id':p.id}
+                lambda ctx:{'favoriteBall_id':p.favorateBall.id,'person_id':p.id}
             )
         ], 
         with_sequences= [
                 (
                     "INSERT INTO person (id, favoriteBall_id) VALUES (:id, :favoriteBall_id)",
-                    lambda:{'id':db.last_inserted_ids()[0], 'favoriteBall_id': None}
+                    lambda ctx:{'id':ctx.last_inserted_ids()[0], 'favoriteBall_id': None}
                 ),
                 (
                     "INSERT INTO ball (id, person_id) VALUES (:id, :person_id)",
-                    lambda:{'id':db.last_inserted_ids()[0],'person_id':p.id}
+                    lambda ctx:{'id':ctx.last_inserted_ids()[0],'person_id':p.id}
                 ),
                 (
                     "INSERT INTO ball (id, person_id) VALUES (:id, :person_id)",
-                    lambda:{'id':db.last_inserted_ids()[0],'person_id':p.id}
+                    lambda ctx:{'id':ctx.last_inserted_ids()[0],'person_id':p.id}
                 ),
                 (
                     "INSERT INTO ball (id, person_id) VALUES (:id, :person_id)",
-                    lambda:{'id':db.last_inserted_ids()[0],'person_id':p.id}
+                    lambda ctx:{'id':ctx.last_inserted_ids()[0],'person_id':p.id}
                 ),
                 (
                     "INSERT INTO ball (id, person_id) VALUES (:id, :person_id)",
-                    lambda:{'id':db.last_inserted_ids()[0],'person_id':p.id}
+                    lambda ctx:{'id':ctx.last_inserted_ids()[0],'person_id':p.id}
                 ),
                 # heres the post update 
                 (
                     "UPDATE person SET favoriteBall_id=:favoriteBall_id WHERE person.id = :person_id",
-                    lambda:{'favoriteBall_id':p.favorateBall.id,'person_id':p.id}
+                    lambda ctx:{'favoriteBall_id':p.favorateBall.id,'person_id':p.id}
                 )
             ])
         objectstore.delete(p)
@@ -334,17 +334,17 @@ class OneToManyManyToOneTest(AssertMixin):
             # heres the post update (which is a pre-update with deletes)
             (
                 "UPDATE person SET favoriteBall_id=:favoriteBall_id WHERE person.id = :person_id",
-                lambda:{'person_id': p.id, 'favoriteBall_id': None}
+                lambda ctx:{'person_id': p.id, 'favoriteBall_id': None}
             ),
             (
                 "DELETE FROM ball WHERE ball.id = :id",
                 None
                 # order cant be predicted, but something like:
-                #lambda:[{'id': 1L}, {'id': 4L}, {'id': 3L}, {'id': 2L}]
+                #lambda ctx:[{'id': 1L}, {'id': 4L}, {'id': 3L}, {'id': 2L}]
             ),
             (
                 "DELETE FROM person WHERE person.id = :id",
-                lambda:[{'id': p.id}]
+                lambda ctx:[{'id': p.id}]
             )
 
 
@@ -396,62 +396,62 @@ class OneToManyManyToOneTest(AssertMixin):
                 ),
                 (
                     "INSERT INTO person (favoriteBall_id) VALUES (:favoriteBall_id)",
-                    lambda:{'favoriteBall_id':b.id}
+                    lambda ctx:{'favoriteBall_id':b.id}
                 ),
                 # heres the post update on each one-to-many item
                 (
                     "UPDATE ball SET person_id=:person_id WHERE ball.id = :ball_id",
-                    lambda:{'person_id':p.id,'ball_id':b.id}
+                    lambda ctx:{'person_id':p.id,'ball_id':b.id}
                 ),
                 (
                     "UPDATE ball SET person_id=:person_id WHERE ball.id = :ball_id",
-                    lambda:{'person_id':p.id,'ball_id':b2.id}
+                    lambda ctx:{'person_id':p.id,'ball_id':b2.id}
                 ),
                 (
                     "UPDATE ball SET person_id=:person_id WHERE ball.id = :ball_id",
-                    lambda:{'person_id':p.id,'ball_id':b3.id}
+                    lambda ctx:{'person_id':p.id,'ball_id':b3.id}
                 ),
                 (
                     "UPDATE ball SET person_id=:person_id WHERE ball.id = :ball_id",
-                    lambda:{'person_id':p.id,'ball_id':b4.id}
+                    lambda ctx:{'person_id':p.id,'ball_id':b4.id}
                 ),
         ],
         with_sequences=[
             (
                 "INSERT INTO ball (id, person_id) VALUES (:id, :person_id)",
-                lambda:{'id':db.last_inserted_ids()[0], 'person_id':None}
+                lambda ctx:{'id':ctx.last_inserted_ids()[0], 'person_id':None}
             ),
             (
                 "INSERT INTO ball (id, person_id) VALUES (:id, :person_id)",
-                lambda:{'id':db.last_inserted_ids()[0], 'person_id':None}
+                lambda ctx:{'id':ctx.last_inserted_ids()[0], 'person_id':None}
             ),
             (
                 "INSERT INTO ball (id, person_id) VALUES (:id, :person_id)",
-                lambda:{'id':db.last_inserted_ids()[0], 'person_id':None}
+                lambda ctx:{'id':ctx.last_inserted_ids()[0], 'person_id':None}
             ),
             (
                 "INSERT INTO ball (id, person_id) VALUES (:id, :person_id)",
-                lambda:{'id':db.last_inserted_ids()[0], 'person_id':None}
+                lambda ctx:{'id':ctx.last_inserted_ids()[0], 'person_id':None}
             ),
             (
                 "INSERT INTO person (id, favoriteBall_id) VALUES (:id, :favoriteBall_id)",
-                lambda:{'id':db.last_inserted_ids()[0], 'favoriteBall_id':b.id}
+                lambda ctx:{'id':ctx.last_inserted_ids()[0], 'favoriteBall_id':b.id}
             ),
             (
                 "UPDATE ball SET person_id=:person_id WHERE ball.id = :ball_id",
-                lambda:{'person_id':p.id,'ball_id':b.id}
+                lambda ctx:{'person_id':p.id,'ball_id':b.id}
             ),
             (
                 "UPDATE ball SET person_id=:person_id WHERE ball.id = :ball_id",
-                lambda:{'person_id':p.id,'ball_id':b2.id}
+                lambda ctx:{'person_id':p.id,'ball_id':b2.id}
             ),
             (
                 "UPDATE ball SET person_id=:person_id WHERE ball.id = :ball_id",
-                lambda:{'person_id':p.id,'ball_id':b3.id}
+                lambda ctx:{'person_id':p.id,'ball_id':b3.id}
             ),
             (
                 "UPDATE ball SET person_id=:person_id WHERE ball.id = :ball_id",
-                lambda:{'person_id':p.id,'ball_id':b4.id}
+                lambda ctx:{'person_id':p.id,'ball_id':b4.id}
             ),
         ])
 
@@ -459,29 +459,29 @@ class OneToManyManyToOneTest(AssertMixin):
         self.assert_sql(db, lambda: objectstore.get_session().flush(), [
             (
                 "UPDATE ball SET person_id=:person_id WHERE ball.id = :ball_id",
-                lambda:{'person_id': None, 'ball_id': b.id}
+                lambda ctx:{'person_id': None, 'ball_id': b.id}
             ),
             (
                 "UPDATE ball SET person_id=:person_id WHERE ball.id = :ball_id",
-                lambda:{'person_id': None, 'ball_id': b2.id}
+                lambda ctx:{'person_id': None, 'ball_id': b2.id}
             ),
             (
                 "UPDATE ball SET person_id=:person_id WHERE ball.id = :ball_id",
-                lambda:{'person_id': None, 'ball_id': b3.id}
+                lambda ctx:{'person_id': None, 'ball_id': b3.id}
             ),
             (
                 "UPDATE ball SET person_id=:person_id WHERE ball.id = :ball_id",
-                lambda:{'person_id': None, 'ball_id': b4.id}
+                lambda ctx:{'person_id': None, 'ball_id': b4.id}
             ),
             (
                 "DELETE FROM person WHERE person.id = :id",
-                lambda:[{'id':p.id}]
+                lambda ctx:[{'id':p.id}]
             ),
             (
                 "DELETE FROM ball WHERE ball.id = :id",
                 None
                 # the order of deletion is not predictable, but its roughly:
-                # lambda:[{'id': b.id}, {'id': b2.id}, {'id': b3.id}, {'id': b4.id}]
+                # lambda ctx:[{'id': b.id}, {'id': b2.id}, {'id': b3.id}, {'id': b4.id}]
             )
         ])
         

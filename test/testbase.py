@@ -30,6 +30,7 @@ def parse_argv():
     parser.add_option("--db", action="store", dest="db", default="sqlite", help="prefab database uri (sqlite, sqlite_file, postgres, mysql, oracle, oracle8, mssql)")
     parser.add_option("--mockpool", action="store_true", dest="mockpool", help="use mock pool")
     parser.add_option("--nothreadlocal", action="store_true", dest="nothreadlocal", help="dont use thread-local mod")
+    parser.add_option("--enginestrategy", action="store", default=None, dest="enginestrategy", help="engine strategy (plain or threadlocal, defaults to SA default)")
 
     (options, args) = parser.parse_args()
     sys.argv[1:] = args
@@ -62,8 +63,10 @@ def parse_argv():
         raise "Could not create engine.  specify --db <sqlite|sqlite_file|postgres|mysql|oracle|oracle8|mssql> to test runner."
 
     if not options.nothreadlocal:
-        sqlalchemy.install_mods('threadlocal')
-        
+        __import__('sqlalchemy.mods.threadlocal')
+    
+    if options.enginestrategy is not None:
+        opts['strategy'] = options.enginestrategy    
     if options.mockpool:
         db = engine.create_engine(db_uri, echo=echo, default_ordering=True, poolclass=MockPool, **opts)
     else:
@@ -201,7 +204,7 @@ class EngineAssert(proxy.BaseProxyEngine):
 
                 (query, params) = item
                 if callable(params):
-                    params = params()
+                    params = params(ctx)
 
                 query = self.convert_statement(query)
 

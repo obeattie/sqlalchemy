@@ -666,26 +666,26 @@ class SaveTest(AssertMixin):
                 ),
                 {
                     "UPDATE email_addresses SET email_address=:email_address WHERE email_addresses.address_id = :email_addresses_address_id":
-                    lambda: {'email_address': 'imnew@foo.bar', 'email_addresses_address_id': objects[2].address_id}
+                    lambda ctx: {'email_address': 'imnew@foo.bar', 'email_addresses_address_id': objects[2].address_id}
                 ,
                 
                     "UPDATE email_addresses SET user_id=:user_id WHERE email_addresses.address_id = :email_addresses_address_id":
-                    lambda: {'user_id': objects[3].user.user_id, 'email_addresses_address_id': objects[3].address_id}
+                    lambda ctx: {'user_id': objects[3].user.user_id, 'email_addresses_address_id': objects[3].address_id}
                 },
                 
         ],
         with_sequences=[
                 (
                     "INSERT INTO users (user_id, user_name) VALUES (:user_id, :user_name)",
-                    lambda:{'user_name': 'imnewlyadded', 'user_id':db.last_inserted_ids()[0]}
+                    lambda ctx:{'user_name': 'imnewlyadded', 'user_id':ctx.last_inserted_ids()[0]}
                 ),
                 {
                     "UPDATE email_addresses SET email_address=:email_address WHERE email_addresses.address_id = :email_addresses_address_id":
-                    lambda: {'email_address': 'imnew@foo.bar', 'email_addresses_address_id': objects[2].address_id}
+                    lambda ctx: {'email_address': 'imnew@foo.bar', 'email_addresses_address_id': objects[2].address_id}
                 ,
                 
                     "UPDATE email_addresses SET user_id=:user_id WHERE email_addresses.address_id = :email_addresses_address_id":
-                    lambda: {'user_id': objects[3].user.user_id, 'email_addresses_address_id': objects[3].address_id}
+                    lambda ctx: {'user_id': objects[3].user.user_id, 'email_addresses_address_id': objects[3].address_id}
                 },
                 
         ])
@@ -762,7 +762,7 @@ class SaveTest(AssertMixin):
                 with_sequences=[
                     (
                     "INSERT INTO email_addresses (address_id, user_id, email_address) VALUES (:address_id, :user_id, :email_address)",
-                    lambda:{'email_address': 'hi', 'user_id': 7, 'address_id':db.last_inserted_ids()[0]}
+                    lambda ctx:{'email_address': 'hi', 'user_id': 7, 'address_id':ctx.last_inserted_ids()[0]}
                     ),
                 ]
         )
@@ -924,20 +924,20 @@ class SaveTest(AssertMixin):
                 {'name': 'yellow'}
             },
             ("INSERT INTO itemkeywords (item_id, keyword_id) VALUES (:item_id, :keyword_id)",
-            lambda: [{'item_id': objects[5].item_id, 'keyword_id': k.keyword_id}]
+            lambda ctx: [{'item_id': objects[5].item_id, 'keyword_id': k.keyword_id}]
             )
         ],
         
         with_sequences = [
             {
                 "UPDATE items SET item_name=:item_name WHERE items.item_id = :items_item_id":
-                [{'item_name': 'item4updated', 'items_item_id': objects[4].item_id}]
+                {'item_name': 'item4updated', 'items_item_id': objects[4].item_id}
             ,
                 "INSERT INTO keywords (keyword_id, name) VALUES (:keyword_id, :name)":
-                lambda: {'name': 'yellow', 'keyword_id':db.last_inserted_ids()[0]}
+                lambda ctx: {'name': 'yellow', 'keyword_id':ctx.last_inserted_ids()[0]}
             },
             ("INSERT INTO itemkeywords (item_id, keyword_id) VALUES (:item_id, :keyword_id)",
-            lambda: [{'item_id': objects[5].item_id, 'keyword_id': k.keyword_id}]
+            lambda ctx: [{'item_id': objects[5].item_id, 'keyword_id': k.keyword_id}]
             )
         ]
         )
@@ -951,7 +951,7 @@ class SaveTest(AssertMixin):
                 ),
                 (   
                     "INSERT INTO itemkeywords (item_id, keyword_id) VALUES (:item_id, :keyword_id)",
-                    lambda: [{'item_id': objects[2].item_id, 'keyword_id': k.keyword_id}]
+                    lambda ctx: [{'item_id': objects[2].item_id, 'keyword_id': k.keyword_id}]
                 )
         ])
         
@@ -1138,19 +1138,19 @@ class SaveTest2(AssertMixin):
                 with_sequences = [
                         (
                             "INSERT INTO users (user_id, user_name) VALUES (:user_id, :user_name)",
-                            lambda: {'user_name': 'thesub', 'user_id':db.last_inserted_ids()[0]}
+                            lambda ctx: {'user_name': 'thesub', 'user_id':ctx.last_inserted_ids()[0]}
                         ),
                         (
                         "INSERT INTO users (user_id, user_name) VALUES (:user_id, :user_name)",
-                            lambda: {'user_name': 'assdkfj', 'user_id':db.last_inserted_ids()[0]}
+                            lambda ctx: {'user_name': 'assdkfj', 'user_id':ctx.last_inserted_ids()[0]}
                         ),
                         (
                         "INSERT INTO email_addresses (address_id, rel_user_id, email_address) VALUES (:address_id, :rel_user_id, :email_address)",
-                        lambda:{'rel_user_id': 1, 'email_address': 'bar@foo.com', 'address_id':db.last_inserted_ids()[0]}
+                        lambda ctx:{'rel_user_id': 1, 'email_address': 'bar@foo.com', 'address_id':ctx.last_inserted_ids()[0]}
                         ),
                         (
                         "INSERT INTO email_addresses (address_id, rel_user_id, email_address) VALUES (:address_id, :rel_user_id, :email_address)",
-                        lambda:{'rel_user_id': 2, 'email_address': 'thesdf@asdf.com', 'address_id':db.last_inserted_ids()[0]}
+                        lambda ctx:{'rel_user_id': 2, 'email_address': 'thesdf@asdf.com', 'address_id':ctx.last_inserted_ids()[0]}
                         )
                         ]
         )

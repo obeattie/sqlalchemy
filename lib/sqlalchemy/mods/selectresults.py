@@ -2,8 +2,6 @@ import sqlalchemy.sql as sql
 
 import sqlalchemy.mapping as mapping
 
-def install_plugin():
-    mapping.global_extensions.append(SelectResultsExt)
     
 class SelectResultsExt(mapping.MapperExtension):
     def select_by(self, query, *args, **params):
@@ -84,3 +82,7 @@ class SelectResults(object):
     
     def __iter__(self):
         return iter(self._query.select_whereclause(self._clause, **self._ops))
+
+def install_plugin():
+    mapping.global_extensions.append(SelectResultsExt)
+install_plugin()

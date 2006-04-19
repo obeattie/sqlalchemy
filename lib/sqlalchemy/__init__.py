@@ -18,8 +18,6 @@ from sqlalchemy.mapping.objectstore import Session
 
 create_engine = sqlalchemy.engine.create_engine
 
-from sqlalchemy.mods import install_mods
-
 
 def global_connect(*args, **kwargs):
     sqlalchemy.schema.default_metadata.connect(*args, **kwargs)

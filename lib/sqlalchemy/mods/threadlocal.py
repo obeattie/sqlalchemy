@@ -102,3 +102,4 @@ def install_plugin():
         
     objectstore.session_registry = util.ScopedRegistry(objectstore.Session) # Default session registry
     engine.default_strategy = 'threadlocal'
+install_plugin()

@@ -4,7 +4,7 @@ import sqlalchemy.mapping.unitofwork as unitofwork
 import sqlalchemy.util as util
 import sqlalchemy
 
-sqlalchemy.install_mods('threadlocal')
+import sqlalchemy.mods.threadlocal
 
 class LegacySession(objectstore.Session):
     def __init__(self, nest_on=None, hash_key=None, **kwargs):
@@ -136,3 +136,4 @@ def install_plugin():
     objectstore.push_session = push_session
     objectstore.pop_session = pop_session
     objectstore.using_session = using_session
+install_plugin()
