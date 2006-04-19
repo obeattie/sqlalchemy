@@ -90,7 +90,7 @@ As you might have guessed, we have just defined a table named `users` which has 
 
 Alternatively, the `users` table might already exist (such as, if you're running examples from this tutorial for the second time), in which case you can just skip the `create()` method call. You can even skip defining the individual columns in the `users` table and ask SQLAlchemy to load its definition from the database:
 
-    >>> users = Table('users', db, autoload = True)
+    >>> users = Table('users', metadata, autoload=True)
     >>> list(users.columns)[0].name
     'user_id'
 
@@ -110,10 +110,10 @@ The `execute()` method of the clause object executes the statement at the databa
 
     >>> for name in ['Tom', 'Dick', 'Harry']: # doctest:+ELLIPSIS
     ...     i.execute(user_name = name)
-    <sqlalchemy.engine.ResultProxy instance at 0x...>
+    <sqlalchemy.engine.base.ResultProxy instance at 0x...>
     ...
     >>> i.execute(user_name = 'Mary', password = 'secure') # doctest:+ELLIPSIS
-    <sqlalchemy.engine.ResultProxy instance at 0x...>
+    <sqlalchemy.engine.base.ResultProxy instance at 0x...>
 
 When constructing clause objects, SQLAlchemy will bind all literal values into bind parameters, according to the paramstyle of the underlying DBAPI. This allows for better performance, as the database may cache a compiled representation of the statement and reuse it for new executions, substituting the new values. Also, when using bound values, you need not worry about [SQL injection][] attacks.
 
@@ -134,7 +134,7 @@ Let's check that the data we have put into `users` table is actually there. The 
 This time, we won't ignore the return value of `execute()`:
 
     >>> r # doctest:+ELLIPSIS
-    <sqlalchemy.engine.ResultProxy instance at 0x...>
+    <sqlalchemy.engine.base.ResultProxy instance at 0x...>
     >>> r.keys
     ['user_id', 'user_name', 'password']
     >>> row = r.fetchone()

@@ -1,6 +1,18 @@
+import sys
+sys.path = ['../../lib', './lib/'] + sys.path
+
 import os
 import re
 import doctest
+import sqlalchemy.util as util
+
+# monkeypatch a plain logger
+class Logger(object):
+    def __init__(self, *args, **kwargs):
+        pass
+    def write(self, msg):
+        print msg
+util.Logger = Logger
 
 def teststring(s, name, globs=None, verbose=None, report=True, 
                optionflags=0, extraglobs=None, raise_on_error=False, 
@@ -37,7 +49,7 @@ def teststring(s, name, globs=None, verbose=None, report=True,
 def replace_file(s, oldfile, newfile):
     engine = r"sqlite:///" + oldfile
     engine = re.compile(engine, re.MULTILINE)
-    s, n = re.subn(engine, "sqlite:///" + newfile, s, 1)
+    s, n = re.subn(engine, "sqlite:///" + newfile, s)
     if not n:
         raise ValueError("Couldn't find suitable create_engine call to replace '%s' in it" % oldfile)
     return s

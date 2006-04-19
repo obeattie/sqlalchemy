@@ -274,6 +274,6 @@ if __name__ == '__main__':
         print inname, '->', outname
         input = file(inname).read()
         html = markdown.markdown(input)
-        file(inname[:-3] + "html", 'w').write(html)
+        #file(inname[:-3] + "html", 'w').write(html)
         myt = html2myghtydoc(html)
         file(outname, 'w').write(myt)

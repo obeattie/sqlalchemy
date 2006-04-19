@@ -3,7 +3,7 @@
 <%python scope="global">
 
     files = [
-        #'tutorial',
+        'tutorial',
         'trailmap',
         'pooling',
         'dbengine',
@@ -24,7 +24,7 @@
     onepage='documentation'
     index='index'
     title='SQLAlchemy Documentation'
-    version = '0.1.5'
+    version = '0.2.0'
 </%attr>
 
 <%method title>
