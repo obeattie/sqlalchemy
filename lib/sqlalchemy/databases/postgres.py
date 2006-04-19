@@ -4,7 +4,7 @@
 # This module is part of SQLAlchemy and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
-import sys, StringIO, string, types, re
+import datetime, sys, StringIO, string, types, re
 
 import sqlalchemy.util as util
 import sqlalchemy.sql as sql
