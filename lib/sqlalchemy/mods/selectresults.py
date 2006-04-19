@@ -2,7 +2,6 @@ import sqlalchemy.sql as sql
 
 import sqlalchemy.mapping as mapping
 
-    
 class SelectResultsExt(mapping.MapperExtension):
     def select_by(self, query, *args, **params):
         return SelectResults(query, query._by_clause(*args, **params))

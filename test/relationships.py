@@ -10,9 +10,13 @@ from sqlalchemy import *
 
 
 class RelationTest(testbase.PersistTest):
-    """this is essentially an extension of the "dependency.py" topological sort test.  this exposes
-    a particular issue that doesnt always occur with the straight dependency tests, due to the nature
-    of the sort being different based on random conditions"""
+    """this is essentially an extension of the "dependency.py" topological sort test.  
+    in this test, a table is dependent on two other tables that are otherwise unrelated to each other.
+    the dependency sort must insure that this childmost table is below both parent tables in the outcome
+    (a bug existed where this was not always the case).
+    while the straight topological sort tests should expose this, since the sorting can be different due
+    to subtle differences in program execution, this test case was exposing the bug whereas the simpler tests
+    were not."""
     def setUpAll(self):
         global tbl_a
         global tbl_b
@@ -83,6 +87,9 @@ class RelationTest(testbase.PersistTest):
         conn.drop(tbl_c)
         conn.drop(tbl_b)
         conn.drop(tbl_a)
+
+    def tearDownAll(self):
+        testbase.metadata.tables.clear()
     
     def testDeleteRootTable(self):
         session.flush()
