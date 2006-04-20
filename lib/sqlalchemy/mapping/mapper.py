@@ -41,6 +41,7 @@ class Mapper(object):
                 properties = None, 
                 primary_key = None, 
                 is_primary = False, 
+                non_primary = False,
                 inherits = None, 
                 inherit_condition = None, 
                 extension = None,
@@ -69,6 +70,7 @@ class Mapper(object):
         self.entity_name = entity_name
         self.class_key = ClassKey(class_, entity_name)
         self.is_primary = is_primary
+        self.non_primary = non_primary
         self.order_by = order_by
         self._options = {}
         self.always_refresh = always_refresh
@@ -210,7 +212,9 @@ class Mapper(object):
         if not mapper_registry.has_key(self.class_key) or self.is_primary or (inherits is not None and inherits._is_primary_mapper()):
             objectstore.global_attributes.reset_class_managed(self.class_)
             self._init_class()
-                
+        elif not non_primary:
+            raise ArgumentError("Class '%s' already has a primary mapper defined.  Use is_primary=True to assign a new primary mapper to the class, or use non_primary=True to create a non primary Mapper" % self.class_)
+                    
         if inherits is not None:
             for key, prop in inherits.props.iteritems():
                 if not self.props.has_key(key):

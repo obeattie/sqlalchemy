@@ -220,7 +220,7 @@ class PropertyLoader(MapperProperty):
             if self.backref is not None:
                 self.backref.compile(self)
         elif not objectstore.global_attributes.is_class_managed(parent.class_, key):
-            raise ArgumentError("Non-primary property created for attribute '%s' on class '%s', but that attribute is not managed! Insure that the primary mapper for this class defines this property" % (key, parent.class_.__name__))
+            raise ArgumentError("Attempting to assign a new relation '%s' to a non-primary mapper on class '%s'.  New relations can only be added to the primary mapper, i.e. the very first mapper created for class '%s' " % (key, parent.class_.__name__, parent.class_.__name__))
 
         self.do_init_subclass(key, parent)
         

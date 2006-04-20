@@ -870,12 +870,13 @@ class SaveTest(AssertMixin):
     def testmanytomany(self):
         items = orderitems
 
+        keywordmapper = mapper(Keyword, keywords)
+
         items.select().execute()
         m = mapper(Item, items, properties = dict(
-                keywords = relation(mapper(Keyword, keywords), itemkeywords, lazy = False),
+                keywords = relation(keywordmapper, itemkeywords, lazy = False),
             ))
 
-        keywordmapper = mapper(Keyword, keywords)
 
         data = [Item,
             {'item_name': 'mm_item1', 'keywords' : (Keyword,[{'name': 'big'},{'name': 'green'}, {'name': 'purple'},{'name': 'round'}])},
@@ -971,7 +972,7 @@ class SaveTest(AssertMixin):
         # the reorganization of mapper construction affected this, but was fixed again
         m = mapper(Item, items, properties = dict(
                 keywords = relation(mapper(IKAssociation, itemkeywords, properties = dict(
-                    keyword = relation(mapper(Keyword, keywords), lazy = False, uselist = False)
+                    keyword = relation(mapper(Keyword, keywords, non_primary=True), lazy = False, uselist = False)
                 ), primary_key = [itemkeywords.c.item_id, itemkeywords.c.keyword_id]),
                 lazy = False)
             ))

@@ -569,7 +569,11 @@ class UOWTask(object):
         of its object list contain dependencies on each other.
         
         this is not the normal case; this logic only kicks in when something like 
-        a hierarchical tree is being represented."""
+        a hierarchical tree is being represented.
+        
+        TODO: dont understand this code ?  well neither do I !  it takes me 
+        an hour to re-understand this code completely, which is definitely an issue.
+        """
 
         allobjects = []
         for task in cycles:
@@ -584,6 +588,7 @@ class UOWTask(object):
         # get put here
         extradeplist = []
 
+        # this creates a map of UOWTasks mapped to individual objects.
         def get_object_task(parent, obj):
             try:
                 return objecttotask[obj]
@@ -593,6 +598,8 @@ class UOWTask(object):
                 objecttotask[obj] = t
                 return t
 
+        # this creates a map of UOWTasks mapped to a particular object
+        # and a particular dependency processor.
         dependencies = {}
         def get_dependency_task(obj, depprocessor):
             try:

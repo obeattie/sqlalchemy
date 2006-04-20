@@ -257,12 +257,14 @@ class MapperTest(MapperSuperTest):
             self.assert_(False, "should have raised ArgumentError")
         except ArgumentError, e:
             self.assert_(True)
-            
+        
+        clear_mappers()
         # assert that allow_column_override cancels the error
         m = mapper(User, users, properties = {
                 'user_name' : relation(mapper(Address, addresses))
             }, allow_column_override=True)
             
+        clear_mappers()
         # assert that the column being named else where also cancels the error
         m = mapper(User, users, properties = {
                 'user_name' : relation(mapper(Address, addresses)),
@@ -563,8 +565,8 @@ class LazyTest(MapperSuperTest):
         closedorders = alias(orders, 'closedorders')
         m = mapper(User, users, properties = dict(
             addresses = relation(mapper(Address, addresses), lazy = False),
-            open_orders = relation(mapper(Order, openorders), primaryjoin = and_(openorders.c.isopen == 1, users.c.user_id==openorders.c.user_id), lazy = True),
-            closed_orders = relation(mapper(Order, closedorders), primaryjoin = and_(closedorders.c.isopen == 0, users.c.user_id==closedorders.c.user_id), lazy = True)
+            open_orders = relation(mapper(Order, openorders, non_primary=True), primaryjoin = and_(openorders.c.isopen == 1, users.c.user_id==openorders.c.user_id), lazy = True),
+            closed_orders = relation(mapper(Order, closedorders,non_primary=True), primaryjoin = and_(closedorders.c.isopen == 0, users.c.user_id==closedorders.c.user_id), lazy = True)
         ))
         l = m.select()
         self.assert_result(l, User,
@@ -746,8 +748,8 @@ class EagerTest(MapperSuperTest):
         ordermapper = mapper(Order, orders)
         m = mapper(User, users, properties = dict(
             addresses = relation(mapper(Address, addresses), lazy = False),
-            open_orders = relation(mapper(Order, openorders), primaryjoin = and_(openorders.c.isopen == 1, users.c.user_id==openorders.c.user_id), lazy = False),
-            closed_orders = relation(mapper(Order, closedorders), primaryjoin = and_(closedorders.c.isopen == 0, users.c.user_id==closedorders.c.user_id), lazy = False)
+            open_orders = relation(mapper(Order, openorders, non_primary=True), primaryjoin = and_(openorders.c.isopen == 1, users.c.user_id==openorders.c.user_id), lazy = False),
+            closed_orders = relation(mapper(Order, closedorders, non_primary=True), primaryjoin = and_(closedorders.c.isopen == 0, users.c.user_id==closedorders.c.user_id), lazy = False)
         ))
         l = m.select()
         self.assert_result(l, User,
