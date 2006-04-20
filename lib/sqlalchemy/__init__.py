@@ -14,7 +14,7 @@ import sqlalchemy.mapping as mapping
 from sqlalchemy.mapping import *
 import sqlalchemy.ext.proxy
 
-from sqlalchemy.mapping.objectstore import Session
+from sqlalchemy.mapping.objectstore import Session, get_session
 
 create_engine = sqlalchemy.engine.create_engine
 

@@ -91,20 +91,30 @@ def process_code_blocks(tree):
         text = re.compile(r'^(?!<&)', re.M).sub('  ', text)
 
         sqlre = re.compile(r'{sql}(.*?)((?:SELECT|INSERT|DELETE|UPDATE|CREATE|DROP).*?)\n\s*(\n|$)', re.S)
+        if sqlre.search(text) is not None:
+            use_sliders = False
+        else:
+            use_sliders = True
+            
         text = sqlre.sub(r"<&formatting.myt:poplink&>\1\n<&|formatting.myt:codepopper, link='sql'&>\2</&>\n\n", text)
 
         sqlre2 = re.compile(r'{opensql}(.*?)((?:SELECT|INSERT|DELETE|UPDATE|CREATE|DROP).*?)\n\s*(\n|$)', re.S)
         text = sqlre2.sub(r"<&|formatting.myt:poppedcode &>\1\n\2</&>\n\n", text)
 
         pre_parent = parent[pre]
+        opts = {}
         if type == 'python':
-            syntype = 'python'
+            opts['syntaxtype'] = 'python'
         else:
-            syntype = None
+            opts['syntaxtype'] = None
+
         if title is not None:
-            tag = MyghtyTag(CODE_BLOCK, {'title':title, 'syntaxtype':syntype})
-        else:
-            tag = MyghtyTag(CODE_BLOCK, {'syntaxtype':syntype})
+            opts['title'] = title
+        
+        if use_sliders:
+            opts['use_sliders'] = True
+            
+        tag = MyghtyTag(CODE_BLOCK, opts)
         tag.text = text
         tag.tail = pre.tail
         pre_parent[index(pre_parent, pre)] = tag

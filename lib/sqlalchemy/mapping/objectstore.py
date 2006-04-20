@@ -355,26 +355,32 @@ def get_session(obj=None, raiseerror=True):
     to any Session, then an error is raised (or None is returned if raiseerror=False).  This behavior can be changed
     using the "threadlocal" mod, which will add an additional step to return a Session that is bound to the current 
     thread."""
+    if obj is not None:
+        # does it have a hash key ?
+        hashkey = getattr(obj, '_sa_session_id', None)
+        if hashkey is not None:
+            # ok, return that
+            try:
+                return _sessions[hashkey]
+            except KeyError:
+                if raiseerror:
+                    raise InvalidRequestError("Session '%s' referenced by object '%s' no longer exists" % (hashkey, repr(obj)))
+                else:
+                    return None
+                    
+    return _default_session(obj=obj, raiseerror=raiseerror)
+
+def _default_session(obj=None, raiseerror=True):
     if obj is None:
         if raiseerror:
             raise InvalidRequestError("Thread-local Sessions are disabled by default.  Use 'import sqlalchemy.mods.threadlocal' to enable.")
         else:
             return None
-    # does it have a hash key ?
-    hashkey = getattr(obj, '_sa_session_id', None)
-    if hashkey is not None:
-        # ok, return that
-        try:
-            return _sessions[hashkey]
-        except KeyError:
-            if raiseerror:
-                raise InvalidRequestError("Session '%s' referenced by object '%s' no longer exists" % (hashkey, repr(obj)))
-            else:
-                return None
     else:
         if raiseerror:
             raise InvalidRequestError("Object '%s' not bound to any Session" % (repr(obj)))
         else:
             return None
+            
 unitofwork.get_session = get_session
 

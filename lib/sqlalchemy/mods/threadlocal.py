@@ -19,22 +19,7 @@ on the returned result (or the result must be consumed completely).  Also, all m
 explicit Session objects when creating instances and creating queries.
 """
 
-def get_session(obj=None, raiseerror=True):
-    # object-specific session ?
-    if obj is not None:
-        # does it have a hash key ?
-        hashkey = getattr(obj, '_sa_session_id', None)
-        if hashkey is not None:
-            # ok, return that
-            try:
-                return objectstore._sessions[hashkey]
-            except KeyError:
-                if raiseerror:
-                    raise InvalidRequestError("Session '%s' referenced by object '%s' no longer exists" % (hashkey, repr(obj)))
-                else:
-                    return None
-
-    return objectstore.session_registry()
+get_session = objectstore.get_session
 
 def begin(*obj):
     return get_session().begin(*obj)
@@ -95,11 +80,10 @@ def import_instance(instance):
     return get_session().import_instance(instance)
 
 def install_plugin():
-    unitofwork.get_session = get_session
     mod = sys.modules[__name__]
-    for name in ['get_session', 'import_instance', 'instance_key', 'has_instance', 'is_dirty', 'has_key', 'delete', 'expunge', 'expire', 'refresh', 'clear', 'flush', 'begin', 'commit']:
+    for name in ['import_instance', 'instance_key', 'has_instance', 'is_dirty', 'has_key', 'delete', 'expunge', 'expire', 'refresh', 'clear', 'flush', 'begin', 'commit']:
         setattr(objectstore, name, getattr(mod, name))
-        
-    objectstore.session_registry = util.ScopedRegistry(objectstore.Session) # Default session registry
+    reg = util.ScopedRegistry(objectstore.Session)
+    objectstore._default_session = lambda *args, **kwargs: reg()
     engine.default_strategy = 'threadlocal'
 install_plugin()

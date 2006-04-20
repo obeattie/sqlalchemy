@@ -1,15 +1,15 @@
-Unit of Work
+Unit of Work {@name=unitofwork}
 ============
 
 ### Overview {@name=overview}    
 
-The concept behind Unit of Work is to track modifications to a field of objects, and then be able to commit those changes to the database in a single operation.  Theres a lot of advantages to this, including that your application doesn't need to worry about individual save operations on objects, nor about the required order for those operations, nor about excessive repeated calls to save operations that would be more efficiently aggregated into one step.  It also simplifies database transactions, providing a neat package with which to insert into the traditional database begin/commit phase.
+The concept behind Unit of Work is to track modifications to a field of objects, and then be able to flush those changes to the database in a single operation.  Theres a lot of advantages to this, including that your application doesn't need to worry about individual save operations on objects, nor about the required order for those operations, nor about excessive repeated calls to save operations that would be more efficiently aggregated into one step.  It also simplifies database transactions, providing a neat package with which to insert into the traditional database begin/commit phase.
     
 SQLAlchemy's unit of work includes these functions:
     
 * The ability to monitor scalar and list attributes on object instances, as well as object creates.  This is handled via the attributes package.
 * The ability to maintain and process a list of modified objects, and based on the relationships set up by the mappers for those objects as well as the foreign key relationships of the underlying tables, figure out the proper order of operations so that referential integrity is maintained, and also so that on-the-fly values such as newly created primary keys can be propigated to dependent objects that need them before they are saved.  The central algorithm for this is the *topological sort*.
-* The ability to define custom functionality that occurs within the unit-of-work commit phase, such as "before insert", "after insert", etc.  This is accomplished via MapperExtension.
+* The ability to define custom functionality that occurs within the unit-of-work flush phase, such as "before insert", "after insert", etc.  This is accomplished via MapperExtension.
 * an Identity Map, which is a dictionary storing the one and only instance of an object for a particular table/primary key combination.  This allows many parts of an application to get a handle to a particular object without any chance of modifications going to two different places.
 * Thread-local operation.  the Identity map as well as its enclosing Unit of Work are normally instantiated and accessed in a manner that is local to the current thread, within an object called a Session.  Another concurrently executing thread will therefore have its own Session, so unless an application explicitly shares objects between threads, the operation of the object relational mapping is automatically threadsafe.  Session objects can also be constructed manually to allow any user-defined scoping.
 
@@ -21,13 +21,13 @@ The current unit of work is accessed via a Session object.  The Session is avail
     # get the current thread's session
     session = objectstore.get_session()
         
-The Session object acts as a proxy to an underlying UnitOfWork object.  Common methods include commit(), begin(), clear(), and delete().  Most of these methods are available at the module level in the objectstore module, which operate upon the Session returned by the get_session() function:
+The Session object acts as a proxy to an underlying UnitOfWork object.  Common methods include flush(), clear(), and delete().  Most of these methods are available at the module level in the objectstore module, which operate upon the Session returned by the get_session() function:
     
     {python}# this...
-    objectstore.get_session().commit()
+    objectstore.get_session().flush()
 
     # is the same as this:
-    objectstore.commit()
+    objectstore.flush()
 
 A description of the most important methods and concepts follows.
 
@@ -99,7 +99,7 @@ Methods on mappers and the objectstore module, which are relevant to identity in
 
 #### Whats Changed ? {@name=changed}    
 
-The next concept is that in addition to the Session storing a record of all objects loaded or saved, it also stores records of all *newly created* objects,  records of all objects whose attributes have been *modified*, records of all objects that have been marked as *deleted*, and records of all *modified list-based attributes* where additions or deletions have occurred.  These lists are used when a `commit()` call is issued to save all changes.  After the commit occurs, these lists are all cleared out.
+The next concept is that in addition to the Session storing a record of all objects loaded or saved, it also stores records of all *newly created* objects,  records of all objects whose attributes have been *modified*, records of all objects that have been marked as *deleted*, and records of all *modified list-based attributes* where additions or deletions have occurred.  These lists are used when a `flush()` call is issued to save all changes.  After the flush occurs, these lists are all cleared out.
     
 These records are all tracked by a collection of `Set` objects (which are a SQLAlchemy-specific  instance called a `HashSet`) that are also viewable off the Session:
 
@@ -143,8 +143,8 @@ Heres an interactive example, assuming the `User` and `Address` mapper setup fir
     >>> ["%s %s" % (l.__class__, id(l)) for l in session.modified_lists]
     ['sqlalchemy.mapping.unitofwork.UOWListElement 7391872']
     
-    >>> # now commit
-    >>> session.commit()
+    >>> # now flush
+    >>> session.flush()
     
     >>> # the "new" list is now empty
     >>> session.new
@@ -170,8 +170,8 @@ Heres an interactive example, assuming the `User` and `Address` mapper setup fir
     >>> session.deleted
     [<__main__.Address object at 0x713a70>]    
     
-    >>> # commit
-    >>> session.commit()
+    >>> # flush
+    >>> session.flush()
     
     >>> # all lists are cleared out
     >>> session.new, session.dirty, session.modified_lists, session.deleted
@@ -181,38 +181,36 @@ Heres an interactive example, assuming the `User` and `Address` mapper setup fir
     >>> session.identity_map.values()
     [<__main__.Address object at 0x713b30>, <__main__.User object at 0x713630>]
     
-Unlike the identity map, the `new`, `dirty`, `modified_lists`, and `deleted` lists are *not weak referencing.*  This means if you abandon all references to new or modified objects within a session, *they are still present* and will be saved on the next commit operation, unless they are removed from the Session explicitly (more on that later).  The `new` list may change in a future release to be weak-referencing, however for the `deleted` list, one can see that its quite natural for a an object marked as deleted to have no references in the application, yet a DELETE operation is still required.
+Unlike the identity map, the `new`, `dirty`, `modified_lists`, and `deleted` lists are *not weak referencing.*  This means if you abandon all references to new or modified objects within a session, *they are still present* and will be saved on the next flush operation, unless they are removed from the Session explicitly (more on that later).  The `new` list may change in a future release to be weak-referencing, however for the `deleted` list, one can see that its quite natural for a an object marked as deleted to have no references in the application, yet a DELETE operation is still required.
 
-#### Commit {@name=commit}    
+#### Flush {@name=flush}    
 
-This is the main gateway to what the Unit of Work does best, which is save everything !  It should be clear by now that a commit looks like:
+This is the main gateway to what the Unit of Work does best, which is save everything !  It should be clear by now that a flush looks like:
     
     {python}
-    objectstore.get_session().commit()
+    objectstore.get_session().flush()
     
-It also can be called with a list of objects; in this form, the commit operation will be limited only to the objects specified in the list, as well as any child objects within `private` relationships for a delete operation:
+It also can be called with a list of objects; in this form, the flush operation will be limited only to the objects specified in the list, as well as any child objects within `private` relationships for a delete operation:
 
     {python}
     # saves only user1 and address2.  all other modified
     # objects remain present in the session.
-    objectstore.get_session().commit(user1, address2)
+    objectstore.get_session().flush(user1, address2)
     
-This second form of commit should be used more carefully as it will not necessarily locate other dependent objects within the session, whose database representation may have foreign constraint relationships with the objects being operated upon.
+This second form of flush should be used more carefully as it will not necessarily locate other dependent objects within the session, whose database representation may have foreign constraint relationships with the objects being operated upon.
 
-##### What Commit is, and Isn't {@name=whatis}        
+##### What Flush is, and Isn't {@name=whatis}        
 
-The purpose of the Commit operation, as defined by the `objectstore` package, is to instruct the Unit of Work to analyze its lists of modified objects, assemble them into a dependency graph, fire off the appopriate INSERT, UPDATE, and DELETE statements via the mappers related to those objects, and to synchronize column-based object attributes that correspond directly to updated/inserted database columns.
+The purpose of the flush operation is to instruct the Unit of Work to analyze its lists of modified objects, assemble them into a dependency graph, fire off the appopriate INSERT, UPDATE, and DELETE statements via the mappers related to those objects, and to synchronize column-based object attributes that correspond directly to updated/inserted database columns.
 
-Its important to note that the *objectstore.get_session().commit() operation is not the same as the commit() operation on SQLEngine.*  A `SQLEngine`, described in [database](rel:database), has its own `begin` and `commit` statements which deal directly with transactions opened on DBAPI connections.  While the `session.commit()` makes use of these calls in order to issue its own SQL within a database transaction, it is only dealing with "committing" its own in-memory changes and only has an indirect relationship with database connection objects.
-        
-The `session.commit()` operation also does not affect any `relation`-based object attributes, that is attributes that reference other objects or lists of other objects, in any way.  A brief list of what will *not* happen includes:
+The `session.flush()` operation also does not affect any `relation`-based object attributes, that is attributes that reference other objects or lists of other objects, in any way.  A brief list of what will *not* happen includes:
 
 * It will not append or delete any object instances to/from any list-based object attributes.  Any objects that have been created or marked as deleted will be updated as such in the database, but if a newly deleted object instance is still attached to a parent object's list, the object itself will remain in that list.
-* It will not set or remove any scalar references to other objects, even if the corresponding database identifier columns have been committed.
+* It will not set or remove any scalar references to other objects, even if the corresponding database identifier columns have been flushed.
 
-This means, if you set `address.user_id` to 5, that integer attribute will be saved, but it will not place an `Address` object in the `addresses` attribute of the corresponding  `User` object.  In some cases there may be a lazy-loader still attached to an object attribute which when first accesed performs a fresh load from the database and creates the appearance of this behavior, but this behavior should not be relied upon as it is specific to lazy loading and also may disappear in a future release.  Similarly, if the `Address` object is marked as deleted and a commit is issued, the correct DELETE statements will be issued, but if the object instance itself is still attached to the `User`, it will remain.
+This means, if you set `address.user_id` to 5, that integer attribute will be saved, but it will not place an `Address` object in the `addresses` attribute of the corresponding  `User` object.  In some cases there may be a lazy-loader still attached to an object attribute which when first accesed performs a fresh load from the database and creates the appearance of this behavior, but this behavior should not be relied upon as it is specific to lazy loading and also may disappear in a future release.  Similarly, if the `Address` object is marked as deleted and a flush is issued, the correct DELETE statements will be issued, but if the object instance itself is still attached to the `User`, it will remain.
 
-So the primary guideline for dealing with commit() is, *the developer is responsible for maintaining in-memory objects and their relationships to each other, the unit of work is responsible for maintaining the database representation of the in-memory objects.*  The typical pattern is that the manipulation of objects *is* the way that changes get communicated to the unit of work, so that when the commit occurs, the objects are already in their correct in-memory representation and problems dont arise.  The manipulation of identifier attributes like integer key values as well as deletes in particular are a frequent source of confusion.
+So the primary guideline for dealing with flush() is, *the developer is responsible for maintaining in-memory objects and their relationships to each other, the unit of work is responsible for maintaining the database representation of the in-memory objects.*  The typical pattern is that the manipulation of objects *is* the way that changes get communicated to the unit of work, so that when the flush occurs, the objects are already in their correct in-memory representation and problems dont arise.  The manipulation of identifier attributes like integer key values as well as deletes in particular are a frequent source of confusion.
         
 A terrific feature of SQLAlchemy which is also a supreme source of confusion is the backreference feature, described in [datamapping_relations_backreferences](rel:datamapping_relations_backreferences).  This feature allows two types of objects to maintain attributes that reference each other, typically one object maintaining a list of elements of the other side, which contains a scalar reference to the list-holding object.  When you append an element to the list, the element gets a "backreference" back to the object which has the list.  When you attach the list-holding element to the child element, the child element gets attached to the list.  *This feature has nothing to do whatsoever with the Unit of Work.*`*`  It is strictly a small convenience feature intended to support the developer's manual manipulation of in-memory objects, and the backreference operation happens at the moment objects are attached or removed to/from each other, independent of any kind of database operation.  It does not change the golden rule, that the developer is reponsible for maintaining in-memory object relationships.
 
@@ -226,8 +224,8 @@ The delete call places an object or objects into the Unit of Work's list of obje
     # mark three objects to be deleted
     objectstore.get_session().delete(obj1, obj2, obj3)
 
-    # commit
-    objectstore.get_session().commit()
+    # flush
+    objectstore.get_session().flush()
     
 When objects which contain references to other objects are deleted, the mappers for those related objects will issue UPDATE statements for those objects that should no longer contain references to the deleted object, setting foreign key identifiers to NULL.  Similarly, when a mapper contains relations with the `private=True` option, DELETE statements will be issued for objects within that relationship in addition to that of the primary deleted object; this is called a *cascading delete*.
 
@@ -265,7 +263,7 @@ Expunge simply removes all record of an object from the current Session.  This i
     {python}
     session.expunge(obj1)
     
-Use `expunge` when youd like to remove an object altogether from memory, such as before calling `del` on it, which will prevent any "ghost" operations occuring when the session is committed.
+Use `expunge` when youd like to remove an object altogether from memory, such as before calling `del` on it, which will prevent any "ghost" operations occuring when the session is flushed.
 
 #### Import Instance {@name=import}
 
@@ -281,31 +279,11 @@ The _instance_key attribute placed on object instances is designed to work with 
         
 Note that the import_instance() function will either mark the deserialized object as the official copy in the current identity map, which includes updating its _instance_key with the current application's class instance, or it will discard it and return the corresponding object that was already present.  Thats why its important to receive the return results from the method and use the result as the official object instance.
 
-#### Begin {@name=begin}    
-
-The "scope" of the unit of work commit can be controlled further by issuing a begin().  A begin operation constructs a new UnitOfWork object and sets it as the currently used UOW.  It maintains a reference to the original UnitOfWork as its "parent", and shares the same identity map of objects that have been loaded from the database within the scope of the parent UnitOfWork.  However, the "new", "dirty", and "deleted" lists are empty.  This has the effect that only changes that take place after the begin() operation get logged to the current UnitOfWork, and therefore those are the only changes that get commit()ted.  When the commit is complete, the "begun" UnitOfWork removes itself and places the parent UnitOfWork as the current one again.
-The begin() method returns a transactional object, upon which you can call commit() or rollback().  *Only this transactional object controls the transaction* - commit() upon the Session will do nothing until commit() or rollback() is called upon the transactional object.
-
-    {python}
-    # modify an object
-    myobj1.foo = "something new"
-    
-    # begin 
-    trans = session.begin()
-    
-    # modify another object
-    myobj2.lala = "something new"
-    
-    # only 'myobj2' is saved
-    trans.commit()
-    
-begin/commit supports the same "nesting" behavior as the SQLEngine (note this behavior is not the original "nested" behavior), meaning that many begin() calls can be made, but only the outermost transactional object will actually perform a commit().  Similarly, calls to the commit() method on the Session, which might occur in function calls within the transaction, will not do anything; this allows an external function caller to control the scope of transactions used within the functions.
-    
 ### Advanced UnitOfWork Management {@name=advscope}
 
 #### Nesting UnitOfWork in a Database Transaction {@name=transactionnesting}    
 
-The UOW commit operation places its INSERT/UPDATE/DELETE operations within the scope of a database transaction controlled by a SQLEngine:
+The UOW flush operation places its INSERT/UPDATE/DELETE operations within the scope of a database transaction controlled by a SQLEngine:
 
     {python}
     engine.begin()
@@ -314,7 +292,7 @@ The UOW commit operation places its INSERT/UPDATE/DELETE operations within the s
     except:
         engine.rollback()
         raise
-    engine.commit()
+    engine.flush()
     
 If you recall from the [dbengine_transactions](rel:dbengine_transactions) section, the engine's begin()/commit() methods support reentrant behavior.  This means you can nest begin and commits and only have the outermost begin/commit pair actually take effect (rollbacks however, abort the whole operation at any stage).  From this it follows that the UnitOfWork commit operation can be nested within a transaction as well:
 
@@ -322,7 +300,7 @@ If you recall from the [dbengine_transactions](rel:dbengine_transactions) sectio
     engine.begin()
     try:
         # perform custom SQL operations
-        objectstore.commit()
+        objectstore.flush()
         # perform custom SQL operations
     except:
         engine.rollback()
@@ -347,15 +325,15 @@ Sessions can be created on an ad-hoc basis and used for individual groups of obj
     # get the session that corresponds to an instance
     s = objectstore.get_session(x)
     
-    # commit 
-    s.commit()
+    # flush 
+    s.flush()
 
     # perform a block of operations with this session set within the current scope
     objectstore.push_session(s)
     try:
         r = mapper.select_by(id=12)
         x = new MyObj()
-        objectstore.commit()
+        objectstore.flush()
     finally:
         objectstore.pop_session()
 

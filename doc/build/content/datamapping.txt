@@ -1,4 +1,4 @@
-Data Mapping
+Data Mapping {@name=datamapping}
 ============
 
 ### Basic Data Mapping {@name=datamapping}
