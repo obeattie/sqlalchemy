@@ -19,10 +19,13 @@ class PoolConnectionProvider(base.ConnectionProvider):
         if pool is None:
             kwargs.setdefault('echo', False)
             kwargs.setdefault('use_threadlocal',True)
-            if poolclass is not None:
-                kwargs['poolclass'] = poolclass
-            self._dbproxy = sqlalchemy.pool.manage(dialect.dbapi(), **kwargs)
-            self._pool = self._dbproxy.get_pool(*cargs, **cparams)
+            if poolclass is None:
+                poolclass = sqlalchemy.pool.QueuePool
+            dbapi = dialect.dbapi()
+            if dbapi is None:
+                raise exceptions.InvalidRequestException("Cant get DBAPI module for dialect '%s'" % dialect)
+                
+            self._pool = poolclass(lambda: dbapi.connect(*cargs, **cparams), **kwargs)
         else:
             if isinstance(pool, sqlalchemy.pool.DBProxy):
                 self._pool = pool.get_pool(*cargs, **cparams)

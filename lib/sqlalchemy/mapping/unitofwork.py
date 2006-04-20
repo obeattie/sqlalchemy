@@ -245,7 +245,7 @@ class UnitOfWork(object):
                 continue
             flush_context.register_object(obj, isdelete=True)
         
-        trans = session.create_transaction()
+        trans = session.create_transaction(autoflush=False)
         flush_context.transaction = trans
         echo_commit = False
         try:

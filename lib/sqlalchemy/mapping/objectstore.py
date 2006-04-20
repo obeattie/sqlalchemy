@@ -13,10 +13,11 @@ import sqlalchemy.sql as sql
 
 
 class SessionTransaction(object):
-    def __init__(self, session, parent=None):
+    def __init__(self, session, parent=None, autoflush=True):
         self.session = session
         self.connections = {}
         self.parent = parent
+        self.autoflush = autoflush
     def connection(self, mapper):
         if self.parent is not None:
             return self.parent.connection(mapper)
@@ -32,6 +33,8 @@ class SessionTransaction(object):
     def commit(self):
         if self.parent is not None:
             return
+        if self.autoflush:
+            self.session.flush()
         for t in self.connections.values():
             t[1].commit()
         self.close()
@@ -39,7 +42,7 @@ class SessionTransaction(object):
         if self.parent is not None:
             self.parent.rollback()
             return
-        for t in self.connections.values():
+        for k, t in self.connections.iteritems():
             t[1].rollback()
         self.close()
     def close(self):
@@ -67,14 +70,14 @@ class Session(object):
             self.hash_key = hash_key
         _sessions[self.hash_key] = self
 
-    def create_transaction(self):
+    def create_transaction(self, **kwargs):
         """returns a new SessionTransaction corresponding to an existing or new transaction.
         if the transaction is new, the returned SessionTransaction will have commit control
         over the underlying transaction, else will have rollback control only."""
         if self.transaction is not None:
             return self.transaction._begin()
         else:
-            self.transaction = SessionTransaction(self)
+            self.transaction = SessionTransaction(self, **kwargs)
             return self.transaction
     def connect(self, mapper=None, **kwargs):
         """returns a unique connection corresponding to the given mapper.  this connection
@@ -254,7 +257,9 @@ class Session(object):
         obj._sa_session_id = self.hash_key
     def _is_bound(self, obj):
         return getattr(obj, '_sa_session_id', None) == self.hash_key
-            
+    def __contains__(self, obj):
+        return self._is_bound(obj) and (obj in self.uow.new or self.uow.has_key(obj._instance_key))
+        
     def _get(self, key):
         return self.uow._get(key)
     def has_key(self, key):

@@ -11,7 +11,10 @@ class TLTransaction(base.Transaction):
         try:
             base.Transaction.rollback(self)
         finally:
-            del self.connection.engine.context.transaction
+            try:
+                del self.connection.engine.context.transaction
+            except AttributeError:
+                pass
     def commit(self):
         try:
             base.Transaction.commit(self)
@@ -20,7 +23,10 @@ class TLTransaction(base.Transaction):
             if len(stack) == 0:
                 del self.connection.engine.context.transaction
         except:
-            del self.connection.engine.context.transaction
+            try:
+                del self.connection.engine.context.transaction
+            except AttributeError:
+                pass
             raise
             
 class TLConnection(base.Connection):

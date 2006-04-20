@@ -73,7 +73,7 @@ class Pool(object):
     def __init__(self, echo = False, use_threadlocal = True, logger=None, **kwargs):
         self._threadconns = {} #weakref.WeakValueDictionary()
         self._use_threadlocal = use_threadlocal
-        self._echo = echo
+        self.echo = echo
         self._logger = logger or util.Logger(origin='pool')
     
     def unique_connection(self):
@@ -91,8 +91,6 @@ class Pool(object):
             return agent
 
     def return_conn(self, agent):
-        if self._echo:
-            self.log("return connection to pool")
         if self._use_threadlocal:
             try:
                 del self._threadconns[thread.get_ident()]
@@ -101,15 +99,9 @@ class Pool(object):
         self.do_return_conn(agent.connection)
         
     def get(self):
-        if self._echo:
-            self.log("get connection from pool")
-            self.log(self.status())
         return self.do_get()
     
     def return_invalid(self):
-        if self._echo:
-            self.log("return invalid connection to pool")
-            self.log(self.status())
         self.do_return_invalid()
             
     def do_get(self):
@@ -140,7 +132,11 @@ class ConnectionFairy(object):
                 self.connection = None
                 self.pool.return_invalid()
                 raise
+        if self.pool.echo:
+            self.pool.log("Connection %s checked out from pool" % repr(self.connection))
     def invalidate(self):
+        if self.pool.echo:
+            self.pool.log("Invalidate connection %s" % repr(self.connection))
         self.connection = None
         self.pool.return_invalid()
     def cursor(self):
@@ -160,6 +156,8 @@ class ConnectionFairy(object):
         self._close()
     def _close(self):
         if self.connection is not None:
+            if self.pool.echo:
+                self.pool.log("Connection %s being returned to pool" % repr(self.connection))
             self.pool.return_conn(self)
             self.pool = None
             self.connection = None
@@ -173,19 +171,18 @@ class CursorFairy(object):
 
 class SingletonThreadPool(Pool):
     """Maintains one connection per each thread, never moving to another thread.  this is
-    used for SQLite and other databases with a similar restriction."""
+    used for SQLite."""
     def __init__(self, creator, **params):
         Pool.__init__(self, **params)
         self._conns = {}
         self._creator = creator
 
     def status(self):
-        return "SingletonThreadPool thread:%d size: %d" % (thread.get_ident(), len(self._conns))
+        return "SingletonThreadPool id:%d thread:%d size: %d" % (id(self), thread.get_ident(), len(self._conns))
 
     def do_return_conn(self, conn):
-        if self._conns.get(thread.get_ident(), None) is None:
-            self._conns[thread.get_ident()] = conn
-
+        pass
+        
     def do_return_invalid(self):
         try:
             del self._conns[thread.get_ident()]
@@ -194,13 +191,11 @@ class SingletonThreadPool(Pool):
             
     def do_get(self):
         try:
-            c = self._conns[thread.get_ident()]
-            if c is None:
-                return self._creator()
+            return self._conns[thread.get_ident()]
         except KeyError:
             c = self._creator()
-        self._conns[thread.get_ident()] = None
-        return c
+            self._conns[thread.get_ident()] = c
+            return c
     
 class QueuePool(Pool):
     """uses Queue.Queue to maintain a fixed-size list of connections."""
@@ -212,23 +207,16 @@ class QueuePool(Pool):
         self._max_overflow = max_overflow
     
     def do_return_conn(self, conn):
-        if self._echo:
-            self.log("return QP connection to pool")
         try:
             self._pool.put(conn, False)
         except Queue.Full:
             self._overflow -= 1
 
     def do_return_invalid(self):
-        if self._echo:
-            self.log("return invalid connection")
         if self._pool.full():
             self._overflow -= 1
         
     def do_get(self):
-        if self._echo:
-            self.log("get QP connection from pool")
-            self.log(self.status())
         try:
             return self._pool.get(self._max_overflow > -1 and self._overflow >= self._max_overflow)
         except Queue.Empty:

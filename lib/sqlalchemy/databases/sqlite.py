@@ -227,8 +227,6 @@ class SQLiteCompiler(ansisql.ANSICompiler):
         else:
             return ansisql.ANSICompiler.binary_operator_string(self, binary)
 
-
-            
 class SQLiteSchemaGenerator(ansisql.ANSISchemaGenerator):
     def get_column_specification(self, column, override_pk=False, **kwargs):
         colspec = column.name + " " + column.type.engine_impl(self.engine).get_col_spec()
