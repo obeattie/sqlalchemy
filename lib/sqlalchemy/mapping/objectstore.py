@@ -80,27 +80,59 @@ class Session(object):
         """returns a unique connection corresponding to the given mapper.  this connection
         will not be part of any pre-existing transactional context."""
         return self.get_bind(mapper).connect(**kwargs)
-    def connection(self, mapper):
-        """returns a connection corresponding to the given mapper.  used by the execute()
+    def connection(self, mapper, **kwargs):
+        """returns a Connection corresponding to the given mapper.  used by the execute()
         method which performs select operations for Mapper and Query.
         if this Session is transactional, 
         the connection will be in the context of this session's transaction.  otherwise, the connection
-        will be unique, and will also have the close_with_result flag set to True so that the connection
-        can be closed out using the result alone."""
+        will be unique.
+        
+        the given **kwargs will be sent to the engine's connect() method, if no transaction is in progress."""
         if self.transaction is not None:
             return self.transaction.connection(mapper)
         else:
-            return self.connect(mapper, close_with_result=True)
+            return self.connect(mapper, **kwargs)
     def execute(self, mapper, clause, params, **kwargs):
-        return self.connection(mapper).execute(clause, params, **kwargs)
+        """using the given mapper to identify the appropriate Engine or Connection to be used for statement execution, 
+        executes the given ClauseElement using the provided parameter dictionary.  Returns a ResultProxy corresponding
+        to the execution's results.  If this method allocates a new Connection for the operation, then the ResultProxy's close() 
+        method will release the resources of the underlying Connection, otherwise its a no-op.
+        """
+        return self.connection(mapper, close_with_result=True).execute(clause, params, **kwargs)
     def close(self):
+        """closes this Session.  
+        
+        TODO: what should we do here ?
+        """
         if self.transaction is not None:
             self.transaction.close()
     def bind_mapper(self, mapper, bindto):
+        """binds the given Mapper to the given Engine or Connection.  All subsequent operations involving this
+        Mapper will use the given bindto."""
         self.binds[mapper] = bindto
     def bind_table(self, table, bindto):
+        """binds the given Table to the given Engine or Connection.  All subsequent operations involving this
+        Table will use the given bindto."""
         self.binds[table] = bindto
     def get_bind(self, mapper):
+        """given a Mapper, returns the Engine or Connection which is used to execute statements on behalf of this 
+        Mapper.  Calling connect() on the return result will always result in a Connection object.  This method 
+        disregards any SessionTransaction that may be in progress.
+        
+        The order of searching is as follows:
+        
+        if an Engine or Connection was bound to this Mapper specifically within this Session, returns that 
+        Engine or Connection.
+        
+        if an Engine or Connection was bound to this Mapper's underlying Table within this Session
+        (i.e. not to the Table directly), returns that Engine or Conneciton.
+        
+        if an Engine or Connection was bound to this Session, returns that Engine or Connection.
+        
+        finally, returns the Engine which was bound directly to the Table's MetaData object.  
+        
+        If no Engine is bound to the Table, an exception is raised.
+        """
         if mapper is None:
             return self.bind_to
         elif self.binds.has_key(mapper):
@@ -112,6 +144,7 @@ class Session(object):
         else:
             return mapper.table.engine
     def query(self, mapper_or_class):
+        """given a mapper or Class, returns a new Query object corresponding to this Session and the mapper, or the classes' primary mapper."""
         if isinstance(mapper_or_class, type):
             return query.Query(class_mapper(mapper_or_class), self)
         else:
@@ -158,11 +191,15 @@ class Session(object):
     get_row_key = staticmethod(get_row_key)
     
     def begin(self, *obj):
+        """deprecated"""
         raise InvalidRequestError("Session.begin() is deprecated.  use install_mod('legacy_session') to enable the old behavior")    
     def commit(self, *obj):
+        """deprecated"""
         raise InvalidRequestError("Session.commit() is deprecated.  use install_mod('legacy_session') to enable the old behavior")    
 
     def flush(self, *obj):
+        """flushes all the object modifications present in this session to the database.  if object
+        arguments are given, then only those objects (and immediate dependencies) are flushed."""
         self.uow.flush(self, *obj)
             
     def refresh(self, *obj):
@@ -178,72 +215,115 @@ class Session(object):
             self.uow.expire(o)
 
     def expunge(self, *obj):
+        """removes the given objects from this Session.  this will free all internal references to the objects."""
         for o in obj:
             self.uow.expunge(o)
             
-    def register_clean(self, *obj):
-        for o in obj:
-            self._bind_to(o)
-            self.uow.register_clean(o)
-    
-    def add(self, *obj):
-        """given some objects, if they have no identity they will be registered as new in this session.
-        if they have an identity, its verified that they are already part of this session."""
+    def add(self, *obj, **kwargs):
+        """adds unsaved objects to this Session.  
+        
+        The 'entity_name' keyword argument can also be given which will be assigned
+        to the instances if given.
+        """
         for o in obj:
             if hasattr(o, '_instance_key'):
                 if not self.uow.has_key(o._instance_key):
-                    raise InvalidRequestError("Instance '%s' is not bound to this Session" % repr(o))
+                    raise InvalidRequestError("Instance '%s' is not bound to this Session; use session.import(instance)" % repr(o))
             else:
-                self.register_new(o)
+                entity_name = kwargs.get('entity_name', None)
+                if entity_name is not None:
+                    m = class_mapper(o.__class__, entity_name=entity_name)
+                    m._assign_entity_name(o)
+                self._register_new(o)
             
-    def register_new(self, *obj):
-        """registers the given objects as "new" and binds them to this session."""
-        for o in obj:
-            self._bind_to(o)
-            self.uow.register_new(o)
-
+    def _register_new(self, obj):
+        self._bind_to(obj)
+        self.uow.register_new(obj)
+    def _register_dirty(self, obj):
+        self._bind_to(obj)
+        self.uow.register_dirty(obj)
+    def _register_clean(self, obj):
+        self._bind_to(obj)
+        self.uow.register_clean(obj)
+    def _register_deleted(self, obj):
+        self._bind_to(obj)
+        self.uow.register_deleted(obj)
     def _bind_to(self, obj):
         """given an object, binds it to this session.  changes on the object will affect
         the currently scoped UnitOfWork maintained by this session."""
         obj._sa_session_id = self.hash_key
-
-    def __getattr__(self, key):
-        """proxy other methods to our underlying UnitOfWork"""
-        return getattr(self.uow, key)
-
+    def _is_bound(self, obj):
+        return getattr(obj, '_sa_session_id', None) == self.hash_key
+            
+    def _get(self, key):
+        return self.uow._get(key)
+    def has_key(self, key):
+        return self.uow.has_key(key)
+    def is_expired(self, instance, **kwargs):
+        return self.uow.is_expired(instance, **kwargs)
+        
+    dirty = property(lambda s:s.uow.dirty)
+    deleted = property(lambda s:s.uow.deleted)
+    new = property(lambda s:s.uow.new)
+    modified_lists = property(lambda s:s.uow.modified_lists)
+    identity_map = property(lambda s:s.uow.identity_map)
+    
     def clear(self):
+        """removes all object instances from this Session.  this is equivalent to calling expunge() for all
+        objects in this Session."""
         self.uow = unitofwork.UnitOfWork()
 
-    def delete(self, *obj):
-        """registers the given objects as to be deleted upon the next commit"""
+    def delete(self, *obj, **kwargs):
+        """registers the given objects to be deleted upon the next flush().  If the given objects are not part of this
+        Session, they will be imported.  the objects are expected to either have an _instance_key
+        attribute or have all of their primary key attributes populated.
+        
+        the keyword argument 'entity_name' can also be provided which will be used by the import."""
         for o in obj:
+            if not self._is_bound(o):
+                o = self.import_(o, **kwargs)
             self.uow.register_deleted(o)
         
-    def import_instance(self, instance):
-        """places the given instance in the current thread's unit of work context,
-        either in the current IdentityMap or marked as "new".  Returns either the object
-        or the current corresponding version in the Identity Map.
+    def import_(self, instance, entity_name=None):
+        """given an instance that represents a saved item, adds it to this session.
+        the return value is either the given instance, or if an instance corresponding to the 
+        identity of the given instance already exists within this session, then that instance is returned;
+        the returned instance should always be used following this method.
+        
+        if the given instance does not have an _instance_key and also does not have all 
+        of its primary key attributes populated, an exception is raised.  similarly, if no
+        mapper can be located for the given instance, an exception is raised.
 
         this method should be used for any object instance that is coming from a serialized
-        storage, from another thread (assuming the regular threaded unit of work model), or any
-        case where the instance was loaded/created corresponding to a different base unitofwork
-        than the current one."""
+        storage, or was loaded by a Session other than this one.
+                
+        the keyword parameter entity_name is optional and is used to locate a Mapper for this
+        class which also specifies the given entity name.
+        """
         if instance is None:
             return None
         key = getattr(instance, '_instance_key', None)
-        mapper = object_mapper(instance)
+        mapper = object_mapper(instance, raiseerror=False)
+        if mapper is None:
+            mapper = class_mapper(instance, entity_name=entity_name)
+        if key is None:
+            ident = mapper.identity(instance)
+            for k in ident:
+                if k is None:
+                    raise InvalidRequestError("Instance '%s' does not have a full set of identity values, and does not represent a saved entity in the database.  Use the add() method to add unsaved instances to this Session." % str(instance))
+            key = mapper.identity_key(*ident)
         u = self.uow
-        if key is not None:
-            if u.identity_map.has_key(key):
-                return u.identity_map[key]
-            else:
-                instance._instance_key = key
-                u.identity_map[key] = instance
-                self._bind_to(instance)
+        if u.identity_map.has_key(key):
+            return u.identity_map[key]
         else:
-            u.register_new(instance)
-        return instance
-
+            instance._instance_key = key
+            u.identity_map[key] = instance
+            self._bind_to(instance)
+            return instance
+            
+    def import_instance(self, *args, **kwargs):
+        """deprecated; a synynom for import()"""
+        return self.import_(*args, **kwargs)
 
 def get_id_key(ident, class_, entity_name=None):
     return Session.get_id_key(ident, class_, entity_name)
@@ -251,24 +331,33 @@ def get_id_key(ident, class_, entity_name=None):
 def get_row_key(row, class_, primary_key, entity_name=None):
     return Session.get_row_key(row, class_, primary_key, entity_name)
 
-
 def mapper(*args, **params):
     return sqlalchemy.mapping.mapper(*args, **params)
 
 def object_mapper(obj):
     return sqlalchemy.mapping.object_mapper(obj)
 
-def class_mapper(class_):
-    return sqlalchemy.mapping.class_mapper(class_)
+def class_mapper(class_, **kwargs):
+    return sqlalchemy.mapping.class_mapper(class_, **kwargs)
 
+# this is the AttributeManager instance used to provide attribute behavior on objects.
+# to all the "global variable police" out there:  its a stateless object.
 global_attributes = unitofwork.global_attributes
 
-_sessions = weakref.WeakValueDictionary() # all referenced sessions (including user-created)
+# this dictionary maps the hash key of a Session to the Session itself, and 
+# acts as a Registry with which to locate Sessions.  this is to enable
+# object instances to be associated with Sessions without having to attach the
+# actual Session object directly to the object instance.
+_sessions = weakref.WeakValueDictionary() 
 
 def get_session(obj=None, raiseerror=True):
+    """returns the Session corrseponding to the given object instance.  By default, if the object is not bound
+    to any Session, then an error is raised (or None is returned if raiseerror=False).  This behavior can be changed
+    using the "threadlocal" mod, which will add an additional step to return a Session that is bound to the current 
+    thread."""
     if obj is None:
         if raiseerror:
-            raise InvalidRequestError("Thread-local Sessions are disabled by default.  Use install_mods('threadlocal') to enable.")
+            raise InvalidRequestError("Thread-local Sessions are disabled by default.  Use 'import sqlalchemy.mods.threadlocal' to enable.")
         else:
             return None
     # does it have a hash key ?

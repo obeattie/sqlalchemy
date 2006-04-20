@@ -53,7 +53,7 @@ class UOWListElement(attributes.ListElement):
             del sess.deleted[item]
         sess.modified_lists.append(self)
         if self.deleteremoved and isdelete:
-            sess.register_deleted(item)
+            sess._register_deleted(item)
     def append(self, item, _mapper_nohistory = False):
         if _mapper_nohistory:
             self.append_nohistory(item)
@@ -69,9 +69,9 @@ class UOWAttributeManager(attributes.AttributeManager):
         sess = get_session(obj, raiseerror=False)
         if sess is not None:
             if hasattr(obj, '_instance_key'):
-                sess.register_dirty(obj)
+                sess._register_dirty(obj)
             else:
-                sess.register_new(obj)
+                sess._register_new(obj)
             
     def create_prop(self, class_, key, uselist, callable_, **kwargs):
         return UOWProperty(class_, self, key, uselist, callable_, **kwargs)

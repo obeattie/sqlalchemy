@@ -43,7 +43,7 @@ class HistoryTest(AssertMixin):
         self.assert_result([u], data[0], *data[1:])
 
         self.echo(repr(u.addresses))
-        objectstore.get_session().rollback_object(u)
+        objectstore.get_session().uow.rollback_object(u)
         data = [User,
             {'user_name' : None,
              'addresses' : (Address, [])
@@ -62,7 +62,7 @@ class HistoryTest(AssertMixin):
         
         u = User()
         a = Address()
-        s.register_new(u, a)
+        s.add(u, a)
         a.user = u
         #print repr(a.__class__._attribute_manager.get_history(a, 'user').added_items())
         #print repr(u.addresses.added_items())
@@ -421,7 +421,7 @@ class SaveTest(AssertMixin):
         u2 = User()
         u2.user_name = 'savetester2'
 
-        objectstore.get_session().register_new(u)
+        objectstore.get_session().add(u)
         
         objectstore.get_session().flush(u)
         objectstore.get_session().flush()
@@ -549,7 +549,7 @@ class SaveTest(AssertMixin):
         u.address.email_address = 'myonlyaddress@foo.com'
         objectstore.get_session().flush()
         self.echo("\n\n\n")
-        objectstore.get_session().register_deleted(u)
+        objectstore.get_session().delete(u)
         objectstore.get_session().flush()
         self.assert_(a.address_id is not None and a.user_id is None and not objectstore.get_session().identity_map.has_key(u._instance_key) and objectstore.get_session().identity_map.has_key(a._instance_key))
 
@@ -613,8 +613,7 @@ class SaveTest(AssertMixin):
         self.assert_result(l, data[0], *data[1:])
         
         self.echo("\n\n\n")
-        objectstore.get_session().register_deleted(l[0])
-        objectstore.get_session().register_deleted(l[2])
+        objectstore.get_session().delete(l[0], l[2])
         objectstore.flush()
         return
         res = self.capture_exec(db, lambda: objectstore.get_session().flush())

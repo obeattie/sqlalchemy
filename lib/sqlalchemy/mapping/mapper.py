@@ -49,8 +49,7 @@ class Mapper(object):
                 allow_column_override = False,
                 entity_name = None,
                 always_refresh = False,
-                version_id_col = None,
-                **kwargs):
+                version_id_col = None):
 
         if primarytable is not None:
             sys.stderr.write("'primarytable' argument to mapper is deprecated\n")
@@ -333,6 +332,11 @@ class Mapper(object):
         not only on class assignment but the optional "entity_name" parameter as well."""
         return instance.__class__ is self.class_ and getattr(instance, '_entity_name', None) == self.entity_name
 
+    def _assign_entity_name(self, instance):
+        """assigns this Mapper's entity name to the given instance.  subsequent Mapper lookups for this
+        instance will return the primary mapper corresponding to this Mapper's class and entity name."""
+        instance._entity_name = self.entity_name
+        
     def _init_class(self):
         """sets up our classes' overridden __init__ method, this mappers hash key as its
         '_mapper' property, and our columns as its 'c' property.  if the class already had a
@@ -355,7 +359,7 @@ class Mapper(object):
                     # register new with the correct session, before the object's 
                     # constructor is called, since further assignments within the
                     # constructor would otherwise bind it to whatever get_session() is.
-                    session.register_new(self)
+                    session._register_new(self)
                 else:
                     session._bind_to(self)
             if oldinit is not None:
@@ -403,7 +407,7 @@ class Mapper(object):
                 
         # store new stuff in the identity map
         for value in imap.values():
-            session.register_clean(value)
+            session._register_clean(value)
 
         if mappers:
             result = [result] + otherresults
@@ -955,13 +959,16 @@ def hash_key(obj):
     else:
         return repr(obj)
         
-def object_mapper(object):
+def object_mapper(object, raiseerror=True):
     """given an object, returns the primary Mapper associated with the object
     or the object's class."""
     try:
         return mapper_registry[ClassKey(object.__class__, getattr(object, '_entity_name', None))]
     except KeyError:
-        raise InvalidRequestError("Class '%s' entity name '%s' has no mapper associated with it" % (object.__class__.__name__, getattr(object, '_entity_name', None)))
+        if raiseerror:
+            raise InvalidRequestError("Class '%s' entity name '%s' has no mapper associated with it" % (object.__class__.__name__, getattr(object, '_entity_name', None)))
+        else:
+            return None
 
 def class_mapper(class_, entity_name=None):
     """given a ClassKey, returns the primary Mapper associated with the key."""
