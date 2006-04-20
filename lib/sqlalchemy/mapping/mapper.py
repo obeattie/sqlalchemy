@@ -158,25 +158,7 @@ class Mapper(object):
         # load custom properties 
         if properties is not None:
             for key, prop in properties.iteritems():
-                if sql.is_column(prop):
-                    try:
-                        prop = self.table._get_col_by_original(prop)
-                    except KeyError:
-                        raise ArgumentError("Column '%s' is not represented in mapper's table" % prop._label)
-                    self.columns[key] = prop
-                    prop = ColumnProperty(prop)
-                elif isinstance(prop, list) and sql.is_column(prop[0]):
-                    try:
-                        prop = [self.table._get_col_by_original(p) for p in prop]
-                    except KeyError, e:
-                        raise ArgumentError("Column '%s' is not represented in mapper's table" % e.args[0])
-                    self.columns[key] = prop[0]
-                    prop = ColumnProperty(*prop)
-                self.props[key] = prop
-                if isinstance(prop, ColumnProperty):
-                    for col in prop.columns:
-                        proplist = self.columntoproperty.setdefault(col.original, [])
-                        proplist.append(prop)
+                self.add_property(key, prop, False)
 
         # load properties from the main table object,
         # not overriding those set up in the 'properties' argument
@@ -299,22 +281,41 @@ class Mapper(object):
 
     def select_text(self, text, **params):
         return self.query.select_text(text, **params)
+    
+    def add_properties(self, dict_of_properties):
+        """adds the given dictionary of properties to this mapper, using add_property."""
+        for key, value in dict_of_properties.iteritems():
+            self.add_property(key, value, True)
             
-    def add_property(self, key, prop):
+    def add_property(self, key, prop, init=True):
         """adds an additional property to this mapper.  this is the same as if it were 
         specified within the 'properties' argument to the constructor.  if the named
         property already exists, this will replace it.  Useful for
         circular relationships, or overriding the parameters of auto-generated properties
         such as backreferences."""
+
         if sql.is_column(prop):
+            try:
+                prop = self.table._get_col_by_original(prop)
+            except KeyError:
+                raise ArgumentError("Column '%s' is not represented in mapper's table" % prop._label)
             self.columns[key] = prop
             prop = ColumnProperty(prop)
+        elif isinstance(prop, list) and sql.is_column(prop[0]):
+            try:
+                prop = [self.table._get_col_by_original(p) for p in prop]
+            except KeyError, e:
+                raise ArgumentError("Column '%s' is not represented in mapper's table" % e.args[0])
+            self.columns[key] = prop[0]
+            prop = ColumnProperty(*prop)
         self.props[key] = prop
         if isinstance(prop, ColumnProperty):
             for col in prop.columns:
                 proplist = self.columntoproperty.setdefault(col.original, [])
                 proplist.append(prop)
-        prop.init(key, self)
+
+        if init:
+            prop.init(key, self)
         
     def __str__(self):
         return "Mapper|" + self.class_.__name__ + "|" + (self.entity_name is not None and "/%s" % self.entity_name or "") + self.primarytable.name
