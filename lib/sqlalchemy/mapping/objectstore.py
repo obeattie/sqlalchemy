@@ -22,14 +22,17 @@ class SessionTransaction(object):
         if self.parent is not None:
             return self.parent.connection(mapper)
         engine = self.session.get_bind(mapper)
-        try:
-            return self.connections[engine][0]
-        except KeyError:
-            c = engine.connect()
-            self.connections[engine] = (c, c.begin())
-            return c
+        return self.add(engine)
     def _begin(self):
         return SessionTransaction(self.session, self)
+    def add(self, connection_or_engine):
+        if self.connections.has_key(connection_or_engine):
+            return self.connections[connection_or_engine][0]
+        c = connection_or_engine.connect()
+        e = c.engine
+        if not self.connections.has_key(e):
+            self.connections[e] = (c, c.begin())
+        return self.connections[e][0]
     def commit(self):
         if self.parent is not None:
             return
