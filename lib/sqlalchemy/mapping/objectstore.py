@@ -222,23 +222,71 @@ class Session(object):
         for o in obj:
             self.uow.expunge(o)
             
-    def add(self, *obj, **kwargs):
+    def save(self, *obj, **kwargs):
         """adds unsaved objects to this Session.  
         
         The 'entity_name' keyword argument can also be given which will be assigned
         to the instances if given.
         """
         for o in obj:
-            if hasattr(o, '_instance_key'):
-                if not self.uow.has_key(o._instance_key):
-                    raise InvalidRequestError("Instance '%s' is not bound to this Session; use session.import(instance)" % repr(o))
-            else:
-                entity_name = kwargs.get('entity_name', None)
-                if entity_name is not None:
-                    m = class_mapper(o.__class__, entity_name=entity_name)
-                    m._assign_entity_name(o)
-                self._register_new(o)
-            
+            for c in object_mapper(o, **kwargs).cascade_iterator('save-update', o):
+                if c is o:
+                    self._save_impl(c, **kwargs)
+                else:
+                    self.save_or_update(c, **kwargs)
+
+    def update(self, *obj, **kwargs):
+        for o in obj:
+            for c in object_mapper(o, **kwargs).cascade_iterator('save-update', o):
+                if c is o:
+                    self._update_impl(c, **kwargs)
+                else:
+                    self.save_or_update(c, **kwargs)
+
+    def save_or_update(self, *obj, **kwargs):
+        for o in obj:
+            for c in object_mapper(o, *kwargs).cascade_iterator('save-update', o):
+                key = self._instance_key(c, raiseerror=False, **kwargs)
+                if key is None:
+                    self._save_impl(c, **kwargs)
+                else:
+                    self._update_impl(c, **kwargs)
+                    
+    def _save_impl(self, object, **kwargs):
+        if hasattr(object, '_instance_key'):
+            if not self.uow.has_key(object._instance_key):
+                raise InvalidRequestError("Instance '%s' attached to a different Session" % repr(object))
+        else:
+            entity_name = kwargs.get('entity_name', None)
+            if entity_name is not None:
+                m = class_mapper(object.__class__, entity_name=entity_name)
+                m._assign_entity_name(object)
+            self._register_new(object)
+
+    def _update_impl(self, object, **kwargs):
+        if self._is_bound(object):
+            return
+        if not hasattr(object, '_instance_key'):
+            raise InvalidRequestError("Instance '%s' is not persisted" % repr(object))
+        self._register_dirty(object)
+
+    def _instance_key(self, object, entity_name=None, raiseerror=True):
+        key = getattr(object, '_instance_key', None)
+        if key is None:
+            mapper = object_mapper(object, raiseerror=False)
+            if mapper is None:
+                mapper = class_mapper(object, entity_name=entity_name)
+            ident = mapper.identity(object)
+            for k in ident:
+                if k is None:
+                    if raiseerror:
+                        raise InvalidRequestError("Instance '%s' does not have a full set of identity values, and does not represent a saved entity in the database.  Use the add() method to add unsaved instances to this Session." % str(object))
+                    else:
+                        return None
+            key = mapper.identity_key(*ident)
+        return key
+        
+        
     def _register_new(self, obj):
         self._bind_to(obj)
         self.uow.register_new(obj)
@@ -285,11 +333,13 @@ class Session(object):
         
         the keyword argument 'entity_name' can also be provided which will be used by the import."""
         for o in obj:
-            if not self._is_bound(o):
-                o = self.import_(o, **kwargs)
-            self.uow.register_deleted(o)
-        
-    def import_(self, instance, entity_name=None):
+            for c in object_mapper(o, **kwargs).cascade_iterator('delete', o):
+                if not self._is_bound(c):
+                    c = self.import_(c, **kwargs)
+                self.uow.register_deleted(c)
+
+
+    def merge(self, instance, entity_name=None):
         """given an instance that represents a saved item, adds it to this session.
         the return value is either the given instance, or if an instance corresponding to the 
         identity of the given instance already exists within this session, then that instance is returned;
@@ -307,16 +357,7 @@ class Session(object):
         """
         if instance is None:
             return None
-        key = getattr(instance, '_instance_key', None)
-        mapper = object_mapper(instance, raiseerror=False)
-        if mapper is None:
-            mapper = class_mapper(instance, entity_name=entity_name)
-        if key is None:
-            ident = mapper.identity(instance)
-            for k in ident:
-                if k is None:
-                    raise InvalidRequestError("Instance '%s' does not have a full set of identity values, and does not represent a saved entity in the database.  Use the add() method to add unsaved instances to this Session." % str(instance))
-            key = mapper.identity_key(*ident)
+        key = self._instance_key(instance, entity_name=entity_name, raiseerror=True)
         u = self.uow
         if u.identity_map.has_key(key):
             return u.identity_map[key]
@@ -328,7 +369,7 @@ class Session(object):
             
     def import_instance(self, *args, **kwargs):
         """deprecated; a synynom for import()"""
-        return self.import_(*args, **kwargs)
+        return self.merge(*args, **kwargs)
 
 def get_id_key(ident, class_, entity_name=None):
     return Session.get_id_key(ident, class_, entity_name)
@@ -339,8 +380,8 @@ def get_row_key(row, class_, primary_key, entity_name=None):
 def mapper(*args, **params):
     return sqlalchemy.mapping.mapper(*args, **params)
 
-def object_mapper(obj):
-    return sqlalchemy.mapping.object_mapper(obj)
+def object_mapper(obj, **kwargs):
+    return sqlalchemy.mapping.object_mapper(obj, **kwargs)
 
 def class_mapper(class_, **kwargs):
     return sqlalchemy.mapping.class_mapper(class_, **kwargs)

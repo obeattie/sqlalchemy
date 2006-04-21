@@ -689,10 +689,16 @@ class Mapper(object):
             prop.register_dependencies(uowcommit, *args, **kwargs)
         if self.inherits is not None:
             uowcommit.register_dependency(self.inherits, self)
-            
-    def register_deleted(self, obj, uow):
+    
+    def cascade_iterator(self, type, object):
+        yield object
         for prop in self.props.values():
-            prop.register_deleted(obj, uow)
+            for c in prop.cascade_iterator(type, object):
+                yield c
+
+#    def register_deleted(self, obj, uow):
+#        for prop in self.props.values():
+#            prop.register_deleted(obj, uow)
     
         
     def _identity_key(self, row):
@@ -781,6 +787,8 @@ class MapperProperty(object):
         """called when the mapper receives a row.  instance is the parent instance
         corresponding to the row. """
         raise NotImplementedError()
+    def cascade_iterator(self, type, object):
+        return []
     def copy(self):
         raise NotImplementedError()
     def get_criterion(self, key, value):

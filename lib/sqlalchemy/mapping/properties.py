@@ -18,6 +18,7 @@ import sync
 import mapper
 import objectstore
 from sqlalchemy.exceptions import *
+import sets
 
 class ColumnProperty(MapperProperty):
     """describes an object attribute that corresponds to a table column."""
@@ -93,7 +94,7 @@ class DeferredColumnProperty(ColumnProperty):
                         if prop is self:
                             continue
                         instance.__dict__[prop.key] = row[prop.columns[0]]
-                        objectstore.global_attributes.create_history(instance, prop.key, uselist=False)
+                        objectstore.global_attributes.create_history(instance, prop.key, uselist=False, cascade=self.cascade)
                     return row[self.columns[0]]    
                 else:
                     return connection.scalar(sql.select([self.columns[0]], clause, use_labels=True),None)
@@ -105,7 +106,7 @@ class DeferredColumnProperty(ColumnProperty):
     def execute(self, session, instance, row, identitykey, imap, isnew):
         if isnew:
             if not self.is_primary():
-                objectstore.global_attributes.create_history(instance, self.key, False, callable_=self.setup_loader(instance))
+                objectstore.global_attributes.create_history(instance, self.key, False, callable_=self.setup_loader(instance), cascade=self.cascade)
             else:
                 objectstore.global_attributes.reset_history(instance, self.key)
 
@@ -118,7 +119,7 @@ class PropertyLoader(MapperProperty):
 
     """describes an object property that holds a single item or list of items that correspond
     to a related database table."""
-    def __init__(self, argument, secondary, primaryjoin, secondaryjoin, foreignkey=None, uselist=None, private=False, association=None, use_alias=None, selectalias=None, order_by=False, attributeext=None, backref=None, is_backref=False, post_update=False):
+    def __init__(self, argument, secondary, primaryjoin, secondaryjoin, foreignkey=None, uselist=None, private=False, association=None, use_alias=None, selectalias=None, order_by=False, attributeext=None, backref=None, is_backref=False, post_update=False, cascade=None):
         self.uselist = uselist
         self.argument = argument
         self.secondary = secondary
@@ -136,8 +137,17 @@ class PropertyLoader(MapperProperty):
             self.foreigntable = foreignkey.table
         else:
             self.foreigntable = None
-            
-        self.private = private
+        
+        # hibernate cascades:
+        # create, merge, save-update, delete, lock, refresh, evict, replicate.
+        if cascade is not None:
+            self.cascade = sets.Set([c.strip() for c in cascade.split(',')])
+        else:
+            if private:
+                self.cascade = sets.Set(["delete-orphan", "delete"])
+            else:
+                self.cascade = sets.Set()
+
         self.association = association
         if selectalias is not None:
             print "'selectalias' argument to relation() is deprecated.  eager loads automatically alias-ize tables now."
@@ -150,6 +160,23 @@ class PropertyLoader(MapperProperty):
         else:
             self.backref = backref
         self.is_backref = is_backref
+
+    private = property(lambda s:"delete-orphan" in s.cascade)
+    
+    def cascade_iterator(self, type, object):
+        
+        if not type in self.cascade:
+            return
+
+        if self.uselist:
+            childlist = objectstore.global_attributes.get_history(object, self.key, passive = False)
+        else: 
+            childlist = objectstore.global_attributes.get_history(object, self.key)
+        for c in childlist.added_items() + childlist.deleted_items() + childlist.unchanged_items():
+            if c is not None:
+                yield c
+                for c2 in self.mapper.cascade_iterator(type, c):
+                    yield c2
 
     def copy(self):
         x = self.__class__.__new__(self.__class__)
@@ -226,7 +253,7 @@ class PropertyLoader(MapperProperty):
         
     def _set_class_attribute(self, class_, key):
         """sets attribute behavior on our target class."""
-        objectstore.global_attributes.register_attribute(class_, key, uselist = self.uselist, deleteremoved = self.private, extension=self.attributeext)
+        objectstore.global_attributes.register_attribute(class_, key, uselist = self.uselist, deleteremoved = self.private, extension=self.attributeext, cascade=self.cascade)
         
     def _get_direction(self):
         """determines our 'direction', i.e. do we represent one to many, many to many, etc."""
@@ -302,17 +329,6 @@ class PropertyLoader(MapperProperty):
             return c.copy_container()
         return None
 
-    def register_deleted(self, obj, uow):
-        if not self.private:
-            return
-
-        if self.uselist:
-            childlist = uow.attributes.get_history(obj, self.key, passive = False)
-        else: 
-            childlist = uow.attributes.get_history(obj, self.key)
-        for child in childlist.deleted_items() + childlist.unchanged_items():
-            if child is not None:
-                uow.register_deleted(child)
 
     class MapperStub(object):
         """poses as a Mapper representing the association table in a many-to-many
@@ -546,7 +562,7 @@ class PropertyLoader(MapperProperty):
         if self.is_primary():
             return
         #print "PLAIN PROPLOADER EXEC NON-PRIAMRY", repr(id(self)), repr(self.mapper.class_), self.key
-        objectstore.global_attributes.create_history(instance, self.key, self.uselist)
+        objectstore.global_attributes.create_history(instance, self.key, self.uselist, cascade=self.cascade)
 
     def _compile_synchronizers(self):
         """assembles a list of 'synchronization rules', which are instructions on how to populate
@@ -596,7 +612,7 @@ class LazyLoader(PropertyLoader):
     def _set_class_attribute(self, class_, key):
         # establish a class-level lazy loader on our class
         #print "SETCLASSATTR LAZY", repr(class_), key
-        objectstore.global_attributes.register_attribute(class_, key, uselist = self.uselist, deleteremoved = self.private, callable_=lambda i: self.setup_loader(i), extension=self.attributeext)
+        objectstore.global_attributes.register_attribute(class_, key, uselist = self.uselist, deleteremoved = self.private, callable_=lambda i: self.setup_loader(i), extension=self.attributeext, cascade=self.cascade)
 
     def setup_loader(self, instance):
         if not self.parent.is_assigned(instance):
@@ -644,7 +660,7 @@ class LazyLoader(PropertyLoader):
                 #print "EXEC NON-PRIAMRY", repr(self.mapper.class_), self.key
                 # we are not the primary manager for this attribute on this class - set up a per-instance lazyloader,
                 # which will override the class-level behavior
-                objectstore.global_attributes.create_history(instance, self.key, self.uselist, callable_=self.setup_loader(instance))
+                objectstore.global_attributes.create_history(instance, self.key, self.uselist, callable_=self.setup_loader(instance), cascade=self.cascade)
             else:
                 #print "EXEC PRIMARY", repr(self.mapper.class_), self.key
                 # we are the primary manager for this attribute on this class - reset its per-instance attribute state, 
@@ -795,7 +811,7 @@ class EagerLoader(PropertyLoader):
         if isnew:
             # new row loaded from the database.  initialize a blank container on the instance.
             # this will override any per-class lazyloading type of stuff.
-            h = objectstore.global_attributes.create_history(instance, self.key, self.uselist)
+            h = objectstore.global_attributes.create_history(instance, self.key, self.uselist, cascade=self.cascade)
             
         if not self.uselist:
             if isnew:

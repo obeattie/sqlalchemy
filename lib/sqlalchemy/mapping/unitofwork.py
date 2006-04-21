@@ -34,48 +34,62 @@ class UOWProperty(attributes.SmartProperty):
         super(UOWProperty, self).__init__(*args, **kwargs)
         self.class_ = class_
     property = property(lambda s:class_mapper(s.class_).props[s.key], doc="returns the MapperProperty object associated with this property")
-    
-class UOWListElement(attributes.ListElement):
+
+                
+class UOWListElement(attributes.ListAttribute):
     """overrides ListElement to provide unit-of-work "dirty" hooks when list attributes are modified,
     plus specialzed append() method."""
-    def __init__(self, obj, key, data=None, deleteremoved=False, **kwargs):
-        attributes.ListElement.__init__(self, obj, key, data=data, **kwargs)
+    def __init__(self, obj, key, data=None, deleteremoved=False, cascade=None, **kwargs):
+        attributes.ListAttribute.__init__(self, obj, key, data=data, **kwargs)
         self.deleteremoved = deleteremoved
-    def list_value_changed(self, obj, key, item, listval, isdelete):
-        sess = get_session(obj, raiseerror=True)
+        self.cascade = cascade
+    def value_changed(self, obj, key, item, listval, isdelete):
+        sess = get_session(obj, raiseerror=False)
         if sess is None:
             return
         # add the child item to this session.  if its already got an identity then its
         # expected to be there already.
-        sess.add(item)
-        if not isdelete and sess.deleted.contains(item):
+        #sess.add(item)
+        #if not isdelete and sess.deleted.contains(item):
             #raise InvalidRequestError("re-inserting a deleted value into a list")
-            del sess.deleted[item]
+        #    del sess.deleted[item]
         sess.modified_lists.append(self)
-        if self.deleteremoved and isdelete:
-            sess._register_deleted(item)
+        if self.cascade is not None:
+            if isdelete:
+                if "delete-orphan" in self.cascade:
+                    sess.delete(item)
+            else:
+                if "save-update" in self.cascade:
+                    sess.save_or_update(item)
+        #if self.deleteremoved and isdelete:
+        #    sess._register_deleted(item)
     def append(self, item, _mapper_nohistory = False):
         if _mapper_nohistory:
             self.append_nohistory(item)
         else:
-            attributes.ListElement.append(self, item)
-            
-class UOWAttributeManager(attributes.AttributeManager):
-    """overrides AttributeManager to provide unit-of-work "dirty" hooks when scalar attribues are modified, plus factory methods for UOWProperrty/UOWListElement."""
-    def __init__(self):
-        attributes.AttributeManager.__init__(self)
-        
-    def value_changed(self, obj, key, value):
+            attributes.ListAttribute.append(self, item)
+
+class UOWScalarElement(attributes.ScalarAttribute):
+    def value_changed(self, oldvalue, newvalue):
+        obj = self.obj
         sess = get_session(obj, raiseerror=False)
         if sess is not None:
             if hasattr(obj, '_instance_key'):
                 sess._register_dirty(obj)
             else:
                 sess._register_new(obj)
-            
+                    
+class UOWAttributeManager(attributes.AttributeManager):
+    """overrides AttributeManager to provide unit-of-work "dirty" hooks when scalar attribues are modified, plus factory methods for UOWProperrty/UOWListElement."""
+    def __init__(self):
+        attributes.AttributeManager.__init__(self)
+        
     def create_prop(self, class_, key, uselist, callable_, **kwargs):
         return UOWProperty(class_, self, key, uselist, callable_, **kwargs)
 
+    def create_scalar(self, obj, key, **kwargs):
+        return UOWScalarElement(obj, key, **kwargs)
+        
     def create_list(self, obj, key, list_, **kwargs):
         return UOWListElement(obj, key, list_, **kwargs)
         
@@ -201,10 +215,6 @@ class UnitOfWork(object):
         if not self.deleted.contains(obj):
             self._validate_obj(obj)
             self.deleted.append(obj)  
-            mapper = object_mapper(obj)
-            # TODO: should the cascading delete dependency thing
-            # happen wtihin PropertyLoader.process_dependencies ?
-            mapper.register_deleted(obj, self)
 
     def unregister_deleted(self, obj):
         try:
@@ -226,6 +236,7 @@ class UnitOfWork(object):
             if self.deleted.contains(obj):
                 continue
             flush_context.register_object(obj)
+            
         for item in self.modified_lists:
             obj = item.obj
             if objset is not None and not objset.contains(obj):
@@ -662,7 +673,13 @@ class UOWTask(object):
                             continue
                         if not o in childtask.objects:
                             # item needs to be saved since its added, or attached to a deleted object
-                            childtask.append(o, isdelete=isdelete and dep.processor.private)
+                            if isdelete:
+                                childtask.append(o, "delete" in processor.cascade)
+                            #if isdelete and "delete" in processor.cascade:
+                            #    childstask.append(o, True)
+                            #elif not isdelete and "save-update" in processor.cascade:
+                            #    childtask.append(o, False)
+                            #childtask.append(o, isdelete=isdelete and dep.processor.private)
                             if cyclicaldep:
                                 # cyclical, so create a placeholder UOWTask that may be built into the
                                 # final task tree
@@ -693,11 +710,12 @@ class UOWTask(object):
             """takes a dependency-sorted tree of objects and creates a tree of UOWTasks"""
             t = objecttotask[node.item]
             can_add_to_parent = t.mapper is parenttask.mapper
-            if can_add_to_parent:
-                parenttask.append(node.item, t.parent.objects[node.item].listonly, isdelete=t.parent.objects[node.item].isdelete, childtask=t)
-            else:
-                t.append(node.item, t.parent.objects[node.item].listonly, isdelete=t.parent.objects[node.item].isdelete)
-                parenttask.append(None, listonly=False, isdelete=t.parent.objects[node.item].isdelete, childtask=t)
+            if t.parent.objects.has_key(node.item):
+                if can_add_to_parent:
+                    parenttask.append(node.item, t.parent.objects[node.item].listonly, isdelete=t.parent.objects[node.item].isdelete, childtask=t)
+                else:
+                    t.append(node.item, t.parent.objects[node.item].listonly, isdelete=t.parent.objects[node.item].isdelete)
+                    parenttask.append(None, listonly=False, isdelete=t.parent.objects[node.item].isdelete, childtask=t)
             if dependencies.has_key(node.item):
                 for depprocessor, deptask in dependencies[node.item].iteritems():
                     if can_add_to_parent:

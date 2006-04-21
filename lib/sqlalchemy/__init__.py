@@ -17,7 +17,7 @@ import sqlalchemy.ext.proxy
 from sqlalchemy.mapping.objectstore import Session, get_session
 
 create_engine = sqlalchemy.engine.create_engine
-
+create_session = objectstore.Session
 
 def global_connect(*args, **kwargs):
     sqlalchemy.schema.default_metadata.connect(*args, **kwargs)

@@ -119,6 +119,7 @@ class ScalarAttribute(ManagedAttribute):
         self.obj.__dict__[self.key] = value
         if self.extension is not None:
             self.extension.set(self.obj, value, orig)
+        self.value_changed(orig, value)
     def delattr(self, **kwargs):
         orig = self.obj.__dict__.get(self.key, None)
         if self.orig is ScalarAttribute.NONE:
@@ -126,6 +127,7 @@ class ScalarAttribute(ManagedAttribute):
         self.obj.__dict__[self.key] = None
         if self.extension is not None:
             self.extension.set(self.obj, None, orig)
+        self.value_changed(orig, None)
     def append(self, obj):
         self.setattr(obj)
     def remove(self, obj):
@@ -136,9 +138,11 @@ class ScalarAttribute(ManagedAttribute):
             self.orig = ScalarAttribute.NONE
     def commit(self):
         self.orig = ScalarAttribute.NONE
+    def value_changed(self, oldvalue, newvalue):
+        pass
     def added_items(self):
         if self.orig is not ScalarAttribute.NONE:
-            return [self.obj.__dict__[self.key]]
+            return [self.obj.__dict__.get(self.key)]
         else:
             return []
     def deleted_items(self):
@@ -148,7 +152,7 @@ class ScalarAttribute(ManagedAttribute):
             return []
     def unchanged_items(self):
         if self.orig is ScalarAttribute.NONE:
-            return [self.obj.__dict__[self.key]]
+            return [self.obj.__dict__.get(self.key)]
         else:
             return []
 
@@ -177,7 +181,7 @@ class ListAttribute(util.HistoryArraySet, ManagedAttribute):
             obj.__dict__[key] = []
             
         util.HistoryArraySet.__init__(self, list_, readonly=kwargs.get('readonly', False))
-    def list_value_changed(self, obj, key, item, listval, isdelete):
+    def value_changed(self, obj, key, item, listval, isdelete):
         pass    
     def setattr(self, value, **kwargs):
         self.obj.__dict__[self.key] = value
@@ -187,21 +191,18 @@ class ListAttribute(util.HistoryArraySet, ManagedAttribute):
     def _setrecord(self, item):
         res = util.HistoryArraySet._setrecord(self, item)
         if res:
-            self.list_value_changed(self.obj, self.key, item, self, False)
+            self.value_changed(self.obj, self.key, item, self, False)
             if self.extension is not None:
                 self.extension.append(self.obj, item)
         return res
     def _delrecord(self, item):
         res = util.HistoryArraySet._delrecord(self, item)
         if res:
-            self.list_value_changed(self.obj, self.key, item, self, True)
+            self.value_changed(self.obj, self.key, item, self, True)
             if self.extension is not None:
                 self.extension.delete(self.obj, item)
         return res
         
-# deprecated
-class ListElement(ListAttribute):pass
-    
 class TriggeredAttribute(ManagedAttribute):
     """Used by AttributeManager to allow the attaching of a callable item, representing the future value
     of a particular attribute on a particular object instance, as the current attribute on an object. 
@@ -221,7 +222,7 @@ class TriggeredAttribute(ManagedAttribute):
         
     def plain_init(self, attrhist):
         if not self.uselist:
-            p = ScalarAttribute(self.obj, self.key, **self.kwargs)
+            p = self.manager.create_scalar(self.obj, self.key, **self.kwargs)
             self.obj.__dict__[self.key] = None
         else:
             p = self.manager.create_list(self.obj, self.key, None, **self.kwargs)
@@ -247,7 +248,7 @@ class TriggeredAttribute(ManagedAttribute):
                         raise AssertionError("AttributeError caught in callable prop:" + str(e.args))
                 self.obj.__dict__[self.key] = value
 
-            p = ScalarAttribute(self.obj, self.key, **self.kwargs)
+            p = self.manager.create_scalar(self.obj, self.key, **self.kwargs)
         else:
             if not self.obj.__dict__.has_key(self.key) or len(self.obj.__dict__[self.key]) == 0:
                 if passive:
@@ -320,7 +321,8 @@ class AttributeManager(object):
         """creates a scalar property object, defaulting to SmartProperty, which 
         will communicate change events back to this AttributeManager."""
         return SmartProperty(self, key, uselist, callable_, **kwargs)
-        
+    def create_scalar(self, obj, key, **kwargs):
+        return ScalarAttribute(obj, key, **kwargs)
     def create_list(self, obj, key, list_, **kwargs):
         """creates a history-aware list property, defaulting to a ListAttribute which
         is a subclass of HistoryArrayList."""
@@ -473,7 +475,7 @@ class AttributeManager(object):
         if callable_ is not None:
             prop = self.create_callable(obj, key, callable_, uselist=uselist, **kwargs)
         elif not uselist:
-            prop = ScalarAttribute(obj, key, **kwargs)
+            prop = self.create_scalar(obj, key, **kwargs)
         else:
             prop = self.create_list(obj, key, None, **kwargs)
         if attrdict is None:
