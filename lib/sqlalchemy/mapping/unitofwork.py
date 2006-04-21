@@ -39,20 +39,13 @@ class UOWProperty(attributes.SmartProperty):
 class UOWListElement(attributes.ListAttribute):
     """overrides ListElement to provide unit-of-work "dirty" hooks when list attributes are modified,
     plus specialzed append() method."""
-    def __init__(self, obj, key, data=None, deleteremoved=False, cascade=None, **kwargs):
+    def __init__(self, obj, key, data=None, cascade=None, **kwargs):
         attributes.ListAttribute.__init__(self, obj, key, data=data, **kwargs)
-        self.deleteremoved = deleteremoved
         self.cascade = cascade
     def value_changed(self, obj, key, item, listval, isdelete):
         sess = get_session(obj, raiseerror=False)
         if sess is None:
             return
-        # add the child item to this session.  if its already got an identity then its
-        # expected to be there already.
-        #sess.add(item)
-        #if not isdelete and sess.deleted.contains(item):
-            #raise InvalidRequestError("re-inserting a deleted value into a list")
-        #    del sess.deleted[item]
         sess.modified_lists.append(self)
         if self.cascade is not None:
             if isdelete:
@@ -61,8 +54,6 @@ class UOWListElement(attributes.ListAttribute):
             else:
                 if "save-update" in self.cascade:
                     sess.save_or_update(item)
-        #if self.deleteremoved and isdelete:
-        #    sess._register_deleted(item)
     def append(self, item, _mapper_nohistory = False):
         if _mapper_nohistory:
             self.append_nohistory(item)
@@ -70,6 +61,9 @@ class UOWListElement(attributes.ListAttribute):
             attributes.ListAttribute.append(self, item)
 
 class UOWScalarElement(attributes.ScalarAttribute):
+    def __init__(self, obj, key, cascade=None, **kwargs):
+        attributes.ScalarAttribute.__init__(self, obj, key, **kwargs)
+        self.cascade=cascade
     def value_changed(self, oldvalue, newvalue):
         obj = self.obj
         sess = get_session(obj, raiseerror=False)
@@ -78,6 +72,13 @@ class UOWScalarElement(attributes.ScalarAttribute):
                 sess._register_dirty(obj)
             else:
                 sess._register_new(obj)
+            if self.cascade is not None:
+                if isdelete:
+                    if "delete-orphan" in self.cascade:
+                        sess.delete(item)
+                else:
+                    if "save-update" in self.cascade:
+                        sess.save_or_update(item)
                     
 class UOWAttributeManager(attributes.AttributeManager):
     """overrides AttributeManager to provide unit-of-work "dirty" hooks when scalar attribues are modified, plus factory methods for UOWProperrty/UOWListElement."""
