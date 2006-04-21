@@ -82,6 +82,9 @@ class ManagedAttribute(object):
         #self.obj = obj
         self.key = key
     obj = property(lambda s:s.__obj())
+    def value_changed(self, *args, **kwargs):
+        self.obj._managed_value_changed = True
+        self.do_value_changed(*args, **kwargs)
     def history(self, **kwargs):
         return self
     def plain_init(self, *args, **kwargs):
@@ -138,7 +141,7 @@ class ScalarAttribute(ManagedAttribute):
             self.orig = ScalarAttribute.NONE
     def commit(self):
         self.orig = ScalarAttribute.NONE
-    def value_changed(self, oldvalue, newvalue):
+    def do_value_changed(self, oldvalue, newvalue):
         pass
     def added_items(self):
         if self.orig is not ScalarAttribute.NONE:
@@ -181,7 +184,7 @@ class ListAttribute(util.HistoryArraySet, ManagedAttribute):
             obj.__dict__[key] = []
             
         util.HistoryArraySet.__init__(self, list_, readonly=kwargs.get('readonly', False))
-    def value_changed(self, obj, key, item, listval, isdelete):
+    def do_value_changed(self, obj, key, item, listval, isdelete):
         pass    
     def setattr(self, value, **kwargs):
         self.obj.__dict__[self.key] = value
@@ -312,7 +315,7 @@ class AttributeManager(object):
     def __init__(self):
         pass
 
-    def value_changed(self, obj, key, value):
+    def do_value_changed(self, obj, key, value):
         """subclasses override this method to provide functionality that is triggered 
         upon an attribute change of value."""
         pass
@@ -367,6 +370,7 @@ class AttributeManager(object):
                     hist.rollback()
             except KeyError:
                 pass
+            o._managed_value_changed = False
 
     def commit(self, *obj):
         """commits all attribute changes on the given list of objects, 
@@ -378,7 +382,11 @@ class AttributeManager(object):
                     hist.commit()
             except KeyError:
                 pass
-                
+            o._managed_value_changed = False
+    
+    def is_modified(self, object):
+        return getattr(object, '_managed_value_changed', False)
+        
     def remove(self, obj):
         """called when an object is totally being removed from memory"""
         # currently a no-op since the state of the object is attached to the object itself

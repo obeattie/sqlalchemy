@@ -249,7 +249,7 @@ class Session(object):
     def save_or_update(self, *obj, **kwargs):
         for o in obj:
             for c in object_mapper(o, *kwargs).cascade_iterator('save-update', o):
-                key = self._instance_key(c, raiseerror=False, **kwargs)
+                key = getattr(o, '_instance_key', None)
                 if key is None:
                     self._save_impl(c, **kwargs)
                 else:
@@ -271,24 +271,10 @@ class Session(object):
             return
         if not hasattr(object, '_instance_key'):
             raise InvalidRequestError("Instance '%s' is not persisted" % repr(object))
-        self._register_dirty(object)
-
-    def _instance_key(self, object, entity_name=None, raiseerror=True):
-        key = getattr(object, '_instance_key', None)
-        if key is None:
-            mapper = object_mapper(object, raiseerror=False)
-            if mapper is None:
-                mapper = class_mapper(object, entity_name=entity_name)
-            ident = mapper.identity(object)
-            for k in ident:
-                if k is None:
-                    if raiseerror:
-                        raise InvalidRequestError("Instance '%s' does not have a full set of identity values, and does not represent a saved entity in the database.  Use the add() method to add unsaved instances to this Session." % str(object))
-                    else:
-                        return None
-            key = mapper.identity_key(*ident)
-        return key
-        
+        if global_attributes.is_modified(object):
+            self._register_dirty(object)
+        else:
+            self._register_clean(object)
         
     def _register_new(self, obj):
         self._bind_to(obj)
@@ -360,7 +346,19 @@ class Session(object):
         """
         if instance is None:
             return None
-        key = self._instance_key(instance, entity_name=entity_name, raiseerror=True)
+        key = getattr(object, '_instance_key', None)
+        if key is None:
+            mapper = object_mapper(object, raiseerror=False)
+            if mapper is None:
+                mapper = class_mapper(object, entity_name=entity_name)
+            ident = mapper.identity(object)
+            for k in ident:
+                if k is None:
+                    if raiseerror:
+                        raise InvalidRequestError("Instance '%s' does not have a full set of identity values, and does not represent a saved entity in the database.  Use the add() method to add unsaved instances to this Session." % str(object))
+                    else:
+                        return None
+            key = mapper.identity_key(*ident)
         u = self.uow
         if u.identity_map.has_key(key):
             return u.identity_map[key]

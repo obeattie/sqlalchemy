@@ -42,7 +42,7 @@ class UOWListElement(attributes.ListAttribute):
     def __init__(self, obj, key, data=None, cascade=None, **kwargs):
         attributes.ListAttribute.__init__(self, obj, key, data=data, **kwargs)
         self.cascade = cascade
-    def value_changed(self, obj, key, item, listval, isdelete):
+    def do_value_changed(self, obj, key, item, listval, isdelete):
         sess = get_session(obj, raiseerror=False)
         if sess is None:
             return
@@ -64,21 +64,16 @@ class UOWScalarElement(attributes.ScalarAttribute):
     def __init__(self, obj, key, cascade=None, **kwargs):
         attributes.ScalarAttribute.__init__(self, obj, key, **kwargs)
         self.cascade=cascade
-    def value_changed(self, oldvalue, newvalue):
+    def do_value_changed(self, oldvalue, newvalue):
         obj = self.obj
         sess = get_session(obj, raiseerror=False)
         if sess is not None:
-            if hasattr(obj, '_instance_key'):
-                sess._register_dirty(obj)
-            else:
-                sess._register_new(obj)
+            sess.save_or_update(obj)
             if self.cascade is not None:
-                if isdelete:
-                    if "delete-orphan" in self.cascade:
-                        sess.delete(item)
-                else:
-                    if "save-update" in self.cascade:
-                        sess.save_or_update(item)
+                if "delete-orphan" in self.cascade:
+                    sess.delete(oldvalue)
+                if "save-update" in self.cascade:
+                    sess.save_or_update(newvalue)
                     
 class UOWAttributeManager(attributes.AttributeManager):
     """overrides AttributeManager to provide unit-of-work "dirty" hooks when scalar attribues are modified, plus factory methods for UOWProperrty/UOWListElement."""
@@ -105,7 +100,10 @@ class UnitOfWork(object):
         self.attributes = global_attributes
         self.new = util.HashSet(ordered = True)
         self.dirty = util.HashSet()
+        
+        # guess what.  we dont even need this anymore !  hooray - TODO: take it out 
         self.modified_lists = util.HashSet()
+        
         self.deleted = util.HashSet()
 
     def get(self, class_, *id):
@@ -247,11 +245,6 @@ class UnitOfWork(object):
             flush_context.register_object(obj, listonly = True)
             flush_context.register_saved_history(item)
 
-#            for o in item.added_items() + item.deleted_items():
-#                if self.deleted.contains(o):
-#                    continue
-#                flush_context.register_object(o, listonly=True)
-                     
         for obj in self.deleted:
             if objset is not None and not objset.contains(obj):
                 continue
