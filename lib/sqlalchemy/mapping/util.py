@@ -6,6 +6,7 @@
 
 
 import sqlalchemy.sql as sql
+import sets
 
 class TableFinder(sql.ClauseVisitor):
     """given a Clause, locates all the Tables within it into a list."""
@@ -29,3 +30,17 @@ class TableFinder(sql.ClauseVisitor):
     def visit_column(self, column):
         if self.check_columns:
             column.table.accept_visitor(self)
+
+
+class CascadeOptions(object):
+    """keeps track of the options sent to relation().cascade"""
+    def __init__(self, arg=""):
+        values = sets.Set([c.strip() for c in arg.split(',')])
+        self.delete_orphan = "delete-orphan" in values
+        self.delete = "delete" in values or self.delete_orphan
+        self.save_update = "save-update" in values
+        self.merge = "merge" in values
+        self.expunge = "expunge" in values
+    def __contains__(self, item):
+        return getattr(self, item.replace("-", "_"), False)
+        

@@ -17,6 +17,7 @@ import sqlalchemy.attributes as attributes
 import sync
 import mapper
 import objectstore
+import util as mapperutil
 from sqlalchemy.exceptions import *
 import sets
 
@@ -138,15 +139,13 @@ class PropertyLoader(MapperProperty):
         else:
             self.foreigntable = None
         
-        # hibernate cascades:
-        # create, merge, save-update, delete, lock, refresh, evict, replicate.
         if cascade is not None:
-            self.cascade = sets.Set([c.strip() for c in cascade.split(',')])
+            self.cascade = mapperutil.CascadeOptions(cascade)
         else:
             if private:
-                self.cascade = sets.Set(["delete-orphan", "delete"])
+                self.cascade = mapperutil.CascadeOptions("save-update, delete-orphan, delete")
             else:
-                self.cascade = sets.Set()
+                self.cascade = mapperutil.CascadeOptions("save-update")
 
         self.association = association
         if selectalias is not None:
@@ -161,22 +160,27 @@ class PropertyLoader(MapperProperty):
             self.backref = backref
         self.is_backref = is_backref
 
-    private = property(lambda s:"delete-orphan" in s.cascade)
+    private = property(lambda s:s.cascade.delete_orphan)
     
-    def cascade_iterator(self, type, object):
+    def cascade_iterator(self, type, object, recursive=None):
         
         if not type in self.cascade:
             return
 
+        if recursive is None:
+            recursive = sets.Set()
+            
         if self.uselist:
             childlist = objectstore.global_attributes.get_history(object, self.key, passive = False)
         else: 
             childlist = objectstore.global_attributes.get_history(object, self.key)
         for c in childlist.added_items() + childlist.deleted_items() + childlist.unchanged_items():
-            if c is not None:
+            if c is not None and c not in recursive:
+                recursive.add(c)
                 yield c
-                for c2 in self.mapper.cascade_iterator(type, c):
-                    yield c2
+                for c2 in self.mapper.cascade_iterator(type, c, recursive):
+                    if c2 not in recursive:
+                        yield c2
 
     def copy(self):
         x = self.__class__.__new__(self.__class__)
@@ -330,6 +334,7 @@ class PropertyLoader(MapperProperty):
         return None
 
 
+    # TODO: this should be moved to an external object
     class MapperStub(object):
         """poses as a Mapper representing the association table in a many-to-many
         join, when performing a commit().  
@@ -345,7 +350,8 @@ class PropertyLoader(MapperProperty):
             pass
         def _primary_mapper(self):
             return self
-        
+
+    # TODO: this method should be moved to an external object
     def register_dependencies(self, uowcommit):
         """tells a UOWTransaction what mappers are dependent on which, with regards
         to the two or three mappers handled by this PropertyLoader.
@@ -409,9 +415,11 @@ class PropertyLoader(MapperProperty):
         else:
             raise AssertionError(" no foreign key ?")
 
+    # TODO: this method should be moved to an external object
     def get_object_dependencies(self, obj, uowcommit, passive = True):
         return uowcommit.uow.attributes.get_history(obj, self.key, passive = passive)
 
+    # TODO: this method should be moved to an external object
     def whose_dependent_on_who(self, obj1, obj2):
         """given an object pair assuming obj2 is a child of obj1, returns a tuple
         with the dependent object second, or None if they are equal.  
@@ -424,6 +432,7 @@ class PropertyLoader(MapperProperty):
         else:
             return (obj2, obj1)
 
+    # TODO: this method should be moved to an external object
     def process_dependencies(self, task, deplist, uowcommit, delete = False):
         """this method is called during a commit operation to synchronize data between a parent and child object.  
         it also can establish child or parent objects within the unit of work as "to be saved" or "deleted" 
@@ -431,9 +440,7 @@ class PropertyLoader(MapperProperty):
         #print self.mapper.table.name + " " + self.key + " " + repr(len(deplist)) + " process_dep isdelete " + repr(delete) + " direction " + repr(self.direction)
 
         def getlist(obj, passive=True):
-            l = self.get_object_dependencies(obj, uowcommit, passive)
-            uowcommit.register_saved_history(l)
-            return l
+            return self.get_object_dependencies(obj, uowcommit, passive)
 
         connection = uowcommit.transaction.connection(self.mapper)
         
@@ -564,6 +571,7 @@ class PropertyLoader(MapperProperty):
         #print "PLAIN PROPLOADER EXEC NON-PRIAMRY", repr(id(self)), repr(self.mapper.class_), self.key
         objectstore.global_attributes.create_history(instance, self.key, self.uselist, cascade=self.cascade)
 
+    # TODO: this method should be moved to an external object
     def _compile_synchronizers(self):
         """assembles a list of 'synchronization rules', which are instructions on how to populate
         the objects on each side of a relationship.  This is done when a PropertyLoader is 
@@ -584,6 +592,7 @@ class PropertyLoader(MapperProperty):
         else:
             self.syncrules.compile(self.primaryjoin, parent_tables, target_tables)
 
+    # TODO: this method should be moved to an external object
     def _synchronize(self, obj, child, associationrow, clearkeys):
         """called during a commit to execute the full list of syncrules on the 
         given object/child/optional association row"""

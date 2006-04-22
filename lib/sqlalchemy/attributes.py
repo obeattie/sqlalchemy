@@ -353,12 +353,10 @@ class AttributeManager(object):
     def set_attribute(self, obj, key, value, **kwargs):
         """sets the value of an object's attribute."""
         self.get_unexec_history(obj, key).setattr(value, **kwargs)
-        self.value_changed(obj, key, value)
     
     def delete_attribute(self, obj, key, **kwargs):
         """deletes the value from an object's attribute."""
         self.get_unexec_history(obj, key).delattr(**kwargs)
-        self.value_changed(obj, key, None)
         
     def rollback(self, *obj):
         """rolls back all attribute changes on the given list of objects, 

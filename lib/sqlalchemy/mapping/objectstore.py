@@ -28,7 +28,7 @@ class SessionTransaction(object):
     def add(self, connection_or_engine):
         if self.connections.has_key(connection_or_engine):
             return self.connections[connection_or_engine][0]
-        c = connection_or_engine.connect()
+        c = connection_or_engine.contextual_connect()
         e = c.engine
         if not self.connections.has_key(e):
             self.connections[e] = (c, c.begin())
@@ -91,20 +91,21 @@ class Session(object):
         method which performs select operations for Mapper and Query.
         if this Session is transactional, 
         the connection will be in the context of this session's transaction.  otherwise, the connection
-        will be unique.
+        is returned by the contextual_connect method, which some Engines override to return a thread-local
+        connection, and will have close_with_result set to True.
         
-        the given **kwargs will be sent to the engine's connect() method, if no transaction is in progress."""
+        the given **kwargs will be sent to the engine's contextual_connect() method, if no transaction is in progress."""
         if self.transaction is not None:
             return self.transaction.connection(mapper)
         else:
-            return self.connect(mapper, **kwargs)
+            return self.get_bind(mapper).contextual_connect(**kwargs)
     def execute(self, mapper, clause, params, **kwargs):
         """using the given mapper to identify the appropriate Engine or Connection to be used for statement execution, 
         executes the given ClauseElement using the provided parameter dictionary.  Returns a ResultProxy corresponding
         to the execution's results.  If this method allocates a new Connection for the operation, then the ResultProxy's close() 
         method will release the resources of the underlying Connection, otherwise its a no-op.
         """
-        return self.connection(mapper, close_with_result=True).execute(clause, params, **kwargs)
+        return self.connection(mapper).execute(clause, params, **kwargs)
     def close(self):
         """closes this Session.  
         
@@ -207,7 +208,11 @@ class Session(object):
         """flushes all the object modifications present in this session to the database.  if object
         arguments are given, then only those objects (and immediate dependencies) are flushed."""
         self.uow.flush(self, *obj)
-            
+    
+    def load(self, class_, *ident):
+        """given a class and a primary key identifier, loads the corresponding object."""
+        return self.query(class_).get(*ident)
+                
     def refresh(self, *obj):
         """reloads the attributes for the given objects from the database, clears
         any changes made."""
@@ -267,7 +272,7 @@ class Session(object):
             self._register_new(object)
 
     def _update_impl(self, object, **kwargs):
-        if self._is_bound(object):
+        if self._is_bound(object) and object not in self.deleted:
             return
         if not hasattr(object, '_instance_key'):
             raise InvalidRequestError("Instance '%s' is not persisted" % repr(object))
@@ -291,7 +296,18 @@ class Session(object):
     def _bind_to(self, obj):
         """given an object, binds it to this session.  changes on the object will affect
         the currently scoped UnitOfWork maintained by this session."""
-        obj._sa_session_id = self.hash_key
+        if getattr(obj, '_sa_session_id', None) != self.hash_key:
+            old = getattr(obj, '_sa_session_id', None)
+            # remove from old session.  we do this gingerly since _sessions is a WeakValueDict
+            # and it might be affected by other threads
+            if old is not None:
+                try:
+                    sess = _sessions[old]
+                except KeyError:
+                    sess = None
+                if sess is not None:
+                    sess.expunge(old)
+            obj._sa_session_id = self.hash_key
     def _is_bound(self, obj):
         return getattr(obj, '_sa_session_id', None) == self.hash_key
     def __contains__(self, obj):
@@ -307,7 +323,6 @@ class Session(object):
     dirty = property(lambda s:s.uow.dirty)
     deleted = property(lambda s:s.uow.deleted)
     new = property(lambda s:s.uow.new)
-    modified_lists = property(lambda s:s.uow.modified_lists)
     identity_map = property(lambda s:s.uow.identity_map)
     
     def clear(self):

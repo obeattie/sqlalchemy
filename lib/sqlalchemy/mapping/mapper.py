@@ -15,6 +15,7 @@ import query
 import objectstore
 import sys
 import weakref
+import sets
 
 # a dictionary mapping classes to their primary mappers
 mapper_registry = weakref.WeakKeyDictionary()
@@ -690,17 +691,15 @@ class Mapper(object):
         if self.inherits is not None:
             uowcommit.register_dependency(self.inherits, self)
     
-    def cascade_iterator(self, type, object):
+    def cascade_iterator(self, type, object, recursive=None):
+        if recursive is None:
+            recursive=sets.Set()
+        recursive.add(object)
         yield object
         for prop in self.props.values():
-            for c in prop.cascade_iterator(type, object):
+            for c in prop.cascade_iterator(type, object, recursive):
                 yield c
 
-#    def register_deleted(self, obj, uow):
-#        for prop in self.props.values():
-#            prop.register_deleted(obj, uow)
-    
-        
     def _identity_key(self, row):
         return objectstore.get_row_key(row, self.class_, self.pks_by_table[self.table], self.entity_name)
 
@@ -787,7 +786,7 @@ class MapperProperty(object):
         """called when the mapper receives a row.  instance is the parent instance
         corresponding to the row. """
         raise NotImplementedError()
-    def cascade_iterator(self, type, object):
+    def cascade_iterator(self, type, object, recursive=None):
         return []
     def copy(self):
         raise NotImplementedError()

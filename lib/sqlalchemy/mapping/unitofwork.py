@@ -46,13 +46,13 @@ class UOWListElement(attributes.ListAttribute):
         sess = get_session(obj, raiseerror=False)
         if sess is None:
             return
-        sess.modified_lists.append(self)
+        sess._register_dirty(obj)
         if self.cascade is not None:
             if isdelete:
-                if "delete-orphan" in self.cascade:
+                if self.cascade.delete_orphan:
                     sess.delete(item)
             else:
-                if "save-update" in self.cascade:
+                if self.cascade.save_update:
                     sess.save_or_update(item)
     def append(self, item, _mapper_nohistory = False):
         if _mapper_nohistory:
@@ -68,13 +68,13 @@ class UOWScalarElement(attributes.ScalarAttribute):
         obj = self.obj
         sess = get_session(obj, raiseerror=False)
         if sess is not None:
-            sess.save_or_update(obj)
+            sess._register_dirty(obj)
             if self.cascade is not None:
-                if "delete-orphan" in self.cascade:
+                if oldvalue is not None and self.cascade.delete_orphan:
                     sess.delete(oldvalue)
-                if "save-update" in self.cascade:
+                if newvalue is not None and self.cascade.save_update:
                     sess.save_or_update(newvalue)
-                    
+            
 class UOWAttributeManager(attributes.AttributeManager):
     """overrides AttributeManager to provide unit-of-work "dirty" hooks when scalar attribues are modified, plus factory methods for UOWProperrty/UOWListElement."""
     def __init__(self):
@@ -90,7 +90,7 @@ class UOWAttributeManager(attributes.AttributeManager):
         return UOWListElement(obj, key, list_, **kwargs)
         
 class UnitOfWork(object):
-    """main UOW object which stores lists of dirty/new/deleted objects, as well as 'modified_lists' for list attributes.  provides top-level "flush" functionality as well as the transaction boundaries with the SQLEngine(s) involved in a write operation."""
+    """main UOW object which stores lists of dirty/new/deleted objects.  provides top-level "flush" functionality as well as the transaction boundaries with the SQLEngine(s) involved in a write operation."""
     def __init__(self, identity_map=None):
         if identity_map is not None:
             self.identity_map = identity_map
@@ -100,9 +100,6 @@ class UnitOfWork(object):
         self.attributes = global_attributes
         self.new = util.HashSet(ordered = True)
         self.dirty = util.HashSet()
-        
-        # guess what.  we dont even need this anymore !  hooray - TODO: take it out 
-        self.modified_lists = util.HashSet()
         
         self.deleted = util.HashSet()
 
@@ -198,12 +195,14 @@ class UnitOfWork(object):
             raise InvalidRequestError("Object '%s' already has an identity - it cant be registered as new" % repr(obj))
         if not self.new.contains(obj):
             self.new.append(obj)
+        self.unregister_deleted(obj)
         
     def register_dirty(self, obj):
         if not self.dirty.contains(obj):
             self._validate_obj(obj)
             self.dirty.append(obj)
-            
+        self.unregister_deleted(obj)
+        
     def is_dirty(self, obj):
         if not self.dirty.contains(obj):
             return False
@@ -236,15 +235,6 @@ class UnitOfWork(object):
                 continue
             flush_context.register_object(obj)
             
-        for item in self.modified_lists:
-            obj = item.obj
-            if objset is not None and not objset.contains(obj):
-                continue
-            if self.deleted.contains(obj):
-                continue
-            flush_context.register_object(obj, listonly = True)
-            flush_context.register_saved_history(item)
-
         for obj in self.deleted:
             if objset is not None and not objset.contains(obj):
                 continue
@@ -285,7 +275,6 @@ class UOWTransaction(object):
         self.mappers = util.HashSet()
         self.dependencies = {}
         self.tasks = {}
-        self.saved_histories = util.HashSet()
         self.__modified = False
         
     def register_object(self, obj, isdelete = False, listonly = False, postupdate=False, **kwargs):
@@ -362,9 +351,6 @@ class UOWTransaction(object):
         task.dependencies.append(UOWDependencyProcessor(processor, targettask, isdeletefrom))
         self.__modified = True
 
-    def register_saved_history(self, listobj):
-        self.saved_histories.append(listobj)
-
     def execute(self, echo=False):
         for task in self.tasks.values():
             task.mapper.register_dependencies(self)
@@ -394,18 +380,6 @@ class UOWTransaction(object):
                     self.uow._remove_deleted(elem.obj)
                 else:
                     self.uow.register_clean(elem.obj)
-                
-        for obj in self.saved_histories:
-            try:
-                obj.commit()
-                del self.uow.modified_lists[obj]
-            except KeyError:
-                pass
-
-    # this assertion only applies to a full flush(), not a
-    # partial one
-        #if len(self.uow.new) > 0 or len(self.uow.dirty) >0 or len(self.uow.modified_lists) > 0:
-        #    raise "assertion failed"
 
     def _sort_dependencies(self):
         """creates a hierarchical tree of dependent tasks.  the root node is returned.
@@ -668,12 +642,7 @@ class UOWTask(object):
                         if not o in childtask.objects:
                             # item needs to be saved since its added, or attached to a deleted object
                             if isdelete:
-                                childtask.append(o, "delete" in processor.cascade)
-                            #if isdelete and "delete" in processor.cascade:
-                            #    childstask.append(o, True)
-                            #elif not isdelete and "save-update" in processor.cascade:
-                            #    childtask.append(o, False)
-                            #childtask.append(o, isdelete=isdelete and dep.processor.private)
+                                childtask.append(o, processor.cascade.delete)
                             if cyclicaldep:
                                 # cyclical, so create a placeholder UOWTask that may be built into the
                                 # final task tree

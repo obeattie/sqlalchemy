@@ -7,7 +7,7 @@ this can be accomplished via a mod; see the sqlalchemy/mods package for details.
 import re
 import cgi
 
-from sqlalchemy.engine import base, default, transactional
+from sqlalchemy.engine import base, default, threadlocal
 
 strategies = {}
 
@@ -57,9 +57,9 @@ class ThreadLocalEngineStrategy(EngineStrategy):
         if poolclass is not None:
             poolargs.setdefault('poolclass', poolclass)
         poolargs['use_threadlocal'] = True
-        provider = transactional.TLocalConnectionProvider(dialect, opts, **poolargs)
+        provider = threadlocal.TLocalConnectionProvider(dialect, opts, **poolargs)
 
-        return transactional.TLEngine(provider, dialect, **kwargs)
+        return threadlocal.TLEngine(provider, dialect, **kwargs)
 ThreadLocalEngineStrategy()
 
 

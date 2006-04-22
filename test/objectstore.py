@@ -62,7 +62,7 @@ class HistoryTest(AssertMixin):
         
         u = User()
         a = Address()
-        s.add(u, a)
+        s.save(u, a)
         a.user = u
         #print repr(a.__class__._attribute_manager.get_history(a, 'user').added_items())
         #print repr(u.addresses.added_items())
@@ -410,7 +410,6 @@ class SaveTest(AssertMixin):
 
         self.assert_(len(objectstore.get_session().new) == 0)
         self.assert_(len(objectstore.get_session().dirty) == 0)
-        self.assert_(len(objectstore.get_session().modified_lists) == 0)
         
     def testbasic(self):
         # save two users
@@ -421,7 +420,7 @@ class SaveTest(AssertMixin):
         u2 = User()
         u2.user_name = 'savetester2'
 
-        objectstore.get_session().add(u)
+        objectstore.get_session().save(u)
         
         objectstore.get_session().flush(u)
         objectstore.get_session().flush()
@@ -440,6 +439,7 @@ class SaveTest(AssertMixin):
 
         # change first users name and save
         u.user_name = 'modifiedname'
+        assert u in objectstore.get_session().dirty
         objectstore.get_session().flush()
 
         # select both

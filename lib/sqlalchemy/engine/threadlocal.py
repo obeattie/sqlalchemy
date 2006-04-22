@@ -50,7 +50,7 @@ class TLEngine(base.ComposedSQLEngine):
         self.context = util.ThreadLocal()
     def raw_connection(self):
         """returns a DBAPI connection."""
-        return self.connection_provider.unique_connection()
+        return self.connection_provider.get_connection()
     def connect(self, **kwargs):
         """returns a Connection that is not thread-locally scoped.  this is the equilvalent to calling
         "connect()" on a ComposedSQLEngine."""
