@@ -338,6 +338,7 @@ class Session(object):
         the keyword argument 'entity_name' can also be provided which will be used by the import."""
         for o in obj:
             for c in object_mapper(o, **kwargs).cascade_iterator('delete', o):
+                print "CASCADING DELETE TO", c
                 if not self._is_bound(c):
                     c = self.import_(c, **kwargs)
                 self.uow.register_deleted(c)

@@ -145,7 +145,7 @@ class PropertyLoader(MapperProperty):
             if private:
                 self.cascade = mapperutil.CascadeOptions("save-update, delete-orphan, delete")
             else:
-                self.cascade = mapperutil.CascadeOptions("save-update")
+                self.cascade = mapperutil.CascadeOptions()
 
         self.association = association
         if selectalias is not None:
@@ -174,12 +174,13 @@ class PropertyLoader(MapperProperty):
             childlist = objectstore.global_attributes.get_history(object, self.key, passive = False)
         else: 
             childlist = objectstore.global_attributes.get_history(object, self.key)
+            
         for c in childlist.added_items() + childlist.deleted_items() + childlist.unchanged_items():
-            if c is not None and c not in recursive:
-                recursive.add(c)
-                yield c
-                for c2 in self.mapper.cascade_iterator(type, c, recursive):
-                    if c2 not in recursive:
+            if c is not None:
+                if c not in recursive:
+                    recursive.add(c)
+                    yield c
+                    for c2 in self.mapper.cascade_iterator(type, c, recursive):
                         yield c2
 
     def copy(self):
@@ -498,18 +499,23 @@ class PropertyLoader(MapperProperty):
             # the child objects have to have their foreign key to the parent set to NULL
             if self.private and not self.post_update:
                 for obj in deplist:
+                    print "HI ON", obj
                     childlist = getlist(obj, False)
                     for child in childlist.deleted_items() + childlist.unchanged_items():
                         if child is None:
                             continue
                         # if private child object, and is in the uow's "deleted" list,
                         # insure its in the list of items to be deleted
+                        print "DEL CHILD", child
                         if child in uowcommit.uow.deleted:
+                            print "REGISTER", child
                             uowcommit.register_object(child, isdelete=True)
             else:
                 for obj in deplist:
+                    print "HI 2 ON", obj
                     childlist = getlist(obj, False)
                     for child in childlist.deleted_items() + childlist.unchanged_items():
+                        print "DELCHILD", child
                         if child is not None:
                             self._synchronize(obj, child, None, True)
                             uowcommit.register_object(child, postupdate=self.post_update)
@@ -554,6 +560,7 @@ class PropertyLoader(MapperProperty):
                 childlist = getlist(obj, passive=True)
                 if childlist is not None:
                     for child in childlist.added_items():
+                        print "ADDCHILD", child
                         self._synchronize(obj, child, None, False)
                         if self.direction == PropertyLoader.ONETOMANY and child is not None:
                             uowcommit.register_object(child, postupdate=self.post_update)

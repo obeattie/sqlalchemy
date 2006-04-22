@@ -63,7 +63,7 @@ class M2MTest(testbase.AssertMixin):
             )
 
         global place_place
-        place_place = Table('place_place', db,
+        place_place = Table('place_place', metadata,
             Column('pl1_id', Integer, ForeignKey('place.place_id')),
             Column('pl2_id', Integer, ForeignKey('place.place_id')),
             )

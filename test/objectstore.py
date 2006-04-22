@@ -538,6 +538,27 @@ class SaveTest(AssertMixin):
         u.address.email_address = 'imnew@foo.com'
         objectstore.get_session().flush()
 
+    def testchildmove(self):
+        m = mapper(User, users, properties = dict(
+            addresses = relation(mapper(Address, addresses), lazy = True, private = False)
+        ))
+        u1 = User()
+        u1.user_name = 'user1'
+        u2 = User()
+        u2.user_name = 'user2'
+        a = Address()
+        a.email_address = 'address1'
+        u1.addresses.append(a)
+        objectstore.flush()
+        del u1.addresses[0]
+        u2.addresses.append(a)
+        objectstore.delete(u1)
+        objectstore.flush()
+        objectstore.clear()
+        u2 = m.get(u2.user_id)
+        assert len(u2.addresses) == 1
+        
+
     def testdelete(self):
         m = mapper(User, users, properties = dict(
             address = relation(mapper(Address, addresses), lazy = True, uselist = False, private = False)

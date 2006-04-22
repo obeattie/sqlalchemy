@@ -694,8 +694,9 @@ class Mapper(object):
     def cascade_iterator(self, type, object, recursive=None):
         if recursive is None:
             recursive=sets.Set()
-        recursive.add(object)
-        yield object
+        if object not in recursive:
+            recursive.add(object)
+            yield object
         for prop in self.props.values():
             for c in prop.cascade_iterator(type, object, recursive):
                 yield c
