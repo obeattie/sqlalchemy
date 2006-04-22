@@ -76,7 +76,7 @@ class DeferredColumnProperty(ColumnProperty):
             return object_mapper(instance).props[self.key].setup_loader(instance)
         def lazyload():
             session = objectstore.get_session(instance)
-            connection = session.connect(self.parent)
+            connection = session.connection(self.parent)
             clause = sql.and_()
             try:
                 pk = self.parent.pks_by_table[self.columns[0].table]
@@ -96,7 +96,7 @@ class DeferredColumnProperty(ColumnProperty):
                         if prop is self:
                             continue
                         instance.__dict__[prop.key] = row[prop.columns[0]]
-                        objectstore.global_attributes.create_history(instance, prop.key, uselist=False, cascade=self.cascade, trackparent=True)
+                        objectstore.global_attributes.create_history(instance, prop.key, uselist=False)
                     return row[self.columns[0]]    
                 else:
                     return connection.scalar(sql.select([self.columns[0]], clause, use_labels=True),None)
@@ -108,7 +108,7 @@ class DeferredColumnProperty(ColumnProperty):
     def execute(self, session, instance, row, identitykey, imap, isnew):
         if isnew:
             if not self.is_primary():
-                objectstore.global_attributes.create_history(instance, self.key, False, callable_=self.setup_loader(instance), cascade=self.cascade, trackparent=True)
+                objectstore.global_attributes.create_history(instance, self.key, False, callable_=self.setup_loader(instance))
             else:
                 objectstore.global_attributes.reset_history(instance, self.key)
 

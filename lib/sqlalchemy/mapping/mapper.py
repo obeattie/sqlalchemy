@@ -354,7 +354,7 @@ class Mapper(object):
             if kwargs.has_key('_sa_session'):
                 session = kwargs.pop('_sa_session')
             else:
-                session = objectstore.get_session(raiseerror=False)
+                session = objectstore.get_session(self, raiseerror=False)
             if session is not None:
                 if not nohist:
                     # register new with the correct session, before the object's 
@@ -713,9 +713,6 @@ class Mapper(object):
         # including modifying any of its related items lists, as its already
         # been exposed to being modified by the application.
         
-        if session is None:
-            session = objectstore.get_session()
-            
         populate_existing = populate_existing or self.always_refresh
         identitykey = self._identity_key(row)
         if session.has_key(identitykey):
