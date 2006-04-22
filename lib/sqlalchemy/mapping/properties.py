@@ -17,6 +17,7 @@ import sqlalchemy.attributes as attributes
 import sync
 import mapper
 import objectstore
+import dependency
 import util as mapperutil
 from sqlalchemy.exceptions import *
 import sets
@@ -95,7 +96,7 @@ class DeferredColumnProperty(ColumnProperty):
                         if prop is self:
                             continue
                         instance.__dict__[prop.key] = row[prop.columns[0]]
-                        objectstore.global_attributes.create_history(instance, prop.key, uselist=False, cascade=self.cascade)
+                        objectstore.global_attributes.create_history(instance, prop.key, uselist=False, cascade=self.cascade, trackparent=True)
                     return row[self.columns[0]]    
                 else:
                     return connection.scalar(sql.select([self.columns[0]], clause, use_labels=True),None)
@@ -107,7 +108,7 @@ class DeferredColumnProperty(ColumnProperty):
     def execute(self, session, instance, row, identitykey, imap, isnew):
         if isnew:
             if not self.is_primary():
-                objectstore.global_attributes.create_history(instance, self.key, False, callable_=self.setup_loader(instance), cascade=self.cascade)
+                objectstore.global_attributes.create_history(instance, self.key, False, callable_=self.setup_loader(instance), cascade=self.cascade, trackparent=True)
             else:
                 objectstore.global_attributes.reset_history(instance, self.key)
 
@@ -120,7 +121,7 @@ class PropertyLoader(MapperProperty):
 
     """describes an object property that holds a single item or list of items that correspond
     to a related database table."""
-    def __init__(self, argument, secondary, primaryjoin, secondaryjoin, foreignkey=None, uselist=None, private=False, association=None, use_alias=None, selectalias=None, order_by=False, attributeext=None, backref=None, is_backref=False, post_update=False, cascade=None):
+    def __init__(self, argument, secondary, primaryjoin, secondaryjoin, foreignkey=None, uselist=None, private=False, association=None, order_by=False, attributeext=None, backref=None, is_backref=False, post_update=False, cascade=None):
         self.uselist = uselist
         self.argument = argument
         self.secondary = secondary
@@ -131,7 +132,7 @@ class PropertyLoader(MapperProperty):
         
         # would like to have foreignkey be a list.
         # however, have to figure out how to do 
-        # <column> in <list>, since column overrides the == operator or somethign
+        # <column> in <list>, since column overrides the == operator 
         # and it doesnt work
         self.foreignkey = foreignkey  #util.to_set(foreignkey)
         if foreignkey:
@@ -148,10 +149,6 @@ class PropertyLoader(MapperProperty):
                 self.cascade = mapperutil.CascadeOptions()
 
         self.association = association
-        if selectalias is not None:
-            print "'selectalias' argument to relation() is deprecated.  eager loads automatically alias-ize tables now."
-        if use_alias is not None:
-            print "'use_alias' argument to relation() is deprecated.  eager loads automatically alias-ize tables now."
         self.order_by = order_by
         self.attributeext=attributeext
         if isinstance(backref, str):
@@ -163,10 +160,8 @@ class PropertyLoader(MapperProperty):
     private = property(lambda s:s.cascade.delete_orphan)
     
     def cascade_iterator(self, type, object, recursive=None):
-        
         if not type in self.cascade:
             return
-
         if recursive is None:
             recursive = sets.Set()
             
@@ -231,13 +226,14 @@ class PropertyLoader(MapperProperty):
         if self.direction is None:
             self.direction = self._get_direction()
         
-        if self.uselist is None and self.direction == PropertyLoader.MANYTOONE:
+        if self.uselist is None and self.direction == sync.MANYTOONE:
             self.uselist = False
 
         if self.uselist is None:
             self.uselist = True
 
         self._compile_synchronizers()
+        self._dependency_processor = dependency.DependencyProcessor(self.key, self.syncrules, self.cascade, secondary=self.secondary, association=self.association, is_backref=self.is_backref, post_update=self.post_update)
 
         # primary property handler, set up class attributes
         if self.is_primary():
@@ -258,23 +254,23 @@ class PropertyLoader(MapperProperty):
         
     def _set_class_attribute(self, class_, key):
         """sets attribute behavior on our target class."""
-        objectstore.global_attributes.register_attribute(class_, key, uselist = self.uselist, extension=self.attributeext, cascade=self.cascade)
+        objectstore.global_attributes.register_attribute(class_, key, uselist = self.uselist, extension=self.attributeext, cascade=self.cascade, trackparent=True)
         
     def _get_direction(self):
         """determines our 'direction', i.e. do we represent one to many, many to many, etc."""
         #print self.key, repr(self.parent.table.name), repr(self.parent.primarytable.name), repr(self.foreignkey.table.name), repr(self.target), repr(self.foreigntable.name)
         
         if self.secondaryjoin is not None:
-            return PropertyLoader.MANYTOMANY
+            return sync.MANYTOMANY
         elif self.parent.table is self.target:
             if self.foreignkey.primary_key:
-                return PropertyLoader.MANYTOONE
+                return sync.MANYTOONE
             else:
-                return PropertyLoader.ONETOMANY
+                return sync.ONETOMANY
         elif self.foreigntable == self.mapper.noninherited_table:
-            return PropertyLoader.ONETOMANY
+            return sync.ONETOMANY
         elif self.foreigntable == self.parent.noninherited_table:
-            return PropertyLoader.MANYTOONE
+            return sync.MANYTOONE
         else:
             raise ArgumentError("Cant determine relation direction")
             
@@ -334,251 +330,15 @@ class PropertyLoader(MapperProperty):
             return c.copy_container()
         return None
 
-
-    # TODO: this should be moved to an external object
-    class MapperStub(object):
-        """poses as a Mapper representing the association table in a many-to-many
-        join, when performing a commit().  
-
-        The Task objects in the objectstore module treat it just like
-        any other Mapper, but in fact it only serves as a "dependency" placeholder
-        for the many-to-many update task."""
-        def __init__(self, mapper):
-            self.mapper = mapper
-        def save_obj(self, *args, **kwargs):
-            pass
-        def delete_obj(self, *args, **kwargs):
-            pass
-        def _primary_mapper(self):
-            return self
-
-    # TODO: this method should be moved to an external object
-    def register_dependencies(self, uowcommit):
-        """tells a UOWTransaction what mappers are dependent on which, with regards
-        to the two or three mappers handled by this PropertyLoader.
-        
-        Also registers itself as a "processor" for one of its mappers, which
-        will be executed after that mapper's objects have been saved or before
-        they've been deleted.  The process operation manages attributes and dependent
-        operations upon the objects of one of the involved mappers."""
-        if self.association is not None:
-            # association object.  our mapper should be dependent on both
-            # the parent mapper and the association object mapper.
-            # this is where we put the "stub" as a marker, so we get
-            # association/parent->stub->self, then we process the child
-            # elments after the 'stub' save, which is before our own
-            # mapper's save.
-            stub = PropertyLoader.MapperStub(self.association)
-            uowcommit.register_dependency(self.parent, stub)
-            uowcommit.register_dependency(self.association, stub)
-            uowcommit.register_dependency(stub, self.mapper)
-            uowcommit.register_processor(stub, self, self.parent, False)
-            uowcommit.register_processor(stub, self, self.parent, True)
-
-        elif self.direction == PropertyLoader.MANYTOMANY:
-            # many-to-many.  create a "Stub" mapper to represent the
-            # "middle table" in the relationship.  This stub mapper doesnt save
-            # or delete any objects, but just marks a dependency on the two
-            # related mappers.  its dependency processor then populates the
-            # association table.
-            
-            if self.is_backref:
-                # if we are the "backref" half of a two-way backref 
-                # relationship, let the other mapper handle inserting the rows
-                return
-            stub = PropertyLoader.MapperStub(self.mapper)
-            uowcommit.register_dependency(self.parent, stub)
-            uowcommit.register_dependency(self.mapper, stub)
-            uowcommit.register_processor(stub, self, self.parent, False)
-            uowcommit.register_processor(stub, self, self.parent, True)
-        elif self.direction == PropertyLoader.ONETOMANY:
-            if self.post_update:
-                stub = PropertyLoader.MapperStub(self.mapper)
-                uowcommit.register_dependency(self.mapper, stub)
-                uowcommit.register_dependency(self.parent, stub)
-                uowcommit.register_processor(stub, self, self.parent, False)
-                uowcommit.register_processor(stub, self, self.parent, True)
-            else:
-                uowcommit.register_dependency(self.parent, self.mapper)
-                uowcommit.register_processor(self.parent, self, self.parent, False)
-                uowcommit.register_processor(self.parent, self, self.parent, True)
-        elif self.direction == PropertyLoader.MANYTOONE:
-            if self.post_update:
-                stub = PropertyLoader.MapperStub(self.mapper)
-                uowcommit.register_dependency(self.mapper, stub)
-                uowcommit.register_dependency(self.parent, stub)
-                uowcommit.register_processor(stub, self, self.parent, False)
-                uowcommit.register_processor(stub, self, self.parent, True)
-            else:
-                uowcommit.register_dependency(self.mapper, self.parent)
-                uowcommit.register_processor(self.mapper, self, self.parent, False)
-                uowcommit.register_processor(self.mapper, self, self.parent, True)
-        else:
-            raise AssertionError(" no foreign key ?")
-
-    # TODO: this method should be moved to an external object
-    def get_object_dependencies(self, obj, uowcommit, passive = True):
-        return uowcommit.uow.attributes.get_history(obj, self.key, passive = passive)
-
-    # TODO: this method should be moved to an external object
-    def whose_dependent_on_who(self, obj1, obj2):
-        """given an object pair assuming obj2 is a child of obj1, returns a tuple
-        with the dependent object second, or None if they are equal.  
-        used by objectstore's object-level topological sort (i.e. cyclical 
-        table dependency)."""
-        if obj1 is obj2:
-            return None
-        elif self.direction == PropertyLoader.ONETOMANY:
-            return (obj1, obj2)
-        else:
-            return (obj2, obj1)
-
-    # TODO: this method should be moved to an external object
-    def process_dependencies(self, task, deplist, uowcommit, delete = False):
-        """this method is called during a commit operation to synchronize data between a parent and child object.  
-        it also can establish child or parent objects within the unit of work as "to be saved" or "deleted" 
-        in some cases."""
-        #print self.mapper.table.name + " " + self.key + " " + repr(len(deplist)) + " process_dep isdelete " + repr(delete) + " direction " + repr(self.direction)
-
-        def getlist(obj, passive=True):
-            return self.get_object_dependencies(obj, uowcommit, passive)
-
-        connection = uowcommit.transaction.connection(self.mapper)
-        
-        # plugin point
-        
-        if self.direction == PropertyLoader.MANYTOMANY:
-            secondary_delete = []
-            secondary_insert = []
-            if delete:
-                for obj in deplist:
-                    childlist = getlist(obj, False)
-                    for child in childlist.deleted_items() + childlist.unchanged_items():
-                        associationrow = {}
-                        self._synchronize(obj, child, associationrow, False)
-                        secondary_delete.append(associationrow)
-            else:
-                for obj in deplist:
-                    childlist = getlist(obj)
-                    if childlist is None: continue
-                    for child in childlist.added_items():
-                        associationrow = {}
-                        self._synchronize(obj, child, associationrow, False)
-                        secondary_insert.append(associationrow)
-                    for child in childlist.deleted_items():
-                        associationrow = {}
-                        self._synchronize(obj, child, associationrow, False)
-                        secondary_delete.append(associationrow)
-            if len(secondary_delete):
-                # TODO: precompile the delete/insert queries and store them as instance variables
-                # on the PropertyLoader
-                statement = self.secondary.delete(sql.and_(*[c == sql.bindparam(c.key) for c in self.secondary.c]))
-                connection.execute(statement, secondary_delete)
-            if len(secondary_insert):
-                statement = self.secondary.insert()
-                connection.execute(statement, secondary_insert)
-        elif self.direction == PropertyLoader.MANYTOONE and delete:
-            if self.private:
-                for obj in deplist:
-                    childlist = getlist(obj, False)
-                    for child in childlist.deleted_items() + childlist.unchanged_items():
-                        if child is None:
-                            continue
-                        # if private child object, and is in the uow's "deleted" list,
-                        # insure its in the list of items to be deleted
-                        if child in uowcommit.uow.deleted:
-                            uowcommit.register_object(child, isdelete=True)
-            elif self.post_update:
-                # post_update means we have to update our row to not reference the child object
-                # before we can DELETE the row
-                for obj in deplist:
-                    self._synchronize(obj, None, None, True)
-                    uowcommit.register_object(obj, postupdate=True)
-        elif self.direction == PropertyLoader.ONETOMANY and delete:
-            # head object is being deleted, and we manage its list of child objects
-            # the child objects have to have their foreign key to the parent set to NULL
-            if self.private and not self.post_update:
-                for obj in deplist:
-                    print "HI ON", obj
-                    childlist = getlist(obj, False)
-                    for child in childlist.deleted_items() + childlist.unchanged_items():
-                        if child is None:
-                            continue
-                        # if private child object, and is in the uow's "deleted" list,
-                        # insure its in the list of items to be deleted
-                        print "DEL CHILD", child
-                        if child in uowcommit.uow.deleted:
-                            print "REGISTER", child
-                            uowcommit.register_object(child, isdelete=True)
-            else:
-                for obj in deplist:
-                    print "HI 2 ON", obj
-                    childlist = getlist(obj, False)
-                    for child in childlist.deleted_items() + childlist.unchanged_items():
-                        print "DELCHILD", child
-                        if child is not None:
-                            self._synchronize(obj, child, None, True)
-                            uowcommit.register_object(child, postupdate=self.post_update)
-        elif self.association is not None:
-            # manage association objects.
-            for obj in deplist:
-                childlist = getlist(obj, passive=True)
-                if childlist is None: continue
-                
-                #print "DIRECTION", self.direction
-                d = {}
-                for child in childlist:
-                    self._synchronize(obj, child, None, False)
-                    key = self.mapper.instance_key(child)
-                    #print "SYNCHRONIZED", child, "INSTANCE KEY", key
-                    d[key] = child
-                    uowcommit.unregister_object(child)
-
-                for child in childlist.added_items():
-                    uowcommit.register_object(child)
-                    key = self.mapper.instance_key(child)
-                    #print "ADDED, INSTANCE KEY", key
-                    d[key] = child
-                    
-                for child in childlist.unchanged_items():
-                    key = self.mapper.instance_key(child)
-                    o = d[key]
-                    o._instance_key= key
-                    
-                for child in childlist.deleted_items():
-                    key = self.mapper.instance_key(child)
-                    #print "DELETED, INSTANCE KEY", key
-                    if d.has_key(key):
-                        o = d[key]
-                        o._instance_key = key
-                        uowcommit.unregister_object(child)
-                    else:
-                        #print "DELETE ASSOC OBJ", repr(child)
-                        uowcommit.register_object(child, isdelete=True)
-        else:
-            for obj in deplist:
-                childlist = getlist(obj, passive=True)
-                if childlist is not None:
-                    for child in childlist.added_items():
-                        print "ADDCHILD", child
-                        self._synchronize(obj, child, None, False)
-                        if self.direction == PropertyLoader.ONETOMANY and child is not None:
-                            uowcommit.register_object(child, postupdate=self.post_update)
-                if self.direction == PropertyLoader.MANYTOONE:
-                    uowcommit.register_object(obj, postupdate=self.post_update)
-                if self.direction != PropertyLoader.MANYTOONE:
-                    for child in childlist.deleted_items():
-                        if not self.private:
-                            self._synchronize(obj, child, None, True)
-                            uowcommit.register_object(child, isdelete=self.private)
-
     def execute(self, session, instance, row, identitykey, imap, isnew):
         if self.is_primary():
             return
         #print "PLAIN PROPLOADER EXEC NON-PRIAMRY", repr(id(self)), repr(self.mapper.class_), self.key
-        objectstore.global_attributes.create_history(instance, self.key, self.uselist, cascade=self.cascade)
+        objectstore.global_attributes.create_history(instance, self.key, self.uselist, cascade=self.cascade, trackparent=True)
 
-    # TODO: this method should be moved to an external object
+    def register_dependencies(self, uowcommit):
+        self._dependency_processor.register_dependencies(uowcommit)
+
     def _compile_synchronizers(self):
         """assembles a list of 'synchronization rules', which are instructions on how to populate
         the objects on each side of a relationship.  This is done when a PropertyLoader is 
@@ -586,37 +346,16 @@ class PropertyLoader(MapperProperty):
         
         The list of rules is used within commits by the _synchronize() method when dependent 
         objects are processed."""
-
-
         parent_tables = util.HashSet(self.parent.tables + [self.parent.primarytable])
         target_tables = util.HashSet(self.mapper.tables + [self.mapper.primarytable])
 
         self.syncrules = sync.ClauseSynchronizer(self.parent, self.mapper, self.direction)
-        if self.direction == PropertyLoader.MANYTOMANY:
+        if self.direction == sync.MANYTOMANY:
             #print "COMPILING p/c", self.parent, self.mapper
             self.syncrules.compile(self.primaryjoin, parent_tables, [self.secondary], False)
             self.syncrules.compile(self.secondaryjoin, target_tables, [self.secondary], True)
         else:
             self.syncrules.compile(self.primaryjoin, parent_tables, target_tables)
-
-    # TODO: this method should be moved to an external object
-    def _synchronize(self, obj, child, associationrow, clearkeys):
-        """called during a commit to execute the full list of syncrules on the 
-        given object/child/optional association row"""
-        if self.direction == PropertyLoader.ONETOMANY:
-            source = obj
-            dest = child
-        elif self.direction == PropertyLoader.MANYTOONE:
-            source = child
-            dest = obj
-        elif self.direction == PropertyLoader.MANYTOMANY:
-            dest = associationrow
-            source = None
-            
-        if dest is None:
-            return
-
-        self.syncrules.execute(source, dest, obj, child, clearkeys)
 
 class LazyLoader(PropertyLoader):
     def do_init_subclass(self, key, parent):
@@ -628,7 +367,7 @@ class LazyLoader(PropertyLoader):
     def _set_class_attribute(self, class_, key):
         # establish a class-level lazy loader on our class
         #print "SETCLASSATTR LAZY", repr(class_), key
-        objectstore.global_attributes.register_attribute(class_, key, uselist = self.uselist, callable_=lambda i: self.setup_loader(i), extension=self.attributeext, cascade=self.cascade)
+        objectstore.global_attributes.register_attribute(class_, key, uselist = self.uselist, callable_=lambda i: self.setup_loader(i), extension=self.attributeext, cascade=self.cascade, trackparent=True)
 
     def setup_loader(self, instance):
         if not self.parent.is_assigned(instance):
@@ -676,7 +415,7 @@ class LazyLoader(PropertyLoader):
                 #print "EXEC NON-PRIAMRY", repr(self.mapper.class_), self.key
                 # we are not the primary manager for this attribute on this class - set up a per-instance lazyloader,
                 # which will override the class-level behavior
-                objectstore.global_attributes.create_history(instance, self.key, self.uselist, callable_=self.setup_loader(instance), cascade=self.cascade)
+                objectstore.global_attributes.create_history(instance, self.key, self.uselist, callable_=self.setup_loader(instance), cascade=self.cascade, trackparent=True)
             else:
                 #print "EXEC PRIMARY", repr(self.mapper.class_), self.key
                 # we are the primary manager for this attribute on this class - reset its per-instance attribute state, 
@@ -827,7 +566,7 @@ class EagerLoader(PropertyLoader):
         if isnew:
             # new row loaded from the database.  initialize a blank container on the instance.
             # this will override any per-class lazyloading type of stuff.
-            h = objectstore.global_attributes.create_history(instance, self.key, self.uselist, cascade=self.cascade)
+            h = objectstore.global_attributes.create_history(instance, self.key, self.uselist, cascade=self.cascade, trackparent=True)
             
         if not self.uselist:
             if isnew:
@@ -928,6 +667,7 @@ class BackRef(object):
             # else set one of us as the "backreference"
             if not prop.mapper.props[self.key].is_backref:
                 prop.is_backref=True
+                prop._dependency_processor.is_backref=True
     def get_extension(self):
         """returns an attribute extension to use with this backreference."""
         return attributes.GenericBackrefExtension(self.key)

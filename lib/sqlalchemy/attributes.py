@@ -89,7 +89,11 @@ class ManagedAttribute(object):
         return self
     def plain_init(self, *args, **kwargs):
         pass
-        
+    def hasparent(self, item):
+        return item.__class__._attribute_manager.attribute_history(item).get('_hasparent_' + self.key)
+    def sethasparent(self, item, value):    
+        item.__class__._attribute_manager.attribute_history(item)['_hasparent_' + self.key] = value
+
 class ScalarAttribute(ManagedAttribute):
     """Used by AttributeManager to track the history of a scalar attribute
     on an object instance.  This is the "scalar history container" object.
@@ -97,10 +101,11 @@ class ScalarAttribute(ManagedAttribute):
     so that the two objects can be called upon largely interchangeably."""
     # make our own NONE to distinguish from "None"
     NONE = object()
-    def __init__(self, obj, key, extension=None, **kwargs):
+    def __init__(self, obj, key, extension=None, trackparent=False, **kwargs):
         ManagedAttribute.__init__(self, obj, key)
         self.orig = ScalarAttribute.NONE
         self.extension = extension
+        self.trackparent = trackparent
     def clear(self):
         del self.obj.__dict__[self.key]
     def history_contains(self, obj):
@@ -120,6 +125,8 @@ class ScalarAttribute(ManagedAttribute):
         if self.orig is ScalarAttribute.NONE:
             self.orig = orig
         self.obj.__dict__[self.key] = value
+        if value is not None and self.trackparent:
+            self.sethasparent(value, True)
         if self.extension is not None:
             self.extension.set(self.obj, value, orig)
         self.value_changed(orig, value)
@@ -128,6 +135,8 @@ class ScalarAttribute(ManagedAttribute):
         if self.orig is ScalarAttribute.NONE:
             self.orig = orig
         self.obj.__dict__[self.key] = None
+        if self.trackparent:
+            self.sethasparent(orig, False)
         if self.extension is not None:
             self.extension.set(self.obj, None, orig)
         self.value_changed(orig, None)
@@ -164,9 +173,10 @@ class ListAttribute(util.HistoryArraySet, ManagedAttribute):
     This is the "list history container" object.
     Subclasses util.HistoryArraySet to provide "onchange" event handling as well
     as a plugin point for BackrefExtension objects."""
-    def __init__(self, obj, key, data=None, extension=None, **kwargs):
+    def __init__(self, obj, key, data=None, extension=None, trackparent=False, **kwargs):
         ManagedAttribute.__init__(self, obj, key)
         self.extension = extension
+        self.trackparent = trackparent
         # if we are given a list, try to behave nicely with an existing
         # list that might be set on the object already
         try:
@@ -194,6 +204,8 @@ class ListAttribute(util.HistoryArraySet, ManagedAttribute):
     def _setrecord(self, item):
         res = util.HistoryArraySet._setrecord(self, item)
         if res:
+            if self.trackparent:
+                self.sethasparent(item, True)
             self.value_changed(self.obj, self.key, item, self, False)
             if self.extension is not None:
                 self.extension.append(self.obj, item)
@@ -201,6 +213,8 @@ class ListAttribute(util.HistoryArraySet, ManagedAttribute):
     def _delrecord(self, item):
         res = util.HistoryArraySet._delrecord(self, item)
         if res:
+            if self.trackparent:
+                self.sethasparent(item, False)
             self.value_changed(self.obj, self.key, item, self, True)
             if self.extension is not None:
                 self.extension.delete(self.obj, item)
@@ -365,7 +379,8 @@ class AttributeManager(object):
             try:
                 attributes = self.attribute_history(o)
                 for hist in attributes.values():
-                    hist.rollback()
+                    if isinstance(hist, ManagedAttribute):
+                        hist.rollback()
             except KeyError:
                 pass
             o._managed_value_changed = False
@@ -377,7 +392,8 @@ class AttributeManager(object):
             try:
                 attributes = self.attribute_history(o)
                 for hist in attributes.values():
-                    hist.commit()
+                    if isinstance(hist, ManagedAttribute):
+                        hist.commit()
             except KeyError:
                 pass
             o._managed_value_changed = False

@@ -44,16 +44,12 @@ class UOWListElement(attributes.ListAttribute):
         self.cascade = cascade
     def do_value_changed(self, obj, key, item, listval, isdelete):
         sess = get_session(obj, raiseerror=False)
-        if sess is None:
-            return
-        sess._register_dirty(obj)
-        if self.cascade is not None:
-            if isdelete:
-                if self.cascade.delete_orphan:
-                    sess.delete(item)
-            else:
-                if self.cascade.save_update:
-                    sess.save_or_update(item)
+        if sess is not None:
+            sess._register_dirty(obj)
+            if self.cascade is not None:
+                if not isdelete:
+                    if self.cascade.save_update:
+                        sess.save_or_update(item)
     def append(self, item, _mapper_nohistory = False):
         if _mapper_nohistory:
             self.append_nohistory(item)
@@ -70,9 +66,7 @@ class UOWScalarElement(attributes.ScalarAttribute):
         if sess is not None:
             sess._register_dirty(obj)
             if self.cascade is not None:
-                if oldvalue is not None and self.cascade.delete_orphan:
-                    sess.delete(oldvalue)
-                if newvalue is not None and self.cascade.save_update:
+                if self.cascade.save_update:
                     sess.save_or_update(newvalue)
             
 class UOWAttributeManager(attributes.AttributeManager):
@@ -427,7 +421,7 @@ class UOWTaskElement(object):
 class UOWDependencyProcessor(object):
     """in between the saving and deleting of objects, process "dependent" data, such as filling in 
     a foreign key on a child item from a new primary key, or deleting association rows before a 
-    delete."""
+    delete.  This object acts as a proxy to a DependencyProcessor."""
     def __init__(self, processor, targettask, isdeletefrom):
         self.processor = processor
         self.targettask = targettask

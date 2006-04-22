@@ -253,8 +253,7 @@ class PrivateAttrTest(AssertMixin):
         class B(object):pass
     
         assign_mapper(B,b_table)
-        assign_mapper(A,a_table,properties= {'bs' : relation 
-        (B.mapper,private=True)})
+        assign_mapper(A,a_table,properties= {'bs' : relation(B.mapper,private=True)})
     
         # create some objects
         a = A(data='a1')
@@ -539,6 +538,8 @@ class SaveTest(AssertMixin):
         objectstore.get_session().flush()
 
     def testchildmove(self):
+        """tests moving a child from one parent to the other, then deleting the first parent, properly
+        updates the child with the new parent.  this tests the 'trackparent' option in the attributes module."""
         m = mapper(User, users, properties = dict(
             addresses = relation(mapper(Address, addresses), lazy = True, private = False)
         ))
@@ -557,8 +558,7 @@ class SaveTest(AssertMixin):
         objectstore.clear()
         u2 = m.get(u2.user_id)
         assert len(u2.addresses) == 1
-        
-
+    
     def testdelete(self):
         m = mapper(User, users, properties = dict(
             address = relation(mapper(Address, addresses), lazy = True, uselist = False, private = False)
