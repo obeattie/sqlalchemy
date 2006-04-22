@@ -40,22 +40,23 @@ class TLConnection(base.Connection):
         return t
         
 class TLEngine(base.ComposedSQLEngine):
-    """a ComposedSQLEngine that includes support for thread-local managed transactions"""
+    """a ComposedSQLEngine that includes support for thread-local managed transactions.  This engine
+    is better suited to be used with threadlocal Pool object."""
     def __init__(self, *args, **kwargs):
         """the TLEngine relies upon the ConnectionProvider having "threadlocal" behavior,
         so that once a connection is checked out for the current thread, you get that same connection
         repeatedly."""
         base.ComposedSQLEngine.__init__(self, *args, **kwargs)
         self.context = util.ThreadLocal()
-    def unique_connection(self):
-        """returns a Connection that is not thread-locally scoped.  this is the equilvalent to calling
-        "connect()" on a ComposedSQLEngine."""
-        return Connection(self, self.raw_unique_connection())
-    def raw_unique_connection(self):
-        """returns a raw connection that is not thread-locally scoped. this is the equivalent to calling
-        raw_connection on a ComposedSQLEngine."""
+    def raw_connection(self):
+        """returns a DBAPI connection."""
         return self.connection_provider.unique_connection()
     def connect(self, **kwargs):
+        """returns a Connection that is not thread-locally scoped.  this is the equilvalent to calling
+        "connect()" on a ComposedSQLEngine."""
+        return base.Connection(self, self.connection_provider.unique_connection())
+    def contextual_connect(self, **kwargs):
+        """returns a TLConnection which is thread-locally scoped."""
         return TLConnection(self, **kwargs)
     def begin(self):
         return self.connect().begin()

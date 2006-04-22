@@ -162,6 +162,10 @@ class Connection(object):
     def _create_transaction(self, parent):
         return Transaction(self, parent)
     def connect(self):
+        """connect() is implemented to return self so that an incoming Engine or Connection object can be treated similarly."""
+        return self
+    def contextual_connect(self):
+        """contextual_connect() is implemented to return self so that an incoming Engine or Connection object can be treated similarly."""
         return self
     def begin(self):
         if self.transaction is None:
@@ -356,7 +360,7 @@ class ComposedSQLEngine(sql.Engine):
 
     def _run_visitor(self, visitorcallable, element, connection=None, **kwargs):
         if connection is None:
-            conn = self.connect()
+            conn = self.contextual_connect()
         else:
             conn = connection
         try:
@@ -366,23 +370,29 @@ class ComposedSQLEngine(sql.Engine):
                 conn.close()
 
     def execute(self, *args, **kwargs):
-        connection = self.connect(close_with_result=True)
+        connection = self.contextual_connect()
         return connection.execute(*args, **kwargs)
         
     def execute_compiled(self, compiled, parameters, **kwargs):
-        connection = self.connect(close_with_result=True)
+        connection = self.contextual_connect()
         return connection.execute_compiled(compiled, parameters, **kwargs)
         
     def compiler(self, statement, parameters, **kwargs):
         return self.dialect.compiler(statement, parameters, engine=self, **kwargs)
 
     def connect(self, **kwargs):
+        """returns a newly allocated Connection object."""
         return Connection(self, **kwargs)
-        
+    
+    def contextual_connect(self, **kwargs):
+        """returns a Connection object which may be newly allocated, or may be part of some 
+        ongoing context.  This Connection is meant to be used by the various "auto-connecting" operations."""
+        return Connection(self, close_with_result=True, **kwargs)
+            
     def reflecttable(self, table, connection=None):
         """given a Table object, reflects its columns and properties from the database."""
         if connection is None:
-            conn = self.connect()
+            conn = self.contextual_connect()
         else:
             conn = connection
         try:
