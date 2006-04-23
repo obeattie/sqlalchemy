@@ -10,11 +10,11 @@ from schema import *
 from exceptions import *
 from engine import *
 import sqlalchemy.sql
-import sqlalchemy.mapping as mapping
-from sqlalchemy.mapping import *
+import sqlalchemy.orm as orm
+from sqlalchemy.orm import *
 import sqlalchemy.ext.proxy
 
-from sqlalchemy.mapping.objectstore import Session, get_session
+from sqlalchemy.orm.objectstore import Session, get_session
 
 create_engine = sqlalchemy.engine.create_engine
 create_session = objectstore.Session

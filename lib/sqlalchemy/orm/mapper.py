@@ -223,7 +223,7 @@ class Mapper(object):
             self._query = query.Query(self)
             return self._query
     query = property(_get_query, doc=\
-        """returns an instance of sqlalchemy.mapping.query.Query, which implements all the query-constructing
+        """returns an instance of sqlalchemy.orm.query.Query, which implements all the query-constructing
         methods such as get(), select(), select_by(), etc.  The default Query object uses the global thread-local
         Session from the objectstore package.  To get a Query object for a specific Session, call the 
         using(session) method.""")

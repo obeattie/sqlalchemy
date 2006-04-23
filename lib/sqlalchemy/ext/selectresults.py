@@ -1,14 +1,14 @@
 import sqlalchemy.sql as sql
 
-import sqlalchemy.mapping as mapping
+import sqlalchemy.orm as orm
 
 
-class SelectResultsExt(mapping.MapperExtension):
+class SelectResultsExt(orm.MapperExtension):
     def select_by(self, query, *args, **params):
         return SelectResults(query, query._by_clause(*args, **params))
     def select(self, query, arg=None, **kwargs):
         if arg is not None and isinstance(arg, sql.Selectable):
-            return mapping.EXT_PASS
+            return orm.EXT_PASS
         else:
             return SelectResults(query, arg, ops=kwargs)
 

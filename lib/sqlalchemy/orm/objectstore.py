@@ -394,13 +394,13 @@ def get_row_key(row, class_, primary_key, entity_name=None):
     return Session.get_row_key(row, class_, primary_key, entity_name)
 
 def mapper(*args, **params):
-    return sqlalchemy.mapping.mapper(*args, **params)
+    return sqlalchemy.orm.mapper(*args, **params)
 
 def object_mapper(obj, **kwargs):
-    return sqlalchemy.mapping.object_mapper(obj, **kwargs)
+    return sqlalchemy.orm.object_mapper(obj, **kwargs)
 
 def class_mapper(class_, **kwargs):
-    return sqlalchemy.mapping.class_mapper(class_, **kwargs)
+    return sqlalchemy.orm.class_mapper(class_, **kwargs)
 
 # this is the AttributeManager instance used to provide attribute behavior on objects.
 # to all the "global variable police" out there:  its a stateless object.

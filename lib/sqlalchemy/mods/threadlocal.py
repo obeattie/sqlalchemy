@@ -1,5 +1,5 @@
 from sqlalchemy import util, engine
-from sqlalchemy.mapping import unitofwork, objectstore
+from sqlalchemy.orm import unitofwork, objectstore
 
 import sys
 

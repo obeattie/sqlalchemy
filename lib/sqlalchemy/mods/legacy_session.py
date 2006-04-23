@@ -1,6 +1,6 @@
 
-import sqlalchemy.mapping.objectstore as objectstore
-import sqlalchemy.mapping.unitofwork as unitofwork
+import sqlalchemy.orm.objectstore as objectstore
+import sqlalchemy.orm.unitofwork as unitofwork
 import sqlalchemy.util as util
 import sqlalchemy
 
