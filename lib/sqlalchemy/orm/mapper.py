@@ -12,7 +12,7 @@ import util as mapperutil
 import sqlalchemy.sql_util as sqlutil
 import sync
 from sqlalchemy.exceptions import *
-import query
+import query as querylib
 import session as sessionlib
 import sys
 import weakref
@@ -215,73 +215,75 @@ class Mapper(object):
         #for key, value in self.columntoproperty.iteritems():
         #    print key.table.name, key.key, [(v.key, v) for v in value]
 
-    def _get_query(self):
+    def using(self, session):
+        return querylib.Query(self, session=session)
+    def query(self, session=None):
+        """returns an instance of sqlalchemy.orm.query.Query, which implements all the query-constructing
+        methods such as get(), select(), select_by(), etc."""
+        if session is not None:
+            return querylib.Query(self, session=session)
+            
         try:
             if self._query.mapper is not self:
-                self._query = query.Query(self)
+                self._query = querylib.Query(self)
             return self._query
         except AttributeError:
-            self._query = query.Query(self)
+            self._query = querylib.Query(self)
             return self._query
-    query = property(_get_query, doc=\
-        """returns an instance of sqlalchemy.orm.query.Query, which implements all the query-constructing
-        methods such as get(), select(), select_by(), etc.  The default Query object uses the global thread-local
-        Session from the session package.  To get a Query object for a specific Session, call the 
-        using(session) method.""")
     
     def get(self, *ident, **kwargs):
         """calls get() on this mapper's default Query object."""
-        return self.query.get(*ident, **kwargs)
+        return self.query().get(*ident, **kwargs)
         
     def _get(self, key, ident=None, reload=False):
-        return self.query._get(key, ident=ident, reload=reload)
+        return self.query()._get(key, ident=ident, reload=reload)
         
     def get_by(self, *args, **params):
         """calls get_by() on this mapper's default Query object."""
-        return self.query.get_by(*args, **params)
+        return self.query().get_by(*args, **params)
 
     def select_by(self, *args, **params):
         """calls select_by() on this mapper's default Query object."""
-        return self.query.select_by(*args, **params)
+        return self.query().select_by(*args, **params)
 
     def selectfirst_by(self, *args, **params):
         """calls selectfirst_by() on this mapper's default Query object."""
-        return self.query.selectfirst_by(*args, **params)
+        return self.query().selectfirst_by(*args, **params)
 
     def selectone_by(self, *args, **params):
         """calls selectone_by() on this mapper's default Query object."""
-        return self.query.selectone_by(*args, **params)
+        return self.query().selectone_by(*args, **params)
 
     def count_by(self, *args, **params):
         """calls count_by() on this mapper's default Query object."""
-        return self.query.count_by(*args, **params)
+        return self.query().count_by(*args, **params)
 
     def selectfirst(self, *args, **params):
         """calls selectfirst() on this mapper's default Query object."""
-        return self.query.selectfirst(*args, **params)
+        return self.query().selectfirst(*args, **params)
 
     def selectone(self, *args, **params):
         """calls selectone() on this mapper's default Query object."""
-        return self.query.selectone(*args, **params)
+        return self.query().selectone(*args, **params)
 
     def select(self, arg=None, **kwargs):
         """calls select() on this mapper's default Query object."""
-        return self.query.select(arg=arg, **kwargs)
+        return self.query().select(arg=arg, **kwargs)
 
     def select_whereclause(self, whereclause=None, params=None, **kwargs):
         """calls select_whereclause() on this mapper's default Query object."""
-        return self.query.select_whereclause(whereclause=whereclause, params=params, **kwargs)
+        return self.query().select_whereclause(whereclause=whereclause, params=params, **kwargs)
 
     def count(self, whereclause=None, params=None, **kwargs):
         """calls count() on this mapper's default Query object."""
-        return self.query.count(whereclause=whereclause, params=params, **kwargs)
+        return self.query().count(whereclause=whereclause, params=params, **kwargs)
 
     def select_statement(self, statement, **params):
         """calls select_statement() on this mapper's default Query object."""
-        return self.query.select_statement(statement, **params)
+        return self.query().select_statement(statement, **params)
 
     def select_text(self, text, **params):
-        return self.query.select_text(text, **params)
+        return self.query().select_text(text, **params)
     
     def add_properties(self, dict_of_properties):
         """adds the given dictionary of properties to this mapper, using add_property."""
@@ -430,7 +432,7 @@ class Mapper(object):
     def compile(self, whereclause = None, **options):
         """works like select, except returns the SQL statement object without 
         compiling or executing it"""
-        return self.query._compile(whereclause, **options)
+        return self.query()._compile(whereclause, **options)
 
     def copy(self, **kwargs):
         mapper = Mapper.__new__(Mapper)
@@ -439,9 +441,7 @@ class Mapper(object):
         mapper.props = self.props.copy()
         return mapper
     
-    def using(self, session):
-        return query.Query(self, session=session)
-
+        
     def options(self, *options, **kwargs):
         """uses this mapper as a prototype for a new mapper with different behavior.
         *options is a list of options directives, which include eagerload(), lazyload(), and noload()"""
@@ -458,7 +458,7 @@ class Mapper(object):
 
     def __getattr__(self, key):
         if (key.startswith('select_by_') or key.startswith('get_by_')):
-            return getattr(self.query, key)
+            return getattr(self.query(), key)
         else:
             raise AttributeError(key)
             

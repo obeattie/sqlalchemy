@@ -147,8 +147,10 @@ class UnicodeTest(AssertMixin):
 
     def testbasic(self):
         class Test(object):
-            pass
-        assign_mapper(Test, uni_table)
+            def __init__(self, id, txt):
+                self.id = id
+                self.txt = txt
+        mapper(Test, uni_table)
 
         txt = u"\u0160\u0110\u0106\u010c\u017d"
         t1 = Test(id=1, txt = txt)

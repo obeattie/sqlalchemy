@@ -137,6 +137,7 @@ class Query(object):
         statement = self._compile(whereclause, **kwargs)
         return self._select_statement(statement, params=params)
 
+        
     def count(self, whereclause=None, params=None, **kwargs):
         s = self.table.count(whereclause)
         if params is not None:
@@ -150,6 +151,10 @@ class Query(object):
     def select_text(self, text, **params):
         t = sql.text(text)
         return self.instances(t, params=params)
+
+    def options(self, *args, **kwargs):
+        """returns a new Query object using the given MapperOptions."""
+        return self.mapper.options(*args, **kwargs).using(session=self._session)
 
     def __getattr__(self, key):
         if (key.startswith('select_by_')):

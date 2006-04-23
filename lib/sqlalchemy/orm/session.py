@@ -11,7 +11,6 @@ import weakref
 import sqlalchemy
 import sqlalchemy.sql as sql
 
-
 class SessionTransaction(object):
     def __init__(self, session, parent=None, autoflush=True):
         self.session = session
@@ -56,6 +55,7 @@ class SessionTransaction(object):
         self.session.transaction = None
         
 class Session(object):
+    """encapsulates a set of objects being operated upon within an object-relational operation."""
     def __init__(self, bind_to=None, hash_key=None, new_imap=True, import_session=None):
         if import_session is not None:
             self.uow = unitofwork.UnitOfWork(identity_map=import_session.uow.identity_map)
@@ -113,6 +113,9 @@ class Session(object):
         """
         if self.transaction is not None:
             self.transaction.close()
+    def mapper(self, class_, entity_name=None):
+        """given an Class, returns the primary Mapper responsible for persisting it"""
+        return class_mapper(class_, entity_name = entity_name)
     def bind_mapper(self, mapper, bindto):
         """binds the given Mapper to the given Engine or Connection.  All subsequent operations involving this
         Mapper will use the given bindto."""

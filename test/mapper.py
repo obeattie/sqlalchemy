@@ -75,28 +75,30 @@ class MapperSuperTest(AssertMixin):
     
 class MapperTest(MapperSuperTest):
     def testget(self):
-        m = mapper(User, users)
-        self.assert_(m.get(19) is None)
-        u = m.get(7)
-        u2 = m.get(7)
+        s = create_session()
+        mapper(User, users)
+        self.assert_(s.get(User, 19) is None)
+        u = s.get(User, 7)
+        u2 = s.get(User, 7)
         self.assert_(u is u2)
-        objectstore.clear()
-        u2 = m.get(7)
+        s.clear()
+        u2 = s.get(User, 7)
         self.assert_(u is not u2)
 
     def testrefresh(self):
-        m = mapper(User, users, properties={'addresses':relation(mapper(Address, addresses))})
-        u = m.get(7)
+        mapper(User, users, properties={'addresses':relation(mapper(Address, addresses))})
+        s = create_session()
+        u = s.get(User, 7)
         u.user_name = 'foo'
         a = Address()
         u.addresses.append(a)
 
         self.assert_(a in u.addresses)
 
-        objectstore.refresh(u)
+        s.refresh(u)
         
         # its refreshed, so not dirty
-        self.assert_(u not in objectstore.get_session().uow.dirty)
+        self.assert_(u not in s.dirty)
         
         # username is back to the DB
         self.assert_(u.user_name == 'jack')
@@ -106,10 +108,10 @@ class MapperTest(MapperSuperTest):
         u.user_name = 'foo'
         u.addresses.append(a)
         # now its dirty
-        self.assert_(u in objectstore.get_session().uow.dirty)
+        self.assert_(u in s.dirty)
         self.assert_(u.user_name == 'foo')
         self.assert_(a in u.addresses)
-        objectstore.expire(u)
+        s.expire(u)
 
         # get the attribute, it refreshes
         self.assert_(u.user_name == 'jack')
@@ -117,27 +119,29 @@ class MapperTest(MapperSuperTest):
 
     def testrefresh_lazy(self):
         """tests that when a lazy loader is set as a trigger on an object's attribute (at the attribute level, not the class level), a refresh() operation doesnt fire the lazy loader or create any problems"""
-        m = mapper(User, users, properties={'addresses':relation(mapper(Address, addresses))})
-        m2 = m.options(lazyload('addresses'))
-        u = m2.selectfirst(users.c.user_id==8)
+        s = create_session()
+        mapper(User, users, properties={'addresses':relation(mapper(Address, addresses))})
+        q2 = s.query(User).options(lazyload('addresses'))
+        u = q2.selectfirst(users.c.user_id==8)
         def go():
-            objectstore.refresh(u)
+            s.refresh(u)
         self.assert_sql_count(db, go, 1)
 
     def testsessionpropigation(self):
         sess = create_session()
-        m = mapper(User, users, properties={'addresses':relation(mapper(Address, addresses), lazy=True)})
-        u = m.using(sess).get(7)
-        assert objectstore.get_session(u) is sess
-        assert objectstore.get_session(u.addresses[0]) is sess
+        mapper(User, users, properties={'addresses':relation(mapper(Address, addresses), lazy=True)})
+        u = sess.get(User, 7)
+        assert get_session(u) is sess
+        assert get_session(u.addresses[0]) is sess
         
     def testexpire(self):
-        m = mapper(User, users, properties={'addresses':relation(mapper(Address, addresses), lazy=False)})
-        u = m.get(7)
+        s = create_session()
+        mapper(User, users, properties={'addresses':relation(mapper(Address, addresses), lazy=False)})
+        u = s.get(User, 7)
         assert(len(u.addresses) == 1)
         u.user_name = 'foo'
         del u.addresses[0]
-        objectstore.expire(u)
+        s.expire(u)
         # test plain expire
         self.assert_(u.user_name =='jack')
         self.assert_(len(u.addresses) == 1)
@@ -145,14 +149,14 @@ class MapperTest(MapperSuperTest):
         # we're changing the database here, so if this test fails in the middle,
         # it'll screw up the other tests which are hardcoded to 7/'jack'
         u.user_name = 'foo'
-        objectstore.flush()
+        s.flush()
         # change the value in the DB
         users.update(users.c.user_id==7, values=dict(user_name='jack')).execute()
-        objectstore.expire(u)
+        s.expire(u)
         # object isnt refreshed yet, using dict to bypass trigger
         self.assert_(u.__dict__['user_name'] != 'jack')
         # do a select
-        m.select()
+        s.query(User).select()
         # test that it refreshed
         self.assert_(u.__dict__['user_name'] == 'jack')
         
@@ -161,25 +165,26 @@ class MapperTest(MapperSuperTest):
         self.assert_(u.user_name =='jack')
         
     def testrefresh2(self):
-        assign_mapper(Address, addresses)
+        s = create_session()
+        mapper(Address, addresses)
 
-        assign_mapper(User, users, properties = dict(addresses=relation(Address.mapper,private=True,lazy=False)) )
+        mapper(User, users, properties = dict(addresses=relation(Address,private=True,lazy=False)) )
 
         u=User()
         u.user_name='Justin'
         a = Address()
         a.address_id=17  # to work around the hardcoded IDs in this test suite....
         u.addresses.append(a)
-        objectstore.flush()
-        objectstore.clear()
-        u = User.mapper.selectfirst()
+        s.flush()
+        s.clear()
+        u = s.query(User).selectfirst()
         print u.user_name
 
         #ok so far
-        u.expire()        #hangs when
+        s.expire(u)        #hangs when
         print u.user_name #this line runs
 
-        u.refresh() #hangs
+        s.refresh(u) #hangs
         
     def testmagic(self):
         m = mapper(User, users, properties = {

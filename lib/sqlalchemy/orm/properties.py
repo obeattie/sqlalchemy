@@ -362,7 +362,7 @@ class LazyLoader(PropertyLoader):
         (self.lazywhere, self.lazybinds) = create_lazy_clause(self.parent.noninherited_table, self.primaryjoin, self.secondaryjoin, self.foreignkey)
         # determine if our "lazywhere" clause is the same as the mapper's
         # get() clause.  then we can just use mapper.get()
-        self.use_get = not self.uselist and self.mapper.query._get_clause.compare(self.lazywhere)
+        self.use_get = not self.uselist and self.mapper.query()._get_clause.compare(self.lazywhere)
         
     def _set_class_attribute(self, class_, key):
         # establish a class-level lazy loader on our class
