@@ -62,7 +62,8 @@ class HistoryTest(AssertMixin):
         
         u = User()
         a = Address()
-        s.save(u, a)
+        s.save(u)
+        s.save(a)
         a.user = u
         #print repr(a.__class__._attribute_manager.get_history(a, 'user').added_items())
         #print repr(u.addresses.added_items())
@@ -268,10 +269,10 @@ class PrivateAttrTest(AssertMixin):
         a.bs.append(b2)
     
         # inserts both A and Bs
-        objectstore.flush(a)
+        objectstore.flush([a])
     
         objectstore.delete(a)
-        objectstore.flush(a)
+        objectstore.flush([a])
         
         assert b_table.count().scalar() == 0
 
@@ -421,7 +422,7 @@ class SaveTest(AssertMixin):
 
         objectstore.get_session().save(u)
         
-        objectstore.get_session().flush(u)
+        objectstore.get_session().flush([u])
         objectstore.get_session().flush()
 
         # assert the first one retreives the same from the identity map

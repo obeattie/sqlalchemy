@@ -214,10 +214,10 @@ class UnitOfWork(object):
         except KeyError:
             pass
             
-    def flush(self, session, *objects):
+    def flush(self, session, objects=None):
         flush_context = UOWTransaction(self, session)
 
-        if len(objects):
+        if objects is not None:
             objset = util.HashSet(iter=objects)
         else:
             objset = None

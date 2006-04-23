@@ -204,61 +204,87 @@ class Session(object):
         """deprecated"""
         raise InvalidRequestError("Session.commit() is deprecated.  use install_mod('legacy_session') to enable the old behavior")    
 
-    def flush(self, *obj):
-        """flushes all the object modifications present in this session to the database.  if object
-        arguments are given, then only those objects (and immediate dependencies) are flushed."""
-        self.uow.flush(self, *obj)
-    
+    def flush(self, objects=None):
+        """flushes all the object modifications present in this session to the database.  'objects'
+        is a list or tuple of objects specifically to be flushed."""
+        self.uow.flush(self, objects)
+
+    def get(self, class_, *ident):
+        """given a class and a primary key identifier, loads the corresponding object."""
+        return self.query(class_).get(*ident)
+        
     def load(self, class_, *ident):
         """given a class and a primary key identifier, loads the corresponding object."""
         return self.query(class_).get(*ident)
                 
-    def refresh(self, *obj):
-        """reloads the attributes for the given objects from the database, clears
+    def refresh(self, object):
+        """reloads the attributes for the given object from the database, clears
         any changes made."""
-        for o in obj:
-            self.uow.refresh(o)
+        self.uow.refresh(object)
 
-    def expire(self, *obj):
-        """invalidates the data in the given objects and sets them to refresh themselves
+    def expire(self, object):
+        """invalidates the data in the given object and sets them to refresh themselves
         the next time they are requested."""
-        for o in obj:
-            self.uow.expire(o)
+        self.uow.expire(object)
 
-    def expunge(self, *obj):
-        """removes the given objects from this Session.  this will free all internal references to the objects."""
-        for o in obj:
-            self.uow.expunge(o)
+    def expunge(self, object):
+        """removes the given object from this Session.  this will free all internal references to the object."""
+        self.uow.expunge(object)
             
-    def save(self, *obj, **kwargs):
-        """adds unsaved objects to this Session.  
+    def save(self, object, entity_name=None):
+        """adds an unsaved object to this Session.  
         
         The 'entity_name' keyword argument can also be given which will be assigned
         to the instances if given.
         """
-        for o in obj:
-            for c in object_mapper(o, **kwargs).cascade_iterator('save-update', o):
-                if c is o:
-                    self._save_impl(c, **kwargs)
-                else:
-                    self.save_or_update(c, **kwargs)
+        for c in object_mapper(object, entity_name=entity_name).cascade_iterator('save-update', object):
+            if c is object:
+                self._save_impl(c, entity_name=entity_name)
+            else:
+                self.save_or_update(c, entity_name=entity_name)
 
-    def update(self, *obj, **kwargs):
-        for o in obj:
-            for c in object_mapper(o, **kwargs).cascade_iterator('save-update', o):
-                if c is o:
-                    self._update_impl(c, **kwargs)
-                else:
-                    self.save_or_update(c, **kwargs)
+    def update(self, object, entity_name=None):
+        for c in object_mapper(object, entity_name=entity_name).cascade_iterator('save-update', object):
+            if c is o:
+                self._update_impl(c, entity_name=entity_name)
+            else:
+                self.save_or_update(c, entity_name=entity_name)
 
-    def save_or_update(self, *obj, **kwargs):
-        for o in obj:
-            for c in object_mapper(o, *kwargs).cascade_iterator('save-update', o):
-                key = getattr(o, '_instance_key', None)
-                if key is None:
-                    self._save_impl(c, **kwargs)
-                else:
-                    self._update_impl(c, **kwargs)
+    def save_or_update(self, object, entity_name=None):
+        for c in object_mapper(object, entity_name=entity_name).cascade_iterator('save-update', object):
+            key = getattr(object, '_instance_key', None)
+            if key is None:
+                self._save_impl(c, entity_name=entity_name)
+            else:
+                self._update_impl(c, entity_name=entity_name)
+
+    def clear(self):
+        """removes all object instances from this Session.  this is equivalent to calling expunge() for all
+        objects in this Session."""
+        self.uow = unitofwork.UnitOfWork()
+
+    def delete(self, object, entity_name=None):
+        for c in object_mapper(object, entity_name=entity_name).cascade_iterator('delete', object):
+            self.uow.register_deleted(c)
+
+    def merge(self, object, entity_name=None):
+        for obj in object_mapper(object, entity_name=entity_name).cascade_iterator('merge', object):
+            key = getattr(obj, '_instance_key', None)
+            if key is None:
+                mapper = object_mapper(object, entity_name=entity_name)
+                ident = mapper.identity(object)
+                for k in ident:
+                    if k is None:
+                        raise InvalidRequestError("Instance '%s' does not have a full set of identity values, and does not represent a saved entity in the database.  Use the add() method to add unsaved instances to this Session." % str(obj))
+                key = mapper.identity_key(*ident)
+            u = self.uow
+            if u.identity_map.has_key(key):
+                return u.identity_map[key]
+            else:
+                obj._instance_key = key
+                u.identity_map[key] = obj
+                self._bind_to(instance)
+                return instance
                     
     def _save_impl(self, object, **kwargs):
         if hasattr(object, '_instance_key'):
@@ -293,9 +319,9 @@ class Session(object):
     def _register_deleted(self, obj):
         self._bind_to(obj)
         self.uow.register_deleted(obj)
+        
     def _bind_to(self, obj):
-        """given an object, binds it to this session.  changes on the object will affect
-        the currently scoped UnitOfWork maintained by this session."""
+        """given an object, binds it to this session.  """
         if getattr(obj, '_sa_session_id', None) != self.hash_key:
             old = getattr(obj, '_sa_session_id', None)
             # remove from old session.  we do this gingerly since _sessions is a WeakValueDict
@@ -307,6 +333,9 @@ class Session(object):
                     sess = None
                 if sess is not None:
                     sess.expunge(old)
+            key = getattr(obj, '_instance_key', None)
+            if key is not None:
+                self.identity_map[key] = obj
             obj._sa_session_id = self.hash_key
     def _is_bound(self, obj):
         return getattr(obj, '_sa_session_id', None) == self.hash_key
@@ -320,71 +349,14 @@ class Session(object):
     def is_expired(self, instance, **kwargs):
         return self.uow.is_expired(instance, **kwargs)
         
-    dirty = property(lambda s:s.uow.dirty)
-    deleted = property(lambda s:s.uow.deleted)
-    new = property(lambda s:s.uow.new)
-    identity_map = property(lambda s:s.uow.identity_map)
+    dirty = property(lambda s:s.uow.dirty, doc="a Set of all objects marked as 'dirty' within this Session")
+    deleted = property(lambda s:s.uow.deleted, doc="a Set of all objects marked as 'deleted' within this Session")
+    new = property(lambda s:s.uow.new, doc="a Set of all objects marked as 'new' within this Session.")
+    identity_map = property(lambda s:s.uow.identity_map, doc="a WeakValueDictionary consisting of all objects within this Session keyed to their _instance_key value.")
     
-    def clear(self):
-        """removes all object instances from this Session.  this is equivalent to calling expunge() for all
-        objects in this Session."""
-        self.uow = unitofwork.UnitOfWork()
-
-    def delete(self, *obj, **kwargs):
-        """registers the given objects to be deleted upon the next flush().  If the given objects are not part of this
-        Session, they will be imported.  the objects are expected to either have an _instance_key
-        attribute or have all of their primary key attributes populated.
-        
-        the keyword argument 'entity_name' can also be provided which will be used by the import."""
-        for o in obj:
-            for c in object_mapper(o, **kwargs).cascade_iterator('delete', o):
-                if not self._is_bound(c):
-                    c = self.import_(c, **kwargs)
-                self.uow.register_deleted(c)
-
-
-    def merge(self, instance, entity_name=None):
-        """given an instance that represents a saved item, adds it to this session.
-        the return value is either the given instance, or if an instance corresponding to the 
-        identity of the given instance already exists within this session, then that instance is returned;
-        the returned instance should always be used following this method.
-        
-        if the given instance does not have an _instance_key and also does not have all 
-        of its primary key attributes populated, an exception is raised.  similarly, if no
-        mapper can be located for the given instance, an exception is raised.
-
-        this method should be used for any object instance that is coming from a serialized
-        storage, or was loaded by a Session other than this one.
-                
-        the keyword parameter entity_name is optional and is used to locate a Mapper for this
-        class which also specifies the given entity name.
-        """
-        if instance is None:
-            return None
-        key = getattr(object, '_instance_key', None)
-        if key is None:
-            mapper = object_mapper(object, raiseerror=False)
-            if mapper is None:
-                mapper = class_mapper(object, entity_name=entity_name)
-            ident = mapper.identity(object)
-            for k in ident:
-                if k is None:
-                    if raiseerror:
-                        raise InvalidRequestError("Instance '%s' does not have a full set of identity values, and does not represent a saved entity in the database.  Use the add() method to add unsaved instances to this Session." % str(object))
-                    else:
-                        return None
-            key = mapper.identity_key(*ident)
-        u = self.uow
-        if u.identity_map.has_key(key):
-            return u.identity_map[key]
-        else:
-            instance._instance_key = key
-            u.identity_map[key] = instance
-            self._bind_to(instance)
-            return instance
             
     def import_instance(self, *args, **kwargs):
-        """deprecated; a synynom for import()"""
+        """deprecated; a synynom for merge()"""
         return self.merge(*args, **kwargs)
 
 def get_id_key(ident, class_, entity_name=None):

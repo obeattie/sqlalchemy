@@ -978,11 +978,11 @@ def hash_key(obj):
     else:
         return repr(obj)
         
-def object_mapper(object, raiseerror=True):
+def object_mapper(object, raiseerror=True, entity_name=None):
     """given an object, returns the primary Mapper associated with the object
     or the object's class."""
     try:
-        return mapper_registry[ClassKey(object.__class__, getattr(object, '_entity_name', None))]
+        return mapper_registry[ClassKey(object.__class__, getattr(object, '_entity_name', entity_name))]
     except KeyError:
         if raiseerror:
             raise InvalidRequestError("Class '%s' entity name '%s' has no mapper associated with it" % (object.__class__.__name__, getattr(object, '_entity_name', None)))

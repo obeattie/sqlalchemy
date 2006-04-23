@@ -22,13 +22,13 @@ explicit Session objects when creating instances and creating queries.
 get_session = session.get_session
 
 class Objectstore(object):
-    def begin(self, *obj):
-        return get_session().begin(*obj)
-    def commit(self, *obj):
-        return get_session().commit(*obj)
+    def begin(self, obj):
+        return get_session().begin(obj)
+    def commit(self, obj):
+        return get_session().commit(obj)
     def get_session(self, obj=None):
         return get_session(obj=obj)
-    def flush(self, *obj):
+    def flush(self, obj):
         """flushes the current UnitOfWork transaction.  if a transaction was begun 
         via begin(), flushes only those objects that were created, modified, or deleted
         since that begin statement.  otherwise flushes all objects that have been
@@ -36,7 +36,7 @@ class Objectstore(object):
 
         if individual objects are submitted, then only those objects are committed, and the 
         begin/commit cycle is not affected."""
-        get_session().flush(*obj)
+        get_session().flush(obj)
 
     def clear(self):
         """removes all current UnitOfWorks and IdentityMaps for this thread and 
@@ -44,22 +44,22 @@ class Objectstore(object):
         current mapped object instances, as they are no longer in the Identity Map."""
         get_session().clear()
 
-    def refresh(self, *obj):
+    def refresh(self, obj):
         """reloads the state of this object from the database, and cancels any in-memory
         changes."""
-        get_session().refresh(*obj)
+        get_session().refresh(obj)
 
-    def expire(self, *obj):
+    def expire(self, obj):
         """invalidates the data in the given objects and sets them to refresh themselves
         the next time they are requested."""
-        get_session().expire(*obj)
+        get_session().expire(obj)
 
-    def expunge(self, *obj):
-        get_session().expunge(*obj)
+    def expunge(self, obj):
+        get_session().expunge(obj)
 
-    def delete(self, *obj):
+    def delete(self, obj):
         """registers the given objects as to be deleted upon the next commit"""
-        s = get_session().delete(*obj)
+        s = get_session().delete(obj)
 
     def has_key(self, key):
         """returns True if the current thread-local IdentityMap contains the given instance key"""
@@ -91,7 +91,7 @@ def assign_mapper(class_, *args, **params):
     m = mapper(class_, *args, **params)
     class_.mapper = m
     class_.get = m.get
-    class_.select = m.select
+    class_.select = m.selectobj
     class_.select_by = m.select_by
     class_.selectone = m.selectone
     class_.get_by = m.get_by
