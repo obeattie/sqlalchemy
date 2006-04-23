@@ -125,7 +125,7 @@ class MapperTest(MapperSuperTest):
         self.assert_sql_count(db, go, 1)
 
     def testsessionpropigation(self):
-        sess = objectstore.Session()
+        sess = create_session()
         m = mapper(User, users, properties={'addresses':relation(mapper(Address, addresses), lazy=True)})
         u = m.using(sess).get(7)
         assert objectstore.get_session(u) is sess
@@ -708,7 +708,7 @@ class EagerTest(MapperSuperTest):
 
     def testcompile(self):
         """tests deferred operation of a pre-compiled mapper statement"""
-        session = objectstore.Session()
+        session = create_session()
         m = mapper(User, users, properties = dict(
             addresses = relation(mapper(Address, addresses), lazy = False)
         ))

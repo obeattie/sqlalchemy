@@ -12,7 +12,7 @@ import util as mapperutil
 import sync
 from sqlalchemy.exceptions import *
 import query
-import objectstore
+import session as sessionlib
 import sys
 import weakref
 import sets
@@ -192,7 +192,7 @@ class Mapper(object):
             proplist.append(prop)
 
         if not mapper_registry.has_key(self.class_key) or self.is_primary or (inherits is not None and inherits._is_primary_mapper()):
-            objectstore.global_attributes.reset_class_managed(self.class_)
+            sessionlib.global_attributes.reset_class_managed(self.class_)
             self._init_class()
         elif not non_primary:
             raise ArgumentError("Class '%s' already has a primary mapper defined.  Use is_primary=True to assign a new primary mapper to the class, or use non_primary=True to create a non primary Mapper" % self.class_)
@@ -225,7 +225,7 @@ class Mapper(object):
     query = property(_get_query, doc=\
         """returns an instance of sqlalchemy.orm.query.Query, which implements all the query-constructing
         methods such as get(), select(), select_by(), etc.  The default Query object uses the global thread-local
-        Session from the objectstore package.  To get a Query object for a specific Session, call the 
+        Session from the session package.  To get a Query object for a specific Session, call the 
         using(session) method.""")
     
     def get(self, *ident, **kwargs):
@@ -348,13 +348,13 @@ class Mapper(object):
 
             # this gets the AttributeManager to do some pre-initialization,
             # in order to save on KeyErrors later on
-            objectstore.global_attributes.init_attr(self)
+            sessionlib.global_attributes.init_attr(self)
             
             nohist = kwargs.pop('_mapper_nohistory', False)
             if kwargs.has_key('_sa_session'):
                 session = kwargs.pop('_sa_session')
             else:
-                session = objectstore.get_session(self, raiseerror=False)
+                session = sessionlib.get_session(self, raiseerror=False)
             if session is not None:
                 if not nohist:
                     # register new with the correct session, before the object's 
@@ -415,11 +415,11 @@ class Mapper(object):
         return result
         
     def identity_key(self, *primary_key):
-        """returns the instance key for the given identity value.  this is a global tracking object used by the objectstore, and is usually available off a mapped object as instance._instance_key."""
-        return objectstore.get_id_key(tuple(primary_key), self.class_, self.entity_name)
+        """returns the instance key for the given identity value.  this is a global tracking object used by the Session, and is usually available off a mapped object as instance._instance_key."""
+        return sessionlib.get_id_key(tuple(primary_key), self.class_, self.entity_name)
     
     def instance_key(self, instance):
-        """returns the instance key for the given instance.  this is a global tracking object used by the objectstore, and is usually available off a mapped object as instance._instance_key."""
+        """returns the instance key for the given instance.  this is a global tracking object used by the Session, and is usually available off a mapped object as instance._instance_key."""
         return self.identity_key(*self.identity(instance))
 
     def identity(self, instance):
@@ -683,7 +683,7 @@ class Mapper(object):
             return False
             
     def register_dependencies(self, uowcommit, *args, **kwargs):
-        """called by an instance of objectstore.UOWTransaction to register 
+        """called by an instance of unitofwork.UOWTransaction to register 
         which mappers are dependent on which, as well as DependencyProcessor 
         objects which will process lists of objects in between saves and deletes."""
         for prop in self.props.values():
@@ -702,7 +702,7 @@ class Mapper(object):
                 yield c
 
     def _identity_key(self, row):
-        return objectstore.get_row_key(row, self.class_, self.pks_by_table[self.table], self.entity_name)
+        return sessionlib.get_row_key(row, self.class_, self.pks_by_table[self.table], self.entity_name)
 
     def _instance(self, session, row, imap, result = None, populate_existing = False):
         """pulls an object instance from the given row and appends it to the given result
@@ -767,7 +767,7 @@ class Mapper(object):
         
         # this gets the AttributeManager to do some pre-initialization,
         # in order to save on KeyErrors later on
-        objectstore.global_attributes.init_attr(obj)
+        sessionlib.global_attributes.init_attr(obj)
 
         session._bind_to(obj)
         return obj

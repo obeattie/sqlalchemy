@@ -1,7 +1,7 @@
-from sqlalchemy import util, engine
-from sqlalchemy.orm import unitofwork, objectstore
-
-import sys
+from sqlalchemy import util, engine, mapper
+from sqlalchemy.orm import unitofwork, session
+import sqlalchemy
+import sys, types
 
 """this plugin installs thread-local behavior at the Engine and Session level.
 
@@ -19,71 +19,102 @@ on the returned result (or the result must be consumed completely).  Also, all m
 explicit Session objects when creating instances and creating queries.
 """
 
-get_session = objectstore.get_session
+get_session = session.get_session
 
-def begin(*obj):
-    return get_session().begin(*obj)
-def commit(*obj):
-    return get_session().commit(*obj)
+class Objectstore(object):
+    def begin(self, *obj):
+        return get_session().begin(*obj)
+    def commit(self, *obj):
+        return get_session().commit(*obj)
+    def get_session(self, obj=None):
+        return get_session(obj=obj)
+    def flush(self, *obj):
+        """flushes the current UnitOfWork transaction.  if a transaction was begun 
+        via begin(), flushes only those objects that were created, modified, or deleted
+        since that begin statement.  otherwise flushes all objects that have been
+        changed.
 
-def flush(*obj):
-    """flushes the current UnitOfWork transaction.  if a transaction was begun 
-    via begin(), flushes only those objects that were created, modified, or deleted
-    since that begin statement.  otherwise flushes all objects that have been
-    changed.
+        if individual objects are submitted, then only those objects are committed, and the 
+        begin/commit cycle is not affected."""
+        get_session().flush(*obj)
 
-    if individual objects are submitted, then only those objects are committed, and the 
-    begin/commit cycle is not affected."""
-    get_session().flush(*obj)
+    def clear(self):
+        """removes all current UnitOfWorks and IdentityMaps for this thread and 
+        establishes a new one.  It is probably a good idea to discard all
+        current mapped object instances, as they are no longer in the Identity Map."""
+        get_session().clear()
 
-def clear():
-    """removes all current UnitOfWorks and IdentityMaps for this thread and 
-    establishes a new one.  It is probably a good idea to discard all
-    current mapped object instances, as they are no longer in the Identity Map."""
-    get_session().clear()
+    def refresh(self, *obj):
+        """reloads the state of this object from the database, and cancels any in-memory
+        changes."""
+        get_session().refresh(*obj)
 
-def refresh(*obj):
-    """reloads the state of this object from the database, and cancels any in-memory
-    changes."""
-    get_session().refresh(*obj)
+    def expire(self, *obj):
+        """invalidates the data in the given objects and sets them to refresh themselves
+        the next time they are requested."""
+        get_session().expire(*obj)
 
-def expire(*obj):
-    """invalidates the data in the given objects and sets them to refresh themselves
-    the next time they are requested."""
-    get_session().expire(*obj)
+    def expunge(self, *obj):
+        get_session().expunge(*obj)
 
-def expunge(*obj):
-    get_session().expunge(*obj)
+    def delete(self, *obj):
+        """registers the given objects as to be deleted upon the next commit"""
+        s = get_session().delete(*obj)
 
-def delete(*obj):
-    """registers the given objects as to be deleted upon the next commit"""
-    s = get_session().delete(*obj)
+    def has_key(self, key):
+        """returns True if the current thread-local IdentityMap contains the given instance key"""
+        return get_session().has_key(key)
 
-def has_key(key):
-    """returns True if the current thread-local IdentityMap contains the given instance key"""
-    return get_session().has_key(key)
+    def has_instance(self, instance):
+        """returns True if the current thread-local IdentityMap contains the given instance"""
+        return get_session().has_instance(instance)
 
-def has_instance(instance):
-    """returns True if the current thread-local IdentityMap contains the given instance"""
-    return get_session().has_instance(instance)
+    def is_dirty(self, obj):
+        """returns True if the given object is in the current UnitOfWork's new or dirty list,
+        or if its a modified list attribute on an object."""
+        return get_session().is_dirty(obj)
 
-def is_dirty(obj):
-    """returns True if the given object is in the current UnitOfWork's new or dirty list,
-    or if its a modified list attribute on an object."""
-    return get_session().is_dirty(obj)
+    def instance_key(self, instance):
+        """returns the IdentityMap key for the given instance"""
+        return get_session().instance_key(instance)
 
-def instance_key(instance):
-    """returns the IdentityMap key for the given instance"""
-    return get_session().instance_key(instance)
+    def import_instance(self, instance):
+        return get_session().import_instance(instance)
 
-def import_instance(instance):
-    return get_session().import_instance(instance)
-
+def assign_mapper(class_, *args, **params):
+    params.setdefault("is_primary", True)
+    if not isinstance(getattr(class_, '__init__'), types.MethodType):
+        def __init__(self, **kwargs):
+             for key, value in kwargs.items():
+                 setattr(self, key, value)
+        class_.__init__ = __init__
+    m = mapper(class_, *args, **params)
+    class_.mapper = m
+    class_.get = m.get
+    class_.select = m.select
+    class_.select_by = m.select_by
+    class_.selectone = m.selectone
+    class_.get_by = m.get_by
+    def commit(self):
+        sqlalchemy.objectstore.commit(self)
+    def delete(self):
+        sqlalchemy.objectstore.delete(self)
+    def expire(self):
+        sqlalchemy.objectstore.expire(self)
+    def refresh(self):
+        sqlalchemy.objectstore.refresh(self)
+    def expunge(self):
+        sqlalchemy.objectstore.expunge(self)
+    class_.commit = commit
+    class_.delete = delete
+    class_.expire = expire
+    class_.refresh = refresh
+    class_.expunge = expunge
 def install_plugin():
-    mod = sys.modules[__name__]
-    for name in ['import_instance', 'instance_key', 'has_instance', 'is_dirty', 'has_key', 'delete', 'expunge', 'expire', 'refresh', 'clear', 'flush', 'begin', 'commit']:
-        setattr(objectstore, name, getattr(mod, name))
-    reg = util.ScopedRegistry(objectstore.Session)
-    objectstore._default_session = lambda *args, **kwargs: reg()
+    reg = util.ScopedRegistry(session.Session)
+    session._default_session = lambda *args, **kwargs: reg()
     engine.default_strategy = 'threadlocal'
+    sqlalchemy.objectstore = Objectstore()
+    sqlalchemy.assign_mapper = assign_mapper
+    
 install_plugin()

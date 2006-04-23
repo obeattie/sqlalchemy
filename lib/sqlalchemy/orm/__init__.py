@@ -12,7 +12,7 @@ import sqlalchemy.sql as sql
 import sqlalchemy.schema as schema
 import sqlalchemy.engine as engine
 import sqlalchemy.util as util
-import objectstore
+import session
 from exceptions import *
 import types as types
 from mapper import *
@@ -20,8 +20,8 @@ from properties import *
 import mapper as mapperlib
 
 __all__ = ['relation', 'backref', 'eagerload', 'lazyload', 'noload', 'deferred', 'defer', 'undefer',
-        'mapper', 'clear_mappers', 'objectstore', 'sql', 'extension', 'class_mapper', 'object_mapper', 'MapperExtension',
-        'assign_mapper', 'cascade_mappers'
+        'mapper', 'clear_mappers', 'sql', 'extension', 'class_mapper', 'object_mapper', 'MapperExtension',
+        'cascade_mappers'
         ]
 
 def relation(*args, **kwargs):
@@ -95,35 +95,6 @@ def undefer(name, **kwargs):
     
 
 
-def assign_mapper(class_, *args, **params):
-    params.setdefault("is_primary", True)
-    if not isinstance(getattr(class_, '__init__'), types.MethodType):
-        def __init__(self, **kwargs):
-             for key, value in kwargs.items():
-                 setattr(self, key, value)
-        class_.__init__ = __init__
-    m = mapper(class_, *args, **params)
-    class_.mapper = m
-    class_.get = m.get
-    class_.select = m.select
-    class_.select_by = m.select_by
-    class_.selectone = m.selectone
-    class_.get_by = m.get_by
-    def commit(self):
-        objectstore.commit(self)
-    def delete(self):
-        objectstore.delete(self)
-    def expire(self):
-        objectstore.expire(self)
-    def refresh(self):
-        objectstore.refresh(self)
-    def expunge(self):
-        objectstore.expunge(self)
-    class_.commit = commit
-    class_.delete = delete
-    class_.expire = expire
-    class_.refresh = refresh
-    class_.expunge = expunge
     
 def cascade_mappers(*classes_or_mappers):
     """given a list of classes and/or mappers, identifies the foreign key relationships

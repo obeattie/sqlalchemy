@@ -5,7 +5,7 @@
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
 
-import objectstore
+import session as sessionlib
 import sqlalchemy.sql as sql
 import sqlalchemy.util as util
 from sqlalchemy.exceptions import *
@@ -28,7 +28,7 @@ class Query(object):
         self._get_clause = self.mapper._get_clause
     def _get_session(self):
         if self._session is None:
-            return objectstore.get_session()
+            return sessionlib.get_session()
         else:
             return self._session
     table = property(lambda s:s.mapper.table)

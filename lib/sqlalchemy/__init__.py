@@ -14,10 +14,10 @@ import sqlalchemy.orm as orm
 from sqlalchemy.orm import *
 import sqlalchemy.ext.proxy
 
-from sqlalchemy.orm.objectstore import Session, get_session
+from sqlalchemy.orm.session import Session, get_session
 
 create_engine = sqlalchemy.engine.create_engine
-create_session = objectstore.Session
+create_session = sqlalchemy.orm.session.Session
 
 def global_connect(*args, **kwargs):
     sqlalchemy.schema.default_metadata.connect(*args, **kwargs)

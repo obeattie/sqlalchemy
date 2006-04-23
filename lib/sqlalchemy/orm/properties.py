@@ -16,7 +16,7 @@ import sqlalchemy.util as util
 import sqlalchemy.attributes as attributes
 import sync
 import mapper
-import objectstore
+import session as sessionlib
 import dependency
 import util as mapperutil
 from sqlalchemy.exceptions import *
@@ -34,7 +34,7 @@ class ColumnProperty(MapperProperty):
     def setattr(self, object, value):
         setattr(object, self.key, value)
     def get_history(self, obj, passive=False):
-        return objectstore.global_attributes.get_history(obj, self.key, passive=passive)
+        return sessionlib.global_attributes.get_history(obj, self.key, passive=passive)
     def copy(self):
         return ColumnProperty(*self.columns)
     def setup(self, key, statement, eagertable=None, **options):
@@ -48,7 +48,7 @@ class ColumnProperty(MapperProperty):
         # establish a SmartProperty property manager on the object for this key
         if parent._is_primary_mapper():
             #print "regiser col on class %s key %s" % (parent.class_.__name__, key)
-            objectstore.global_attributes.register_attribute(parent.class_, key, uselist = False)
+            sessionlib.global_attributes.register_attribute(parent.class_, key, uselist = False)
     def execute(self, session, instance, row, identitykey, imap, isnew):
         if isnew:
             #print "POPULATING OBJ", instance.__class__.__name__, "COL", self.columns[0]._label, "WITH DATA", row[self.columns[0]], "ROW IS A", row.__class__.__name__, "COL ID", id(self.columns[0])
@@ -70,12 +70,12 @@ class DeferredColumnProperty(ColumnProperty):
         # establish a SmartProperty property manager on the object for this key, 
         # containing a callable to load in the attribute
         if self.is_primary():
-            objectstore.global_attributes.register_attribute(parent.class_, key, uselist=False, callable_=lambda i:self.setup_loader(i))
+            sessionlib.global_attributes.register_attribute(parent.class_, key, uselist=False, callable_=lambda i:self.setup_loader(i))
     def setup_loader(self, instance):
         if not self.parent.is_assigned(instance):
             return object_mapper(instance).props[self.key].setup_loader(instance)
         def lazyload():
-            session = objectstore.get_session(instance)
+            session = sessionlib.get_session(instance)
             connection = session.connection(self.parent)
             clause = sql.and_()
             try:
@@ -96,7 +96,7 @@ class DeferredColumnProperty(ColumnProperty):
                         if prop is self:
                             continue
                         instance.__dict__[prop.key] = row[prop.columns[0]]
-                        objectstore.global_attributes.create_history(instance, prop.key, uselist=False)
+                        sessionlib.global_attributes.create_history(instance, prop.key, uselist=False)
                     return row[self.columns[0]]    
                 else:
                     return connection.scalar(sql.select([self.columns[0]], clause, use_labels=True),None)
@@ -108,9 +108,9 @@ class DeferredColumnProperty(ColumnProperty):
     def execute(self, session, instance, row, identitykey, imap, isnew):
         if isnew:
             if not self.is_primary():
-                objectstore.global_attributes.create_history(instance, self.key, False, callable_=self.setup_loader(instance))
+                sessionlib.global_attributes.create_history(instance, self.key, False, callable_=self.setup_loader(instance))
             else:
-                objectstore.global_attributes.reset_history(instance, self.key)
+                sessionlib.global_attributes.reset_history(instance, self.key)
 
 mapper.ColumnProperty = ColumnProperty
 
@@ -166,9 +166,9 @@ class PropertyLoader(MapperProperty):
             recursive = sets.Set()
             
         if self.uselist:
-            childlist = objectstore.global_attributes.get_history(object, self.key, passive = False)
+            childlist = sessionlib.global_attributes.get_history(object, self.key, passive = False)
         else: 
-            childlist = objectstore.global_attributes.get_history(object, self.key)
+            childlist = sessionlib.global_attributes.get_history(object, self.key)
             
         for c in childlist.added_items() + childlist.deleted_items() + childlist.unchanged_items():
             if c is not None:
@@ -247,14 +247,14 @@ class PropertyLoader(MapperProperty):
 
             if self.backref is not None:
                 self.backref.compile(self)
-        elif not objectstore.global_attributes.is_class_managed(parent.class_, key):
+        elif not sessionlib.global_attributes.is_class_managed(parent.class_, key):
             raise ArgumentError("Attempting to assign a new relation '%s' to a non-primary mapper on class '%s'.  New relations can only be added to the primary mapper, i.e. the very first mapper created for class '%s' " % (key, parent.class_.__name__, parent.class_.__name__))
 
         self.do_init_subclass(key, parent)
         
     def _set_class_attribute(self, class_, key):
         """sets attribute behavior on our target class."""
-        objectstore.global_attributes.register_attribute(class_, key, uselist = self.uselist, extension=self.attributeext, cascade=self.cascade, trackparent=True)
+        sessionlib.global_attributes.register_attribute(class_, key, uselist = self.uselist, extension=self.attributeext, cascade=self.cascade, trackparent=True)
         
     def _get_direction(self):
         """determines our 'direction', i.e. do we represent one to many, many to many, etc."""
@@ -334,7 +334,7 @@ class PropertyLoader(MapperProperty):
         if self.is_primary():
             return
         #print "PLAIN PROPLOADER EXEC NON-PRIAMRY", repr(id(self)), repr(self.mapper.class_), self.key
-        objectstore.global_attributes.create_history(instance, self.key, self.uselist, cascade=self.cascade, trackparent=True)
+        sessionlib.global_attributes.create_history(instance, self.key, self.uselist, cascade=self.cascade, trackparent=True)
 
     def register_dependencies(self, uowcommit):
         self._dependency_processor.register_dependencies(uowcommit)
@@ -367,7 +367,7 @@ class LazyLoader(PropertyLoader):
     def _set_class_attribute(self, class_, key):
         # establish a class-level lazy loader on our class
         #print "SETCLASSATTR LAZY", repr(class_), key
-        objectstore.global_attributes.register_attribute(class_, key, uselist = self.uselist, callable_=lambda i: self.setup_loader(i), extension=self.attributeext, cascade=self.cascade, trackparent=True)
+        sessionlib.global_attributes.register_attribute(class_, key, uselist = self.uselist, callable_=lambda i: self.setup_loader(i), extension=self.attributeext, cascade=self.cascade, trackparent=True)
 
     def setup_loader(self, instance):
         if not self.parent.is_assigned(instance):
@@ -375,7 +375,7 @@ class LazyLoader(PropertyLoader):
         def lazyload():
             params = {}
             allparams = True
-            session = objectstore.get_session(instance)
+            session = sessionlib.get_session(instance)
             #print "setting up loader, lazywhere", str(self.lazywhere)
             for col, bind in self.lazybinds.iteritems():
                 params[bind.key] = self.parent._getattrbycolumn(instance, col)
@@ -415,14 +415,14 @@ class LazyLoader(PropertyLoader):
                 #print "EXEC NON-PRIAMRY", repr(self.mapper.class_), self.key
                 # we are not the primary manager for this attribute on this class - set up a per-instance lazyloader,
                 # which will override the class-level behavior
-                objectstore.global_attributes.create_history(instance, self.key, self.uselist, callable_=self.setup_loader(instance), cascade=self.cascade, trackparent=True)
+                sessionlib.global_attributes.create_history(instance, self.key, self.uselist, callable_=self.setup_loader(instance), cascade=self.cascade, trackparent=True)
             else:
                 #print "EXEC PRIMARY", repr(self.mapper.class_), self.key
                 # we are the primary manager for this attribute on this class - reset its per-instance attribute state, 
                 # so that the class-level lazy loader is executed when next referenced on this instance.
                 # this usually is not needed unless the constructor of the object referenced the attribute before we got 
                 # to load data into it.
-                objectstore.global_attributes.reset_history(instance, self.key)
+                sessionlib.global_attributes.reset_history(instance, self.key)
  
 def create_lazy_clause(table, primaryjoin, secondaryjoin, foreignkey):
     binds = {}
@@ -566,7 +566,7 @@ class EagerLoader(PropertyLoader):
         if isnew:
             # new row loaded from the database.  initialize a blank container on the instance.
             # this will override any per-class lazyloading type of stuff.
-            h = objectstore.global_attributes.create_history(instance, self.key, self.uselist, cascade=self.cascade, trackparent=True)
+            h = sessionlib.global_attributes.create_history(instance, self.key, self.uselist, cascade=self.cascade, trackparent=True)
             
         if not self.uselist:
             if isnew:

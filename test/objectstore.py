@@ -100,7 +100,7 @@ class VersioningTest(AssertMixin):
         
         f1.value='f1rev2'
         s.flush()
-        s2 = objectstore.Session()
+        s2 = create_session()
         f1_s = Foo.mapper.using(s2).get(f1.id)
         f1_s.value='f1rev3'
         s2.flush()
