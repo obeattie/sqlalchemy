@@ -9,6 +9,7 @@ import sqlalchemy.sql as sql
 import sqlalchemy.schema as schema
 import sqlalchemy.util as util
 import util as mapperutil
+import sqlalchemy.sql_util as sqlutil
 import sync
 from sqlalchemy.exceptions import *
 import query
@@ -107,7 +108,7 @@ class Mapper(object):
                 # stricter set of tables to create "sync rules" by,based on the immediate
                 # inherited table, rather than all inherited tables
                 self._synchronizer = sync.ClauseSynchronizer(self, self, sync.ONETOMANY)
-                self._synchronizer.compile(self.table.onclause, util.HashSet([inherits.noninherited_table]), mapperutil.TableFinder(table))
+                self._synchronizer.compile(self.table.onclause, util.HashSet([inherits.noninherited_table]), sqlutil.TableFinder(table))
                 # the old rule
                 #self._synchronizer.compile(self.table.onclause, inherits.tables, TableFinder(table))
             else:
@@ -122,7 +123,7 @@ class Mapper(object):
             
         # locate all tables contained within the "table" passed in, which
         # may be a join or other construct
-        self.tables = mapperutil.TableFinder(self.table)
+        self.tables = sqlutil.TableFinder(self.table)
 
         # determine primary key columns, either passed in, or get them from our set of tables
         self.pks_by_table = {}

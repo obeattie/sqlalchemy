@@ -28,7 +28,7 @@ class Objectstore(object):
         return get_session().commit(obj)
     def get_session(self, obj=None):
         return get_session(obj=obj)
-    def flush(self, obj):
+    def flush(self, obj=None):
         """flushes the current UnitOfWork transaction.  if a transaction was begun 
         via begin(), flushes only those objects that were created, modified, or deleted
         since that begin statement.  otherwise flushes all objects that have been
@@ -91,7 +91,7 @@ def assign_mapper(class_, *args, **params):
     m = mapper(class_, *args, **params)
     class_.mapper = m
     class_.get = m.get
-    class_.select = m.selectobj
+    class_.select = m.select
     class_.select_by = m.select_by
     class_.selectone = m.selectone
     class_.get_by = m.get_by

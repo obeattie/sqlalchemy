@@ -164,6 +164,58 @@ class ReflectionTest(PersistTest):
             self.assert_(isinstance(table.c.col4.type, String))
         finally:
             table.drop()
+
+class CreateDropTest(PersistTest):
+    def setUpAll(self):
+        global metadata
+        metadata = MetaData()
+        users = Table('users', metadata,
+                      Column('user_id', Integer, Sequence('user_id_seq', optional=True), primary_key = True),
+                      Column('user_name', String(40)),
+                      )
+
+        addresses = Table('email_addresses', metadata,
+            Column('address_id', Integer, Sequence('address_id_seq', optional=True), primary_key = True),
+            Column('user_id', Integer, ForeignKey(users.c.user_id)),
+            Column('email_address', String(40)),
+    
+        )
+
+        orders = Table('orders', metadata,
+            Column('order_id', Integer, Sequence('order_id_seq', optional=True), primary_key = True),
+            Column('user_id', Integer, ForeignKey(users.c.user_id)),
+            Column('description', String(50)),
+            Column('isopen', Integer),
+    
+        )
+
+        orderitems = Table('items', metadata,
+            Column('item_id', INT, Sequence('items_id_seq', optional=True), primary_key = True),
+            Column('order_id', INT, ForeignKey("orders")),
+            Column('item_name', VARCHAR(50)),
+    
+        )
+
+    def test_sorter( self ):
+        tables = metadata._sort_tables(metadata.tables.values())
+        table_names = [t.name for t in tables]
+        self.assertEqual( table_names, ['users', 'orders', 'items', 'email_addresses'] )
+
+
+    def test_createdrop(self):
+        metadata.create_all(engine=testbase.db)
+        self.assertEqual( testbase.db.has_table('items'), True )
+        self.assertEqual( testbase.db.has_table('email_addresses'), True )        
+        metadata.create_all(engine=testbase.db)
+        self.assertEqual( testbase.db.has_table('items'), True )        
+
+        metadata.drop_all(engine=testbase.db)
+        self.assertEqual( testbase.db.has_table('items'), False )
+        self.assertEqual( testbase.db.has_table('email_addresses'), False )                
+        metadata.drop_all(engine=testbase.db)
+        self.assertEqual( testbase.db.has_table('items'), False )                
+
+
             
 if __name__ == "__main__":
     testbase.main()        

@@ -273,6 +273,13 @@ class PGDialect(ansisql.ANSIDialect):
     def dbapi(self):
         return self.module
 
+    def has_table(self, connection, table_name):
+        """
+        return boolean whether or not the engine/schema contains this table
+        """
+        cursor = connection.execute("""select relname from pg_class where relname = %(name)s""", {'name':table_name})
+        return bool( not not cursor.rowcount )
+
     def reflecttable(self, connection, table):
         if self.version == 2:
             ischema_names = pg2_ischema_names

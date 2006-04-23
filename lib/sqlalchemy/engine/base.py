@@ -83,6 +83,8 @@ class Dialect(sql.AbstractDialect):
     def reflecttable(self, connection, table):
         """given an Connection and a Table object, reflects its columns and properties from the database."""
         raise NotImplementedError()
+    def has_table(self, connection, table_name):
+        raise NotImplementedError()
     def dbapi(self):
         """subclasses override this method to provide the DBAPI module used to establish
         connections."""
@@ -245,7 +247,8 @@ class Connection(object):
         return self.engine.reflecttable(table, connection=self, **kwargs)
     def default_schema_name(self):
         return self.engine.dialect.get_default_schema_name(self)
-        
+    def run_callable(self, callable_):
+        callable_(self)
     def _execute_raw(self, statement, parameters=None, cursor=None, echo=None, context=None, **kwargs):
         if cursor is None:
             cursor = self.connection.cursor()
@@ -368,7 +371,18 @@ class ComposedSQLEngine(sql.Engine):
         finally:
             if connection is None:
                 conn.close()
-
+    
+    def run_callable(self, callable_, connection=None):
+        if connection is None:
+            conn = self.contextual_connect()
+        else:
+            conn = connection
+        try:
+            return callable_(conn)
+        finally:
+            if connection is None:
+                conn.close()
+        
     def execute(self, *args, **kwargs):
         connection = self.contextual_connect()
         return connection.execute(*args, **kwargs)
@@ -400,7 +414,9 @@ class ComposedSQLEngine(sql.Engine):
         finally:
             if connection is None:
                 conn.close()
-
+    def has_table(self, table_name):
+        return self.run_callable(lambda c: self.dialect.has_table(c, table_name))
+        
     def raw_connection(self):
         """returns a DBAPI connection."""
         return self.connection_provider.get_connection()

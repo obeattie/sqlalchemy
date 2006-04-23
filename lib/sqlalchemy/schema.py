@@ -589,6 +589,45 @@ class MetaData(SchemaItem):
         self.name = name
     def is_bound(self):
         return False
+
+    def create_all(self, tables=None, engine=None):
+        if not tables:
+            tables = self.tables.values()
+
+        if engine is None and self.is_bound():
+            engine = self.engine
+
+        def do(conn):
+            e = conn.engine
+            ts = self._sort_tables( tables )
+            for table in ts:
+                if e.dialect.has_table(conn, table.name):
+                    continue
+                conn.create(table)
+        engine.run_callable(do)
+        
+    def drop_all(self, tables=None, engine=None):
+        if not tables:
+            tables = self.tables.values()
+
+        if engine is None and self.is_bound():
+            engine = self.engine
+        
+        def do(conn):
+            e = conn.engine
+            ts = self._sort_tables( tables, reverse=False )
+            for table in ts:
+                if e.dialect.has_table(conn, table.name):
+                    conn.drop(table)
+        engine.run_callable(do)
+                
+    def _sort_tables(self, tables, reverse=True):
+        import sqlalchemy.sql_util
+        sorter = sqlalchemy.sql_util.TableCollection()
+        for t in self.tables.values():
+            sorter.add(t)
+        return sorter.sort(reverse=reverse)
+        
     def _derived_metadata(self):
         return self
     def _get_engine(self):
