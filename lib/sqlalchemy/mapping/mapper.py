@@ -724,7 +724,7 @@ class Mapper(object):
                     imap[identitykey] = instance
                 for prop in self.props.values():
                     prop.execute(session, instance, row, identitykey, imap, True)
-            if self.extension.append_result(self, row, imap, result, instance, isnew, populate_existing=populate_existing) is EXT_PASS:
+            if self.extension.append_result(self, session, row, imap, result, instance, isnew, populate_existing=populate_existing) is EXT_PASS:
                 if result is not None:
                     result.append_nohistory(instance)
             return instance
@@ -738,9 +738,9 @@ class Mapper(object):
                 if row[col] is None:
                     return None
             # plugin point
-            instance = self.extension.create_instance(self, row, imap, self.class_)
+            instance = self.extension.create_instance(self, session, row, imap, self.class_)
             if instance is EXT_PASS:
-                instance = self.class_(_mapper_nohistory=True, _sa_entity_name=self.entity_name, _sa_session=session)
+                instance = self._create_instance(session)
             imap[identitykey] = instance
             isnew = True
         else:
@@ -753,10 +753,24 @@ class Mapper(object):
         # instances from the row and possibly populate this item.
         if self.extension.populate_instance(self, session, instance, row, identitykey, imap, isnew) is EXT_PASS:
             self.populate_instance(session, instance, row, identitykey, imap, isnew)
-        if self.extension.append_result(self, row, imap, result, instance, isnew, populate_existing=populate_existing) is EXT_PASS:
+        if self.extension.append_result(self, session, row, imap, result, instance, isnew, populate_existing=populate_existing) is EXT_PASS:
             if result is not None:
                 result.append_nohistory(instance)
         return instance
+
+    def _create_instance(self, session):
+
+        #return self.class_(_mapper_nohistory=True, _sa_entity_name=self.entity_name, _sa_session=session)
+        
+        obj = self.class_.__new__(self.class_)
+        obj._entity_name = self.entity_name
+        
+        # this gets the AttributeManager to do some pre-initialization,
+        # in order to save on KeyErrors later on
+        objectstore.global_attributes.init_attr(obj)
+
+        session._bind_to(obj)
+        return obj
 
     def translate_row(self, tomapper, row):
         """attempts to take a row and translate its values to a row that can
@@ -857,7 +871,7 @@ class MapperExtension(object):
             return EXT_PASS
         else:
             return self.next.select(query, *args, **kwargs)
-    def create_instance(self, mapper, row, imap, class_):
+    def create_instance(self, mapper, session, row, imap, class_):
         """called when a new object instance is about to be created from a row.  
         the method can choose to create the instance itself, or it can return 
         None to indicate normal object creation should take place.
@@ -874,8 +888,8 @@ class MapperExtension(object):
         if self.next is None:
             return EXT_PASS
         else:
-            return self.next.create_instance(mapper, row, imap, class_)
-    def append_result(self, mapper, row, imap, result, instance, isnew, populate_existing=False):
+            return self.next.create_instance(mapper, session, row, imap, class_)
+    def append_result(self, mapper, session, row, imap, result, instance, isnew, populate_existing=False):
         """called when an object instance is being appended to a result list.
         
         If this method returns True, it is assumed that the mapper should do the appending, else
@@ -904,7 +918,7 @@ class MapperExtension(object):
         if self.next is None:
             return EXT_PASS
         else:
-            return self.next.append_result(mapper, row, imap, result, instance, isnew, populate_existing)
+            return self.next.append_result(mapper, session, row, imap, result, instance, isnew, populate_existing)
     def populate_instance(self, mapper, session, instance, row, identitykey, imap, isnew):
         """called right before the mapper, after creating an instance from a row, passes the row
         to its MapperProperty objects which are responsible for populating the object's attributes.

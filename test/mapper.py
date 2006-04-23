@@ -550,7 +550,7 @@ class LazyTest(MapperSuperTest):
 
     def testbackwardsonetoone(self):
         m = mapper(Address, addresses, properties = dict(
-            user = relation(mapper(User, users, properties = {'id':users.c.user_id}), lazy = True)
+            user = relation(mapper(User, users), lazy = True)
         ))
         l = m.select(addresses.c.address_id == 1)
         self.echo(repr(l))
