@@ -37,9 +37,9 @@ class SqlSoup:
         args may either be an SQLEngine or a set of arguments suitable
         for passing to create_engine
         """
-        from sqlalchemy.engine import SQLEngine
+        from sqlalchemy.sql import Engine
         # meh, sometimes having method overloading instead of kwargs would be easier
-        if isinstance(args[0], SQLEngine):
+        if isinstance(args[0], Engine):
             engine = args.pop(0)
             if args or kwargs:
                 raise ArgumentError('Extra arguments not allowed when engine is given')

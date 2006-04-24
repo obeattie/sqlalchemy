@@ -89,7 +89,7 @@ class ColumnsTest(AssertMixin):
         )
 
         for aCol in testTable.c:
-            self.assertEquals(expectedResults[aCol.name], db.schemagenerator().get_column_specification(aCol))
+            self.assertEquals(expectedResults[aCol.name], db.dialect.schemagenerator(db, None).get_column_specification(aCol))
         
 class UnicodeTest(AssertMixin):
     """tests the Unicode type.  also tests the TypeDecorator with instances in the types package."""
@@ -113,15 +113,15 @@ class UnicodeTest(AssertMixin):
         self.assert_(isinstance(x['unicode_data'], unicode) and x['unicode_data'] == unicodedata)
         if isinstance(x['plain_data'], unicode):
             # SQLLite returns even non-unicode data as unicode
-            self.assert_(sys.modules[db.engine.__module__].descriptor()['name'] == 'sqlite')
+            self.assert_(db.name == 'sqlite')
             self.echo("its sqlite !")
         else:
             self.assert_(not isinstance(x['plain_data'], unicode) and x['plain_data'] == rawdata)
     def testengineparam(self):
         """tests engine-wide unicode conversion"""
-        prev_unicode = db.engine.convert_unicode
+        prev_unicode = db.engine.dialect.convert_unicode
         try:
-            db.engine.convert_unicode = True
+            db.engine.dialect.convert_unicode = True
             rawdata = 'Alors vous imaginez ma surprise, au lever du jour, quand une dr\xc3\xb4le de petit voix m\xe2\x80\x99a r\xc3\xa9veill\xc3\xa9. Elle disait: \xc2\xab S\xe2\x80\x99il vous pla\xc3\xaet\xe2\x80\xa6 dessine-moi un mouton! \xc2\xbb\n'
             unicodedata = rawdata.decode('utf-8')
             unicode_table.insert().execute(unicode_data=unicodedata, plain_data=rawdata)
@@ -131,7 +131,7 @@ class UnicodeTest(AssertMixin):
             self.assert_(isinstance(x['unicode_data'], unicode) and x['unicode_data'] == unicodedata)
             self.assert_(isinstance(x['plain_data'], unicode) and x['plain_data'] == unicodedata)
         finally:
-            db.engine.convert_unicode = prev_unicode
+            db.engine.dialect.convert_unicode = prev_unicode
     
 class BinaryTest(AssertMixin):
     def setUpAll(self):
@@ -179,7 +179,7 @@ class DateTest(AssertMixin):
         collist = [Column('user_id', INT, primary_key = True), Column('user_name', VARCHAR(20)), Column('user_datetime', DateTime),
                    Column('user_date', Date), Column('user_time', Time)]
         
-        if db.engine.__module__.endswith('mysql') or db.engine.__module__.endswith('mssql'):
+        if db.engine.name == 'mysql' or db.engine.name == 'mssql':
             # strip microseconds -- not supported by this engine (should be an easier way to detect this)
             for d in insert_data:
                 if d[2] is not None:

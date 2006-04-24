@@ -181,11 +181,9 @@ def descriptor():
     ]}
 
 class PGExecutionContext(default.DefaultExecutionContext):
-    def pre_exec(self, engine, proxy, statement, parameters, **kwargs):
-        return
 
     def post_exec(self, engine, proxy, compiled, parameters, **kwargs):
-        if getattr(compiled, "isinsert", False) and self._last_inserted_ids is None:
+        if getattr(compiled, "isinsert", False) and self.last_inserted_ids is None:
             if not engine.dialect.use_oids:
                 pass
                 # will raise invalid error when they go to get them
@@ -226,6 +224,9 @@ class PGDialect(ansisql.ANSIDialect):
             else:
                 opts['port'] = str(opts['port'])
         return ([], opts)
+
+    def create_execution_context(self):
+        return PGExecutionContext(self)
 
     def type_descriptor(self, typeobj):
         if self.version == 2:

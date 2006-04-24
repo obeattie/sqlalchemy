@@ -56,7 +56,7 @@ class MSDate(sqltypes.Date):
 class MSTime(sqltypes.Time):
     def get_col_spec(self):
         return "TIME"
-    def convert_result_value(self, value, engine):
+    def convert_result_value(self, value, dialect):
         # convert from a timedelta value
         if value is not None:
             return datetime.time(value.seconds/60/60, value.seconds/60%60, value.seconds - (value.seconds/60*60))
@@ -130,67 +130,60 @@ def descriptor():
         ('host',"Hostname", None),
     ]}
 
-class MySQLEngine(ansisql.ANSISQLEngine):
-    def __init__(self, opts, module = None, **params):
+
+class MySQLExecutionContext(default.DefaultExecutionContext):
+    def post_exec(self, engine, proxy, compiled, parameters, **kwargs):
+        if getattr(compiled, "isinsert", False):
+            self._last_inserted_ids = [proxy().lastrowid]
+
+class MySQLDialect(ansisql.ANSIDialect):
+    def __init__(self, module = None, **kwargs):
         if module is None:
             self.module = mysql
-        self.opts = self._translate_connect_args(('host', 'db', 'user', 'passwd'), opts)
-        ansisql.ANSISQLEngine.__init__(self, **params)
+        ansisql.ANSIDialect.__init__(self, **kwargs)
 
-    def connect_args(self):
-        return [[], self.opts]
+    def create_connect_args(self, opts):
+        opts = self._translate_connect_args(('host', 'db', 'user', 'passwd'), opts)
+        return [[], opts]
+
+    def create_execution_context(self):
+        return MySQLExecutionContext(self)
 
     def type_descriptor(self, typeobj):
         return sqltypes.adapt_type(typeobj, colspecs)
-
-    def last_inserted_ids(self):
-        return self.context.last_inserted_ids
 
     def supports_sane_rowcount(self):
         return False
 
     def compiler(self, statement, bindparams, **kwargs):
-        return MySQLCompiler(statement, bindparams, engine=self, **kwargs)
+        return MySQLCompiler(self, statement, bindparams, **kwargs)
 
-    def schemagenerator(self, **params):
-        return MySQLSchemaGenerator(self, **params)
+    def schemagenerator(self, *args, **kwargs):
+        return MySQLSchemaGenerator(*args, **kwargs)
 
-    def schemadropper(self, **params):
-        return MySQLSchemaDropper(self, **params)
+    def schemadropper(self, *args, **kwargs):
+        return MySQLSchemaDropper(*args, **kwargs)
 
     def get_default_schema_name(self):
         if not hasattr(self, '_default_schema_name'):
             self._default_schema_name = text("select database()", self).scalar()
         return self._default_schema_name
-        
-    def last_inserted_ids(self):
-        return self.context.last_inserted_ids
-            
-    def post_exec(self, proxy, compiled, parameters, **kwargs):
-        if getattr(compiled, "isinsert", False):
-            self.context.last_inserted_ids = [proxy().lastrowid]
     
-    # executemany just runs normally, since we arent using rowcount at all with mysql
-#    def _executemany(self, c, statement, parameters):
- #       """we need accurate rowcounts for updates, inserts and deletes.  mysql is *also* is not nice enough
- #       to produce this correctly for an executemany, so we do our own executemany here."""
-  #      rowcount = 0
-  #      for param in parameters:
-  #          c.execute(statement, param)
-  #          rowcount += c.rowcount
-  #      self.context.rowcount = rowcount
-
     def dbapi(self):
         return self.module
 
-    def reflecttable(self, table):
+    def has_table(self, connection, table_name):
+        cursor = connection.execute("show table status like '" + table_name + "'")
+        return bool( not not cursor.rowcount )
+
+    def reflecttable(self, connection, table):
         # to use information_schema:
         #ischema.reflecttable(self, table, ischema_names, use_mysql=True)
         
-        tabletype, foreignkeyD = self.moretableinfo(table=table)
+        tabletype, foreignkeyD = self.moretableinfo(connection, table=table)
         table.kwargs['mysql_engine'] = tabletype
         
-        c = self.execute("describe " + table.name, {})
+        c = connection.execute("describe " + table.name, {})
         while True:
             row = c.fetchone()
             if row is None:
@@ -220,7 +213,7 @@ class MySQLEngine(ansisql.ANSISQLEngine):
                                                    default=default
                                                    )))
     
-    def moretableinfo(self, table):
+    def moretableinfo(self, connection, table):
         """Return (tabletype, {colname:foreignkey,...})
         execute(SHOW CREATE TABLE child) =>
         CREATE TABLE `child` (
@@ -229,7 +222,7 @@ class MySQLEngine(ansisql.ANSISQLEngine):
         KEY `par_ind` (`parent_id`),
         CONSTRAINT `child_ibfk_1` FOREIGN KEY (`parent_id`) REFERENCES `parent` (`id`) ON DELETE CASCADE\n) TYPE=InnoDB
         """
-        c = self.execute("SHOW CREATE TABLE " + table.name, {})
+        c = connection.execute("SHOW CREATE TABLE " + table.name, {})
         desc = c.fetchone()[1].strip()
         tabletype = ''
         lastparen = re.search(r'\)[^\)]*\Z', desc)
@@ -290,3 +283,5 @@ class MySQLSchemaDropper(ansisql.ANSISchemaDropper):
     def visit_index(self, index):
         self.append("\nDROP INDEX " + index.name + " ON " + index.table.name)
         self.execute()
+
+dialect = MySQLDialect
