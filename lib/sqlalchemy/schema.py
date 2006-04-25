@@ -426,7 +426,7 @@ class ForeignKey(SchemaItem):
                     schema = self.parent.original.table.schema
                 else:
                     (schema,tname,colname) = m.group(1,2,3)
-                table = Table(tname, self.parent.metadata, mustexist=True, schema=schema)
+                table = Table(tname, self.parent.original.metadata, mustexist=True, schema=schema)
                 if colname is None:
                     key = self.parent
                     self._column = table.c[self.parent.key]

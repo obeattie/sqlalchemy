@@ -108,14 +108,14 @@ class UnitOfWork(object):
     def _put(self, key, obj):
         self.identity_map[key] = obj
 
-    def refresh(self, obj):
+    def refresh(self, sess, obj):
         self.rollback_object(obj)
-        object_mapper(obj)._get(obj._instance_key, reload=True)
+        sess.query(obj.__class__)._get(obj._instance_key, reload=True)
 
-    def expire(self, obj):
+    def expire(self, sess, obj):
         self.rollback_object(obj)
         def exp():
-            object_mapper(obj)._get(obj._instance_key, reload=True)
+            sess.query(obj.__class__)._get(obj._instance_key, reload=True)
         global_attributes.trigger_history(obj, exp)
     
     def is_expired(self, obj, unexpire=False):

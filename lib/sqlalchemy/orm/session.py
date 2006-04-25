@@ -105,7 +105,7 @@ class Session(object):
         to the execution's results.  If this method allocates a new Connection for the operation, then the ResultProxy's close() 
         method will release the resources of the underlying Connection, otherwise its a no-op.
         """
-        return self.connection(mapper).execute(clause, params, **kwargs)
+        return self.connection(mapper, close_with_result=True).execute(clause, params, **kwargs)
     def close(self):
         """closes this Session.  
         
@@ -223,12 +223,12 @@ class Session(object):
     def refresh(self, object):
         """reloads the attributes for the given object from the database, clears
         any changes made."""
-        self.uow.refresh(object)
+        self.uow.refresh(self, object)
 
     def expire(self, object):
         """invalidates the data in the given object and sets them to refresh themselves
         the next time they are requested."""
-        self.uow.expire(object)
+        self.uow.expire(self, object)
 
     def expunge(self, object):
         """removes the given object from this Session.  this will free all internal references to the object."""
@@ -271,6 +271,7 @@ class Session(object):
             self.uow.register_deleted(c)
 
     def merge(self, object, entity_name=None):
+        instance = None
         for obj in object_mapper(object, entity_name=entity_name).cascade_iterator('merge', object):
             key = getattr(obj, '_instance_key', None)
             if key is None:
@@ -282,12 +283,14 @@ class Session(object):
                 key = mapper.identity_key(*ident)
             u = self.uow
             if u.identity_map.has_key(key):
-                return u.identity_map[key]
+                # TODO: copy the state of the given object into this one.  tricky !
+                inst = u.identity_map[key]
             else:
-                obj._instance_key = key
-                u.identity_map[key] = obj
-                self._bind_to(instance)
-                return instance
+                inst = self.get(*key[1])
+            if obj is object:
+                instance = inst
+                
+        return instance
                     
     def _save_impl(self, object, **kwargs):
         if hasattr(object, '_instance_key'):

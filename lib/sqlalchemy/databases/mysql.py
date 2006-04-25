@@ -124,9 +124,9 @@ def descriptor():
     return {'name':'mysql',
     'description':'MySQL',
     'arguments':[
-        ('user',"Database Username",None),
-        ('passwd',"Database Password",None),
-        ('db',"Database Name",None),
+        ('username',"Database Username",None),
+        ('password',"Database Password",None),
+        ('database',"Database Name",None),
         ('host',"Hostname", None),
     ]}
 
@@ -142,8 +142,8 @@ class MySQLDialect(ansisql.ANSIDialect):
             self.module = mysql
         ansisql.ANSIDialect.__init__(self, **kwargs)
 
-    def create_connect_args(self, opts):
-        opts = self._translate_connect_args(('host', 'db', 'user', 'passwd'), opts)
+    def create_connect_args(self, url):
+        opts = url.translate_connect_args(['host', 'db', 'user', 'passwd', 'port'])
         return [[], opts]
 
     def create_execution_context(self):

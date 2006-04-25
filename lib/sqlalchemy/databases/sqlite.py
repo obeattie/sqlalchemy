@@ -116,7 +116,7 @@ def descriptor():
     return {'name':'sqlite',
     'description':'SQLite',
     'arguments':[
-        ('filename', "Database Filename",None)
+        ('host', "Database Filename",None)
     ]}
 
 
@@ -130,8 +130,8 @@ class SQLiteDialect(ansisql.ANSIDialect):
         return SQLiteCompiler(self, statement, bindparams, **kwargs)
     def schemagenerator(self, *args, **kwargs):
         return SQLiteSchemaGenerator(*args, **kwargs)
-    def create_connect_args(self, opts):
-        filename = opts.pop('filename', ':memory:')
+    def create_connect_args(self, url):
+        filename = url.host or ':memory:'
         return ([filename], {})
     def type_descriptor(self, typeobj):
         return sqltypes.adapt_type(typeobj, colspecs)
@@ -153,6 +153,10 @@ class SQLiteDialect(ansisql.ANSIDialect):
         
     def push_session(self):
         raise InvalidRequestError("SQLite doesn't support nested sessions")
+
+    def has_table(self, connection, table_name):
+        cursor = connection.execute("PRAGMA table_info(" + table_name + ")", {})
+        return bool(cursor.rowcount>0)
 
     def reflecttable(self, connection, table):
         c = connection.execute("PRAGMA table_info(" + table.name + ")", {})

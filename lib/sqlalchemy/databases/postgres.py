@@ -174,7 +174,7 @@ def descriptor():
     return {'name':'postgres',
     'description':'PostGres',
     'arguments':[
-        ('user',"Database Username",None),
+        ('username',"Database Username",None),
         ('password',"Database Password",None),
         ('database',"Database Name",None),
         ('host',"Hostname", None),
@@ -216,8 +216,8 @@ class PGDialect(ansisql.ANSIDialect):
             self.version = 1
         ansisql.ANSIDialect.__init__(self, **params)
 
-    def create_connect_args(self, opts):
-        opts = self._translate_connect_args(('host', 'database', 'user', 'password'), opts)
+    def create_connect_args(self, url):
+        opts = url.translate_connect_args(['host', 'database', 'user', 'password', 'port'])
         if opts.has_key('port'):
             if self.version == 2:
                 opts['port'] = int(opts['port'])
@@ -275,9 +275,6 @@ class PGDialect(ansisql.ANSIDialect):
         return self.module
 
     def has_table(self, connection, table_name):
-        """
-        return boolean whether or not the engine/schema contains this table
-        """
         cursor = connection.execute("""select relname from pg_class where relname = %(name)s""", {'name':table_name})
         return bool( not not cursor.rowcount )
 

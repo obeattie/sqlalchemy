@@ -14,8 +14,8 @@ import base
 
 
 class PoolConnectionProvider(base.ConnectionProvider):
-    def __init__(self, dialect, connectopts, poolclass=None, pool=None, **kwargs):
-        (cargs, cparams) = dialect.create_connect_args(connectopts)
+    def __init__(self, dialect, url, poolclass=None, pool=None, **kwargs):
+        (cargs, cparams) = dialect.create_connect_args(url)
         if pool is None:
             kwargs.setdefault('echo', False)
             kwargs.setdefault('use_threadlocal',True)
@@ -80,25 +80,6 @@ class DefaultDialect(base.Dialect):
         cursor.execute(statement, parameters)
     def defaultrunner(self, engine, proxy):
         return base.DefaultRunner(engine, proxy)
-    def _translate_connect_args(self, names, args):
-        """translates a dictionary of connection arguments to those used by a specific dbapi.
-        the names parameter is a tuple of argument names in the form ('host', 'database', 'user', 'password')
-        where the given strings match the corresponding argument names for the dbapi.  Will return a dictionary
-        with the dbapi-specific parameters, the generic ones removed, and any additional parameters still remaining,
-        from the dictionary represented by args.  Will return a blank dictionary if args is null."""
-        if args is None:
-            return {}
-        a = {} #args.copy()
-        standard_names = [('host','hostname'), ('database', 'dbname'), ('user', 'username'), ('password', 'passwd', 'pw')]
-        for n in names:
-            sname = standard_names.pop(0)
-            if n is None:
-                continue
-            for sn in sname:
-                if args.has_key(sn):
-                    a[n] = args[sn]
-                    #del a[sn]
-        return a
         
     def _set_paramstyle(self, style):
         self._paramstyle = style

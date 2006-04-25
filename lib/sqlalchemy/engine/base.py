@@ -166,7 +166,7 @@ class Connection(object):
     def connect(self):
         """connect() is implemented to return self so that an incoming Engine or Connection object can be treated similarly."""
         return self
-    def contextual_connect(self):
+    def contextual_connect(self, **kwargs):
         """contextual_connect() is implemented to return self so that an incoming Engine or Connection object can be treated similarly."""
         return self
     def begin(self):
@@ -182,8 +182,9 @@ class Connection(object):
         if self.transaction is None and re.match(r'UPDATE|INSERT|CREATE|DELETE|DROP', statement.lstrip().upper()):
             self.engine.dialect.do_commit(self.connection)
     def close(self):
-        self.connection.close()
-        self.connection = None
+        if self.connection is not None:
+            self.connection.close()
+            self.connection = None
     def scalar(self, object, parameters, **kwargs):
         row = self.execute(object, parameters, **kwargs).fetchone()
         if row is not None:
@@ -363,7 +364,7 @@ class ComposedSQLEngine(sql.Engine):
 
     def _run_visitor(self, visitorcallable, element, connection=None, **kwargs):
         if connection is None:
-            conn = self.contextual_connect()
+            conn = self.contextual_connect(close_with_result=False)
         else:
             conn = connection
         try:
@@ -374,7 +375,7 @@ class ComposedSQLEngine(sql.Engine):
     
     def run_callable(self, callable_, connection=None):
         if connection is None:
-            conn = self.contextual_connect()
+            conn = self.contextual_connect(close_with_result=False)
         else:
             conn = connection
         try:
@@ -384,11 +385,11 @@ class ComposedSQLEngine(sql.Engine):
                 conn.close()
         
     def execute(self, *args, **kwargs):
-        connection = self.contextual_connect()
+        connection = self.contextual_connect(close_with_result=True)
         return connection.execute(*args, **kwargs)
         
     def execute_compiled(self, compiled, parameters, **kwargs):
-        connection = self.contextual_connect()
+        connection = self.contextual_connect(close_with_result=True)
         return connection.execute_compiled(compiled, parameters, **kwargs)
         
     def compiler(self, statement, parameters, **kwargs):
@@ -398,15 +399,15 @@ class ComposedSQLEngine(sql.Engine):
         """returns a newly allocated Connection object."""
         return Connection(self, **kwargs)
     
-    def contextual_connect(self, **kwargs):
+    def contextual_connect(self, close_with_result=False, **kwargs):
         """returns a Connection object which may be newly allocated, or may be part of some 
         ongoing context.  This Connection is meant to be used by the various "auto-connecting" operations."""
-        return Connection(self, close_with_result=True, **kwargs)
+        return Connection(self, close_with_result=close_with_result, **kwargs)
             
     def reflecttable(self, table, connection=None):
         """given a Table object, reflects its columns and properties from the database."""
         if connection is None:
-            conn = self.contextual_connect()
+            conn = self.contextual_connect(close_with_result=False)
         else:
             conn = connection
         try:

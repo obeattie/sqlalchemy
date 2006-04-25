@@ -4,10 +4,8 @@ new strategies can be added via constructing a new EngineStrategy object which w
 list of available strategies here, or replace one of the existing name.  
 this can be accomplished via a mod; see the sqlalchemy/mods package for details."""
 
-import re
-import cgi
 
-from sqlalchemy.engine import base, default, threadlocal
+from sqlalchemy.engine import base, default, threadlocal, url
 
 strategies = {}
 
@@ -27,8 +25,9 @@ class EngineStrategy(object):
 class PlainEngineStrategy(EngineStrategy):
     def __init__(self):
         EngineStrategy.__init__(self, 'plain')
-    def create(self, name, opts=None, **kwargs):
-        (module, opts) = _parse_db_args(name, opts)
+    def create(self, name_or_url, **kwargs):
+        u = url.make_url(name_or_url)
+        module = u.get_module()
 
         dialect = module.dialect(**kwargs)
 
@@ -38,7 +37,7 @@ class PlainEngineStrategy(EngineStrategy):
         if poolclass is not None:
             poolargs.setdefault('poolclass', poolclass)
         poolargs['use_threadlocal'] = False
-        provider = default.PoolConnectionProvider(dialect, opts, **poolargs)
+        provider = default.PoolConnectionProvider(dialect, u, **poolargs)
 
         return base.ComposedSQLEngine(provider, dialect, **kwargs)
 PlainEngineStrategy()
@@ -46,8 +45,9 @@ PlainEngineStrategy()
 class ThreadLocalEngineStrategy(EngineStrategy):
     def __init__(self):
         EngineStrategy.__init__(self, 'threadlocal')
-    def create(self, name, opts=None, **kwargs):
-        (module, opts) = _parse_db_args(name, opts)
+    def create(self, name_or_url, **kwargs):
+        u = url.make_url(name_or_url)
+        module = u.get_module()
 
         dialect = module.dialect(**kwargs)
 
@@ -57,52 +57,10 @@ class ThreadLocalEngineStrategy(EngineStrategy):
         if poolclass is not None:
             poolargs.setdefault('poolclass', poolclass)
         poolargs['use_threadlocal'] = True
-        provider = threadlocal.TLocalConnectionProvider(dialect, opts, **poolargs)
+        provider = threadlocal.TLocalConnectionProvider(dialect, u, **poolargs)
 
         return threadlocal.TLEngine(provider, dialect, **kwargs)
 ThreadLocalEngineStrategy()
 
 
-def _parse_db_args(name, opts=None):
-    ret = _parse_rfc1738_args(name, opts=opts)
-    #if ret is None:
-    #    ret = _parse_keyvalue_args(name, opts=opts)
-    if ret is not None:
-        (name, opts) = ret
-
-    module = getattr(__import__('sqlalchemy.databases.%s' % name).databases, name)
-    return (module, opts)
-        
-def _parse_rfc1738_args(name, opts=None):
-    pattern = re.compile(r'''
-            (\w+)://
-            (?:
-                ([^:]*)
-                (?::(.*))?
-            @)?
-            (?:
-                ([^/:]*)
-                (?::([^/]*))?
-            )
-            (?:/(.*))?
-            '''
-            , re.X)
-    
-    m = pattern.match(name)
-    if m is not None and (m.group(4) or m.group(6)):
-        (name, username, password, host, port, database) = m.group(1, 2, 3, 4, 5, 6)
-        opts = {'username':username,'password':password,'host':host,'port':port,'database':database,'filename':(database or host)}
-        return (name, opts)
-    else:
-        return None
-
-def _parse_keyvalue_args(name, opts=None):
-    m = re.match( r'(\w+)://(.*)', name)
-    if m is not None:
-        (name, args) = m.group(1, 2)
-        opts = dict( cgi.parse_qsl( args ) )
-        return (name, opts)
-    else:
-        return None
-    
     

@@ -26,7 +26,8 @@ def engine_descriptors():
     query the user for database and connection information.
     """
     result = []
-    for module in sqlalchemy.databases.__all__:
+    #for module in sqlalchemy.databases.__all__:
+    for module in ['sqlite', 'postgres', 'mysql']:
         module = getattr(__import__('sqlalchemy.databases.%s' % module).databases, module)
         result.append(module.descriptor())
     return result
