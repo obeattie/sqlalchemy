@@ -32,6 +32,9 @@ managers = Table('managers', db,
   
 # create our classes.  The Engineer and Manager classes extend from Person.
 class Person(object):
+    def __init__(self, **kwargs):
+        for key, value in kwargs.iteritems():
+            setattr(self, key, value)
     def __repr__(self):
         return "Ordinary person %s" % self.name
 class Engineer(Person):
@@ -41,6 +44,9 @@ class Manager(Person):
     def __repr__(self):
         return "Manager %s, description %s" % (self.name, self.description)
 class Company(object):
+    def __init__(self, **kwargs):
+        for key, value in kwargs.iteritems():
+            setattr(self, key, value)
     def __repr__(self):
         return "Company %s" % self.name
 
@@ -48,9 +54,9 @@ class Company(object):
 # creating for these classes, they automatically become the "primary mappers", which
 # define the dependency relationships between the classes, so we do a straight
 # inheritance setup, i.e. no modifications to how objects are loaded or anything like that.
-assign_mapper(Person, people)
-assign_mapper(Engineer, engineers, inherits=Person.mapper)
-assign_mapper(Manager, managers, inherits=Person.mapper)
+mapper(Person, people)
+mapper(Engineer, engineers, inherits=class_mapper(Person))
+mapper(Manager, managers, inherits=class_mapper(Person))
 
 # next, we define a query that is going to load Managers and Engineers in one shot.
 # we will use a UNION ALL with an extra hardcoded column to indicate the type of object.
@@ -81,7 +87,7 @@ print "Person selectable:", str(person_join.select(use_labels=True)), "\n"
 
 # MapperExtension object.
 class PersonLoader(MapperExtension):
-    def create_instance(self, mapper, row, imap, class_):
+    def create_instance(self, session, mapper, row, imap, class_):
         if row['pjoin_type'] =='engineer':
             e = Engineer()
             e.special_description = row['pjoin_description']
@@ -94,7 +100,10 @@ ext = PersonLoader()
 
 # set up the polymorphic mapper, which maps the person_join we set up to
 # the Person class, using an instance of PersonLoader.  
-people_mapper = mapper(Person, person_join, extension=ext)
+people_mapper = mapper(Person, person_join, extension=ext, non_primary=True)
+
+# TODO: polymorphic options, i.e.:
+# people_mapper = mapper(Person, person_join, polymorphic_on=person_join.c.type, polymorphic_map={'engineer':Engineer, 'manager':Manager})
 
 # create a mapper for Company.  the 'employees' relationship points to 
 # our new people_mapper. 
@@ -107,36 +116,38 @@ people_mapper = mapper(Person, person_join, extension=ext)
 # themselves as dependent on the Person mapper's save operations.
 # (translation: it'll work)
 # TODO: get the eager loading to work (the compound select alias doesnt like being aliased itself)
-assign_mapper(Company, companies, properties={
-    'employees': relation(people_mapper, lazy=False, private=True)
+mapper(Company, companies, properties={
+    'employees': relation(people_mapper, lazy=False, cascade="save-update,delete,delete-orphan", backref=backref("company"))
 })
 
+session = create_session()
 c = Company(name='company1')
 c.employees.append(Manager(name='pointy haired boss', description='manager1'))
 c.employees.append(Engineer(name='dilbert', special_description='engineer1'))
 c.employees.append(Engineer(name='wally', special_description='engineer2'))
 c.employees.append(Manager(name='jsmith', description='manager2'))
-objectstore.commit()
+session.save(c)
+session.flush()
 
-objectstore.clear()
+session.clear()
 
-c = Company.get(1)
+c = session.query(Company).get(1)
 for e in c.employees:
     print e, e._instance_key
 
 print "\n"
 
-dilbert = Engineer.mapper.get_by(name='dilbert')
+dilbert = session.query(Engineer).get_by(name='dilbert')
 dilbert.special_description = 'hes dibert!'
-objectstore.commit()
+session.flush()
 
-objectstore.clear()
-c = Company.get(1)
+session.clear()
+c = session.query(Company).get(1)
 for e in c.employees:
-    print e, e._instance_key
+    print e, e._instance_key, e.company
 
-objectstore.delete(c)
-objectstore.commit()
+session.delete(c)
+session.flush()
 
 
 managers.drop()

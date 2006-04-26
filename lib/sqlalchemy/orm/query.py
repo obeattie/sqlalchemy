@@ -40,7 +40,7 @@ class Query(object):
         if not found.  The *ident argument is a 
         list of primary key columns in the order of the table def's primary key columns."""
         key = self.mapper.identity_key(*ident)
-        #print "key: " + repr(key) + " ident: " + repr(ident)
+        print "key: " + repr(key) + " ident: " + repr(ident)
         return self._get(key, ident, **kwargs)
 
     def get_by(self, *args, **params):
@@ -203,6 +203,7 @@ class Query(object):
             except KeyError:
                 pass
 
+        print "_GET!", key, ident
         if ident is None:
             ident = key[1]
         i = 0

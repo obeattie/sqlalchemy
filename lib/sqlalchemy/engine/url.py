@@ -9,6 +9,8 @@ class URL(object):
         self.host = host
         self.port = port
         self.database= database
+    def __str__(self):
+        return "%s:%s@%s:%s/%s" % (self.username,self.password, self.host,self.port,self.database)
     def get_module(self):
         return getattr(__import__('sqlalchemy.databases.%s' % self.drivername).databases, self.drivername)
     def translate_connect_args(self, names):
@@ -43,13 +45,13 @@ def _parse_rfc1738_args(name):
             (?:
                 ([^/:]*)
                 (?::([^/]*))?
-            )
+            )?
             (?:/(.*))?
             '''
             , re.X)
     
     m = pattern.match(name)
-    if m is not None and (m.group(4) or m.group(6)):
+    if m is not None:
         (name, username, password, host, port, database) = m.group(1, 2, 3, 4, 5, 6)
         opts = {'username':username,'password':password,'host':host,'port':port,'database':database}
         return URL(name, **opts)

@@ -96,7 +96,7 @@ class PersonLoader(MapperExtension):
         else:
             return sqlalchemy.mapping.EXT_PASS
 
-people_mapper = mapper(Person, person_join, extension=PersonLoader())
+people_mapper = mapper(Person, person_join, polymorphic_on=person_join.c.type, polymorphic_map={'engineer':Engineer, 'manager':Manager})
 
 assign_mapper(Company, companies, properties={
     'employees': relation(people_mapper, lazy=False, private=True)

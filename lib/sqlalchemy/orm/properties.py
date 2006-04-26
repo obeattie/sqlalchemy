@@ -375,13 +375,16 @@ class LazyLoader(PropertyLoader):
         def lazyload():
             params = {}
             allparams = True
-            session = sessionlib.get_session(instance)
-            #print "setting up loader, lazywhere", str(self.lazywhere)
-            for col, bind in self.lazybinds.iteritems():
-                params[bind.key] = self.parent._getattrbycolumn(instance, col)
-                if params[bind.key] is None:
-                    allparams = False
-                    break
+            session = sessionlib.get_session(instance, raiseerror=False)
+            #print "setting up loader, lazywhere", str(self.lazywhere), "binds", self.lazybinds
+            if session is not None:
+                for col, bind in self.lazybinds.iteritems():
+                    params[bind.key] = self.parent._getattrbycolumn(instance, col)
+                    if params[bind.key] is None:
+                        allparams = False
+                        break
+            else:
+                allparams = False
             if allparams:
                 # if we have a simple straight-primary key load, use mapper.get()
                 # to possibly save a DB round trip
@@ -656,25 +659,35 @@ class BackRef(object):
         """called by the owning PropertyLoader to set up a backreference on the
         PropertyLoader's mapper."""
         # try to set a LazyLoader on our mapper referencing the parent mapper
+        mapper = prop.mapper.primary_mapper()
         if not prop.mapper.props.has_key(self.key):
-            if prop.secondaryjoin is not None:
-                # if setting up a backref to a many-to-many, reverse the order
-                # of the "primary" and "secondary" joins
-                pj = prop.secondaryjoin
-                sj = prop.primaryjoin
-            else:
-                pj = prop.primaryjoin
-                sj = None
+            pj = self.kwargs.pop('primaryjoin', None)
+            sj = self.kwargs.pop('secondaryjoin', None)
+            # TODO: we are going to have the newly backref'd property create its 
+            # primary/secondary join through normal means, and only override if they are
+            # specified to the constructor.  think about if this is really going to work
+            # all the way.
+            #if pj is None:
+            #    if prop.secondaryjoin is not None:
+            #        # if setting up a backref to a many-to-many, reverse the order
+            #        # of the "primary" and "secondary" joins
+            #        pj = prop.secondaryjoin
+            #        sj = prop.primaryjoin
+            #    else:
+            #        pj = prop.primaryjoin
+            #        sj = None
             lazy = self.kwargs.pop('lazy', True)
             if lazy:
                 cls = LazyLoader
             else:
                 cls = EagerLoader
-            relation = cls(prop.parent, prop.secondary, pj, sj, backref=prop.key, is_backref=True, **self.kwargs)
-            prop.mapper.add_property(self.key, relation);
+            # the backref property is set on the primary mapper
+            parent = prop.parent.primary_mapper()
+            relation = cls(parent, prop.secondary, pj, sj, backref=prop.key, is_backref=True, **self.kwargs)
+            mapper.add_property(self.key, relation);
         else:
             # else set one of us as the "backreference"
-            if not prop.mapper.props[self.key].is_backref:
+            if not mapper.props[self.key].is_backref:
                 prop.is_backref=True
                 prop._dependency_processor.is_backref=True
     def get_extension(self):

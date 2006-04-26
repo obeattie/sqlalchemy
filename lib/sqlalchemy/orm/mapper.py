@@ -76,6 +76,7 @@ class Mapper(object):
         self._options = {}
         self.always_refresh = always_refresh
         self.version_id_col = version_id_col
+        self._inheriting_mappers = sets.Set()
         
         if not issubclass(class_, object):
             raise ArgumentError("Class '%s' is not a new-style class" % class_.__name__)
@@ -199,6 +200,7 @@ class Mapper(object):
             raise ArgumentError("Class '%s' already has a primary mapper defined.  Use is_primary=True to assign a new primary mapper to the class, or use non_primary=True to create a non primary Mapper" % self.class_)
                     
         if inherits is not None:
+            inherits._inheriting_mappers.add(self)
             for key, prop in inherits.props.iteritems():
                 if not self.props.has_key(key):
                     self.props[key] = prop.copy()
@@ -319,6 +321,11 @@ class Mapper(object):
 
         if init:
             prop.init(key, self)
+
+        for mapper in self._inheriting_mappers:
+            p = prop.copy()
+            p.parent = mapper
+            mapper.add_property(key, p, init=False)
         
     def __str__(self):
         return "Mapper|" + self.class_.__name__ + "|" + (self.entity_name is not None and "/%s" % self.entity_name or "") + self.primarytable.name
@@ -332,7 +339,7 @@ class Mapper(object):
         return mapper_registry[self.class_key]
 
     def is_assigned(self, instance):
-        """returns True if this mapper is the primary mapper for the given instance.  this is dependent
+        """returns True if this mapper handles the given instance.  this is dependent
         not only on class assignment but the optional "entity_name" parameter as well."""
         return instance.__class__ is self.class_ and getattr(instance, '_entity_name', None) == self.entity_name
 
@@ -485,7 +492,10 @@ class Mapper(object):
 
     def _setattrbycolumn(self, obj, column, value):
         self.columntoproperty[column.original][0].setattr(obj, value)
-        
+    
+    def primary_mapper(self):
+        return mapper_registry[self.class_key]
+            
     def save_obj(self, objects, uow, postupdate=False):
         """called by a UnitOfWork object to save objects, which involves either an INSERT or
         an UPDATE statement for each table used by this mapper, for each element of the
