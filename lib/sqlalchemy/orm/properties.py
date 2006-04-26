@@ -302,7 +302,7 @@ class PropertyLoader(MapperProperty):
             self.foreigntable = dependent[0]
 
             
-    def get_criterion(self, key, value):
+    def get_criterion(self, query, key, value):
         """given a key/value pair, determines if this PropertyLoader's mapper contains a key of the
         given name in its property list, or if this PropertyLoader's association mapper, if any, 
         contains a key of the given name in its property list, and returns a WHERE clause against
@@ -326,7 +326,7 @@ class PropertyLoader(MapperProperty):
                 c = (self.mapper.table.c[key].columns[0]==value) & self.primaryjoin
             return c.copy_container()
         elif self.association is not None:
-            c = self.mapper._get_criterion(key, value) & self.primaryjoin
+            c = query._get_criterion(self.mapper, key, value) & self.primaryjoin
             return c.copy_container()
         return None
 

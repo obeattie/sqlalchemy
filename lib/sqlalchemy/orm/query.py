@@ -187,7 +187,7 @@ class Query(object):
         for key, value in params.iteritems():
             if value is False:
                 continue
-            c = self._get_criterion(key, value)
+            c = self._get_criterion(self.mapper, key, value)
             if c is None:
                 raise InvalidRequestError("Cant find criterion for property '"+ key + "'")
             if clause is None:
@@ -268,17 +268,17 @@ class Query(object):
             value.setup(key, statement, **kwargs) 
         return statement
 
-    def _get_criterion(self, key, value):
+    def _get_criterion(self, mapper, key, value):
         """used by select_by to match a key/value pair against
         local properties, column names, or a matching property in this mapper's
         list of relations."""
-        if self.props.has_key(key):
-            return self.props[key].columns[0] == value
-        elif self.table.c.has_key(key):
-            return self.table.c[key] == value
+        if mapper.props.has_key(key):
+            return mapper.props[key].columns[0] == value
+        elif mapper.table.c.has_key(key):
+            return mapper.table.c[key] == value
         else:
-            for prop in self.props.values():
-                c = prop.get_criterion(key, value)
+            for prop in mapper.props.values():
+                c = prop.get_criterion(self, key, value)
                 if c is not None:
                     return c
             else:

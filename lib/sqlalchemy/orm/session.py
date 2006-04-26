@@ -153,10 +153,10 @@ class Session(object):
             return self.bind_to
         else:
             return mapper.table.engine
-    def query(self, mapper_or_class):
+    def query(self, mapper_or_class, entity_name=None):
         """given a mapper or Class, returns a new Query object corresponding to this Session and the mapper, or the classes' primary mapper."""
         if isinstance(mapper_or_class, type):
-            return query.Query(class_mapper(mapper_or_class), self)
+            return query.Query(class_mapper(mapper_or_class, entity_name=entity_name), self)
         else:
             return query.Query(mapper_or_class, self)
     def _sql(self):
@@ -212,13 +212,15 @@ class Session(object):
         is a list or tuple of objects specifically to be flushed."""
         self.uow.flush(self, objects)
 
-    def get(self, class_, *ident):
+    def get(self, class_, *ident, **kwargs):
         """given a class and a primary key identifier, loads the corresponding object."""
-        return self.query(class_).get(*ident)
+        entity_name = kwargs.get('entity_name', None)
+        return self.query(class_, entity_name=entity_name).get(*ident)
         
-    def load(self, class_, *ident):
+    def load(self, class_, *ident, **kwargs):
         """given a class and a primary key identifier, loads the corresponding object."""
-        return self.query(class_).get(*ident)
+        entity_name = kwargs.get('entity_name', None)
+        return self.query(class_, entity_name=entity_name).get(*ident)
                 
     def refresh(self, object):
         """reloads the attributes for the given object from the database, clears
@@ -286,7 +288,7 @@ class Session(object):
                 # TODO: copy the state of the given object into this one.  tricky !
                 inst = u.identity_map[key]
             else:
-                inst = self.get(*key[1])
+                inst = self.get(object.__class__, *key[1])
             if obj is object:
                 instance = inst
                 

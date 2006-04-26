@@ -803,7 +803,7 @@ class MapperProperty(object):
         return []
     def copy(self):
         raise NotImplementedError()
-    def get_criterion(self, key, value):
+    def get_criterion(self, query, key, value):
         """Returns a WHERE clause suitable for this MapperProperty corresponding to the 
         given key/value pair, where the key is a column or object property name, and value
         is a value to be matched.  This is only picked up by PropertyLoaders.
