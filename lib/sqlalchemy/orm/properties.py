@@ -195,7 +195,7 @@ class PropertyLoader(MapperProperty):
             if isinstance(self.association, type):
                 self.association = sqlalchemy.orm.class_mapper(self.association)
         
-        self.target = self.mapper.table
+        self.target = self.mapper.select_table
         self.key = key
         self.parent = parent
 
@@ -204,12 +204,13 @@ class PropertyLoader(MapperProperty):
         # if join conditions were not specified, figure them out based on foreign keys
         if self.secondary is not None:
             if self.secondaryjoin is None:
-                self.secondaryjoin = sql.join(self.mapper.noninherited_table, self.secondary).onclause
+                self.secondaryjoin = sql.join(self.mapper.unjoined_table, self.secondary).onclause
             if self.primaryjoin is None:
-                self.primaryjoin = sql.join(parent.noninherited_table, self.secondary).onclause
+                self.primaryjoin = sql.join(parent.unjoined_table, self.secondary).onclause
         else:
             if self.primaryjoin is None:
-                self.primaryjoin = sql.join(parent.noninherited_table, self.target).onclause
+                self.primaryjoin = sql.join(parent.unjoined_table, self.target).onclause
+        print "PJ", self.primaryjoin
         # if the foreign key wasnt specified and theres no assocaition table, try to figure
         # out who is dependent on who. we dont need all the foreign keys represented in the join,
         # just one of them.  
@@ -255,18 +256,18 @@ class PropertyLoader(MapperProperty):
         
     def _get_direction(self):
         """determines our 'direction', i.e. do we represent one to many, many to many, etc."""
-        #print self.key, repr(self.parent.table.name), repr(self.parent.primarytable.name), repr(self.foreignkey.table.name), repr(self.target), repr(self.foreigntable.name)
+        #print self.key, repr(self.parent.mapped_table.name), repr(self.parent.primarytable.name), repr(self.foreignkey.table.name), repr(self.target), repr(self.foreigntable.name)
         
         if self.secondaryjoin is not None:
             return sync.MANYTOMANY
-        elif self.parent.table is self.target:
+        elif self.parent.mapped_table is self.target:
             if self.foreignkey.primary_key:
                 return sync.MANYTOONE
             else:
                 return sync.ONETOMANY
-        elif self.foreigntable == self.mapper.noninherited_table:
+        elif self.foreigntable == self.mapper.unjoined_table:
             return sync.ONETOMANY
-        elif self.foreigntable == self.parent.noninherited_table:
+        elif self.foreigntable == self.parent.unjoined_table:
             return sync.MANYTOONE
         else:
             raise ArgumentError("Cant determine relation direction")
@@ -316,11 +317,11 @@ class PropertyLoader(MapperProperty):
             else:
                 c = (self.mapper.props[key].columns[0]==value) & self.primaryjoin
             return c.copy_container()
-        elif self.mapper.table.c.has_key(key):
+        elif self.mapper.mapped_table.c.has_key(key):
             if self.secondaryjoin is not None:
-                c = (self.mapper.table.c[key].columns[0]==value) & self.primaryjoin & self.secondaryjoin
+                c = (self.mapper.mapped_table.c[key].columns[0]==value) & self.primaryjoin & self.secondaryjoin
             else:
-                c = (self.mapper.table.c[key].columns[0]==value) & self.primaryjoin
+                c = (self.mapper.mapped_table.c[key].columns[0]==value) & self.primaryjoin
             return c.copy_container()
         elif self.association is not None:
             c = query._get_criterion(self.mapper, key, value) & self.primaryjoin
@@ -343,8 +344,8 @@ class PropertyLoader(MapperProperty):
         
         The list of rules is used within commits by the _synchronize() method when dependent 
         objects are processed."""
-        parent_tables = util.HashSet(self.parent.tables + [self.parent.primarytable])
-        target_tables = util.HashSet(self.mapper.tables + [self.mapper.primarytable])
+        parent_tables = util.HashSet(self.parent.tables + [self.parent.mapped_table, self.parent.select_table])
+        target_tables = util.HashSet(self.mapper.tables + [self.mapper.mapped_table, self.mapper.select_table])
 
         self.syncrules = sync.ClauseSynchronizer(self.parent, self.mapper, self.direction)
         if self.direction == sync.MANYTOMANY:
@@ -356,7 +357,7 @@ class PropertyLoader(MapperProperty):
 
 class LazyLoader(PropertyLoader):
     def do_init_subclass(self, key, parent):
-        (self.lazywhere, self.lazybinds, self.lazyreverse) = create_lazy_clause(self.parent.noninherited_table, self.primaryjoin, self.secondaryjoin, self.foreignkey)
+        (self.lazywhere, self.lazybinds, self.lazyreverse) = create_lazy_clause(self.parent.unjoined_table, self.primaryjoin, self.secondaryjoin, self.foreignkey)
         # determine if our "lazywhere" clause is the same as the mapper's
         # get() clause.  then we can just use mapper.get()
         self.use_get = not self.uselist and self.mapper.query()._get_clause.compare(self.lazywhere)
@@ -387,7 +388,7 @@ class LazyLoader(PropertyLoader):
                 # to possibly save a DB round trip
                 if self.use_get:
                     ident = []
-                    for primary_key in self.mapper.pks_by_table[self.mapper.table]:
+                    for primary_key in self.mapper.pks_by_table[self.mapper.select_table]:
                         bind = self.lazyreverse[primary_key]
                         ident.append(params[bind.key])
                     return self.mapper.using(session).get(*ident)
@@ -500,7 +501,7 @@ class EagerLoader(PropertyLoader):
             if isinstance(prop, EagerLoader):
                 eagerprops.append(prop)
         if len(eagerprops):
-            recursion_stack[self.parent.table] = True
+            recursion_stack[self.parent.mapped_table] = True
             self.mapper = self.mapper.copy()
             try:
                 for prop in eagerprops:
@@ -510,16 +511,16 @@ class EagerLoader(PropertyLoader):
                         continue
                     p = prop.copy()
                     self.mapper.props[prop.key] = p
-#                    print "we are:", id(self), self.target.name, (self.secondary and self.secondary.name or "None"), self.parent.table.name
-#                    print "prop is",id(prop), prop.target.name, (prop.secondary and prop.secondary.name or "None"), prop.parent.table.name
+#                    print "we are:", id(self), self.target.name, (self.secondary and self.secondary.name or "None"), self.parent.mapped_table.name
+#                    print "prop is",id(prop), prop.target.name, (prop.secondary and prop.secondary.name or "None"), prop.parent.mapped_table.name
                     p.do_init_subclass(prop.key, prop.parent, recursion_stack)
                     p._create_eager_chain(in_chain=True, recursion_stack=recursion_stack)
                     p.eagerprimary = p.eagerprimary.copy_container()
-#                    aliasizer = Aliasizer(p.parent.table, aliases={p.parent.table:self.eagertarget})
+#                    aliasizer = Aliasizer(p.parent.mapped_table, aliases={p.parent.mapped_table:self.eagertarget})
                     p.eagerprimary.accept_visitor(self.aliasizer)
-                    #print "new eagertqarget", p.eagertarget.name, (p.secondary and p.secondary.name or "none"), p.parent.table.name
+                    #print "new eagertqarget", p.eagertarget.name, (p.secondary and p.secondary.name or "none"), p.parent.mapped_table.name
             finally:
-                del recursion_stack[self.parent.table]
+                del recursion_stack[self.parent.mapped_table]
 
         self._row_decorator = self._create_decorator_row()
         
@@ -546,7 +547,7 @@ class EagerLoader(PropertyLoader):
         if hasattr(statement, '_outerjoin'):
             towrap = statement._outerjoin
         else:
-            towrap = self.parent.table
+            towrap = self.parent.mapped_table
 
  #       print "hello, towrap", str(towrap)
         if self.secondaryjoin is not None:

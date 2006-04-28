@@ -31,7 +31,7 @@ class Query(object):
             return sessionlib.get_session()
         else:
             return self._session
-    table = property(lambda s:s.mapper.selectfrom)
+    table = property(lambda s:s.mapper.select_table)
     props = property(lambda s:s.mapper.props)
     session = property(_get_session)
     
@@ -274,8 +274,8 @@ class Query(object):
         list of relations."""
         if mapper.props.has_key(key):
             return mapper.props[key].columns[0] == value
-        elif mapper.table.c.has_key(key):
-            return mapper.table.c[key] == value
+        elif mapper.select_table.c.has_key(key):
+            return mapper.select_table.c[key] == value
         else:
             for prop in mapper.props.values():
                 c = prop.get_criterion(self, key, value)

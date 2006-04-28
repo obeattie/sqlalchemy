@@ -77,16 +77,12 @@ person_join = select(
             people.c.person_id==engineers.c.person_id)).alias('pjoin')
 
 
-mapper(Person, people)
-mapper(Engineer, engineers, inherits=Person)
-mapper(Manager, managers, inherits=Person)
-    
-people_mapper = mapper(Person, person_join, polymorphic_on=person_join.c.type, polymorphic_map={'engineer':Engineer, 'manager':Manager}, non_primary=True)
-
-
+person_mapper = mapper(Person, people, select_table=person_join, polymorphic_on=person_join.c.type)
+mapper(Engineer, engineers, inherits=person_mapper, polymorphic_ident='engineer')
+mapper(Manager, managers, inherits=person_mapper, polymorphic_ident='manager')
 
 mapper(Company, companies, properties={
-    'employees': relation(people_mapper, lazy=False, private=True, backref='company')
+    'employees': relation(Person, lazy=True, private=True, backref='company')
 })
 
 session = create_session()
@@ -106,10 +102,8 @@ for e in c.employees:
 
 print "\n"
 
-dilbert = session.query(people_mapper).get_by(name='dilbert')
-print "DILBERT1", dilbert
+dilbert = session.query(Person).get_by(name='dilbert')
 dilbert2 = session.query(Engineer).get_by(name='dilbert')
-print "DILBERT2", dilbert2
 assert dilbert is dilbert2
 
 dilbert.engineer_name = 'hes dibert!'

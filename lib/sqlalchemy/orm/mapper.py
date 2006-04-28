@@ -38,7 +38,7 @@ class Mapper(object):
     relation() function."""
     def __init__(self, 
                 class_, 
-                table, 
+                local_table, 
                 properties = None, 
                 primary_key = None, 
                 is_primary = False, 
@@ -54,7 +54,7 @@ class Mapper(object):
                 polymorphic_on=None,
                 polymorphic_map=None,
                 polymorphic_ident=None,
-                selectfrom=None):
+                select_table=None):
 
         ext = MapperExtension()
         
@@ -78,77 +78,89 @@ class Mapper(object):
         self.version_id_col = version_id_col
         self._inheriting_mappers = sets.Set()
         self.polymorphic_on = polymorphic_on
-        self.polymorphic_map = polymorphic_map or {}
-                    
+        if polymorphic_map is None:
+            self.polymorphic_map = {}
+        else:
+            self.polymorphic_map = polymorphic_map
+        
         if not issubclass(class_, object):
             raise ArgumentError("Class '%s' is not a new-style class" % class_.__name__)
-            
-        if isinstance(table, sql.Select):
-            # some db's, noteably postgres, dont want to select from a select
-            # without an alias.  also if we make our own alias internally, then
-            # the configured properties on the mapper are not matched against the alias 
-            # we make, theres workarounds but it starts to get really crazy (its crazy enough
-            # the SQL that gets generated) so just require an alias
-            raise ArgumentError("Mapping against a Select object requires that it has a name.  Use an alias to give it a name, i.e. s = select(...).alias('myselect')")
-        else:
-            self.table = table
 
-        if selectfrom is None:
-            self.selectfrom = self.table
-        else:
-            self.selectfrom = selectfrom
-            
+        # set up various Selectable units:
+        
+        # mapped_table - the Selectable that represents a join of the underlying Tables to be saved (or just the Table)
+        # local_table - the Selectable that was passed to this Mapper's constructor, if any
+        # select_table - the Selectable that will be used during queries.  if this is specified
+        # as a constructor keyword argument, it takes precendence over mapped_table, otherwise its mapped_table
+        # unjoined_table - our Selectable, minus any joins constructed against the inherits table.
+        # this is either select_table if it was given explicitly, or in the case of a mapper that inherits
+        # its local_table
+        # tables - a collection of underlying Table objects pulled from mapped_table
+        
+        for table in (local_table, select_table):
+            if table is not None and isinstance(local_table, sql.Select):
+                # some db's, noteably postgres, dont want to select from a select
+                # without an alias.  also if we make our own alias internally, then
+                # the configured properties on the mapper are not matched against the alias 
+                # we make, theres workarounds but it starts to get really crazy (its crazy enough
+                # the SQL that gets generated) so just require an alias
+                raise ArgumentError("Mapping against a Select object requires that it has a name.  Use an alias to give it a name, i.e. s = select(...).alias('myselect')")
+
+        self.local_table = local_table
+
         if inherits is not None:
             if isinstance(inherits, type):
                 inherits = class_mapper(inherits)
             if self.class_.__mro__[1] != inherits.class_:
                 raise ArgumentError("Class '%s' does not inherit from '%s'" % (self.class_.__name__, inherits.class_.__name__))
-            self.primarytable = inherits.primarytable
             # inherit_condition is optional.
-            if not table is inherits.noninherited_table:
+            if not local_table is inherits.local_table:
                 if inherit_condition is None:
                     # figure out inherit condition from our table to the immediate table
                     # of the inherited mapper, not its full table which could pull in other 
                     # stuff we dont want (allows test/inheritance.InheritTest4 to pass)
-                    inherit_condition = sql.join(inherits.noninherited_table, table).onclause
-                self.table = sql.join(inherits.table, table, inherit_condition)
+                    inherit_condition = sql.join(inherits.local_table, self.local_table).onclause
+                self.mapped_table = sql.join(inherits.mapped_table, self.local_table, inherit_condition)
                 #print "inherit condition", str(self.table.onclause)
 
                 # generate sync rules.  similarly to creating the on clause, specify a 
                 # stricter set of tables to create "sync rules" by,based on the immediate
                 # inherited table, rather than all inherited tables
                 self._synchronizer = sync.ClauseSynchronizer(self, self, sync.ONETOMANY)
-                self._synchronizer.compile(self.table.onclause, util.HashSet([inherits.noninherited_table]), sqlutil.TableFinder(table))
-                # the old rule
-                #self._synchronizer.compile(self.table.onclause, inherits.tables, TableFinder(table))
+                self._synchronizer.compile(self.mapped_table.onclause, util.HashSet([inherits.local_table]), sqlutil.TableFinder(self.local_table))
             else:
                 self._synchronizer = None
             self.inherits = inherits
-            self.noninherited_table = table
             if polymorphic_ident is not None:
                 inherits.add_polymorphic_mapping(polymorphic_ident, self)
         else:
-            self.primarytable = self.table
-            self.noninherited_table = self.table
             self._synchronizer = None
             self.inherits = None
+            self.mapped_table = self.local_table
             if polymorphic_ident is not None:
                 raise ArgumentError("'polymorphic_ident' argument can only be used with inherits=<somemapper>")
+
+        if select_table is not None:
+            self.select_table = select_table
+            self.unjoined_table = self.select_table
+        else:
+            self.select_table = self.mapped_table
+            self.unjoined_table = self.local_table
             
         # locate all tables contained within the "table" passed in, which
         # may be a join or other construct
-        self.tables = sqlutil.TableFinder(self.table)
+        self.tables = sqlutil.TableFinder(self.mapped_table)
 
         # determine primary key columns, either passed in, or get them from our set of tables
         self.pks_by_table = {}
         if primary_key is not None:
             for k in primary_key:
                 self.pks_by_table.setdefault(k.table, util.HashSet(ordered=True)).append(k)
-                if k.table != self.table:
+                if k.table != self.mapped_table:
                     # associate pk cols from subtables to the "main" table
-                    self.pks_by_table.setdefault(self.table, util.HashSet(ordered=True)).append(k)
+                    self.pks_by_table.setdefault(self.mapped_table, util.HashSet(ordered=True)).append(k)
         else:
-            for t in self.tables + [self.table]:
+            for t in self.tables + [self.mapped_table, self.select_table]:
                 try:
                     l = self.pks_by_table[t]
                 except KeyError:
@@ -177,7 +189,7 @@ class Mapper(object):
 
         # load properties from the main table object,
         # not overriding those set up in the 'properties' argument
-        for column in self.table.columns:
+        for column in self.select_table.columns:
             if not self.columns.has_key(column.key):
                 self.columns[column.key] = column
 
@@ -206,7 +218,7 @@ class Mapper(object):
             proplist = self.columntoproperty.setdefault(column.original, [])
             proplist.append(prop)
 
-        if not mapper_registry.has_key(self.class_key) or self.is_primary or (inherits is not None and inherits._is_primary_mapper()):
+        if not non_primary and (not mapper_registry.has_key(self.class_key) or self.is_primary or (inherits is not None and inherits._is_primary_mapper())):
             sessionlib.global_attributes.reset_class_managed(self.class_)
             self._init_class()
         elif not non_primary:
@@ -215,7 +227,7 @@ class Mapper(object):
         for key in self.polymorphic_map.keys():
             if isinstance(self.polymorphic_map[key], type):
                 self.polymorphic_map[key] = class_mapper(self.polymorphic_map[key])
-                    
+
         if inherits is not None:
             inherits._inheriting_mappers.add(self)
             for key, prop in inherits.props.iteritems():
@@ -227,6 +239,7 @@ class Mapper(object):
         for key, prop in l:
             if getattr(prop, 'key', None) is None:
                 prop.init(key, self)
+
 
         # this prints a summary of the object attributes and how they
         # will be mapped to table columns
@@ -323,14 +336,14 @@ class Mapper(object):
 
         if sql.is_column(prop):
             try:
-                prop = self.table._get_col_by_original(prop)
+                prop = self.select_table._get_col_by_original(prop)
             except KeyError:
                 raise ArgumentError("Column '%s' is not represented in mapper's table" % prop._label)
             self.columns[key] = prop
             prop = ColumnProperty(prop)
         elif isinstance(prop, list) and sql.is_column(prop[0]):
             try:
-                prop = [self.table._get_col_by_original(p) for p in prop]
+                prop = [self.select_table._get_col_by_original(p) for p in prop]
             except KeyError, e:
                 raise ArgumentError("Column '%s' is not represented in mapper's table" % e.args[0])
             self.columns[key] = prop[0]
@@ -350,7 +363,7 @@ class Mapper(object):
             mapper.add_property(key, p, init=False)
         
     def __str__(self):
-        return "Mapper|" + self.class_.__name__ + "|" + (self.entity_name is not None and "/%s" % self.entity_name or "") + self.primarytable.name
+        return "Mapper|" + self.class_.__name__ + "|" + (self.entity_name is not None and "/%s" % self.entity_name or "") + self.select_table.name
     
     def _is_primary_mapper(self):
         """returns True if this mapper is the primary mapper for its class key (class + entity_name)"""
@@ -456,7 +469,7 @@ class Mapper(object):
 
     def identity(self, instance):
         """returns the identity (list of primary key values) for the given instance.  The list of values can be fed directly into the get() method as mapper.get(*key)."""
-        return [self._getattrbycolumn(instance, column) for column in self.pks_by_table[self.table]]
+        return [self._getattrbycolumn(instance, column) for column in self.pks_by_table[self.select_table]]
         
     def compile(self, whereclause = None, **options):
         """works like select, except returns the SQL statement object without 
@@ -489,6 +502,8 @@ class Mapper(object):
         if (key.startswith('select_by_') or key.startswith('get_by_')):
             return getattr(self.query(), key)
         else:
+            if key == 'table':
+                raise "what!? " + key #AttributeError(key)
             raise AttributeError(key)
             
     def _getpropbycolumn(self, column, raiseerror=True):
@@ -735,7 +750,7 @@ class Mapper(object):
                 yield c
 
     def _identity_key(self, row):
-        return sessionlib.get_row_key(row, self.class_, self.pks_by_table[self.table], self.entity_name)
+        return sessionlib.get_row_key(row, self.class_, self.pks_by_table[self.select_table], self.entity_name)
 
     def _instance(self, session, row, imap, result = None, populate_existing = False):
         """pulls an object instance from the given row and appends it to the given result
@@ -745,6 +760,7 @@ class Mapper(object):
         
         if self.polymorphic_on is not None:
             discriminator = row[self.polymorphic_on]
+            print self.polymorphic_map
             mapper = self.polymorphic_map[discriminator]
             if mapper is not self:
                 row = self.translate_row(mapper, row)
@@ -776,7 +792,7 @@ class Mapper(object):
         if not exists:
             # check if primary key cols in the result are None - this indicates 
             # an instance of the object is not present in the row
-            for col in self.pks_by_table[self.table]:
+            for col in self.pks_by_table[self.select_table]:
                 if row[col] is None:
                     return None
             # plugin point
@@ -820,9 +836,9 @@ class Mapper(object):
         bare keynames to accomplish this.  So far this works for the various polymorphic
         examples."""
         newrow = util.DictDecorator(row)
-        for c in self.table.c:
+        for c in self.select_table.c:
             newrow[c.name] = row[c]
-        for c in tomapper.table.c:
+        for c in tomapper.select_table.c:
             newrow[c] = newrow[c.name]
         return newrow
         

@@ -147,12 +147,12 @@ class Session(object):
             return self.bind_to
         elif self.binds.has_key(mapper):
             return self.binds[mapper]
-        elif self.binds.has_key(mapper.table):
-            return self.binds[mapper.table]
+        elif self.binds.has_key(mapper.select_table):
+            return self.binds[mapper.select_table]
         elif self.bind_to is not None:
             return self.bind_to
         else:
-            return mapper.table.engine
+            return mapper.select_table.engine
     def query(self, mapper_or_class, entity_name=None):
         """given a mapper or Class, returns a new Query object corresponding to this Session and the mapper, or the classes' primary mapper."""
         if isinstance(mapper_or_class, type):

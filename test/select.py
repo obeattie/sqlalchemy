@@ -460,6 +460,13 @@ FROM mytable WHERE mytable.myid = :mytable_my_1 ORDER BY mytable.myid")
 FROM mytable UNION SELECT myothertable.otherid, myothertable.othername \
 FROM myothertable UNION SELECT thirdtable.userid, thirdtable.otherstuff FROM thirdtable")
             
+            u = union(
+                select([table1]),
+                select([table2]),
+                select([table3])
+            )
+            assert u._get_col_by_original(table2.c.otherid) is u.c.otherid
+            
             
     def testouterjoin(self):
         # test an outer join.  the oracle module should take the ON clause of the join and

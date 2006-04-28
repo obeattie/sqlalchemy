@@ -1,5 +1,5 @@
-from sqlalchemy import *
 import testbase
+from sqlalchemy import *
 import string
 import sqlalchemy.attributes as attr
 import sys
@@ -374,7 +374,7 @@ class InheritTest5(testbase.AssertMixin):
     def testbasic(self):
         class ContentType(object): pass
         class Content(object): pass
-        class Product(object): pass
+        class Product(Content): pass
 
         content_types = mapper(ContentType, content_type)
         contents = mapper(Content, content, properties={
@@ -410,6 +410,7 @@ class InheritTest6(testbase.AssertMixin):
         foos = mapper(Foo, foo)
         bars = mapper(Bar, bar, inherits=foos)
         bars.add_property('lazy', relation(foos, bar_foo, lazy=True))
+        print bars.props['lazy'].primaryjoin, bars.props['lazy'].secondaryjoin
         bars.add_property('eager', relation(foos, bar_foo, lazy=False))
 
         foo.insert().execute(data='foo1')
