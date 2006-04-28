@@ -16,7 +16,8 @@ companies = Table('companies', db,
 people = Table('people', db, 
    Column('person_id', Integer, primary_key=True),
    Column('company_id', Integer, ForeignKey('companies.company_id')),
-   Column('name', String(50))).create()
+   Column('name', String(50)),
+   Column('type', String(30))).create()
    
 engineers = Table('engineers', db, 
    Column('person_id', Integer, ForeignKey('people.person_id'), primary_key=True),
@@ -56,28 +57,38 @@ class Company(object):
 # create a union that represents both types of joins.  we have to use
 # nulls to pad out the disparate columns.
 person_join = select(
-                [
-                    people, 
-                    managers.c.status, 
-                    managers.c.manager_name,
-                    null().label('engineer_name'),
-                    null().label('primary_language'),
-                    column("'manager'").label('type')
-                ], 
-                people.c.person_id==managers.c.person_id).union_all(
-            select(
-                [
-                    people, 
-                    engineers.c.status, 
-                    null().label('').label('manager_name'),
-                    engineers.c.engineer_name,
-                    engineers.c.primary_language, 
-                    column("'engineer'").label('type')
-                ],
-            people.c.person_id==engineers.c.person_id)).alias('pjoin')
+                    [
+                        people, 
+                        managers.c.status, 
+                        managers.c.manager_name,
+                        null().label('engineer_name'),
+                        null().label('primary_language'),
+                    ], 
+                    people.c.person_id==managers.c.person_id
+                ).union_all(
+                    select(
+                        [
+                            people, 
+                            engineers.c.status, 
+                            null().label('').label('manager_name'),
+                            engineers.c.engineer_name,
+                            engineers.c.primary_language, 
+                        ],
+                    people.c.person_id==engineers.c.person_id
+                ).union_all(
+                    select(
+                        [
+                            people, 
+                            null().label('').label('status'), 
+                            null().label('').label('manager_name'),
+                            null().label('engineer_name'),
+                            null().label('primary_language'),
+                        ],
+                        )
+                )
+            ).alias('pjoin')
 
-
-person_mapper = mapper(Person, people, select_table=person_join, polymorphic_on=person_join.c.type)
+person_mapper = mapper(Person, people, select_table=person_join, polymorphic_on=person_join.c.type, polymorphic_ident='person')
 mapper(Engineer, engineers, inherits=person_mapper, polymorphic_ident='engineer')
 mapper(Manager, managers, inherits=person_mapper, polymorphic_ident='manager')
 
@@ -89,6 +100,7 @@ session = create_session()
 c = Company(name='company1')
 c.employees.append(Manager(name='pointy haired boss', status='AAB', manager_name='manager1'))
 c.employees.append(Engineer(name='dilbert', status='BBA', engineer_name='engineer1', primary_language='java'))
+c.employees.append(Person(name='joesmith', status='HHH'))
 c.employees.append(Engineer(name='wally', status='CGG', engineer_name='engineer2', primary_language='python'))
 c.employees.append(Manager(name='jsmith', status='ABA', manager_name='manager2'))
 session.save(c)

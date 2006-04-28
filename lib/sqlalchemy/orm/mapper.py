@@ -133,12 +133,19 @@ class Mapper(object):
             self.inherits = inherits
             if polymorphic_ident is not None:
                 inherits.add_polymorphic_mapping(polymorphic_ident, self)
+            self.polymorphic_ident = polymorphic_ident
+            if self.polymorphic_on is None:
+                self.effective_polymorphic_on = inherits.effective_polymorphic_on
+            else:
+                self.effective_polymorphic_on = self.polymorphic_on
         else:
             self._synchronizer = None
             self.inherits = None
             self.mapped_table = self.local_table
             if polymorphic_ident is not None:
-                raise ArgumentError("'polymorphic_ident' argument can only be used with inherits=<somemapper>")
+                self.add_polymorphic_mapping(polymorphic_ident, self)
+            self.polymorphic_ident = polymorphic_ident
+            self.effective_polymorphic_on = self.polymorphic_on
 
         if select_table is not None:
             self.select_table = select_table
@@ -596,6 +603,12 @@ class Mapper(object):
                             value = self._getattrbycolumn(obj, col)
                             if value is not None:
                                 params[col.key] = value
+                    elif self.effective_polymorphic_on is not None and col.original is self.effective_polymorphic_on.original:
+                        print "YA YA ITS", self.polymorphic_ident
+                        if isinsert:
+                            value = self.polymorphic_ident
+                            if col.default is None or value is not None:
+                                params[col.key] = value
                     else:
                         # column is not a primary key ?
                         if not isinsert:
@@ -760,7 +773,6 @@ class Mapper(object):
         
         if self.polymorphic_on is not None:
             discriminator = row[self.polymorphic_on]
-            print self.polymorphic_map
             mapper = self.polymorphic_map[discriminator]
             if mapper is not self:
                 row = self.translate_row(mapper, row)
