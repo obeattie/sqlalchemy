@@ -28,6 +28,7 @@ Entire SQL/Schema system can be used with no Engines whatsoever, executed
 solely by an explicit Connection object.  the "bound" methodlogy exists via the 
 BoundMetaData for schema objects.  ProxyEngine is generally not needed
 anymore and is replaced by DynamicMetaData.
+- true polymorphic behavior implemented, fixes [ticket:167]
 - "oid" system has been totally moved into compile-time behavior; 
 if they are used in an order_by where they are not available, the order_by
 doesnt get compiled, fixes [ticket:147]
