@@ -39,7 +39,6 @@ class Mapper(object):
     def __init__(self, 
                 class_, 
                 table, 
-                primarytable = None, 
                 properties = None, 
                 primary_key = None, 
                 is_primary = False, 
@@ -51,11 +50,12 @@ class Mapper(object):
                 allow_column_override = False,
                 entity_name = None,
                 always_refresh = False,
-                version_id_col = None):
+                version_id_col = None,
+                polymorphic_on=None,
+                polymorphic_map=None,
+                polymorphic_ident=None,
+                selectfrom=None):
 
-        if primarytable is not None:
-            sys.stderr.write("'primarytable' argument to mapper is deprecated\n")
-        
         ext = MapperExtension()
         
         for ext_class in global_extensions:
@@ -77,7 +77,9 @@ class Mapper(object):
         self.always_refresh = always_refresh
         self.version_id_col = version_id_col
         self._inheriting_mappers = sets.Set()
-        
+        self.polymorphic_on = polymorphic_on
+        self.polymorphic_map = polymorphic_map or {}
+                    
         if not issubclass(class_, object):
             raise ArgumentError("Class '%s' is not a new-style class" % class_.__name__)
             
@@ -91,7 +93,14 @@ class Mapper(object):
         else:
             self.table = table
 
+        if selectfrom is None:
+            self.selectfrom = self.table
+        else:
+            self.selectfrom = selectfrom
+            
         if inherits is not None:
+            if isinstance(inherits, type):
+                inherits = class_mapper(inherits)
             if self.class_.__mro__[1] != inherits.class_:
                 raise ArgumentError("Class '%s' does not inherit from '%s'" % (self.class_.__name__, inherits.class_.__name__))
             self.primarytable = inherits.primarytable
@@ -116,11 +125,15 @@ class Mapper(object):
                 self._synchronizer = None
             self.inherits = inherits
             self.noninherited_table = table
+            if polymorphic_ident is not None:
+                inherits.add_polymorphic_mapping(polymorphic_ident, self)
         else:
             self.primarytable = self.table
             self.noninherited_table = self.table
             self._synchronizer = None
             self.inherits = None
+            if polymorphic_ident is not None:
+                raise ArgumentError("'polymorphic_ident' argument can only be used with inherits=<somemapper>")
             
         # locate all tables contained within the "table" passed in, which
         # may be a join or other construct
@@ -198,6 +211,10 @@ class Mapper(object):
             self._init_class()
         elif not non_primary:
             raise ArgumentError("Class '%s' already has a primary mapper defined.  Use is_primary=True to assign a new primary mapper to the class, or use non_primary=True to create a non primary Mapper" % self.class_)
+
+        for key in self.polymorphic_map.keys():
+            if isinstance(self.polymorphic_map[key], type):
+                self.polymorphic_map[key] = class_mapper(self.polymorphic_map[key])
                     
         if inherits is not None:
             inherits._inheriting_mappers.add(self)
@@ -217,6 +234,11 @@ class Mapper(object):
         #for key, value in self.columntoproperty.iteritems():
         #    print key.table.name, key.key, [(v.key, v) for v in value]
 
+    def add_polymorphic_mapping(self, key, class_or_mapper, entity_name=None):
+        if isinstance(class_or_mapper, type):
+            class_or_mapper = class_mapper(class_or_mapper, entity_name=entity_name)
+        self.polymorphic_map[key] = class_or_mapper
+        
     def using(self, session):
         return querylib.Query(self, session=session)
     def query(self, session=None):
@@ -720,6 +742,15 @@ class Mapper(object):
         list. if the instance already exists in the given identity map, its not added.  in
         either case, executes all the property loaders on the instance to also process extra
         information in the row."""
+        
+        if self.polymorphic_on is not None:
+            discriminator = row[self.polymorphic_on]
+            mapper = self.polymorphic_map[discriminator]
+            if mapper is not self:
+                row = self.translate_row(mapper, row)
+                return mapper._instance(session, row, imap, result=result, populate_existing=populate_existing)
+            
+        
         # look in main identity map.  if its there, we dont do anything to it,
         # including modifying any of its related items lists, as its already
         # been exposed to being modified by the application.

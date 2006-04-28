@@ -31,7 +31,7 @@ class Query(object):
             return sessionlib.get_session()
         else:
             return self._session
-    table = property(lambda s:s.mapper.table)
+    table = property(lambda s:s.mapper.selectfrom)
     props = property(lambda s:s.mapper.props)
     session = property(_get_session)
     
@@ -203,7 +203,6 @@ class Query(object):
             except KeyError:
                 pass
 
-        print "_GET!", key, ident
         if ident is None:
             ident = key[1]
         i = 0

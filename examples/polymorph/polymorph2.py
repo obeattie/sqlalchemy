@@ -34,6 +34,9 @@ managers = Table('managers', db,
   
 # create our classes.  The Engineer and Manager classes extend from Person.
 class Person(object):
+    def __init__(self, **kwargs):
+        for key, value in kwargs.iteritems():
+            setattr(self, key, value)
     def __repr__(self):
         return "Ordinary person %s" % self.name
 class Engineer(Person):
@@ -43,13 +46,12 @@ class Manager(Person):
     def __repr__(self):
         return "Manager %s, status %s, manager_name %s" % (self.name, self.status, self.manager_name)
 class Company(object):
+    def __init__(self, **kwargs):
+        for key, value in kwargs.iteritems():
+            setattr(self, key, value)
     def __repr__(self):
         return "Company %s" % self.name
 
-# assign plain vanilla mappers
-assign_mapper(Person, people)
-assign_mapper(Engineer, engineers, inherits=Person.mapper)
-assign_mapper(Manager, managers, inherits=Person.mapper)
 
 # create a union that represents both types of joins.  we have to use
 # nulls to pad out the disparate columns.
@@ -74,60 +76,53 @@ person_join = select(
                 ],
             people.c.person_id==engineers.c.person_id)).alias('pjoin')
 
-print [c for c in person_join.c]            
+
+mapper(Person, people)
+mapper(Engineer, engineers, inherits=Person)
+mapper(Manager, managers, inherits=Person)
     
-# MapperExtension object.
-class PersonLoader(MapperExtension):
-    def create_instance(self, mapper, row, imap, class_):
-        if row[person_join.c.type] =='engineer':
-            return Engineer()
-        elif row[person_join.c.type] =='manager':
-            return Manager()
-        else:
-            return Person()
-            
-    def populate_instance(self, mapper, session, instance, row, identitykey, imap, isnew):
-        if row[person_join.c.type] =='engineer':
-            Engineer.mapper.populate_instance(session, instance, row, identitykey, imap, isnew, frommapper=mapper)
-            return False
-        elif row[person_join.c.type] =='manager':
-            Manager.mapper.populate_instance(session, instance, row, identitykey, imap, isnew, frommapper=mapper)
-            return False
-        else:
-            return sqlalchemy.mapping.EXT_PASS
+people_mapper = mapper(Person, person_join, polymorphic_on=person_join.c.type, polymorphic_map={'engineer':Engineer, 'manager':Manager}, non_primary=True)
 
-people_mapper = mapper(Person, person_join, polymorphic_on=person_join.c.type, polymorphic_map={'engineer':Engineer, 'manager':Manager})
 
-assign_mapper(Company, companies, properties={
-    'employees': relation(people_mapper, lazy=False, private=True)
+
+mapper(Company, companies, properties={
+    'employees': relation(people_mapper, lazy=False, private=True, backref='company')
 })
 
+session = create_session()
 c = Company(name='company1')
 c.employees.append(Manager(name='pointy haired boss', status='AAB', manager_name='manager1'))
 c.employees.append(Engineer(name='dilbert', status='BBA', engineer_name='engineer1', primary_language='java'))
 c.employees.append(Engineer(name='wally', status='CGG', engineer_name='engineer2', primary_language='python'))
 c.employees.append(Manager(name='jsmith', status='ABA', manager_name='manager2'))
-objectstore.commit()
+session.save(c)
+session.flush()
 
-objectstore.clear()
+session.clear()
 
-c = Company.get(1)
+c = session.query(Company).get(1)
 for e in c.employees:
-    print e, e._instance_key
+    print e, e._instance_key, e.company
 
 print "\n"
 
-dilbert = Engineer.mapper.get_by(name='dilbert')
-dilbert.engineer_name = 'hes dibert!'
-objectstore.commit()
+dilbert = session.query(people_mapper).get_by(name='dilbert')
+print "DILBERT1", dilbert
+dilbert2 = session.query(Engineer).get_by(name='dilbert')
+print "DILBERT2", dilbert2
+assert dilbert is dilbert2
 
-objectstore.clear()
-c = Company.get(1)
+dilbert.engineer_name = 'hes dibert!'
+
+session.flush()
+session.clear()
+
+c = session.query(Company).get(1)
 for e in c.employees:
     print e, e._instance_key
 
-objectstore.delete(c)
-objectstore.commit()
+session.delete(c)
+session.flush()
 
 
 managers.drop()
