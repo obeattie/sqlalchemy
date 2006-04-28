@@ -165,10 +165,7 @@ class PropertyLoader(MapperProperty):
         if recursive is None:
             recursive = sets.Set()
             
-        if self.uselist:
-            childlist = sessionlib.global_attributes.get_history(object, self.key, passive = False)
-        else: 
-            childlist = sessionlib.global_attributes.get_history(object, self.key)
+        childlist = sessionlib.global_attributes.get_history(object, self.key, passive=True)
             
         for c in childlist.added_items() + childlist.deleted_items() + childlist.unchanged_items():
             if c is not None:
