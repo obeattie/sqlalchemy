@@ -90,6 +90,7 @@ def assign_mapper(class_, *args, **params):
         class_.__init__ = __init__
     m = mapper(class_, *args, **params)
     class_.mapper = m
+    # TODO: get these outta here, have to go off explicit session
     class_.get = m.get
     class_.select = m.select
     class_.select_by = m.select_by

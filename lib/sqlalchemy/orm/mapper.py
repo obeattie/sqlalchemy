@@ -247,7 +247,6 @@ class Mapper(object):
             if getattr(prop, 'key', None) is None:
                 prop.init(key, self)
 
-
         # this prints a summary of the object attributes and how they
         # will be mapped to table columns
         #print "mapper %s, columntoproperty:" % (self.class_.__name__)
@@ -603,7 +602,6 @@ class Mapper(object):
                             if value is not None:
                                 params[col.key] = value
                     elif self.effective_polymorphic_on is not None and col.original is self.effective_polymorphic_on.original:
-                        print "YA YA ITS", self.polymorphic_ident
                         if isinsert:
                             value = self.polymorphic_ident
                             if col.default is None or value is not None:

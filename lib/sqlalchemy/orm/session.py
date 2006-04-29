@@ -270,7 +270,7 @@ class Session(object):
                 self.save_or_update(c, entity_name=entity_name)
 
     def update(self, object, entity_name=None):
-        """Brings the given detached (saved) instance. into this Session.
+        """Brings the given detached (saved) instance into this Session.
         If there is a persistent instance with the same identifier (i.e. a saved instance already associated with this
         Session), an exception is thrown. 
         This operation cascades the "save_or_update" method to associated instances if the relation is mapped 
