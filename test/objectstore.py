@@ -90,7 +90,8 @@ class VersioningTest(AssertMixin):
         version_table.delete().execute()
         objectstore.clear()
         clear_mappers()
-        
+    
+    @testbase.unsupported('mysql')
     def testbasic(self):
         s = Session()
         class Foo(object):pass
@@ -197,6 +198,8 @@ class PKTest(AssertMixin):
     def setUp(self):
         objectstore.clear()
         clear_mappers()
+        
+    @testbase.unsupported('sqlite')
     def testprimarykey(self):
         class Entry(object):
             pass
@@ -496,7 +499,7 @@ class SaveTest(AssertMixin):
         usersaddresses = sql.join(users, addresses, users.c.user_id == addresses.c.user_id)
         print usersaddresses._get_col_by_original(users.c.user_id)
         print repr(usersaddresses._orig_cols)
-        m = mapper(User, usersaddresses, primarytable = users,  
+        m = mapper(User, usersaddresses, 
             properties = dict(
                 email = addresses.c.email_address, 
                 foo_id = [users.c.user_id, addresses.c.user_id],

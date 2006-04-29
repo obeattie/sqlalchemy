@@ -132,7 +132,8 @@ class SequenceTest(PersistTest):
         )
         
         cartitems.create()
-
+    
+    @testbase.supported('postgres', 'oracle')
     def testsequence(self):
         cartitems.insert().execute(description='hi')
         cartitems.insert().execute(description='there')
@@ -141,6 +142,7 @@ class SequenceTest(PersistTest):
         cartitems.select().execute().fetchall()
    
    
+    @testbase.supported('postgres', 'oracle')
     def teststandalone(self):
         s = Sequence("my_sequence", metadata=testbase.db)
         s.create()
@@ -150,6 +152,7 @@ class SequenceTest(PersistTest):
         finally:
             s.drop()
     
+    @testbase.supported('postgres', 'oracle')
     def teststandalone2(self):
         x = cartitems.c.cart_id.sequence.execute()
         self.assert_(1 <= x <= 4)

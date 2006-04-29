@@ -79,6 +79,11 @@ class MSBinary(sqltypes.Binary):
             return "BINARY(%d)" % self.length
         else:
             return "BLOB"
+    def convert_result_value(self, value, engine):
+        if value is None:
+            return None
+        else:
+            return buffer(value)
 
 class MSBoolean(sqltypes.Boolean):
     def get_col_spec(self):

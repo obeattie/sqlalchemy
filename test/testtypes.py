@@ -2,7 +2,8 @@ from sqlalchemy import *
 import string,datetime, re, sys
 from testbase import PersistTest, AssertMixin
 import testbase
-    
+import sqlalchemy.engine.url as url
+
 db = testbase.db
 
 class MyType(types.TypeEngine):
@@ -14,21 +15,48 @@ class MyType(types.TypeEngine):
         return value + "BIND_OUT"
     def adapt(self, typeobj):
         return typeobj()
-    def adapt_args(self):
-        return self
 
-class MyDecoratedType(types.String):
+class MyDecoratedType(types.TypeDecorator):
+    impl = String
     def convert_bind_param(self, value, engine):
         return "BIND_IN"+ value
     def convert_result_value(self, value, engine):
         return value + "BIND_OUT"
-
+    def copy(self):
+        return MyDecoratedType()
+        
 class MyUnicodeType(types.Unicode):
     def convert_bind_param(self, value, engine):
         return "UNI_BIND_IN"+ value
     def convert_result_value(self, value, engine):
         return value + "UNI_BIND_OUT"
+    def copy(self):
+        return MyUnicodeType(self.impl.length)
 
+class AdaptTest(PersistTest):
+    def testadapt(self):
+        e1 = url.URL('postgres').get_module().dialect()
+        e2 = url.URL('mysql').get_module().dialect()
+        e3 = url.URL('sqlite').get_module().dialect()
+        
+        type = String(40)
+        
+        t1 = type.dialect_impl(e1)
+        t2 = type.dialect_impl(e2)
+        t3 = type.dialect_impl(e3)
+        assert t1 != t2
+        assert t2 != t3
+        assert t3 != t1
+    
+    def testdecorator(self):
+        t1 = Unicode(20)
+        t2 = Unicode()
+        assert isinstance(t1.impl, String)
+        assert not isinstance(t1.impl, TEXT)
+        assert (t1.impl.length == 20)
+        assert isinstance(t2.impl, TEXT)
+        assert t2.impl.length is None
+        
 class OverrideTest(PersistTest):
     """tests user-defined types, including a full type as well as a TypeDecorator"""
 
@@ -132,7 +160,15 @@ class UnicodeTest(AssertMixin):
             self.assert_(isinstance(x['plain_data'], unicode) and x['plain_data'] == unicodedata)
         finally:
             db.engine.dialect.convert_unicode = prev_unicode
-    
+
+class Foo(object):
+    def __init__(self, moredata):
+        self.data = 'im data'
+        self.stuff = 'im stuff'
+        self.moredata = moredata
+    def __eq__(self, other):
+        return other.data == self.data and other.stuff == self.stuff and other.moredata==self.moredata
+
 class BinaryTest(AssertMixin):
     def setUpAll(self):
         global binary_table
@@ -140,20 +176,28 @@ class BinaryTest(AssertMixin):
         Column('primary_id', Integer, primary_key=True),
         Column('data', Binary),
         Column('data_slice', Binary(100)),
-        Column('misc', String(30)))
+        Column('misc', String(30)),
+        Column('pickled', PickleType)
+        )
         binary_table.create()
     def tearDownAll(self):
         binary_table.drop()
     def testbinary(self):
+        testobj1 = Foo('im foo 1')
+        testobj2 = Foo('im foo 2')
+
         stream1 =self.get_module_stream('sqlalchemy.sql')
-        stream2 =self.get_module_stream('sqlalchemy.engine')
-        binary_table.insert().execute(primary_id=1, misc='sql.pyc',    data=stream1, data_slice=stream1[0:100])
-        binary_table.insert().execute(primary_id=2, misc='engine.pyc', data=stream2, data_slice=stream2[0:99])
+        stream2 =self.get_module_stream('sqlalchemy.schema')
+        binary_table.insert().execute(primary_id=1, misc='sql.pyc',    data=stream1, data_slice=stream1[0:100], pickled=testobj1)
+        binary_table.insert().execute(primary_id=2, misc='schema.pyc', data=stream2, data_slice=stream2[0:99], pickled=testobj2)
         l = binary_table.select().execute().fetchall()
         print len(stream1), len(l[0]['data']), len(l[0]['data_slice'])
         self.assert_(list(stream1) == list(l[0]['data']))
         self.assert_(list(stream1[0:100]) == list(l[0]['data_slice']))
         self.assert_(list(stream2) == list(l[1]['data']))
+        self.assert_(testobj1 == l[0]['pickled'])
+        self.assert_(testobj2 == l[1]['pickled'])
+
     def get_module_stream(self, name):
         mod = __import__(name)
         for token in name.split('.')[1:]:
