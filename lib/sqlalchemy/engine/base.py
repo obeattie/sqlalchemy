@@ -276,12 +276,16 @@ class Connection(object):
             self.engine.dialect.do_execute(c, statement, parameters, context=context)
         except Exception, e:
             self.engine.dialect.do_rollback(self.connection)
+            if self.close_with_result:
+                self.close()
             raise exceptions.SQLError(statement, parameters, e)
     def _executemany(self, c, statement, parameters, context=None):
         try:
             self.engine.dialect.do_executemany(c, statement, parameters, context=context)
         except Exception, e:
             self.engine.dialect.do_rollback(self.connection)
+            if self.close_with_result:
+                self.close()
             raise exceptions.SQLError(statement, parameters, e)
     def proxy(self, statement=None, parameters=None):
         """executes the given statement string and parameter object.
@@ -349,7 +353,7 @@ class ComposedSQLEngine(sql.Engine):
         """drops a table or index within this engine's database connection given a schema.Table object."""
         self._run_visitor(self.dialect.schemadropper, entity, connection=connection, **kwargs)
     def execute_default(self, default, **kwargs):
-        connection = self.connect()
+        connection = self.contextual_connect(close_with_result=False)
         try:
             return connection.execute_default(default, **kwargs)
         finally:

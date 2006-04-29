@@ -288,13 +288,13 @@ class PGDialect(ansisql.ANSIDialect):
 
 class PGCompiler(ansisql.ANSICompiler):
         
-    def visit_insert_column(self, column):
+    def visit_insert_column(self, column, parameters):
         # Postgres advises against OID usage and turns it off in 8.1,
         # effectively making cursor.lastrowid
         # useless, effectively making reliance upon SERIAL useless.  
         # so all column primary key inserts must be explicitly present
         if column.primary_key:
-            self.parameters[column.key] = None
+            parameters[column.key] = None
 
     def limit_clause(self, select):
         text = ""

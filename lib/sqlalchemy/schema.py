@@ -453,12 +453,17 @@ class ForeignKey(SchemaItem):
 
 class DefaultGenerator(SchemaItem):
     """Base class for column "default" values."""
-    def __init__(self, for_update=False):
+    def __init__(self, for_update=False, metadata=None):
         self.for_update = for_update
+        self._metadata = metadata
     def _derived_metadata(self):
-        return self.column.table.metadata
+        try:
+            return self.column.table.metadata
+        except AttributeError:
+            return self._metadata
     def _set_parent(self, column):
         self.column = column
+        self._metadata = self.column.table.metadata
         if self.for_update:
             self.column.onupdate = self
         else:
