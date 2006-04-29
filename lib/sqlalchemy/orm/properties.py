@@ -75,7 +75,7 @@ class DeferredColumnProperty(ColumnProperty):
         if not self.parent.is_assigned(instance):
             return object_mapper(instance).props[self.key].setup_loader(instance)
         def lazyload():
-            session = sessionlib.get_session(instance)
+            session = sessionlib.object_session(instance)
             connection = session.connection(self.parent)
             clause = sql.and_()
             try:
@@ -210,7 +210,7 @@ class PropertyLoader(MapperProperty):
         else:
             if self.primaryjoin is None:
                 self.primaryjoin = sql.join(parent.unjoined_table, self.target).onclause
-        print "PJ", self.primaryjoin
+
         # if the foreign key wasnt specified and theres no assocaition table, try to figure
         # out who is dependent on who. we dont need all the foreign keys represented in the join,
         # just one of them.  
@@ -373,7 +373,7 @@ class LazyLoader(PropertyLoader):
         def lazyload():
             params = {}
             allparams = True
-            session = sessionlib.get_session(instance, raiseerror=False)
+            session = sessionlib.object_session(instance)
             #print "setting up loader, lazywhere", str(self.lazywhere), "binds", self.lazybinds
             if session is not None:
                 for col, bind in self.lazybinds.iteritems():

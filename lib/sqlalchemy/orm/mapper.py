@@ -406,15 +406,12 @@ class Mapper(object):
             if kwargs.has_key('_sa_session'):
                 session = kwargs.pop('_sa_session')
             else:
-                session = sessionlib.get_session(self, raiseerror=False)
+                session = sessionlib.current_session(self)
             if session is not None:
                 if not nohist:
-                    # register new with the correct session, before the object's 
-                    # constructor is called, since further assignments within the
-                    # constructor would otherwise bind it to whatever get_session() is.
                     session._register_new(self)
                 else:
-                    session._bind_to(self)
+                    session._register_clean(self)
             if oldinit is not None:
                 oldinit(self, *args, **kwargs)
         # override oldinit, insuring that its not already one of our
@@ -839,7 +836,7 @@ class Mapper(object):
         # in order to save on KeyErrors later on
         sessionlib.global_attributes.init_attr(obj)
 
-        session._bind_to(obj)
+        session._register_clean(obj)
         return obj
 
     def translate_row(self, tomapper, row):

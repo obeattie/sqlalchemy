@@ -60,7 +60,7 @@ class Session(object):
         if import_session is not None:
             self.uow = unitofwork.UnitOfWork(identity_map=import_session.uow.identity_map)
         elif new_imap is False:
-            self.uow = unitofwork.UnitOfWork(identity_map=objectstore.get_session().uow.identity_map)
+            self.uow = unitofwork.UnitOfWork(identity_map=current_session().uow.identity_map)
         else:
             self.uow = unitofwork.UnitOfWork()
         
@@ -106,13 +106,21 @@ class Session(object):
         method will release the resources of the underlying Connection, otherwise its a no-op.
         """
         return self.connection(mapper, close_with_result=True).execute(clause, params, **kwargs)
+        
     def close(self):
         """closes this Session.  
-        
-        TODO: what should we do here ?
         """
+        self.clear()
         if self.transaction is not None:
             self.transaction.close()
+
+    def clear(self):
+        """removes all object instances from this Session.  this is equivalent to calling expunge() for all
+        objects in this Session."""
+        for instance in self:
+            self._unattach(instance)
+        self.uow = unitofwork.UnitOfWork()
+            
     def mapper(self, class_, entity_name=None):
         """given an Class, returns the primary Mapper responsible for persisting it"""
         return class_mapper(class_, entity_name = entity_name)
@@ -213,14 +221,25 @@ class Session(object):
         self.uow.flush(self, objects)
 
     def get(self, class_, *ident, **kwargs):
-        """given a class and a primary key identifier, loads the corresponding object."""
+        """returns an instance of the object based on the given identifier, or None
+        if not found.  The *ident argument is a list of primary key columns in the order of the 
+        table def's primary key columns.
+        
+        the entity_name keyword argument may also be specified which further qualifies the underlying
+        Mapper used to perform the query."""
         entity_name = kwargs.get('entity_name', None)
         return self.query(class_, entity_name=entity_name).get(*ident)
         
     def load(self, class_, *ident, **kwargs):
-        """given a class and a primary key identifier, loads the corresponding object."""
+        """returns an instance of the object based on the given identifier. If not found,
+        raises an exception.  The method will *remove all pending changes* to the object
+        already existing in the Session.  The *ident argument is a 
+        list of primary key columns in the order of the table def's primary key columns.
+        
+        the entity_name keyword argument may also be specified which further qualifies the underlying
+        Mapper used to perform the query."""
         entity_name = kwargs.get('entity_name', None)
-        return self.query(class_, entity_name=entity_name).get(*ident)
+        return self.query(class_, entity_name=entity_name).load(*ident)
                 
     def refresh(self, object):
         """reloads the attributes for the given object from the database, clears
@@ -237,10 +256,12 @@ class Session(object):
         self.uow.expunge(object)
             
     def save(self, object, entity_name=None):
-        """adds an unsaved object to this Session.  
+        """
+        Adds a transient (unsaved) instance to this Session.  This operation cascades the "save_or_update" 
+        method to associated instances if the relation is mapped with cascade="save-update".        
         
-        The 'entity_name' keyword argument can also be given which will be assigned
-        to the instances if given.
+        The 'entity_name' keyword argument will further qualify the specific Mapper used to handle this
+        instance.
         """
         for c in object_mapper(object, entity_name=entity_name).cascade_iterator('save-update', object):
             if c is object:
@@ -249,6 +270,11 @@ class Session(object):
                 self.save_or_update(c, entity_name=entity_name)
 
     def update(self, object, entity_name=None):
+        """Brings the given detached (saved) instance. into this Session.
+        If there is a persistent instance with the same identifier (i.e. a saved instance already associated with this
+        Session), an exception is thrown. 
+        This operation cascades the "save_or_update" method to associated instances if the relation is mapped 
+        with cascade="save-update"."""
         for c in object_mapper(object, entity_name=entity_name).cascade_iterator('save-update', object):
             if c is o:
                 self._update_impl(c, entity_name=entity_name)
@@ -263,11 +289,6 @@ class Session(object):
             else:
                 self._update_impl(c, entity_name=entity_name)
 
-    def clear(self):
-        """removes all object instances from this Session.  this is equivalent to calling expunge() for all
-        objects in this Session."""
-        self.uow = unitofwork.UnitOfWork()
-
     def delete(self, object, entity_name=None):
         for c in object_mapper(object, entity_name=entity_name).cascade_iterator('delete', object):
             self.uow.register_deleted(c)
@@ -281,7 +302,7 @@ class Session(object):
                 ident = mapper.identity(object)
                 for k in ident:
                     if k is None:
-                        raise InvalidRequestError("Instance '%s' does not have a full set of identity values, and does not represent a saved entity in the database.  Use the add() method to add unsaved instances to this Session." % str(obj))
+                        raise InvalidRequestError("Instance '%s' does not have a full set of identity values, and does not represent a saved entity in the database.  Use the add() method to add unsaved instances to this Session." % repr(obj))
                 key = mapper.identity_key(*ident)
             u = self.uow
             if u.identity_map.has_key(key):
@@ -297,7 +318,7 @@ class Session(object):
     def _save_impl(self, object, **kwargs):
         if hasattr(object, '_instance_key'):
             if not self.uow.has_key(object._instance_key):
-                raise InvalidRequestError("Instance '%s' attached to a different Session" % repr(object))
+                raise InvalidRequestError("Instance '%s' is already persistent in a different Session" % repr(object))
         else:
             entity_name = kwargs.get('entity_name', None)
             if entity_name is not None:
@@ -306,7 +327,7 @@ class Session(object):
             self._register_new(object)
 
     def _update_impl(self, object, **kwargs):
-        if self._is_bound(object) and object not in self.deleted:
+        if self._is_attached(object) and object not in self.deleted:
             return
         if not hasattr(object, '_instance_key'):
             raise InvalidRequestError("Instance '%s' is not persisted" % repr(object))
@@ -316,25 +337,28 @@ class Session(object):
             self._register_clean(object)
         
     def _register_new(self, obj):
-        self._bind_to(obj)
+        self._attach(obj)
         self.uow.register_new(obj)
     def _register_dirty(self, obj):
-        self._bind_to(obj)
+        self._attach(obj)
         self.uow.register_dirty(obj)
     def _register_clean(self, obj):
-        self._bind_to(obj)
+        self._attach(obj)
         self.uow.register_clean(obj)
     def _register_deleted(self, obj):
-        self._bind_to(obj)
+        self._attach(obj)
         self.uow.register_deleted(obj)
         
-    def _bind_to(self, obj):
-        """given an object, binds it to this session.  """
+    def _attach(self, obj):
+        """given an object, attaches it to this session.  """
         if getattr(obj, '_sa_session_id', None) != self.hash_key:
             old = getattr(obj, '_sa_session_id', None)
-            # remove from old session.  we do this gingerly since _sessions is a WeakValueDict
-            # and it might be affected by other threads
             if old is not None:
+                raise InvalidRequestError("Object '%s' is already attached to session '%s'" % (repr(obj), old))
+                
+                # auto-removal from the old session is disabled.  but if we decide to 
+                # turn it back on, do it as below: gingerly since _sessions is a WeakValueDict
+                # and it might be affected by other threads
                 try:
                     sess = _sessions[old]
                 except KeyError:
@@ -345,11 +369,18 @@ class Session(object):
             if key is not None:
                 self.identity_map[key] = obj
             obj._sa_session_id = self.hash_key
-    def _is_bound(self, obj):
+            
+    def _unattach(self, obj):
+        if not self._is_attached(obj): #getattr(obj, '_sa_session_id', None) != self.hash_key:
+            raise InvalidRequestError("Object '%s' is not attached to this Session" % repr(obj))
+        del obj._sa_session_id
+        
+    def _is_attached(self, obj):
         return getattr(obj, '_sa_session_id', None) == self.hash_key
     def __contains__(self, obj):
-        return self._is_bound(obj) and (obj in self.uow.new or self.uow.has_key(obj._instance_key))
-        
+        return self._is_attached(obj) and (obj in self.uow.new or self.uow.has_key(obj._instance_key))
+    def __iter__(self):
+        return iter(self.uow.identity_map.values())
     def _get(self, key):
         return self.uow._get(key)
     def has_key(self, key):
@@ -392,37 +423,40 @@ global_attributes = unitofwork.global_attributes
 # actual Session object directly to the object instance.
 _sessions = weakref.WeakValueDictionary() 
 
-def get_session(obj=None, raiseerror=True):
-    """returns the Session corrseponding to the given object instance.  By default, if the object is not bound
-    to any Session, then an error is raised (or None is returned if raiseerror=False).  This behavior can be changed
-    using the "threadlocal" mod, which will add an additional step to return a Session that is bound to the current 
-    thread."""
-    if obj is not None:
-        # does it have a hash key ?
-        hashkey = getattr(obj, '_sa_session_id', None)
-        if hashkey is not None:
-            # ok, return that
-            try:
-                return _sessions[hashkey]
-            except KeyError:
-                if raiseerror:
-                    raise InvalidRequestError("Session '%s' referenced by object '%s' no longer exists" % (hashkey, repr(obj)))
-                else:
-                    return None
-                    
-    return _default_session(obj=obj, raiseerror=raiseerror)
+def current_session(obj=None):
+    if hasattr(obj.__class__, '__sessioncontext__'):
+        return obj.__class__.__sessioncontext__()
+    else:
+        return _default_session(obj=obj)
+        
+# deprecated
+get_session=current_session
 
-def _default_session(obj=None, raiseerror=True):
-    if obj is None:
-        if raiseerror:
-            raise InvalidRequestError("Thread-local Sessions are disabled by default.  Use 'import sqlalchemy.mods.threadlocal' to enable.")
+def required_current_session(obj=None):
+    s = current_session(obj)
+    if s is None:
+        if obj is None:
+            raise InvalidRequestError("No global-level Session context is established.  Use 'import sqlalchemy.mods.threadlocal' to establish a default thread-local context.")
         else:
+            raise InvalidRequestError("No Session context is established for class '%s', and no global-level Session context is established.  Use 'import sqlalchemy.mods.threadlocal' to establish a default thread-local context." % (obj.__class__))
+    return s
+    
+def _default_session(obj=None):
+    return None
+def register_default_session(callable_):
+    global _default_session
+    _default_session = callable_            
+    
+def object_session(obj):
+    hashkey = getattr(obj, '_sa_session_id', None)
+    if hashkey is not None:
+        # ok, return that
+        try:
+            return _sessions[hashkey]
+        except KeyError:
             return None
     else:
-        if raiseerror:
-            raise InvalidRequestError("Object '%s' not bound to any Session" % (repr(obj)))
-        else:
-            return None
-            
-unitofwork.get_session = get_session
+        return None
+
+unitofwork.object_session = object_session
 

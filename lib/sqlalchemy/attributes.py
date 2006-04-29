@@ -37,11 +37,12 @@ class SmartProperty(object):
     create_prop method on AttributeManger, which can be overridden to provide
     subclasses of SmartProperty.
     """
-    def __init__(self, manager, key, uselist, callable_, **kwargs):
+    def __init__(self, manager, key, uselist, callable_, typecallable, **kwargs):
         self.manager = manager
         self.key = key
         self.uselist = uselist
         self.callable_ = callable_
+        self.typecallable= typecallable
         self.kwargs = kwargs
     def init(self, obj, attrhist=None):
         """creates an appropriate ManagedAttribute for the given object and establishes
@@ -50,7 +51,7 @@ class SmartProperty(object):
             func = self.callable_(obj)
         else:
             func = None
-        return self.manager.create_managed_attribute(obj, self.key, self.uselist, callable_=func, attrdict=attrhist, **self.kwargs)
+        return self.manager.create_managed_attribute(obj, self.key, self.uselist, callable_=func, attrdict=attrhist, typecallable=self.typecallable, **self.kwargs)
     def __set__(self, obj, value):
         self.manager.set_attribute(obj, self.key, value)
     def __delete__(self, obj):
@@ -173,7 +174,7 @@ class ListAttribute(util.HistoryArraySet, ManagedAttribute):
     This is the "list history container" object.
     Subclasses util.HistoryArraySet to provide "onchange" event handling as well
     as a plugin point for BackrefExtension objects."""
-    def __init__(self, obj, key, data=None, extension=None, trackparent=False, **kwargs):
+    def __init__(self, obj, key, data=None, extension=None, trackparent=False, typecallable=None, **kwargs):
         ManagedAttribute.__init__(self, obj, key)
         self.extension = extension
         self.trackparent = trackparent
@@ -189,10 +190,11 @@ class ListAttribute(util.HistoryArraySet, ManagedAttribute):
         except KeyError:
             if data is not None:
                 list_ = data
+            elif typecallable is not None:
+                list_ = typecallable()
             else:
                 list_ = []
-            obj.__dict__[key] = []
-            
+            obj.__dict__[key] = list_
         util.HistoryArraySet.__init__(self, list_, readonly=kwargs.get('readonly', False))
     def do_value_changed(self, obj, key, item, listval, isdelete):
         pass    
@@ -334,16 +336,16 @@ class AttributeManager(object):
         upon an attribute change of value."""
         pass
         
-    def create_prop(self, class_, key, uselist, callable_, **kwargs):
+    def create_prop(self, class_, key, uselist, callable_, typecallable, **kwargs):
         """creates a scalar property object, defaulting to SmartProperty, which 
         will communicate change events back to this AttributeManager."""
-        return SmartProperty(self, key, uselist, callable_, **kwargs)
+        return SmartProperty(self, key, uselist, callable_, typecallable, **kwargs)
     def create_scalar(self, obj, key, **kwargs):
         return ScalarAttribute(obj, key, **kwargs)
-    def create_list(self, obj, key, list_, **kwargs):
+    def create_list(self, obj, key, list_, typecallable=None, **kwargs):
         """creates a history-aware list property, defaulting to a ListAttribute which
         is a subclass of HistoryArrayList."""
-        return ListAttribute(obj, key, list_, **kwargs)
+        return ListAttribute(obj, key, list_, typecallable=typecallable, **kwargs)
     def create_callable(self, obj, key, func, uselist, **kwargs):
         """creates a callable container that will invoke a function the first
         time an object property is accessed.  The return value of the function
@@ -491,15 +493,15 @@ class AttributeManager(object):
     def is_class_managed(self, class_, key):
         return hasattr(class_, key) and isinstance(getattr(class_, key), SmartProperty)
 
-    def create_managed_attribute(self, obj, key, uselist, callable_=None, attrdict=None, **kwargs):
+    def create_managed_attribute(self, obj, key, uselist, callable_=None, attrdict=None, typecallable=None, **kwargs):
         """creates a new ManagedAttribute corresponding to the given attribute key on the 
         given object instance, and installs it in the attribute dictionary attached to the object."""
         if callable_ is not None:
-            prop = self.create_callable(obj, key, callable_, uselist=uselist, **kwargs)
+            prop = self.create_callable(obj, key, callable_, uselist=uselist, typecallable=typecallable, **kwargs)
         elif not uselist:
             prop = self.create_scalar(obj, key, **kwargs)
         else:
-            prop = self.create_list(obj, key, None, **kwargs)
+            prop = self.create_list(obj, key, None, typecallable=typecallable, **kwargs)
         if attrdict is None:
             attrdict = self.attribute_history(obj)
         attrdict[key] = prop
@@ -521,7 +523,8 @@ class AttributeManager(object):
         if not hasattr(class_, '_attribute_manager'):
             class_._attribute_manager = self
             class_._managed_attributes = ObjectAttributeGateway()
-        setattr(class_, key, self.create_prop(class_, key, uselist, callable_, **kwargs))
+        typecallable = getattr(class_, key, None)
+        setattr(class_, key, self.create_prop(class_, key, uselist, callable_, typecallable=typecallable, **kwargs))
 
 managed_attributes = weakref.WeakKeyDictionary()
 

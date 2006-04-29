@@ -130,7 +130,6 @@ for e in c.employees:
 session.delete(c)
 session.flush()
 
-
 managers.drop()
 engineers.drop()
 people.drop()

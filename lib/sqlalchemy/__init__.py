@@ -14,7 +14,7 @@ import sqlalchemy.orm as orm
 from sqlalchemy.orm import *
 import sqlalchemy.ext.proxy
 
-from sqlalchemy.orm.session import Session, get_session
+from sqlalchemy.orm.session import Session, current_session
 
 create_engine = sqlalchemy.engine.create_engine
 create_session = sqlalchemy.orm.session.Session

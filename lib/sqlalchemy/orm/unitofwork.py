@@ -43,7 +43,7 @@ class UOWListElement(attributes.ListAttribute):
         attributes.ListAttribute.__init__(self, obj, key, data=data, **kwargs)
         self.cascade = cascade
     def do_value_changed(self, obj, key, item, listval, isdelete):
-        sess = get_session(obj, raiseerror=False)
+        sess = object_session(obj)
         if sess is not None:
             sess._register_dirty(obj)
             if self.cascade is not None:
@@ -62,7 +62,7 @@ class UOWScalarElement(attributes.ScalarAttribute):
         self.cascade=cascade
     def do_value_changed(self, oldvalue, newvalue):
         obj = self.obj
-        sess = get_session(obj, raiseerror=False)
+        sess = object_session(obj)
         if sess is not None:
             sess._register_dirty(obj)
             if self.cascade is not None:

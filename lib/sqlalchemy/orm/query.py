@@ -28,7 +28,7 @@ class Query(object):
         self._get_clause = self.mapper._get_clause
     def _get_session(self):
         if self._session is None:
-            return sessionlib.get_session()
+            return sessionlib.required_current_session()
         else:
             return self._session
     table = property(lambda s:s.mapper.select_table)
@@ -40,9 +40,19 @@ class Query(object):
         if not found.  The *ident argument is a 
         list of primary key columns in the order of the table def's primary key columns."""
         key = self.mapper.identity_key(*ident)
-        print "key: " + repr(key) + " ident: " + repr(ident)
         return self._get(key, ident, **kwargs)
 
+    def load(self, *ident, **kwargs):
+        """returns an instance of the object based on the given identifier. If not found,
+        raises an exception.  The method will *remove all pending changes* to the object
+        already existing in the Session.  The *ident argument is a 
+        list of primary key columns in the order of the table def's primary key columns."""
+        key = self.mapper.identity_key(*ident)
+        instance = self._get(key, ident, reload=True, **kwargs)
+        if instance is None:
+            raise exceptions.InvalidRequestError("No instance found for identity %s" % repr(ident))
+        return instance
+        
     def get_by(self, *args, **params):
         """returns a single object instance based on the given key/value criterion. 
         this is either the first value in the result list, or None if the list is 
