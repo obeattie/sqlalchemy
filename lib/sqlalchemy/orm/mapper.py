@@ -411,7 +411,9 @@ class Mapper(object):
                 if not nohist:
                     session._register_new(self)
                 else:
-                    session._register_clean(self)
+                    pass
+                    # TODO: this _attach should not be needed....
+                    #session._attach(self)
             if oldinit is not None:
                 oldinit(self, *args, **kwargs)
         # override oldinit, insuring that its not already one of our
@@ -784,7 +786,6 @@ class Mapper(object):
         identitykey = self._identity_key(row)
         if session.has_key(identitykey):
             instance = session._get(identitykey)
-
             isnew = False
             if populate_existing or session.is_expired(instance, unexpire=True):
                 if not imap.has_key(identitykey):
@@ -836,7 +837,8 @@ class Mapper(object):
         # in order to save on KeyErrors later on
         sessionlib.global_attributes.init_attr(obj)
 
-        session._register_clean(obj)
+#       TODO: this _attach should not be needed....
+#        session._attach(obj)
         return obj
 
     def translate_row(self, tomapper, row):

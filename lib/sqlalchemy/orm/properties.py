@@ -591,7 +591,6 @@ class EagerLoader(PropertyLoader):
             result_list = h
         else:
             result_list = getattr(instance, self.key)
-    
         self._instance(session, row, imap, result_list)
 
     def _create_decorator_row(self):

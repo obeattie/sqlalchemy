@@ -614,7 +614,6 @@ class LazyTest(MapperSuperTest):
 class EagerTest(MapperSuperTest):
     def testbasic(self):
         """tests a basic one-to-many eager load"""
-        
         m = mapper(Address, addresses)
         
         m = mapper(User, users, properties = dict(
