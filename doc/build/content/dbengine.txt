@@ -39,22 +39,25 @@ Available drivernames are `sqlite`, `mysql`, `postgres`, `oracle`, `mssql`, and 
 
 Keyword options can also be specified to `create_engine()`, following the string URL as follows:
 
+    {python}
     db = create_engine('postgres://...', encoding='latin1', echo=True, module=psycopg1)
+
+Options that can be specified include the following:
 
 * strategy='plain' : the Strategy describes the general configuration used to create this Engine.  The two available values are `plain`, which is the default, and `threadlocal`, which applies a "thread-local context" to implicit executions performed by the Engine.  This context is further described in the sections below.
 * pool=None : an instance of `sqlalchemy.pool.Pool` to be used as the underlying source for connections, overriding the engine's connect arguments (pooling is described in [pool](rel:pool)).  If None, a default `Pool` (usually `QueuePool`, or `SingletonThreadPool` in the case of SQLite) will be created using the engine's connect arguments.
 
 Example:
 
-        {python}
-        from sqlalchemy import *
-        import sqlalchemy.pool as pool
-        import MySQLdb
-
-        def getconn():
-            return MySQLdb.connect(user='ed', dbname='mydb')
-
-        engine = create_engine('mysql', pool=pool.QueuePool(getconn, pool_size=20, max_overflow=40))
+    {python}
+    from sqlalchemy import *
+    import sqlalchemy.pool as pool
+    import MySQLdb
+    
+    def getconn():
+        return MySQLdb.connect(user='ed', dbname='mydb')
+    
+    engine = create_engine('mysql', pool=pool.QueuePool(getconn, pool_size=20, max_overflow=40))
 
 * echo=False : if True, the Engine will log all statements as well as a repr() of their parameter lists to the engines logger, which defaults to sys.stdout.  A SQLEngine instances' "echo" data member can be modified at any time to turn logging on and off.  If set to the string 'debug', result rows will be printed to the standard output as well.
 * logger=None : a file-like object where logging output can be sent, if echo is set to True.  This defaults to sys.stdout.
@@ -93,7 +96,7 @@ When executing off the Engine directly, a Connection is created and used automat
 
 In both execution styles above, the `Connection` object will also automatically return its resources to the connection pool when the object is garbage collected, i.e. its `__del__()` method is called.  When using the standard C implementation of Python, this method is usually called immediately as soon as the object is dereferenced.  With other Python implementations such as Jython, this is not so guaranteed.  
     
-The execute method on `Engine` and `Connection` can also receive SQL clause constructs as well, which are described in [sqlconstruction](rel:sqlconstruction):
+The execute method on `Engine` and `Connection` can also receive SQL clause constructs as well, which are described in [sql](rel:sql):
 
     {python}
     connection = engine.connect()
@@ -106,7 +109,7 @@ The execute method on `Engine` and `Connection` can also receive SQL clause cons
 
 "Implicit" connections refer to the example above when the `execute()` method is called directly off the `Engine` object, *without* the usage of a `Connection` object, and resources are released by calling the `close()` method on the result object.  When using "implicit" connections, the user has two choices, determined when the Engine is first created, as to how the resources of this connection should be used in relation to other connections.  This is determined by the `strategy` argument to `create_engine()`, which has two possible values: `plain` and `threadlocal`.  In `plain`, every `execute` call uses a distinct connection from the database, which is only released when the `close()` method on the Result is called.  In `threadlocal`, multiple calls to `execute()` within the same thread will use the already-checked out connection resource if one is available, or if none is available will request a connection resource.
 
-It is crucial to note that the `plain` and `threadlocal` contexts **do not impact the `connect()` method on the Engine.**  If you are using explicit Connection objects returned by `connect()` method, you have full control over the connection resources used.
+It is crucial to note that the `plain` and `threadlocal` contexts **do not impact the connect() method on the Engine.**  If you are using explicit Connection objects returned by `connect()` method, you have full control over the connection resources used.
 
 The `plain` strategy is better suited to an application that insures the explicit releasing of the resources used by each execution.  This is because each execution uses its own distinct connection resource, and as those resources remain open, multiple connections can be checked out from the pool quickly.  Since the connection pool will block further requests when too many connections have been checked out, not keeping track of this can impact an application's stability.
 
@@ -128,7 +131,7 @@ The `plain` strategy is better suited to an application that insures the explici
     # release connection 2
     r2.close()
 
-The `threadlocal` strategy is better suited to a programming style which relies upon the __del__() method of Connection objects in order to return them to the connection pool, rather than explicitly issuing a `close()` statement upon the `Result` object.   This is because all of the executions within a single thread will share the same connection, if one has already been checked out in the current thread.  Using this style, an application will use only one connection per thread at most within the scope of all implicit executions.
+The `threadlocal` strategy is better suited to a programming style which relies upon the `__del__()` method of Connection objects in order to return them to the connection pool, rather than explicitly issuing a `close()` statement upon the `Result` object.   This is because all of the executions within a single thread will share the same connection, if one has already been checked out in the current thread.  Using this style, an application will use only one connection per thread at most within the scope of all implicit executions.
 
     {python title="Threadlocal Strategy"}
     db = create_engine('mysql://localhost/test', strategy='threadlocal')
