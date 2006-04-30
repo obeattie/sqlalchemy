@@ -30,9 +30,9 @@ SQLAlchemy 0.2 indicates the source of an Engine strictly via [RFC-1738](http://
 
 Available drivernames are `sqlite`, `mysql`, `postgres`, `oracle`, `mssql`, and `firebird`.  For sqlite, the database name is the filename to connect to, or the special name ":memory:" which indicates an in-memory database.  The URL is typically sent as a string to the `create_engine()` function:
 
-    db = create_engine('postgres://scott:tiger@localhost:5432/mydatabase')
+    pg_db = create_engine('postgres://scott:tiger@localhost:5432/mydatabase')
     sqlite_db = create_engine('sqlite:///mydb.txt')
-    mysql_db = create_engine('sqlite://localhost/foo')
+    mysql_db = create_engine('mysql://localhost/foo')
     oracle_db = create_engine('oracle://scott:tiger@dsn')
 
 ### Database Engine Options {@name=options}
@@ -41,6 +41,7 @@ Keyword options can also be specified to `create_engine()`, following the string
 
     db = create_engine('postgres://...', encoding='latin1', echo=True, module=psycopg1)
 
+* strategy='plain' : the Strategy describes the general configuration used to create this Engine.  The two available values are `plain`, which is the default, and `threadlocal`, which applies a "thread-local context" to implicit executions performed by the Engine.  This context is further described in the sections below.
 * pool=None : an instance of `sqlalchemy.pool.Pool` to be used as the underlying source for connections, overriding the engine's connect arguments (pooling is described in [pool](rel:pool)).  If None, a default `Pool` (usually `QueuePool`, or `SingletonThreadPool` in the case of SQLite) will be created using the engine's connect arguments.
 
 Example:
@@ -65,92 +66,110 @@ Example:
 * encoding='utf-8' : the encoding to use for Unicode translations - passed to all encode/decode methods.
 * echo_uow=False : when True, logs unit of work commit plans to the standard output.
 
-### Database Engine Methods {@name=methods}
+### Using Connections {@name=connections}
 
-A few useful methods off the SQLEngine are described here:
+In this section we describe the explicit interface available on Engine.  Note that when using the Object Relational Mapper (ORM) as well as when dealing with only with "bound" metadata objects (described later), SQLAlchemy deals with the Engine for you and you generally don't need to know much about it; in those cases, you can skip this section and go to [metadata](rel:metadata).
 
-    {python}engine = create_engine('postgres://hostname=localhost&amp;user=scott&amp;password=tiger&amp;database=test')
+The Engine provides methods by which literal SQL text as well as SQL clause constructs can be compiled and executed.  
 
-    # get a pooled DBAPI connection
-    conn = engine.connection()
+    {python title="Explicit Connection"}
+    engine = create_engine('sqlite:///:memory:')
+    connection = engine.connect()
+    result = connection.execute("select * from mytable where col1=:col1", {'col1':5})
+    for row in result:
+        print row['col1'], row['col2']
+    connection.close()
 
-    # create/drop tables based on table metadata objects
-    # (see the next section, Table Metadata, for info on table metadata)
-    engine.create(mytable)
-    engine.drop(mytable)
-
-    # get the DBAPI module being used
-    dbapi = engine.dbapi()
-
-    # get the default schema name
-    name = engine.get_default_schema_name()
-
-    # execute some SQL directly, returns a ResultProxy (see the SQL Construction section for details)
-    result = engine.execute("select * from table where col1=:col1", {'col1':'foo'})
-
-    # log a message to the engine's log stream
-    engine.log('this is a message')
-               
+The `close` method on `Connection` does not actually remove the underlying connection to the database, but rather indicates that the underlying resources can be returned to the connection pool.  When using the `connect()` method, the DBAPI connection referenced by the `Connection` object is not referenced anywhere else. 
     
-### Using the Proxy Engine {@name=proxy}
+    {python title="Implicit Connection"}
+    engine = create_engine('sqlite:///:memory:')
+    result = engine.execute("select * from mytable where col1=:col1", {'col1':5})
+    for row in result:
+        print row['col1'], row['col2']
+    result.close()
 
-The ProxyEngine is useful for applications that need to swap engines
-at runtime, or to create their tables and mappers before they know
-what engine they will use. One use case is an application meant to be
-pluggable into a mix of other applications, such as a WSGI
-application. Well-behaved WSGI applications should be relocatable; and
-since that means that two versions of the same application may be
-running in the same process (or in the same thread at different
-times), WSGI applications ought not to depend on module-level or
-global configuration. Using the ProxyEngine allows a WSGI application
-to define tables and mappers in a module, but keep the specific
-database connection uri as an application instance or thread-local
-value.
+When executing off the Engine directly, a Connection is created and used automatically.  The returned `ResultProxy` then has a `close()` method, which will return the resources used by the `Connection`.  This is a more abbreviated style of usage which is also the method used when dealing with "bound" schema and statement objects, which are described later.
 
-The ProxyEngine is used in the same way as any other engine, with one
-additional method:
+In both execution styles above, the `Connection` object will also automatically return its resources to the connection pool when the object is garbage collected, i.e. its `__del__()` method is called.  When using the standard C implementation of Python, this method is usually called immediately as soon as the object is dereferenced.  With other Python implementations such as Jython, this is not so guaranteed.  
     
-    {python}# define the tables and mappers
-    from sqlalchemy import *
-    from sqlalchemy.ext.proxy import ProxyEngine
-    
-    engine = ProxyEngine()
-    
-    users = Table('users', engine, ... )
-    
-    class Users(object):
-        pass
-        
-    assign_mapper(Users, users)
-    
-    def app(environ, start_response):
-        # later, connect the proxy engine to a real engine via the connect() method
-        engine.connect(environ['db_uri'])
-        # now you have a real db connection and can select, insert, etc.
-    
+The execute method on `Engine` and `Connection` can also receive SQL clause constructs as well, which are described in [sqlconstruction](rel:sqlconstruction):
 
-#### Using the Global Proxy {@name=defaultproxy}
-    
-There is an instance of ProxyEngine available within the schema package as `default_engine`.  You can construct Table objects and not specify the engine parameter, and they will connect to this engine by default.  To connect the default_engine, use the `global_connect` function.
+    {python}
+    connection = engine.connect()
+    result = connection.execute(select([table1], table1.c.col1==5))
+    for row in result:
+        print row['col1'], row['col2']
+    connection.close()
 
-    {python}# define the tables and mappers
-    from sqlalchemy import *
-    
-    # specify a table with no explicit engine
-    users = Table('users', 
-            Column('user_id', Integer, primary_key=True),
-            Column('user_name', String)
-        )
-    
-    # connect the global proxy engine
-    global_connect('sqlite://filename=foo.db')
-    
-    # create the table in the selected database
-    users.create()
-    
+#### Implicit Connection Contexts {@name=context}
 
+"Implicit" connections refer to the example above when the `execute()` method is called directly off the `Engine` object, *without* the usage of a `Connection` object, and resources are released by calling the `close()` method on the result object.  When using "implicit" connections, the user has two choices, determined when the Engine is first created, as to how the resources of this connection should be used in relation to other connections.  This is determined by the `strategy` argument to `create_engine()`, which has two possible values: `plain` and `threadlocal`.  In `plain`, every `execute` call uses a distinct connection from the database, which is only released when the `close()` method on the Result is called.  In `threadlocal`, multiple calls to `execute()` within the same thread will use the already-checked out connection resource if one is available, or if none is available will request a connection resource.
+
+It is crucial to note that the `plain` and `threadlocal` contexts **do not impact the `connect()` method on the Engine.**  If you are using explicit Connection objects returned by `connect()` method, you have full control over the connection resources used.
+
+The `plain` strategy is better suited to an application that insures the explicit releasing of the resources used by each execution.  This is because each execution uses its own distinct connection resource, and as those resources remain open, multiple connections can be checked out from the pool quickly.  Since the connection pool will block further requests when too many connections have been checked out, not keeping track of this can impact an application's stability.
+
+    {python title="Plain Strategy"}
+    db = create_engine('mysql://localhost/test', strategy='plain')
+    
+    # execute one statement and receive results.  r1 now references a DBAPI connection resource.
+    r1 = db.execute("select * from table1")
+    
+    # execute a second statement and receive results.  r2 now references a *second* DBAPI connection resource.
+    r2 = db.execute("select * from table2")
+    for row in r1:
+        ...
+    for row in r2:
+        ...
+    # release connection 1
+    r1.close()
+    
+    # release connection 2
+    r2.close()
+
+The `threadlocal` strategy is better suited to a programming style which relies upon the __del__() method of Connection objects in order to return them to the connection pool, rather than explicitly issuing a `close()` statement upon the `Result` object.   This is because all of the executions within a single thread will share the same connection, if one has already been checked out in the current thread.  Using this style, an application will use only one connection per thread at most within the scope of all implicit executions.
+
+    {python title="Threadlocal Strategy"}
+    db = create_engine('mysql://localhost/test', strategy='threadlocal')
+    
+    # execute one statement and receive results.  r1 now references a DBAPI connection resource.
+    r1 = db.execute("select * from table1")
+    
+    # execute a second statement and receive results.  r2 now references the *same* resource as r1
+    r2 = db.execute("select * from table2")
+    
+    for row in r1:
+        ...
+    for row in r2:
+        ...
+    # dereference r1.  the connection is still held by r2.
+    r1 = None
+    
+    # dereference r2.  with no more references to the underlying connection resources, they
+    # are returned to the pool.
+    r2 = None
+
+While the `close()` method is still available with the "threadlocal" strategy, it should be used carefully.  Above, if we issued a `close()` call on `r1`, and then tried to further work with results from `r2`, `r2` would be in an invalid state since its connection was already returned to the pool.  By relying on __del__() to automatically clean up resources, this condition will never occur.
+
+At this point, you're probably saying, "wow, why would anyone *ever* want to use the [insert name here] strategy ??"  Advantages to `plain` include that connection resources are immediately returned to the connection pool, without any reliance upon the __del__() method; there is no chance of resources being left around by a Python implementation that doesn't necessarily call __del__() immediately.  Advantages to `threadlocal` include that resources can be left to clean up after themselves, application code can be more minimal, its guaranteed that only one connection is used per thread, and there is no chance of a "connection pool block", which is when an execution hangs because the current thread has already checked out all remaining resources.
+
+    
 ### Transactions {@name=transactions}
 
+The `Connection` object provides a `begin()` method which returns a `Transaction` object.  This object is usually used within a try/except clause so that it is guaranteed to `rollback()` or `commit()`:
+
+    {python}
+    trans = connection.begin()
+    try:
+        r1 = connection.execute(table1.select())
+        connection.execute(table1.insert().execute(col1=7, col2='this is some data))
+        trans.commit()
+    except:
+        trans.rollback()
+        raise
+    
+    
 A SQLEngine also provides an interface to the transactional capabilities of the underlying DBAPI connection object, as well as the connection object itself.  Note that when using the object-relational-mapping package, described in a later section, basic transactional operation is handled for you automatically by its "Unit of Work" system;  the methods described here will usually apply just to literal SQL update/delete/insert operations or those performed via the SQL construction library.
     
 Typically, a connection is opened with `autocommit=False`.  So to perform SQL operations and just commit as you go, you can simply pull out a connection from the connection pool, keep it in the local scope, and call commit() on it as needed.  As long as the connection remains referenced, all other SQL operations within the same thread will use this same connection, including those used by the SQL construction system as well as the object-relational mapper, both described in later sections:
