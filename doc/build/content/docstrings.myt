@@ -7,7 +7,7 @@
     import sqlalchemy.engine.strategies as strategies
     import sqlalchemy.sql as sql
     import sqlalchemy.pool as pool
-    import sqlalchemy.mapping as mapping
+    import sqlalchemy.orm as orm
     import sqlalchemy.exceptions as exceptions
     import sqlalchemy.ext.proxy as proxy
     import sqlalchemy.mods.threadlocal as threadlocal
@@ -18,9 +18,9 @@
 <& pydoc.myt:obj_doc, obj=schema &>
 <& pydoc.myt:obj_doc, obj=engine, classes=[engine.ComposedSQLEngine, engine.Connection, engine.Transaction, engine.Dialect, engine.ConnectionProvider, engine.ExecutionContext, engine.ResultProxy, engine.RowProxy] &>
 <& pydoc.myt:obj_doc, obj=strategies &>
-<& pydoc.myt:obj_doc, obj=mapping, classes=[mapping.Mapper, mapping.MapperExtension] &>
-<& pydoc.myt:obj_doc, obj=mapping.query, classes=[mapping.query.Query] &>
-<& pydoc.myt:obj_doc, obj=mapping.objectstore, classes=[mapping.objectstore.Session, mapping.objectstore.SessionTransaction] &>
+<& pydoc.myt:obj_doc, obj=orm, classes=[orm.Mapper, orm.MapperExtension] &>
+<& pydoc.myt:obj_doc, obj=orm.query, classes=[orm.query.Query] &>
+<& pydoc.myt:obj_doc, obj=orm.session, classes=[orm.session.Session, orm.session.SessionTransaction] &>
 <& pydoc.myt:obj_doc, obj=threadlocal &>
 <& pydoc.myt:obj_doc, obj=exceptions &>
 <& pydoc.myt:obj_doc, obj=pool, classes=[pool.DBProxy, pool.Pool, pool.QueuePool, pool.SingletonThreadPool] &>
