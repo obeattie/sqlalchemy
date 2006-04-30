@@ -1,75 +1,69 @@
 Database Engines {@name=dbengine}
 ============================
 
-A database engine is a subclass of `sqlalchemy.engine.Engine`, and is the starting point for where SQLAlchemy provides a layer of abstraction on top of the various DBAPI2 database modules.  It serves as an abstract factory for database-specific implementation objects as well as a layer of abstraction over the most essential tasks of a database connection, including connecting, executing queries, returning result sets, and managing transactions.
-    
-The average developer doesn't need to know anything about the interface or workings of an Engine in order to use it.  Simply creating one, and then specifying it when constructing tables and other SQL objects is all that's needed. 
-    
-An Engine is also a layer of abstraction on top of the connection pooling described in the previous section.  Once you have an Engine, you can retrieve pooled connections directly from its underlying connection pool via its own `connection()` method.  However, if you're exclusively using SQLALchemy's SQL construction objects and/or object-relational mappers, all the details of connecting can be handled automatically by *binding* those objects to the Engine.
+A database engine is a subclass of `sqlalchemy.sql.Engine`, and is the starting point for where SQLAlchemy provides a layer of abstraction on top of the various DBAPI2 database modules.  For all databases supported by SA, there is a specific "implementation" module, found in the `sqlalchemy.databases` package, that provides all the objects an `Engine` needs in order to perform its job.  A typical user of SQLAlchemy never needs to deal with these modules directly.  For many purposes, the only knowledge that's needed is how to create an Engine for a particular connection URL.  When dealing with direct execution of SQL statements, one would also be aware of Result, Connection, and Transaction objects.  The primary public facing objects are:
 
-This binding process is also completely optional, and explicitly managed connections can be used as well.
-    
+* **URL** - represents the identifier for a particular database.  URL objects are usually created automatically based on a given connect string passed to the `create_engine()` function.
+* **Engine** - Combines a connection-providing resource with implementation-provided objects that know how to generate, execute, and gather information about SQL statements.  It also provides the primary interface by which Connections are obtained, as well as a context for constructed SQL objects and schema constructs to "implicitly execute" themselves, which is an optional feature of SA 0.2.  The Engine object that is normally dealt with is an instance of `sqlalchemy.engine.base.ComposedSQLEngine`.
+* **Connection** - represents a connection to the database.  The underlying connection object returned by a DBAPI's connect() method is referenced internally by the Connection object.  Connection provides methods that handle the execution of SQLAlchemy's own SQL construct objects, as well as literal string-based statements.  
+* **Transaction** - represents a transaction on a single Connection.  Includes `begin()`, `commit()` and `rollback()` methods that support basic "nestable" behavior, meaning an outermost transaction is maintained against multiple nested calls to begin/commit.
+* **ResultProxy** - Represents the results of an execution, and is most analgous to the cursor object in DBAPI.  It primarily allows iteration over result sets, but also provides an interface to information about inserts/updates/deletes, such as the count of rows affected, last inserted IDs, etc.
+* **RowProxy** -  Represents a single row returned by the fetchone() method on ResultProxy.
+
+Underneath the public-facing API of `ComposedSQLEngine`, several components are provided by database implementations to provide the full behavior, including:
+
+* **Dialect** - this object is provided by database implementations to describe the behavior of a particular database.  It acts as a repository for metadata about a database's characteristics, and provides factory methods for other objects that deal with generating SQL strings and objects that handle some of the details of statement execution.  
+* **ConnectionProvider** - this object knows how to return a DBAPI connection object.  It typically talks to a connection pool.
+* **ExecutionContext** - this object is created for each execution of a single SQL statement, and stores information such as the last primary keys inserted, the total count of rows affected, etc.  It also may implement any special logic that various DBAPI modules may require before or after a statement execution.
+* **Compiler** - receives SQL expression objects and assembles them into strings that are suitable for direct execution, as well as collecting bind parameters into a dictionary or list to be sent along with the statement.
+* **SchemaGenerator** - receives collections of Schema objects and knows how to generate the appropriate SQL for `CREATE` and `DROP` statements.
+
+### Supported Databases {@name=supported}
+
+Engines exist for SQLite, Postgres, MySQL, MS-SQL, and Oracle, using the Pysqlite, Psycopg (1 or 2), MySQLDB, adodbapi or pymssql, and cx_Oracle modules.  There is also not-well tested support for Firebird.   For each engine, a distinct Python module exists in the `sqlalchemy.databases` package, which provides implementations of some of the objects mentioned in the previous section.
 
 ### Establishing a Database Engine {@name=establishing}
-    
-Engines exist for SQLite, Postgres, MySQL, MS-SQL, and Oracle, using the Pysqlite, Psycopg (1 or 2), MySQLDB, adodbapi or pymssql, and cx_Oracle modules (there is also experimental support for Firebird).  Each engine imports its corresponding module which is required to be installed.  For Postgres and Oracle, an alternate module may be specified at construction time as well.
-    
-The string based argument names for connecting are translated to the appropriate names when the connection is made; argument names include "host" or "hostname" for database host, "database", "db", or "dbname" for the database name (also is dsn for Oracle), "user" or "username" for the user, and "password", "pw", or "passwd" for the password.  SQLite expects "filename" or "file" for the filename, or if None it defaults to "":memory:".
 
-The connection arguments can be specified as a string + dictionary pair, or a single URL-encoded string, as follows:
-    
-    {python}from sqlalchemy import *
+SQLAlchemy 0.2 indicates the source of an Engine strictly via [RFC-1738](http://rfc.net/rfc1738.html) style URLs, combined with optional keyword arguments to specify options for the Engine.  The form of the URL is:
 
-    # sqlite in memory    
-    sqlite_engine = create_engine('sqlite', {'filename':':memory:'}, **opts)
+    driver://username:password@host:port/database
 
-    # via URL
-    sqlite_engine = create_engine('sqlite://', **opts)
-    
-    # sqlite using a file
-    sqlite_engine = create_engine('sqlite', {'filename':'querytest.db'}, **opts)
+Available drivernames are `sqlite`, `mysql`, `postgres`, `oracle`, `mssql`, and `firebird`.  For sqlite, the database name is the filename to connect to, or the special name ":memory:" which indicates an in-memory database.  The URL is typically sent as a string to the `create_engine()` function:
 
-    # via URL
-    sqlite_engine = create_engine('sqlite://filename=querytest.db', **opts)
+    db = create_engine('postgres://scott:tiger@localhost:5432/mydatabase')
+    sqlite_db = create_engine('sqlite:///mydb.txt')
+    mysql_db = create_engine('sqlite://localhost/foo')
+    oracle_db = create_engine('oracle://scott:tiger@dsn')
 
-    # postgres
-    postgres_engine = create_engine('postgres', 
-                            {'database':'test', 
-                            'host':'127.0.0.1', 
-                            'user':'scott', 
-                            'password':'tiger'}, **opts)
+### Database Engine Options {@name=options}
 
-    # via URL
-    postgres_engine = create_engine('postgres://database=test&amp;host=127.0.0.1&amp;user=scott&amp;password=tiger')
-    
-    # mysql
-    mysql_engine = create_engine('mysql',
-                            {
-                                'db':'mydb',
-                                'user':'scott',
-                                'passwd':'tiger',
-                                'host':'127.0.0.1'
-                            }
-                            **opts)
-    # oracle
-    oracle_engine = create_engine('oracle', 
-                            {'dsn':'mydsn', 
-                            'user':'scott', 
-                            'password':'tiger'}, **opts)
-    
+Keyword options can also be specified to `create_engine()`, following the string URL as follows:
 
-    
-Note that the general form of connecting to an engine is:
+    db = create_engine('postgres://...', encoding='latin1', echo=True, module=psycopg1)
 
-    {python}# separate arguments
-    engine = create_engine(
-                <enginename>, 
-                {<named DBAPI arguments>}, 
-                <sqlalchemy options>
-            )
+* pool=None : an instance of `sqlalchemy.pool.Pool` to be used as the underlying source for connections, overriding the engine's connect arguments (pooling is described in [pool](rel:pool)).  If None, a default `Pool` (usually `QueuePool`, or `SingletonThreadPool` in the case of SQLite) will be created using the engine's connect arguments.
 
-    # url
-    engine = create_engine('&lt;enginename&gt;://&lt;named DBAPI arguments&gt;', <sqlalchemy options>)
+Example:
+
+        {python}
+        from sqlalchemy import *
+        import sqlalchemy.pool as pool
+        import MySQLdb
+
+        def getconn():
+            return MySQLdb.connect(user='ed', dbname='mydb')
+
+        engine = create_engine('mysql', pool=pool.QueuePool(getconn, pool_size=20, max_overflow=40))
+
+* echo=False : if True, the Engine will log all statements as well as a repr() of their parameter lists to the engines logger, which defaults to sys.stdout.  A SQLEngine instances' "echo" data member can be modified at any time to turn logging on and off.  If set to the string 'debug', result rows will be printed to the standard output as well.
+* logger=None : a file-like object where logging output can be sent, if echo is set to True.  This defaults to sys.stdout.
+* module=None : used by Oracle and Postgres, this is a reference to a DBAPI2 module to be used instead of the engine's default module.  For Postgres, the default is psycopg2, or psycopg1 if 2 cannot be found.  For Oracle, its cx_Oracle.
+* default_ordering=False : if True, table objects and associated joins and aliases will generate information used for ordering by primary keys (or OIDs, if the database supports OIDs).  This information is used by the Mapper system to when it constructs select queries to supply a default ordering to mapped objects.
+* use_ansi=True : used only by Oracle;  when False, the Oracle driver attempts to support a particular "quirk" of some Oracle databases, that the LEFT OUTER JOIN SQL syntax is not supported, and the "Oracle join" syntax of using &lt;column1&gt;(+)=&lt;column2&gt; must be used in order to achieve a LEFT OUTER JOIN.  Its advised that the Oracle database be configured to have full ANSI support instead of using this feature.
+* use_oids=False : used only by Postgres, will enable the column name "oid" as the object ID column.  Postgres as of 8.1 has object IDs disabled by default.
+* convert_unicode=False : if set to True, all String/character based types will convert Unicode values to raw byte values going into the database, and all raw byte values to Python Unicode coming out in result sets.  This is an engine-wide method to provide unicode across the board.  For unicode conversion on a column-by-column level, use the Unicode column type instead.
+* encoding='utf-8' : the encoding to use for Unicode translations - passed to all encode/decode methods.
+* echo_uow=False : when True, logs unit of work commit plans to the standard output.
 
 ### Database Engine Methods {@name=methods}
 
@@ -97,32 +91,6 @@ A few useful methods off the SQLEngine are described here:
     # log a message to the engine's log stream
     engine.log('this is a message')
                
-### Database Engine Options {@name=options}
-
-The remaining arguments to `create_engine` are keyword arguments that are passed to the specific subclass of `sqlalchemy.engine.SQLEngine` being used,  as well as the underlying `sqlalchemy.pool.Pool` instance.  All of the options described in the previous section [pooling_configuration](rel:pooling_configuration) can be specified, as well as engine-specific options:
-    
-* pool=None : an instance of `sqlalchemy.pool.Pool` to be used as the underlying source for connections, overriding the engine's connect arguments (pooling is described in the previous section).  If None, a default Pool (QueuePool or SingletonThreadPool as appropriate) will be created using the engine's connect arguments.
-
-Example:
-
-    {python}from sqlalchemy import *
-    import sqlalchemy.pool as pool
-    import MySQLdb
-    
-    def getconn():
-        return MySQLdb.connect(user='ed', dbname='mydb')
-    
-    engine = create_engine('mysql', pool=pool.QueuePool(getconn, pool_size=20, max_overflow=40))
-
-* echo=False : if True, the SQLEngine will log all statements as well as a repr() of their parameter lists to the engines logger, which defaults to sys.stdout.  A SQLEngine instances' "echo" data member can be modified at any time to turn logging on and off.  If set to the string 'debug', result rows will be printed to the standard output as well.
-* logger=None : a file-like object where logging output can be sent, if echo is set to True.  This defaults to sys.stdout.
-* module=None : used by Oracle and Postgres, this is a reference to a DBAPI2 module to be used instead of the engine's default module.  For Postgres, the default is psycopg2, or psycopg1 if 2 cannot be found.  For Oracle, its cx_Oracle.
-* default_ordering=False : if True, table objects and associated joins and aliases will generate information used for ordering by primary keys (or OIDs, if the database supports OIDs).  This information is used by the Mapper system to when it constructs select queries to supply a default ordering to mapped objects.
-* use_ansi=True : used only by Oracle;  when False, the Oracle driver attempts to support a particular "quirk" of some Oracle databases, that the LEFT OUTER JOIN SQL syntax is not supported, and the "Oracle join" syntax of using &lt;column1&gt;(+)=&lt;column2&gt; must be used in order to achieve a LEFT OUTER JOIN.  Its advised that the Oracle database be configured to have full ANSI support instead of using this feature.
-* use_oids=False : used only by Postgres, will enable the column name "oid" as the object ID column.  Postgres as of 8.1 has object IDs disabled by default.
-* convert_unicode=False : if set to True, all String/character based types will convert Unicode values to raw byte values going into the database, and all raw byte values to Python Unicode coming out in result sets.  This is an engine-wide method to provide unicode across the board.  For unicode conversion on a column-by-column level, use the Unicode column type instead.
-* encoding='utf-8' : the encoding to use for Unicode translations - passed to all encode/decode methods.
-* echo_uow=False : when True, logs unit of work commit plans to the standard output.
     
 ### Using the Proxy Engine {@name=proxy}
 

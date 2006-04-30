@@ -4,8 +4,6 @@
 
     files = [
         'tutorial',
-        'trailmap',
-        'pooling',
         'dbengine',
         'metadata',
         'sqlconstruction',
@@ -13,6 +11,7 @@
         'unitofwork',
         'adv_datamapping',
         'types',
+        'pooling',
         'docstrings',
         ]
 

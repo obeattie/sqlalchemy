@@ -491,7 +491,10 @@ You may have noticed from the example above that when we say `session.flush()`, 
     ['fredsnewemail@fred.com', 7]
     COMMIT
 
-Main documentation:  [unitofwork](rel:unitofwork), [dbengine_transactions](rel:dbengine_transactions).
+Main documentation:  [unitofwork](rel:unitofwork)
 
-Conclusion
+Next Steps
 ----------
+
+That covers a quick tour through the basic idea of SQLAlchemy, in its simplest form.  Beyond that, one should familiarize oneself with the basics of Sessions, the various patterns that can be used to define different kinds of Mappers and relations among them, the rudimentary SQL types that are available when constructing Tables, and the basics of Engines, SQL statements, and database Connections. 
+
