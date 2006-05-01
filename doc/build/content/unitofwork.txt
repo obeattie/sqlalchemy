@@ -138,11 +138,29 @@ Unlike the identity map, the `new`, `dirty`, and `deleted` lists are *not weak r
 
 #### query() {@name=query}
 
+The `query()` function takes a class or `Mapper` as an argument, along with an optional `entity_name` parameter, and returns a new `Query` object which will issue mapper queries within the context of this Session.  If a Mapper is passed, then the Query uses that mapper.  Otherwise, if a class is sent, it will locate the primary mapper for that class which is used to construct the Query.  
+
+"entity_name" is an optional keyword argument sent with a class object, in order to further qualify which primary mapper to be used; this only applies if there was a `Mapper` created with that particular class/entity name combination, else an exception is raised.  All of the methods on Session which take a class or mapper argument also take the "entity_name" argument, so that a given class can be properly matched to the desired primary mapper.
+
+All instances retrieved by the returned `Query` object will be stored as persistent instances within the originating Session.
+
 #### get() {@name=get}
+
+Given a class or mapper, a scalar or tuple-based identity, and an optional "entity_name" keyword argument, creates a `Query` corresponding to the given mapper or class/entity_name combination, and calls the `get()` method with the given identity value.  If the object already exists within this Session, it is simply returned, else it is queried from the database.  If the instance is not found, the method returns `None`.
 
 #### load() {@name=load}
 
+load() is similar to get() except it will raise an exception if the instance does not exist in the database.  It will also load the object's data from the database in all cases, and **overwrite** all changes on the object if it already exists in the session with the latest data from the database.
+
 #### save() {@name=save}
+
+save() is called with a single transient (unsaved, unattached) instance as an argument, which is then added to the Session and becomes pending.  When the session is next `flush()`ed, the instance will be saved to the database uponwhich it becomes persistent (saved, attached).  If the given instance is not transient, meaning it is either attached to an existing Session or it has a database identity, an exception is raised.
+
+save() is called automatically for new instances by the classes' associated mapper, if a default Session context is in effect (such as a thread-local session), which means that newly created instances automatically become pending.  If there is no default session available, then the instance remains transient (unattached) until it is explicitly added to a Session via the save() method.
+
+A transient instance also can be automatically `save()`ed if it is associated with a parent object which specifies `save-update` within its *cascade* rules, and that parent is already attached or becomes attached to a Session.  For more information on cascade, see the next section.
+
+The `save_or_update()` method is a convenience method which will call the `save()` or `update()` methods appropriately dependening on whether or not the instance has a database identity (but the instance still must be unattached).
 
 #### flush() {@name=flush}    
 
@@ -170,6 +188,8 @@ The primary guideline for dealing with flush() is, the developer is responsible 
         
 #### close() {@name=close}
 
+This method first calls `clear()`, removing all objects from this Session, and then insures that any transactional resources are closed.
+
 #### delete() {@name=delete}
 
 The delete call places an instance into the Unit of Work's list of objects to be marked as deleted:
@@ -182,7 +202,7 @@ The delete call places an instance into the Unit of Work's list of objects to be
     # flush
     session.flush()
 
-The delete operation will have an effect on instances that are attached to the deleted instance according to the `cascade` style of the relationship.  By default, associated instances may need to be updated upon flush in order to reflect that they no longer are associated with the parent object, before the parent is deleted.  If the relationship specifies `cascade="delete"`, then the associated instance will also be deleted upon flush, assuming it is still attached to the parent.  If the relationship additionally includes the `delete-orphan` cascade style, the associated instance will be deleted if it is still attached to the parent, or is unattached to any other parent. 
+The delete operation will have an effect on instances that are attached to the deleted instance according to the `cascade` style of the relationship; cascade rules are described further in the following section.  By default, associated instances may need to be updated in the database to reflect that they no longer are associated with the parent object, before the parent is deleted.  If the relationship specifies `cascade="delete"`, then the associated instance will also be deleted upon flush, assuming it is still attached to the parent.  If the relationship additionally includes the `delete-orphan` cascade style, the associated instance will be deleted if it is still attached to the parent, or is unattached to any other parent. 
 
 The `delete()` operation has no relationship to the in-memory status of the instance, including usage of the `del` Python statement.  An instance marked as deleted and flushed will still exist within memory until references to it are freed; similarly, removing an instance from memory via the `del` statement will have no effect, since the persistent instance will still be referenced by its Session.  Obviously, if the instance is removed from the Session and then totally dereferenced, it will no longer exist in memory, but also won't exist in any Session and is therefore not deleted from the database.
 
@@ -220,25 +240,84 @@ Use `expunge` when youd like to remove an object altogether from memory, such as
 
 #### bind_mapper()/bind_table() {@name=bind}
 
+Both of these methods receive two arguments; in the case of `bind_mapper()`, it is a `Mapper` and an `Engine` or `Connection` instance; in the case of `bind_table()`, it is a `Table` instance or other `Selectable` (such as an `Alias`, `Select`, etc.), and an `Engine` or `Connection` instance.
+
+Normally, when a Session is created via `create_session()` with no arguments, the Session has no awareness of individual `Engines`, and when mappers use the `Session` to retreieve connections, the underlying `MetaData` each `Table` is associated with is expected to be "bound" to an `Engine`, else no engine can be located and an exception is raiased.  A second form of `create_session()` takes the argument `bind_to=engine_or_connection`, where all operations performed by this Session are done via the single Engine or Connection passed to the constructor.
+
+The point of these methods is to bind individual mapper and/or table operations to distinct engines or connections, thereby overriding not only the engine which may be "bound" to the underlying `MetaData`, but also the `Engine` or `Connection` which may have been passed to the constructor.  Configurations which interact with multiple explicit database connections at one time must use either or both of these methods in order to associate Session operations with the appropriate connection resource.  
+
+Binding a `Mapper` to a resource takes precedence over a `Table` bind, meaning if mapper A is associated with table B, and the Session binds mapper A to connection X and table B to connection Y, an opertaion with mapper A will use connection X, not connection Y.
+
 #### update() {@name=update}
+
+The update() method is used *only* with detached instances.  A detached instance only exists if its `Session` was cleared or closed, or the instance was `expunge()`d from its session.  `update()` will re-attach the detached instance with this Session, bringing it back to the persistent state.  If the instance is already attached to an existing Session, an exception is raised.
+
+The `save_or_update()` method is a convenience method which will call the `save()` or `update()` methods appropriately dependening on whether or not the instance has a database identity (but the instance still must be unattached).
 
 #### save_or_update() {@name=save_or_update}
 
+This method is a combination of the `save()` and `update()` methods, which will examine the given instance for a database identity (i.e. if it is transient or detached), and will call the implementation of `save()` or `update()` as appropriate.  Use `save_or_update()` to add unattached instances to a session when you're not sure if they were newly created or not.
+
 #### merge() {@name=merge}
 
-The _instance_key attribute placed on object instances is designed to work with objects that are serialized into strings and brought back again.  As it contains no references to internal structures or database connections, applications that use caches or session storage which require serialization (i.e. pickling) can store SQLAlchemy-loaded objects.  However, as mentioned earlier, an object with a particular database identity is only allowed to exist uniquely within the current unit-of-work scope.  So, upon deserializing such an object, it has to "check in" with the current Session.  This is achieved via the `import_instance()` method:
+`merge()` is used to return the persistent version of an instance that is not attached to this Session.  When passed an instance, if an instance with its database identity already exists within this Session, it is returned.  If the instance does not exist in this Session, it is loaded from the database and then returned.  
+
+A future version of `merge()` will also update the Session's instance with the state of the given instance (hence the name "merge").
+
+This method is useful for bringing in objects which may have been restored from a serialization, such as those stored in an HTTP session:
 
     {python}
     # deserialize an object
     myobj = pickle.loads(mystring)
 
-    # "import" it.  if the objectstore already had this object in the 
+    # "merge" it.  if the session already had this object in the 
     # identity map, then you get back the one from the current session.
-    myobj = session.import_instance(myobj)
+    myobj = session.merge(myobj)
+
+Note that `merge()` *does not* associate the given instance with the Session; it remains detached (or attached to whatever Session it was already attached to).
         
-Note that the import_instance() function will either mark the deserialized object as the official copy in the current identity map, which includes updating its _instance_key with the current application's class instance, or it will discard it and return the corresponding object that was already present.  Thats why its important to receive the return results from the method and use the result as the official object instance.
+### Cascade rules {@name=cascade}
 
+Mappers support the concept of configurable *cascade* behavior on `relation()`s.  This behavior controls how the Session should treat the instances that have a parent-child relationship with another instance that is operated upon by the Session.  Cascade is indicated as a comma-separated list of string keywords, with the possible values `all`, `delete`, `save-update`, `refresh-expire`, `merge`, `expunge`, and `delete-orphan`.
 
+Cascading is configured by setting the `cascade` keyword argument on a `relation()`:
+
+    {python}
+    mapper(Order, order_table, properties={
+        'items' : relation(Item, items_table, cascade="all, delete-orphan"),
+        'customer' : relation(User, users_table, user_orders_table, cascade="save-update"),
+    })
+
+The above mapper specifies two relations, `items` and `customer`.  The `items` relationship specifies "all, delete-orphan" as its `cascade` value, indicating that all  `save`, `update`, `merge`, `expunge`, `refresh` `delete` and `expire` operations performed on a parent `Order` instance should also be performed on the child `Item` instances attached to it (`save` and `update` are cascaded using the `save_or_update()` method, so that the database identity of the instance doesn't matter).  The `delete-orphan` cascade value additionally indicates that if an `Item` instance is no longer associated with an `Order`, it should also be deleted.  The "all, delete-orphan" cascade argument allows a so-called *lifecycle* relationship between an `Order` and an `Item` object.
+
+The `customer` relationship specifies only the "save-update" cascade value, indicating most operations will not be cascaded from a parent `Order` instance to a child `User` instance, except for if the `Order` is attached with a particular session, either via the `save()`, `update()`, or `save-update()` method.
+
+Additionally, when a child item is attached to a parent item that specifies the "save-update" cascade value on the relationship, the child is automatically passed to `save_or_update()` (and the operation is further cascaded to the child item).
+
+Note that cascading doesn't do anything that isn't possible by manually calling Session methods on individual instances within a hierarchy, it merely automates common operations on a group of associated instances.
+
+### SessionTransaction {@name=transaction}
+
+SessionTransaction is a multi-engine transaction manager, which aggregates one or more Engine/Connection pairs and keeps track of a Transaction object for each one.  As the Session receives requests to execute SQL statements, it uses the Connection that is referenced by the SessionTransaction.  At commit time, the underyling Session is flushed, and each Transaction is the committed.
+
+Example usage is as follows:
+
+    {python}
+    sess = create_session()
+    trans = sess.create_transaction()
+    try:
+        item1 = sess.query(Item).get(1)
+        item2 = sess.query(Item).get(2)
+        item1.foo = 'bar'
+        item2.bar = 'foo'
+        trans.commit()
+    except:
+        trans.rollback()
+        raise
+
+The `create_transaction()` method creates a new SessionTransaction object but does not declare any connection/transaction resources.  At the point of the first `get()` call, a connection resource is opened off the engine that corresponds to the Item classes' mapper and is stored within the SessionTransaction with an open Transaction.  When `trans.commit()` is called, the `flush()` method is called on the `Session` and the corresponding update statements are issued to the database within the scope of the transaction already opened; afterwards, the underying Transaction is committed, and connection resources are freed.
+
+`SessionTransaction`, like the `Transaction` off of `Connection` also supports "nested" behavior, and is safe to pass to other functions which then issue their own `begin()`/`commit()` pair; only the outermost `begin()`/`commit()` pair actually affects the transaction, and any call to `rollback()` within a particular call stack will issue a rollback.
 
 #### Analyzing Object Commits {@name=logging}    
 
