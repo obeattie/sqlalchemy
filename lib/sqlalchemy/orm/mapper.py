@@ -274,9 +274,9 @@ class Mapper(object):
             self._query = querylib.Query(self)
             return self._query
     
-    def get(self, *ident, **kwargs):
+    def get(self, ident, **kwargs):
         """calls get() on this mapper's default Query object."""
-        return self.query().get(*ident, **kwargs)
+        return self.query().get(ident, **kwargs)
         
     def _get(self, key, ident=None, reload=False):
         return self.query()._get(key, ident=ident, reload=reload)
@@ -464,13 +464,13 @@ class Mapper(object):
             result = [result] + otherresults
         return result
         
-    def identity_key(self, *primary_key):
+    def identity_key(self, primary_key):
         """returns the instance key for the given identity value.  this is a global tracking object used by the Session, and is usually available off a mapped object as instance._instance_key."""
-        return sessionlib.get_id_key(tuple(primary_key), self.class_, self.entity_name)
+        return sessionlib.get_id_key(util.to_list(primary_key), self.class_, self.entity_name)
     
     def instance_key(self, instance):
         """returns the instance key for the given instance.  this is a global tracking object used by the Session, and is usually available off a mapped object as instance._instance_key."""
-        return self.identity_key(*self.identity(instance))
+        return self.identity_key(self.identity(instance))
 
     def identity(self, instance):
         """returns the identity (list of primary key values) for the given instance.  The list of values can be fed directly into the get() method as mapper.get(*key)."""

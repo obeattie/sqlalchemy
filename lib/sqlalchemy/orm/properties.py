@@ -391,7 +391,7 @@ class LazyLoader(PropertyLoader):
                     for primary_key in self.mapper.pks_by_table[self.mapper.select_table]:
                         bind = self.lazyreverse[primary_key]
                         ident.append(params[bind.key])
-                    return self.mapper.using(session).get(*ident)
+                    return self.mapper.using(session).get(ident)
                 elif self.order_by is not False:
                     order_by = self.order_by
                 elif self.secondary is not None and self.secondary.default_order_by() is not None:

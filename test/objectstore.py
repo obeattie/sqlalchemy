@@ -218,7 +218,7 @@ class PKTest(AssertMixin):
         e.multi_rev = 2
         objectstore.flush()
         objectstore.clear()
-        e2 = Entry.mapper.get(e.multi_id, 2)
+        e2 = Entry.mapper.get((e.multi_id, 2))
         self.assert_(e is not e2 and e._instance_key == e2._instance_key)
     def testmanualpk(self):
         class Entry(object):

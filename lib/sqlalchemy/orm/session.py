@@ -227,26 +227,26 @@ class Session(object):
         is a list or tuple of objects specifically to be flushed."""
         self.uow.flush(self, objects)
 
-    def get(self, class_, *ident, **kwargs):
+    def get(self, class_, ident, **kwargs):
         """returns an instance of the object based on the given identifier, or None
-        if not found.  The *ident argument is a list of primary key columns in the order of the 
+        if not found.  The ident argument is a scalar or tuple of primary key column values in the order of the 
         table def's primary key columns.
         
         the entity_name keyword argument may also be specified which further qualifies the underlying
         Mapper used to perform the query."""
         entity_name = kwargs.get('entity_name', None)
-        return self.query(class_, entity_name=entity_name).get(*ident)
+        return self.query(class_, entity_name=entity_name).get(ident)
         
-    def load(self, class_, *ident, **kwargs):
+    def load(self, class_, ident, **kwargs):
         """returns an instance of the object based on the given identifier. If not found,
         raises an exception.  The method will *remove all pending changes* to the object
-        already existing in the Session.  The *ident argument is a 
-        list of primary key columns in the order of the table def's primary key columns.
+        already existing in the Session.  The ident argument is a scalar or tuple of
+        primary key columns in the order of the table def's primary key columns.
         
         the entity_name keyword argument may also be specified which further qualifies the underlying
         Mapper used to perform the query."""
         entity_name = kwargs.get('entity_name', None)
-        return self.query(class_, entity_name=entity_name).load(*ident)
+        return self.query(class_, entity_name=entity_name).load(ident)
                 
     def refresh(self, object):
         """reloads the attributes for the given object from the database, clears
@@ -310,7 +310,7 @@ class Session(object):
                 for k in ident:
                     if k is None:
                         raise InvalidRequestError("Instance '%s' does not have a full set of identity values, and does not represent a saved entity in the database.  Use the add() method to add unsaved instances to this Session." % repr(obj))
-                key = mapper.identity_key(*ident)
+                key = mapper.identity_key(ident)
             u = self.uow
             if u.identity_map.has_key(key):
                 # TODO: copy the state of the given object into this one.  tricky !

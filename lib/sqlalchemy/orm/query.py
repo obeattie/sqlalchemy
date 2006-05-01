@@ -35,19 +35,19 @@ class Query(object):
     props = property(lambda s:s.mapper.props)
     session = property(_get_session)
     
-    def get(self, *ident, **kwargs):
+    def get(self, ident, **kwargs):
         """returns an instance of the object based on the given identifier, or None
-        if not found.  The *ident argument is a 
-        list of primary key columns in the order of the table def's primary key columns."""
-        key = self.mapper.identity_key(*ident)
+        if not found.  The ident argument is a scalar or tuple of primary key column values
+        in the order of the table def's primary key columns."""
+        key = self.mapper.identity_key(ident)
         return self._get(key, ident, **kwargs)
 
-    def load(self, *ident, **kwargs):
+    def load(self, ident, **kwargs):
         """returns an instance of the object based on the given identifier. If not found,
         raises an exception.  The method will *remove all pending changes* to the object
-        already existing in the Session.  The *ident argument is a 
-        list of primary key columns in the order of the table def's primary key columns."""
-        key = self.mapper.identity_key(*ident)
+        already existing in the Session.  The ident argument is a scalar or tuple of primary
+        key column values in the order of the table def's primary key columns."""
+        key = self.mapper.identity_key(ident)
         instance = self._get(key, ident, reload=True, **kwargs)
         if instance is None:
             raise exceptions.InvalidRequestError("No instance found for identity %s" % repr(ident))
@@ -215,6 +215,8 @@ class Query(object):
 
         if ident is None:
             ident = key[1]
+        else:
+            ident = util.to_list(ident)
         i = 0
         params = {}
         for primary_key in self.mapper.pks_by_table[self.table]:

@@ -56,7 +56,7 @@ def create():
 def drop():
     metadata.drop_all()
 def delete():
-    for t in metadata.table_iterator():
+    for t in metadata.table_iterator(reverse=False):
         t.delete().execute()
 def user_data():
     users.insert().execute(
