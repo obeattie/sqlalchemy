@@ -5,7 +5,7 @@ A database engine is a subclass of `sqlalchemy.sql.Engine`, and is the starting 
 
 * **URL** - represents the identifier for a particular database.  URL objects are usually created automatically based on a given connect string passed to the `create_engine()` function.
 * **Engine** - Combines a connection-providing resource with implementation-provided objects that know how to generate, execute, and gather information about SQL statements.  It also provides the primary interface by which Connections are obtained, as well as a context for constructed SQL objects and schema constructs to "implicitly execute" themselves, which is an optional feature of SA 0.2.  The Engine object that is normally dealt with is an instance of `sqlalchemy.engine.base.ComposedSQLEngine`.
-* **Connection** - represents a connection to the database.  The underlying connection object returned by a DBAPI's connect() method is referenced internally by the Connection object.  Connection provides methods that handle the execution of SQLAlchemy's own SQL construct objects, as well as literal string-based statements.  
+* **Connection** - represents a connection to the database.  The underlying connection object returned by a DBAPI's connect() method is referenced internally by the Connection object.  Connection provides methods that handle the execution of SQLAlchemy's own SQL constructs, as well as literal string-based statements.  
 * **Transaction** - represents a transaction on a single Connection.  Includes `begin()`, `commit()` and `rollback()` methods that support basic "nestable" behavior, meaning an outermost transaction is maintained against multiple nested calls to begin/commit.
 * **ResultProxy** - Represents the results of an execution, and is most analgous to the cursor object in DBAPI.  It primarily allows iteration over result sets, but also provides an interface to information about inserts/updates/deletes, such as the count of rows affected, last inserted IDs, etc.
 * **RowProxy** -  Represents a single row returned by the fetchone() method on ResultProxy.
@@ -13,8 +13,8 @@ A database engine is a subclass of `sqlalchemy.sql.Engine`, and is the starting 
 Underneath the public-facing API of `ComposedSQLEngine`, several components are provided by database implementations to provide the full behavior, including:
 
 * **Dialect** - this object is provided by database implementations to describe the behavior of a particular database.  It acts as a repository for metadata about a database's characteristics, and provides factory methods for other objects that deal with generating SQL strings and objects that handle some of the details of statement execution.  
-* **ConnectionProvider** - this object knows how to return a DBAPI connection object.  It typically talks to a connection pool.
-* **ExecutionContext** - this object is created for each execution of a single SQL statement, and stores information such as the last primary keys inserted, the total count of rows affected, etc.  It also may implement any special logic that various DBAPI modules may require before or after a statement execution.
+* **ConnectionProvider** - this object knows how to return a DBAPI connection object.  It typically talks to a connection pool which maintains one or more connections in memory for quick re-use.
+* **ExecutionContext** - this object is created for each execution of a single SQL statement, and tracks information about its execution such as primary keys inserted, the total count of rows affected, etc.  It also may implement any special logic that various DBAPI implementations may require before or after a statement execution.
 * **Compiler** - receives SQL expression objects and assembles them into strings that are suitable for direct execution, as well as collecting bind parameters into a dictionary or list to be sent along with the statement.
 * **SchemaGenerator** - receives collections of Schema objects and knows how to generate the appropriate SQL for `CREATE` and `DROP` statements.
 
@@ -153,11 +153,10 @@ The `threadlocal` strategy is better suited to a programming style which relies 
     # are returned to the pool.
     r2 = None
 
-While the `close()` method is still available with the "threadlocal" strategy, it should be used carefully.  Above, if we issued a `close()` call on `r1`, and then tried to further work with results from `r2`, `r2` would be in an invalid state since its connection was already returned to the pool.  By relying on __del__() to automatically clean up resources, this condition will never occur.
+While the `close()` method is still available with the "threadlocal" strategy, it should be used carefully.  Above, if we issued a `close()` call on `r1`, and then tried to further work with results from `r2`, `r2` would be in an invalid state since its connection was already returned to the pool.  By relying on `__del__()` to automatically clean up resources, this condition will never occur.
 
-At this point, you're probably saying, "wow, why would anyone *ever* want to use the [insert name here] strategy ??"  Advantages to `plain` include that connection resources are immediately returned to the connection pool, without any reliance upon the __del__() method; there is no chance of resources being left around by a Python implementation that doesn't necessarily call __del__() immediately.  Advantages to `threadlocal` include that resources can be left to clean up after themselves, application code can be more minimal, its guaranteed that only one connection is used per thread, and there is no chance of a "connection pool block", which is when an execution hangs because the current thread has already checked out all remaining resources.
+At this point, you're probably saying, "wow, why would anyone *ever* want to use the [insert name here] strategy ??"  Advantages to `plain` include that connection resources are immediately returned to the connection pool, without any reliance upon the `__del__()` method; there is no chance of resources being left around by a Python implementation that doesn't necessarily call `__del__()` immediately.  Advantages to `threadlocal` include that resources can be left to clean up after themselves, application code can be more minimal, its guaranteed that only one connection is used per thread, and there is no chance of a "connection pool block", which is when an execution hangs because the current thread has already checked out all remaining resources.
 
-    
 ### Transactions {@name=transactions}
 
 The `Connection` object provides a `begin()` method which returns a `Transaction` object.  This object is usually used within a try/except clause so that it is guaranteed to `rollback()` or `commit()`:
@@ -172,78 +171,36 @@ The `Connection` object provides a `begin()` method which returns a `Transaction
         trans.rollback()
         raise
     
-    
-A SQLEngine also provides an interface to the transactional capabilities of the underlying DBAPI connection object, as well as the connection object itself.  Note that when using the object-relational-mapping package, described in a later section, basic transactional operation is handled for you automatically by its "Unit of Work" system;  the methods described here will usually apply just to literal SQL update/delete/insert operations or those performed via the SQL construction library.
-    
-Typically, a connection is opened with `autocommit=False`.  So to perform SQL operations and just commit as you go, you can simply pull out a connection from the connection pool, keep it in the local scope, and call commit() on it as needed.  As long as the connection remains referenced, all other SQL operations within the same thread will use this same connection, including those used by the SQL construction system as well as the object-relational mapper, both described in later sections:
+The `Transaction` object also handles "nested" behavior by keeping track of the outermost begin/commit pair.  In this example, two functions both issue a transaction on a Connection, but only the outermost Transaction object actually takes effect when it is committed.
 
-    {python}conn = engine.connection()
-    
-    # execute SQL via the engine
-    engine.execute("insert into mytable values ('foo', 'bar')")
-    conn.commit()
-    
-    # execute SQL via the SQL construction library            
-    mytable.insert().execute(col1='bat', col2='lala')
-    conn.commit()
-        
-There is a more automated way to do transactions, and that is to use the engine's begin()/commit() functionality.  When the begin() method is called off the engine, a connection is checked out from the pool and stored in a thread-local context.  That way, all subsequent SQL operations within the same thread will use that same connection.  Subsequent commit() or rollback() operations are performed against that same connection.  In effect, its a more automated way to perform the "commit as you go" example above.  
-    
-    {python}engine.begin()
-    engine.execute("insert into mytable values ('foo', 'bar')")
-    mytable.insert().execute(col1='foo', col2='bar')
-    engine.commit()
-        
-
-A traditional "rollback on exception" pattern looks like this:    
-
-    {python}engine.begin()
-    try:
-        engine.execute("insert into mytable values ('foo', 'bar')")
-        mytable.insert().execute(col1='foo', col2='bar')
-    except:
-        engine.rollback()
-        raise
-    engine.commit()
-    
-
-An shortcut which is equivalent to the above is provided by the `transaction` method:
-    
-    {python}def do_stuff():
-            engine.execute("insert into mytable values ('foo', 'bar')")
-            mytable.insert().execute(col1='foo', col2='bar')
-
-    engine.transaction(do_stuff)
-        
-An added bonus to the engine's transaction methods is "reentrant" functionality; once you call begin(), subsequent calls to begin() will increment a counter that must be decremented corresponding to each commit() statement before an actual commit can happen.  This way, any number of methods that want to insure a transaction can call begin/commit, and be nested arbitrarily:
-
-    {python}# method_a starts a transaction and calls method_b
-    def method_a():
-        engine.begin()
+    {python}
+    # method_a starts a transaction and calls method_b
+    def method_a(connection):
+        trans = connection.begin()
         try:
-            method_b()
+            method_b(connection)
+            trans.commit()  # transaction is committed here
         except:
-            engine.rollback()
+            trans.rollback() # this rolls back the transaction unconditionally
             raise
-        engine.commit()
 
-    # method_b starts a transaction, or joins the one already in progress,
-    # and does some SQL
-    def method_b():
-        engine.begin()
+    # method_b also starts a transaction
+    def method_b(connection):
+        trans.begin()
         try:
-            engine.execute("insert into mytable values ('bat', 'lala')")
-            mytable.insert().execute(col1='bat', col2='lala')
+            connection.execute("insert into mytable values ('bat', 'lala')")
+            connection.execute(mytable.insert(), dict(col1='bat', col2='lala'))
+            trans.commit()  # transaction is not committed yet
         except:
-            engine.rollback()
+            trans.rollback() # this rolls back the transaction unconditionally
             raise
-        engine.commit()
         
-    # call method_a                
-    method_a()                
+    # open a Connection and call method_a
+    conn = engine.connect()                
+    method_a(conn)
+    conn.close()
             
-Above, `method_a` is called first, which calls `engine.begin()`.  Then it calls `method_b`. When `method_b` calls `engine.begin()`, it just increments a counter that is decremented when it calls `commit()`.  If either `method_a` or `method_b` calls `rollback()`, the whole transaction is rolled back.  The transaction is not committed until `method_a` calls the `commit()` method.
+Above, `method_a` is called first, which calls `connection.begin()`.  Then it calls `method_b`. When `method_b` calls `connection.begin()`, it just increments a counter that is decremented when it calls `commit()`.  If either `method_a` or `method_b` calls `rollback()`, the whole transaction is rolled back.  The transaction is not committed until `method_a` calls the `commit()` method.
        
-The object-relational-mapper capability of SQLAlchemy includes its own `commit()` method that gathers SQL statements into a batch and runs them within one transaction.  That transaction is also invokved within the scope of the "reentrant" methodology above; so multiple objectstore.commit() operations can also be bundled into a larger database transaction via the above methodology.
-    
+Note that SQLAlchemy's Object Relational Mapper also provides a way to control transaction scope at a higher level; this is described in [unitofwork_transactions](rel:unitofwork_transactions).
 

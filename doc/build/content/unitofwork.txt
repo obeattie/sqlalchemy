@@ -1,4 +1,4 @@
-Unit of Work {@name=unitofwork}
+Session / Unit of Work {@name=unitofwork}
 ============
 
 ### Overview {@name=overview}    
@@ -11,45 +11,79 @@ SQLAlchemy's unit of work includes these functions:
 * The ability to maintain and process a list of modified objects, and based on the relationships set up by the mappers for those objects as well as the foreign key relationships of the underlying tables, figure out the proper order of operations so that referential integrity is maintained, and also so that on-the-fly values such as newly created primary keys can be propigated to dependent objects that need them before they are saved.  The central algorithm for this is the *topological sort*.
 * The ability to define custom functionality that occurs within the unit-of-work flush phase, such as "before insert", "after insert", etc.  This is accomplished via MapperExtension.
 * an Identity Map, which is a dictionary storing the one and only instance of an object for a particular table/primary key combination.  This allows many parts of an application to get a handle to a particular object without any chance of modifications going to two different places.
-* Thread-local operation.  the Identity map as well as its enclosing Unit of Work are normally instantiated and accessed in a manner that is local to the current thread, within an object called a Session.  Another concurrently executing thread will therefore have its own Session, so unless an application explicitly shares objects between threads, the operation of the object relational mapping is automatically threadsafe.  Session objects can also be constructed manually to allow any user-defined scoping.
+* The sole interface to the unit of work is provided via the `Session` object.  Transactional capability, which rides on top of the transactions provided by `Engine` objects, is provided by the `SessionTransaction` object.
+* Thread-locally scoped Session behavior is available as an option, which allows new objects to be automatically added to the Session corresponding to by the *default Session context*.  Without a default Session context, an application must explicitly create a Session manually as well as add new objects to it.  The default Session context, disabled by default, can also be plugged in with other user-defined schemes, which may also take into account the specific class being dealt with for a particular operation.
+* The Session object in SQLAlchemy 0.2 borrows conceptually from that of [hibernate](http://www.hibernate.org), which is a leading ORM for Java.  SQLAlchemy is in general very different from Hibernate, providing a different paradigm for producing queries, a SQL API that is useable independently of the ORM, and of course Pythonic configuration as opposed to XML; however, Hibernate has covered the bases pretty well with its Session ideology.
 
-### The Session Interface {@name=session}    
+### Object States {@name=states}
 
-The current unit of work is accessed via a Session object.  The Session is available in a thread-local context from the objectstore module as follows:
+When dealing with mapped instances with regards to Sessions, an instance may be *attached* or *unattached* to a particular Session.  An instance also may or may not correspond to an actual row in the database.  The product of these two binary conditions yields us four general states a particular instance can have within the perspective of the Session:
+
+* Transient - a transient instance exists within memory only and is not associated with any Session.  It also has no database identity and does not have a corresponding record in the database.  When a new instance of a class is constructed, and no default session context exists with which to automatically attach the new instance, it is a transient instance.  The instance can then be saved to a particular session in which case it becomes a *pending* instance.  If a default session context exists, new instances are added to that Session by default and therefore become *pending* instances immediately.  
+
+* Pending - a pending instance is a Session-attached object that has not yet been assigned a database identity.  When the Session is flushed (i.e. changes are persisted to the database), a pending instance becomes persistent.
+
+* Persistent - a persistent instance has a database identity and a corresponding record in the database, and is also associated with a particular Session.   By "database identity" we mean the object is associated with a table or relational concept in the database combined with a particular primary key in that table.  Objects that are loaded by SQLAlchemy in the context of a particular session are automatically considered persistent, as are formerly pending instances which have been subject to a session `flush()`.
+
+* Detached - a detached instance is an instance which has a database identity and corresponding row in the database, but is not attached to any Session.  This occurs when an instance has been removed from a Session, either because the session itself was cleared or closed, or the instance was explicitly removed from the Session.  The object can be re-attached with a session again in which case it becomes Persistent again.  Detached instances are useful when an application needs to represent a long-running operation across multiple Sessions, needs to store an object in a serialized state and then restore it later (such as within an HTTP "session" object), or in some cases where code needs to load instances locally which will later be associated with some other Session.
+
+### Acquiring a Session {@name=getting}
+
+A new Session object is constructed via the `create_session()` function:
 
     {python}
-    # get the current thread's session
-    session = objectstore.get_session()
-        
-The Session object acts as a proxy to an underlying UnitOfWork object.  Common methods include flush(), clear(), and delete().  Most of these methods are available at the module level in the objectstore module, which operate upon the Session returned by the get_session() function:
-    
-    {python}# this...
-    objectstore.get_session().flush()
+    session = create_session()
 
+The session to which an object is attached can be acquired via the `object_session()` method, which returns the appropriate `Session` if the object is pending or persistent, or `None` if the object is transient or detached:
+
+    {python}
+    session = object_session(obj)
+
+When default session contexts are enabled, the current contextual session can be acquired by the `current_session()` function.  This function takes an optional instance argument, which allows session contexts that are specific to particular class hierarchies to return the correct session.  When using the "threadlocal" session context, enabled via the *mod* `sqlalchemy.mods.threadlocal`, no instance argument is required:
+
+    {python}
+    # enable the thread-local default session context (only need to call this once per application)
+    import sqlalchemy.mods.threadlocal
+    
+    # return the Session that is bound to the current thread
+    session = current_session()
+
+When using the `threadlocal` mod, a familiar SA 0.1 keyword `objectstore` is imported into the `sqlalchemy` namespace.  Using `objectstore`, methods can be called which will automatically be *proxied* to the Session that corresponds to `current_session()`:
+
+    {python}
+    # load the 'threadlocal' mod *first*
+    import sqlalchemy.mods.threadlocal
+    
+    # then 'objectstore' is available within the 'sqlalchemy' namespace
+    from sqlalchemy import *
+    
+    # and then this...
+    current_session().flush()
+    
     # is the same as this:
     objectstore.flush()
 
-A description of the most important methods and concepts follows.
+We will now cover some of the key concepts used by Sessions and its underlying Unit of Work.
 
-#### Identity Map {@name=identitymap}    
+### Introduction to the Identity Map {@name=identitymap}    
 
-The first concept to understand about the Unit of Work is that it is keeping track of all mapped objects which have been loaded from the database, as well as all mapped objects which have been saved to the database in the current session.  This means that everytime you issue a `select` call to a mapper which returns results, all of those objects are now installed within the current Session, mapped to their identity.
+A primary concept of the Session's underlying Unit of Work is that it is keeping track of all persistent instances; recall that a persistent instance has a database identity and is attached to a Session.  In particular, the Unit of Work must insure that only *one* copy of a particular persistent instance exists within the Session at any given time.   The UOW accomplishes this task using a dictionary known as an *Identity Map*.  When a `Query` is used to issue `select` or `get` requests to the database, it will in nearly all cases result in an actual SQL execution to the database, and a corresponding traversal of rows received from that execution.  However, when the underlying mapper *instantiates* objects corresponding to the result set rows it receives, it will *check the session's identity map first* before instantating a new object, and return *the same instance* already present in the identiy map if it already exists, essentially *ignoring* the object state represented by that row.  There are several ways to override this behavior and truly refresh an already-loaded instance which are described later, but the main idea is that once your instance is loaded into a particular Session, it will *never change* its state without your explicit approval, regardless of what the database says about it.  
     
-In particular, it is insuring that only *one* instance of a particular object, corresponding to a particular database identity, exists within the Session at one time.  By "database identity" we mean a table or relational concept in the database combined with a particular primary key in that table. The session accomplishes this task using a dictionary known as an *Identity Map*.  When `select` or `get` calls on mappers issue queries to the database, they will in nearly all cases go out to the database on each call to fetch results.  However, when the mapper *instantiates* objects corresponding to the result set rows it receives, it will *check the current identity map first* before instantating a new object, and return *the same instance* already present in the identiy map if it already exists.  
-    
-Example:
+For example; below, two separate calls to load an instance with database identity "15" are issued, and the results assigned to two separate variables.   However, since the same `Session` was used, the two instances are the same instance:
 
-    {python}mymapper = mapper(MyClass, mytable)
+    {python}
+    mymapper = mapper(MyClass, mytable)
     
-    obj1 = mymapper.selectfirst(mytable.c.id==15)
-    obj2 = mymapper.selectfirst(mytable.c.id==15)
+    session = create_session()
+    obj1 = session.query(MyClass).selectfirst(mytable.c.id==15)
+    obj2 = session.query(MyClass).selectfirst(mytable.c.id==15)
     
     >>> obj1 is obj2
     True
     
-The Identity Map is an instance of `weakref.WeakValueDictionary`, so that when an in-memory object falls out of scope, it will be removed automatically.  However, this may not be instant if there are circular references upon the object.  The current SA attributes implementation places some circular refs upon objects, although this may change in the future.  There are other ways to remove object instances from the current session, as well as to clear the current session entirely, which are described later in this section.
+The Identity Map is an instance of `weakref.WeakValueDictionary`, so that when an in-memory object falls out of scope, it will be removed automatically.  However, this may not be instant if there are circular references upon the object.  To guarantee that an instance is removed from the identity map before removing references to it, use the `expunge()` method, described later, to remove it.  
 
-To view the Session's identity map, it is accessible via the `identity_map` accessor, and is an instance of `weakref.WeakValueDictionary`:
+The Session's identity map is accessible via the `identity_map` accessor:
 
     {python}
     >>> objectstore.get_session().identity_map.values()
@@ -61,72 +95,38 @@ The identity of each object instance is available via the _instance_key property
     >>> obj._instance_key 
     (<class 'test.tables.User'>, (7,))
     
-At the moment that an object is assigned this key, it is also added to the current thread's unit-of-work's identity map.  
+At the moment that an object is assigned this key within a `flush()` operation, it is also added to the session's identity map.  
     
-The get() method on a mapper, which retrieves an object based on primary key identity, also checks in the current identity map first to save a database round-trip if possible.  In the case of an object lazy-loading a single child object, the get() method is used as well, so scalar-based lazy loads may in some cases not query the database; this is particularly important for backreference relationships as it can save a lot of queries.
+The get() method on `Query`, which retrieves an object based on primary key identity, also checks in the Session's identity map first to save a database round-trip if possible.  In the case of an object lazy-loading a single child object, the get() method is used as well, so scalar-based lazy loads may in some cases not query the database; this is particularly important for backreference relationships as it can save a lot of queries.
+
+### Whats Changed ? {@name=changed}    
+
+The next concept is that in addition to the Session storing a record of all objects loaded or saved, it also stores lists of all *newly created* (i.e. pending) objects,  lists of all persistent objects whose attributes have been *modified*, and lists of all persistent objects that have been marked as *deleted*.  These lists are used when a `flush()` call is issued to save all changes.  After the flush occurs, these lists are all cleared out.
     
-Methods on mappers and the objectstore module, which are relevant to identity include the following:
+These records are all tracked by a collection of `Set` objects (which are a SQLAlchemy-specific instance called a `HashSet`) that are also viewable off the Session:
 
     {python}
-    # assume 'm' is a mapper
-    m = mapper(User, users)
-
-    # get the identity key corresponding to a primary key
-    key = m.identity_key(7)
-
-    # for composite key, list out the values in the order they
-    # appear in the table
-    key = m.identity_key(12, 'rev2')
-
-    # get the identity key given a primary key 
-    # value as a tuple and a class
-    key = objectstore.get_id_key((12, 'rev2'), User)
-
-    # get the identity key for an object, whether or not it actually
-    # has one attached to it (m is the mapper for obj's class)
-    key = m.instance_key(obj)
-    
-    # is this key in the current identity map?
-    session.has_key(key)
-
-    # is this object in the current identity map?
-    session.has_instance(obj)
-
-    # get this object from the current identity map based on 
-    # singular/composite primary key, or if not go 
-    # and load from the database
-    obj = m.get(12, 'rev2')
-
-#### Whats Changed ? {@name=changed}    
-
-The next concept is that in addition to the Session storing a record of all objects loaded or saved, it also stores records of all *newly created* objects,  records of all objects whose attributes have been *modified*, records of all objects that have been marked as *deleted*, and records of all *modified list-based attributes* where additions or deletions have occurred.  These lists are used when a `flush()` call is issued to save all changes.  After the flush occurs, these lists are all cleared out.
-    
-These records are all tracked by a collection of `Set` objects (which are a SQLAlchemy-specific  instance called a `HashSet`) that are also viewable off the Session:
-
-    {python}
-    # new objects that were just constructed
+    # pending objects recently added to the Session
     session.new
 
-    # objects that exist in the database, that were modified
+    # persistent objects with modifications
     session.dirty
 
-    # objects that have been marked as deleted via session.delete(obj)
+    # persistent objects that have been marked as deleted via session.delete(obj)
     session.deleted
 
-    # list-based attributes thave been appended
-    session.modified_lists
-    
 Heres an interactive example, assuming the `User` and `Address` mapper setup first outlined in [datamapping_relations](rel:datamapping_relations):
 
     {python}
-    >>> # get the current thread's session
-    >>> session = objectstore.get_session()
+    >>> # create a session
+    >>> session = create_session()
 
     >>> # create a new object, with a list-based attribute 
     >>> # containing two more new objects
     >>> u = User(user_name='Fred')
     >>> u.addresses.append(Address(city='New York'))
     >>> u.addresses.append(Address(city='Boston'))
+    >>> session.save(u)
     
     >>> # objects are in the "new" list
     >>> session.new
@@ -134,11 +134,6 @@ Heres an interactive example, assuming the `User` and `Address` mapper setup fir
     <__main__.Address object at 0x713a70>, 
     <__main__.Address object at 0x713b30>]
     
-    >>> # view the "modified lists" member, 
-    >>> # reveals our two Address objects as well, inside of a list
-    >>> session.modified_lists
-    [[<__main__.Address object at 0x713a70>, <__main__.Address object at 0x713b30>]]
-
     >>> # lets view what the class/ID is for the list object
     >>> ["%s %s" % (l.__class__, id(l)) for l in session.modified_lists]
     ['sqlalchemy.mapping.unitofwork.UOWListElement 7391872']
@@ -148,10 +143,6 @@ Heres an interactive example, assuming the `User` and `Address` mapper setup fir
     
     >>> # the "new" list is now empty
     >>> session.new
-    []
-    
-    >>> # the "modified lists" list is now empty
-    >>> session.modified_lists
     []
     
     >>> # now lets modify an object
