@@ -443,6 +443,7 @@ class SaveTest(AssertMixin):
         self.assert_(u is not nu and u.user_id == nu.user_id and nu.user_name == 'savetester')
 
         # change first users name and save
+        objectstore.get_session().update(u)
         u.user_name = 'modifiedname'
         assert u in objectstore.get_session().dirty
         objectstore.get_session().flush()

@@ -65,7 +65,7 @@ class UOWScalarElement(attributes.ScalarAttribute):
         sess = object_session(obj)
         if sess is not None:
             sess._register_dirty(obj)
-            if self.cascade is not None:
+            if newvalue is not None and self.cascade is not None:
                 if self.cascade.save_update:
                     sess.save_or_update(newvalue)
             

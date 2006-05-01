@@ -146,7 +146,7 @@ class PropertyLoader(MapperProperty):
             if private:
                 self.cascade = mapperutil.CascadeOptions("all, delete-orphan")
             else:
-                self.cascade = mapperutil.CascadeOptions("all")
+                self.cascade = mapperutil.CascadeOptions("save-update")
 
         self.association = association
         self.order_by = order_by

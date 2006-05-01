@@ -276,7 +276,7 @@ class Session(object):
         This operation cascades the "save_or_update" method to associated instances if the relation is mapped 
         with cascade="save-update"."""
         for c in object_mapper(object, entity_name=entity_name).cascade_iterator('save-update', object):
-            if c is o:
+            if c is object:
                 self._update_impl(c, entity_name=entity_name)
             else:
                 self.save_or_update(c, entity_name=entity_name)
