@@ -18,7 +18,7 @@ class IndexTest(testbase.AssertMixin):
                 entity.drop()
     
     def test_index_create(self):
-        employees = Table('employees', testbase.db,
+        employees = Table('employees', testbase.metadata,
                           Column('id', Integer, primary_key=True),
                           Column('first_name', String(30)),
                           Column('last_name', String(30)),
@@ -40,7 +40,7 @@ class IndexTest(testbase.AssertMixin):
 
     def test_index_create_camelcase(self):
         """test that mixed-case index identifiers are legal"""
-        employees = Table('companyEmployees', testbase.db,
+        employees = Table('companyEmployees', testbase.metadata,
                           Column('id', Integer, primary_key=True),
                           Column('firstName', String(30)),
                           Column('lastName', String(30)),
@@ -76,7 +76,7 @@ class IndexTest(testbase.AssertMixin):
         stream.write = capt.append
         testbase.db.logger = testbase.db.engine.logger = stream
         
-        events = Table('events', testbase.db,
+        events = Table('events', testbase.metadata,
                        Column('id', Integer, primary_key=True),
                        Column('name', String(30), unique=True),
                        Column('location', String(30), index=True),

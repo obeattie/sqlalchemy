@@ -156,7 +156,8 @@ class SQLiteDialect(ansisql.ANSIDialect):
 
     def has_table(self, connection, table_name):
         cursor = connection.execute("PRAGMA table_info(" + table_name + ")", {})
-        return bool(cursor.rowcount>0)
+        row = cursor.fetchone()
+        return (row is not None)
 
     def reflecttable(self, connection, table):
         c = connection.execute("PRAGMA table_info(" + table.name + ")", {})

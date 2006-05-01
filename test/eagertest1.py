@@ -7,7 +7,6 @@ import datetime
 class EagerTest(AssertMixin):
     def setUpAll(self):
         global designType, design, part, inheritedPart
-        
         designType = Table('design_types', testbase.metadata, 
         	Column('design_type_id', Integer, primary_key=True),
         	)
@@ -27,45 +26,41 @@ class EagerTest(AssertMixin):
         	Column('design_id', Integer, ForeignKey('design.design_id')),
         	)
 
-        designType.create()
-        design.create()
-        part.create()
-        inheritedPart.create()
+        testbase.metadata.create_all()
     def tearDownAll(self):
-        inheritedPart.drop()
-        part.drop()
-        design.drop()
-        designType.drop()
-    
+        testbase.metadata.drop_all()
+        testbase.metadata.clear()
     def testone(self):
         class Part(object):pass
         class Design(object):pass
         class DesignType(object):pass
         class InheritedPart(object):pass
 	
-        assign_mapper(Part, part)
+        mapper(Part, part)
 
-        assign_mapper(InheritedPart, inheritedPart, properties=dict(
+        mapper(InheritedPart, inheritedPart, properties=dict(
         	part=relation(Part, lazy=False)
         ))
 
-        assign_mapper(Design, design, properties=dict(
+        mapper(Design, design, properties=dict(
         	parts=relation(Part, private=True, backref="design"),
         	inheritedParts=relation(InheritedPart, private=True, backref="design"),
         ))
 
-        assign_mapper(DesignType, designType, properties=dict(
+        mapper(DesignType, designType, properties=dict(
         #	designs=relation(Design, private=True, backref="type"),
         ))
 
-        Design.mapper.add_property("type", relation(DesignType, lazy=False, backref="designs"))
-        Part.mapper.add_property("design", relation(Design, lazy=False, backref="parts"))
+        class_mapper(Design).add_property("type", relation(DesignType, lazy=False, backref="designs"))
+        class_mapper(Part).add_property("design", relation(Design, lazy=False, backref="parts"))
         #Part.mapper.add_property("designType", relation(DesignType))
 
         d = Design()
-        objectstore.flush()
-        objectstore.clear()
-        x = Design.get(1)
+        sess = create_session()
+        sess.save(d)
+        sess.flush()
+        sess.clear()
+        x = sess.query(Design).get(1)
         x.inheritedParts
 
 if __name__ == "__main__":    

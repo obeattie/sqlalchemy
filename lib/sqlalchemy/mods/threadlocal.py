@@ -111,11 +111,16 @@ def assign_mapper(class_, *args, **params):
     class_.expire = expire
     class_.refresh = refresh
     class_.expunge = expunge
+    
 def install_plugin():
     reg = util.ScopedRegistry(session.Session)
     session.register_default_session(lambda *args, **kwargs: reg())
     engine.default_strategy = 'threadlocal'
     sqlalchemy.objectstore = Objectstore()
     sqlalchemy.assign_mapper = assign_mapper
+
+def uninstall_plugin():
+    session.register_default_session(lambda *args, **kwargs:None)
+    engine.default_strategy = 'plain'
     
 install_plugin()

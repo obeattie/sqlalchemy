@@ -44,7 +44,7 @@ class RelationTest(testbase.PersistTest):
         )
     def setUp(self):
         global session
-        session = objectstore.Session(bind_to=testbase.db)
+        session = create_session(bind_to=testbase.db)
         conn = session.connect()
         conn.create(tbl_a)
         conn.create(tbl_b)
@@ -79,7 +79,8 @@ class RelationTest(testbase.PersistTest):
         d1 = D(); d1.name = "d1"; d1.b_row = b; d1.c_row = c
         d2 = D(); d2.name = "d2"; d2.b_row = b; d2.c_row = c
         d3 = D(); d3.name = "d3"; d3.b_row = b; d3.c_row = c
-        session.save_or_update(a,b)
+        session.save_or_update(a)
+        session.save_or_update(b)
         
     def tearDown(self):
         conn = session.connect()

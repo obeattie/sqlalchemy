@@ -64,7 +64,8 @@ def parse_argv():
 
     if not options.nothreadlocal:
         __import__('sqlalchemy.mods.threadlocal')
-    
+        sqlalchemy.mods.threadlocal.uninstall_plugin()
+        
     if options.enginestrategy is not None:
         opts['strategy'] = options.enginestrategy    
     if options.mockpool:
@@ -112,6 +113,10 @@ class PersistTest(unittest.TestCase):
     def echo(self, text):
         if echo:
             echo_text(text)
+    def install_threadlocal(self):
+        sqlalchemy.mods.threadlocal.install_plugin()
+    def uninstall_threadlocal(self):
+        sqlalchemy.mods.threadlocal.uninstall_plugin()
     def setUpAll(self):
         pass
     def tearDownAll(self):
@@ -136,6 +141,8 @@ class MockPool(pool.Pool):
         raise "Invalid"
 
     def do_get(self):
+        if getattr(self, 'breakpoint', False):
+            raise "breakpoint"
         assert self.connection is not None
         c = self.connection
         self.connection = None

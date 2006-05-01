@@ -594,7 +594,11 @@ class MetaData(SchemaItem):
         self.name = name
     def is_bound(self):
         return False
-
+    def clear(self):
+        self.tables.clear()
+    def table_iterator(self, reverse=True):
+        return self._sort_tables(self.tables.values(), reverse=reverse)
+        
     def create_all(self, tables=None, engine=None):
         if not tables:
             tables = self.tables.values()

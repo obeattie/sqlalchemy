@@ -1,5 +1,5 @@
 from testbase import PersistTest
-import sqlalchemy.mapping.topological as topological
+import sqlalchemy.orm.topological as topological
 import unittest, sys, os
 
 

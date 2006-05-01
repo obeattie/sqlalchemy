@@ -9,6 +9,7 @@ import tables
 
 class HistoryTest(AssertMixin):
     def setUpAll(self):
+        self.install_threadlocal()
         db.echo = False
         users.create()
         addresses.create()
@@ -18,6 +19,7 @@ class HistoryTest(AssertMixin):
         addresses.drop()
         users.drop()
         db.echo = testbase.echo
+        self.uninstall_threadlocal()
     def setUp(self):
         objectstore.clear()
         clear_mappers()
@@ -77,6 +79,7 @@ class HistoryTest(AssertMixin):
 
 class VersioningTest(AssertMixin):
     def setUpAll(self):
+        self.install_threadlocal()
         objectstore.clear()
         global version_table
         version_table = Table('version_test', db,
@@ -86,6 +89,7 @@ class VersioningTest(AssertMixin):
         ).create()
     def tearDownAll(self):
         version_table.drop()
+        self.uninstall_threadlocal()
     def tearDown(self):
         version_table.delete().execute()
         objectstore.clear()
@@ -136,6 +140,7 @@ class VersioningTest(AssertMixin):
         
 class UnicodeTest(AssertMixin):
     def setUpAll(self):
+        self.install_threadlocal()
         objectstore.clear()
         global uni_table
         uni_table = Table('uni_test', db,
@@ -145,6 +150,7 @@ class UnicodeTest(AssertMixin):
     def tearDownAll(self):
         uni_table.drop()
         uni_table.deregister()
+        self.uninstall_threadlocal()
 
     def testbasic(self):
         class Test(object):
@@ -162,6 +168,7 @@ class UnicodeTest(AssertMixin):
 
 class PKTest(AssertMixin):
     def setUpAll(self):
+        self.install_threadlocal()
         db.echo = False
         global table
         global table2
@@ -195,6 +202,7 @@ class PKTest(AssertMixin):
         table2.drop()
         table3.drop()
         db.echo = testbase.echo
+        self.uninstall_threadlocal()
     def setUp(self):
         objectstore.clear()
         clear_mappers()
@@ -236,6 +244,7 @@ class PKTest(AssertMixin):
 class PrivateAttrTest(AssertMixin):
     """tests various things to do with private=True mappers"""
     def setUpAll(self):
+        self.install_threadlocal()
         global a_table, b_table
         a_table = Table('a',testbase.db,
             Column('a_id', Integer, Sequence('next_a_id'), primary_key=True),
@@ -249,6 +258,7 @@ class PrivateAttrTest(AssertMixin):
     def tearDownAll(self):
         b_table.drop()
         a_table.drop()
+        self.uninstall_threadlocal()
     def setUp(self):
         objectstore.clear()
         clear_mappers()
@@ -311,6 +321,7 @@ class DefaultTest(AssertMixin):
     the newly saved instances receive all the default values either through a post-fetch or getting the pre-exec'ed 
     defaults back from the engine."""
     def setUpAll(self):
+        self.install_threadlocal()
         #db.echo = 'debug'
         use_string_defaults = db.engine.__module__.endswith('postgres') or db.engine.__module__.endswith('oracle') or db.engine.__module__.endswith('sqlite')
 
@@ -331,6 +342,7 @@ class DefaultTest(AssertMixin):
         self.table.create()
     def tearDownAll(self):
         self.table.drop()
+        self.uninstall_threadlocal()
     def setUp(self):
         self.table = Table('default_test', db)
     def testinsert(self):
@@ -383,6 +395,7 @@ class DefaultTest(AssertMixin):
 class SaveTest(AssertMixin):
 
     def setUpAll(self):
+        self.install_threadlocal()
         db.echo = False
         tables.create()
         db.echo = testbase.echo
@@ -390,6 +403,7 @@ class SaveTest(AssertMixin):
         db.echo = False
         tables.drop()
         db.echo = testbase.echo
+        self.uninstall_threadlocal()
         
     def setUp(self):
         db.echo = False
@@ -1101,6 +1115,7 @@ class SaveTest(AssertMixin):
 class SaveTest2(AssertMixin):
 
     def setUp(self):
+        self.install_threadlocal()
         db.echo = False
         objectstore.clear()
         clear_mappers()
@@ -1128,6 +1143,7 @@ class SaveTest2(AssertMixin):
         self.addresses.drop()
         self.users.drop()
         db.echo = testbase.echo
+        self.uninstall_threadlocal()
     
     def testbackwardsnonmatch(self):
         m = mapper(Address, self.addresses, properties = dict(
