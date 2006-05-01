@@ -114,84 +114,30 @@ These records are all tracked by a collection of `Set` objects (which are a SQLA
 
     # persistent objects that have been marked as deleted via session.delete(obj)
     session.deleted
+    
+Unlike the identity map, the `new`, `dirty`, and `deleted` lists are *not weak referencing.*  This means if you abandon all references to new or modified objects within a session, *they are still present* and will be saved on the next flush operation, unless they are removed from the Session explicitly (more on that later).  The `new` list may change in a future release to be weak-referencing, however for the `deleted` list, one can see that its quite natural for a an object marked as deleted to have no references in the application, yet a DELETE operation is still required.
 
-Heres an interactive example, assuming the `User` and `Address` mapper setup first outlined in [datamapping_relations](rel:datamapping_relations):
-
-    {python}
-    >>> # create a session
-    >>> session = create_session()
-
-    >>> # create a new object, with a list-based attribute 
-    >>> # containing two more new objects
-    >>> u = User(user_name='Fred')
-    >>> u.addresses.append(Address(city='New York'))
-    >>> u.addresses.append(Address(city='Boston'))
-    >>> session.save(u)
-    
-    >>> # objects are in the "new" list
-    >>> session.new
-    [<__main__.User object at 0x713630>, 
-    <__main__.Address object at 0x713a70>, 
-    <__main__.Address object at 0x713b30>]
-    
-    >>> # lets view what the class/ID is for the list object
-    >>> ["%s %s" % (l.__class__, id(l)) for l in session.modified_lists]
-    ['sqlalchemy.mapping.unitofwork.UOWListElement 7391872']
-    
-    >>> # now flush
-    >>> session.flush()
-    
-    >>> # the "new" list is now empty
-    >>> session.new
-    []
-    
-    >>> # now lets modify an object
-    >>> u.user_name='Ed'
-    
-    >>> # it gets placed in the "dirty" list
-    >>> session.dirty
-    [<__main__.User object at 0x713630>]
-    
-    >>> # delete one of the addresses 
-    >>> session.delete(u.addresses[0])
-    
-    >>> # and also delete it off the User object, note that
-    >>> # this is *not automatic* when using session.delete()
-    >>> del u.addresses[0]
-    >>> session.deleted
-    [<__main__.Address object at 0x713a70>]    
-    
-    >>> # flush
-    >>> session.flush()
-    
-    >>> # all lists are cleared out
-    >>> session.new, session.dirty, session.modified_lists, session.deleted
-    ([], [], [], [])
-    
-    >>> # identity map has the User and the one remaining Address
-    >>> session.identity_map.values()
-    [<__main__.Address object at 0x713b30>, <__main__.User object at 0x713630>]
-    
-Unlike the identity map, the `new`, `dirty`, `modified_lists`, and `deleted` lists are *not weak referencing.*  This means if you abandon all references to new or modified objects within a session, *they are still present* and will be saved on the next flush operation, unless they are removed from the Session explicitly (more on that later).  The `new` list may change in a future release to be weak-referencing, however for the `deleted` list, one can see that its quite natural for a an object marked as deleted to have no references in the application, yet a DELETE operation is still required.
+### The Session API {@name=api}
 
 #### Flush {@name=flush}    
 
 This is the main gateway to what the Unit of Work does best, which is save everything !  It should be clear by now that a flush looks like:
     
     {python}
-    objectstore.get_session().flush()
+    session.flush()
     
 It also can be called with a list of objects; in this form, the flush operation will be limited only to the objects specified in the list, as well as any child objects within `private` relationships for a delete operation:
 
     {python}
     # saves only user1 and address2.  all other modified
     # objects remain present in the session.
-    objectstore.get_session().flush(user1, address2)
+    session.flush(user1, address2)
     
 This second form of flush should be used more carefully as it will not necessarily locate other dependent objects within the session, whose database representation may have foreign constraint relationships with the objects being operated upon.
 
-##### What Flush is, and Isn't {@name=whatis}        
+##### Notes on Flush {@name=whatis}        
 
+A common misconception about the `flush()` operation is that once performed, the newly persisted instances will automatically have related objects attached to them, based on the values of primary key identities that have been assigned to the instances before they were persisted.
 The purpose of the flush operation is to instruct the Unit of Work to analyze its lists of modified objects, assemble them into a dependency graph, fire off the appopriate INSERT, UPDATE, and DELETE statements via the mappers related to those objects, and to synchronize column-based object attributes that correspond directly to updated/inserted database columns.
 
 The `session.flush()` operation also does not affect any `relation`-based object attributes, that is attributes that reference other objects or lists of other objects, in any way.  A brief list of what will *not* happen includes:
@@ -270,111 +216,6 @@ The _instance_key attribute placed on object instances is designed to work with 
         
 Note that the import_instance() function will either mark the deserialized object as the official copy in the current identity map, which includes updating its _instance_key with the current application's class instance, or it will discard it and return the corresponding object that was already present.  Thats why its important to receive the return results from the method and use the result as the official object instance.
 
-### Advanced UnitOfWork Management {@name=advscope}
-
-#### Nesting UnitOfWork in a Database Transaction {@name=transactionnesting}    
-
-The UOW flush operation places its INSERT/UPDATE/DELETE operations within the scope of a database transaction controlled by a SQLEngine:
-
-    {python}
-    engine.begin()
-    try:
-        # run objectstore update operations
-    except:
-        engine.rollback()
-        raise
-    engine.flush()
-    
-If you recall from the [dbengine_transactions](rel:dbengine_transactions) section, the engine's begin()/commit() methods support reentrant behavior.  This means you can nest begin and commits and only have the outermost begin/commit pair actually take effect (rollbacks however, abort the whole operation at any stage).  From this it follows that the UnitOfWork commit operation can be nested within a transaction as well:
-
-    {python}
-    engine.begin()
-    try:
-        # perform custom SQL operations
-        objectstore.flush()
-        # perform custom SQL operations
-    except:
-        engine.rollback()
-        raise
-    engine.commit()
-
-#### Per-Object Sessions {@name=object}    
-
-Sessions can be created on an ad-hoc basis and used for individual groups of objects and operations.  This has the effect of bypassing the normal thread-local Session and explicitly using a particular Session:
-
-    {python}
-    # make a new Session with a global UnitOfWork
-    s = objectstore.Session()
-    
-    # make objects bound to this Session
-    x = MyObj(_sa_session=s)
-    
-    # perform mapper operations bound to this Session
-    # (this function coming soon)
-    r = MyObj.mapper.using(s).select_by(id=12)
-        
-    # get the session that corresponds to an instance
-    s = objectstore.get_session(x)
-    
-    # flush 
-    s.flush()
-
-    # perform a block of operations with this session set within the current scope
-    objectstore.push_session(s)
-    try:
-        r = mapper.select_by(id=12)
-        x = new MyObj()
-        objectstore.flush()
-    finally:
-        objectstore.pop_session()
-
-##### Nested Transaction Sessions {@name=nested}    
-
-Sessions also now support a "nested transaction" feature whereby a second Session can use a different database connection.  This can be used inside of a larger database transaction to issue commits to the database that will be committed independently of the larger transaction's status:
-
-    {python}
-    engine.begin()
-    try:
-        a = MyObj()
-        b = MyObj()
-    
-        sess = Session(nest_on=engine)
-        objectstore.push_session(sess)
-        try:
-            c = MyObj()
-            objectstore.commit()    # will commit "c" to the database,
-                                    # even if the external transaction rolls back
-        finally:
-            objectstore.pop_session()
-    
-        objectstore.commit()  # commit "a" and "b" to the database
-        engine.commit()
-    except:
-        engine.rollback()
-        raise
-
-#### Custom Session Objects/Custom Scopes {@name=scope}
-
-For users who want to make their own Session subclass, or replace the algorithm used to return scoped Session objects (i.e. the objectstore.get_session() method):
-
-    {python title="Create a Session"}
-    # make a new Session
-    s = objectstore.Session()
-
-    # set it as the current thread-local session
-    objectstore.session_registry.set(s)
-
-    {python title="Create a custom Registry Algorithm"}
-    # set the objectstore's session registry to a different algorithm
-
-    def create_session():
-        """creates new sessions"""
-        return objectstore.Session()
-    def mykey():
-        """creates contextual keys to store scoped sessions"""
-        return "mykey"
-    
-    objectstore.session_registry = sqlalchemy.util.ScopedRegistry(createfunc=create_session, scopefunc=mykey)
 
 #### Analyzing Object Commits {@name=logging}    
 
