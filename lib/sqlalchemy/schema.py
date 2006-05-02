@@ -217,11 +217,17 @@ class Table(SchemaItem, sql.TableClause):
         issue a SQL DROP statement."""
         key = _get_table_key(self.name, self.schema)
         del self.metadata.tables[key]
-    def create(self, **params):
-        self.engine.create(self)
+    def create(self, engine=None):
+        if engine is not None:
+            engine.create(self)
+        else:
+            self.engine.create(self)
         return self
-    def drop(self, **params):
-        self.engine.drop(self)
+    def drop(self, engine=None):
+        if engine is not None:
+            engine.drop(self)
+        else:
+            self.engine.drop(self)
     def tometadata(self, metadata, schema=None):
         """returns a singleton instance of this Table with a different Schema"""
         try:
@@ -569,13 +575,17 @@ class Index(SchemaItem):
                                 % (self.name, column))
         self.columns.append(column)
         
-    def create(self):
-       self.engine.create(self)
-       return self
-    def drop(self):
-       self.engine.drop(self)
-    def execute(self):
-       self.create()
+    def create(self, engine=None):
+        if engine is not None:
+            engine.create(self)
+        else:
+            self.engine.create(self)
+        return self
+    def drop(self, engine=None):
+        if engine is not None:
+            engine.drop(self)
+        else:
+            self.engine.drop(self)
     def accept_schema_visitor(self, visitor):
         visitor.visit_index(self)
     def __str__(self):

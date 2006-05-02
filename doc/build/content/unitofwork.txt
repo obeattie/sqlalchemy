@@ -13,7 +13,7 @@ SQLAlchemy's unit of work includes these functions:
 * an Identity Map, which is a dictionary storing the one and only instance of an object for a particular table/primary key combination.  This allows many parts of an application to get a handle to a particular object without any chance of modifications going to two different places.
 * The sole interface to the unit of work is provided via the `Session` object.  Transactional capability, which rides on top of the transactions provided by `Engine` objects, is provided by the `SessionTransaction` object.
 * Thread-locally scoped Session behavior is available as an option, which allows new objects to be automatically added to the Session corresponding to by the *default Session context*.  Without a default Session context, an application must explicitly create a Session manually as well as add new objects to it.  The default Session context, disabled by default, can also be plugged in with other user-defined schemes, which may also take into account the specific class being dealt with for a particular operation.
-* The Session object in SQLAlchemy 0.2 borrows conceptually from that of [hibernate](http://www.hibernate.org), which is a leading ORM for Java.  SQLAlchemy is in general very different from Hibernate, providing a different paradigm for producing queries, a SQL API that is useable independently of the ORM, and of course Pythonic configuration as opposed to XML; however, Hibernate has covered the bases pretty well with its Session ideology.
+* The Session object in SQLAlchemy 0.2 borrows conceptually from that of [Hibernate](http://www.hibernate.org), a leading ORM for Java that is largely based on [JSR-220](http://jcp.org/aboutJava/communityprocess/pfd/jsr220/index.html).  SQLAlchemy, under no obligation to conform to EJB specifications, is in general very different from Hibernate, providing a different paradigm for producing queries, a SQL API that is useable independently of the ORM, and of course Pythonic configuration as opposed to XML; however, JSR-220/Hibernate makes some pretty good suggestions with regards to the mechanisms of persistence.
 
 ### Object States {@name=states}
 
@@ -140,6 +140,18 @@ Unlike the identity map, the `new`, `dirty`, and `deleted` lists are *not weak r
 
 The `query()` function takes a class or `Mapper` as an argument, along with an optional `entity_name` parameter, and returns a new `Query` object which will issue mapper queries within the context of this Session.  If a Mapper is passed, then the Query uses that mapper.  Otherwise, if a class is sent, it will locate the primary mapper for that class which is used to construct the Query.  
 
+    {python}
+    # query from a class
+    session.query(User).select_by(name='ed')
+    
+    # query from a mapper
+    query = session.query(usermapper)
+    x = query.get(1)
+    
+    # query from a class mapped with entity name 'alt_users'
+    q = session.query(User, entity_name='alt_users')
+    y = q.options(eagerload('orders')).select()
+    
 "entity_name" is an optional keyword argument sent with a class object, in order to further qualify which primary mapper to be used; this only applies if there was a `Mapper` created with that particular class/entity name combination, else an exception is raised.  All of the methods on Session which take a class or mapper argument also take the "entity_name" argument, so that a given class can be properly matched to the desired primary mapper.
 
 All instances retrieved by the returned `Query` object will be stored as persistent instances within the originating Session.
@@ -148,9 +160,24 @@ All instances retrieved by the returned `Query` object will be stored as persist
 
 Given a class or mapper, a scalar or tuple-based identity, and an optional "entity_name" keyword argument, creates a `Query` corresponding to the given mapper or class/entity_name combination, and calls the `get()` method with the given identity value.  If the object already exists within this Session, it is simply returned, else it is queried from the database.  If the instance is not found, the method returns `None`.
 
+    {python}
+    # get Employer primary key 5
+    employer = session.get(Employer, 5)
+    
+    # get Report composite primary key 7,12, using mapper 'report_mapper_b'
+    report = session.get(Report, (7,12), entity_name='report_mapper_b')
+    
+
 #### load() {@name=load}
 
 load() is similar to get() except it will raise an exception if the instance does not exist in the database.  It will also load the object's data from the database in all cases, and **overwrite** all changes on the object if it already exists in the session with the latest data from the database.
+
+    {python}
+    # load Employer primary key 5
+    employer = session.load(Employer, 5)
+
+    # load Report composite primary key 7,12, using mapper 'report_mapper_b'
+    report = session.load(Report, (7,12), entity_name='report_mapper_b')
 
 #### save() {@name=save}
 
@@ -161,6 +188,14 @@ save() is called automatically for new instances by the classes' associated mapp
 A transient instance also can be automatically `save()`ed if it is associated with a parent object which specifies `save-update` within its *cascade* rules, and that parent is already attached or becomes attached to a Session.  For more information on cascade, see the next section.
 
 The `save_or_update()` method is a convenience method which will call the `save()` or `update()` methods appropriately dependening on whether or not the instance has a database identity (but the instance still must be unattached).
+
+    {python}
+    user1 = User(name='user1')
+    user2 = User(name='user2')
+    session.save(user1)
+    session.save(user2)
+    
+    session.flush()     # write changes to the database
 
 #### flush() {@name=flush}    
 
@@ -321,6 +356,8 @@ The `create_transaction()` method creates a new SessionTransaction object but do
 
 `SessionTransaction`, like the `Transaction` off of `Connection` also supports "nested" behavior, and is safe to pass to other functions which then issue their own `begin()`/`commit()` pair; only the outermost `begin()`/`commit()` pair actually affects the transaction, and any call to `rollback()` within a particular call stack will issue a rollback.
 
+Note that while SessionTransaction is capable of tracking multiple transactions across multiple databases, it currently is in no way a fully functioning two-phase commit engine; generally, when dealing with multiple databases simultaneously, there is the distinct possibility that a transaction can succeed on the first database and fail on the second, which for some applications may be an invalid state.  If this is an issue, its best to either refrain from spanning transactions across databases, or to look into some of the available technologies in this area, such as [Zope](http://www.zope.org) which offers a two-phase commit engine; some users have already created their own SQLAlchemy/Zope hybrid implementations to deal with scenarios like these.
+
 #### Using SQL with SessionTransaction {@name=sql}
 
 The SessionTransaction can interact with direct SQL queries in two general ways.  Either specific `Connection` objects can be associated with the `SessionTransaction`, which are then useable both for direct SQL as well as within `flush()` operations performed by the `SessionTransaction`, or via accessing the `Connection` object automatically referenced within the `SessionTransaction`.
@@ -339,7 +376,7 @@ To associate a specific `Connection` with the `SessionTransaction`, use the `add
         trans.rollback()
         raise
 
-The `add()` method will key the `Connection`'s underlying `Engine` to this `SessionTransaction`.  When mapper operations are performed against this `Engine`, the `Connection` explicitly added will be used.  This **overrides** any other `Connection` objects that the Session was associated with, corresponding to the underlying `Engine` of that `Connection`.
+The `add()` method will key the `Connection`'s underlying `Engine` to this `SessionTransaction`.  When mapper operations are performed against this `Engine`, the `Connection` explicitly added will be used.  This **overrides** any other `Connection` objects that the underlying Session was associated with, corresponding to the underlying `Engine` of that `Connection`.  However, if the `SessionTransaction` itself is already associated with a `Connection`, then an exception is thrown.
 
 The other way is just to use the `Connection` referenced by the `SessionTransaction`.  This is performed via the `connection()` method, and requires passing in a `Mapper` which indicates which underlying `Connection` should be returned.  If the `Mapper` argument is `None`, then the `Session` must be globally bound to a specific `Engine` when it was constructed, else the method returns `None`.
 

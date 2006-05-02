@@ -331,12 +331,10 @@ class ComposedSQLEngine(sql.Engine):
     provide a default implementation of SchemaEngine.
     """
 
-    def __init__(self, connection_provider, dialect, echo=False, logger=None, echo_uow=False, **kwargs):
+    def __init__(self, connection_provider, dialect, echo=False, logger=None, **kwargs):
         self.connection_provider = connection_provider
         self.dialect=dialect
         self.echo = echo
-        # TODO: echo_uow should be only in Session
-        self.echo_uow = echo_uow
         self.logger = logger or util.Logger(origin='engine')
 
     def _get_name(self):

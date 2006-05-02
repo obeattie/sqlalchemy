@@ -39,8 +39,7 @@ class PoolConnectionProvider(base.ConnectionProvider):
         
 class DefaultDialect(base.Dialect):
     """default implementation of Dialect"""
-    def __init__(self, default_ordering=False, convert_unicode=False, encoding='utf-8', **kwargs):
-        self.default_ordering=default_ordering
+    def __init__(self, convert_unicode=False, encoding='utf-8', **kwargs):
         self.convert_unicode = convert_unicode
         self.supports_autoclose_results = True
         self.encoding = encoding

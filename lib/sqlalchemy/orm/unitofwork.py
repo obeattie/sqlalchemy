@@ -214,7 +214,7 @@ class UnitOfWork(object):
         except KeyError:
             pass
             
-    def flush(self, session, objects=None):
+    def flush(self, session, objects=None, echo=False):
         flush_context = UOWTransaction(self, session)
 
         if objects is not None:
@@ -236,9 +236,8 @@ class UnitOfWork(object):
         
         trans = session.create_transaction(autoflush=False)
         flush_context.transaction = trans
-        echo_commit = False
         try:
-            flush_context.execute(echo=echo_commit)
+            flush_context.execute(echo=echo)
             trans.commit()
         except:
             trans.rollback()

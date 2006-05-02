@@ -67,7 +67,7 @@ class SessionTransaction(object):
         
 class Session(object):
     """encapsulates a set of objects being operated upon within an object-relational operation."""
-    def __init__(self, bind_to=None, hash_key=None, new_imap=True, import_session=None):
+    def __init__(self, bind_to=None, hash_key=None, new_imap=True, import_session=None, echo_uow=False):
         if import_session is not None:
             self.uow = unitofwork.UnitOfWork(identity_map=import_session.uow.identity_map)
         elif new_imap is False:
@@ -77,6 +77,7 @@ class Session(object):
         
         self.bind_to = bind_to
         self.binds = {}
+        self.echo_uow = echo_uow
         self.transaction = None
         if hash_key is None:
             self.hash_key = id(self)
@@ -229,7 +230,7 @@ class Session(object):
     def flush(self, objects=None):
         """flushes all the object modifications present in this session to the database.  'objects'
         is a list or tuple of objects specifically to be flushed."""
-        self.uow.flush(self, objects)
+        self.uow.flush(self, objects, echo=self.echo_uow)
 
     def get(self, class_, ident, **kwargs):
         """returns an instance of the object based on the given identifier, or None
