@@ -90,7 +90,7 @@ def process_code_blocks(tree):
         # consumed as Myghty comments.
         text = re.compile(r'^(?!<&)', re.M).sub('  ', text)
 
-        sqlre = re.compile(r'{sql}(.*?)((?:SELECT|INSERT|DELETE|UPDATE|CREATE|DROP).*?)\n\s*(\n|$)', re.S)
+        sqlre = re.compile(r'{sql}(.*?)((?:SELECT|INSERT|DELETE|UPDATE|CREATE|DROP|PRAGMA|DESCRIBE).*?)\n\s*(\n|$)', re.S)
         if sqlre.search(text) is not None:
             use_sliders = False
         else:

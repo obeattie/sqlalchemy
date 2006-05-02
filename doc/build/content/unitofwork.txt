@@ -84,7 +84,7 @@ We will now cover some of the key concepts used by Sessions and its underlying U
 
 ### Introduction to the Identity Map {@name=identitymap}    
 
-A primary concept of the Session's underlying Unit of Work is that it is keeping track of all persistent instances; recall that a persistent instance has a database identity and is attached to a Session.  In particular, the Unit of Work must insure that only *one* copy of a particular persistent instance exists within the Session at any given time.   The UOW accomplishes this task using a dictionary known as an *Identity Map*.  When a `Query` is used to issue `select` or `get` requests to the database, it will in nearly all cases result in an actual SQL execution to the database, and a corresponding traversal of rows received from that execution.  However, when the underlying mapper *instantiates* objects corresponding to the result set rows it receives, it will *check the session's identity map first* before instantating a new object, and return *the same instance* already present in the identiy map if it already exists, essentially *ignoring* the object state represented by that row.  There are several ways to override this behavior and truly refresh an already-loaded instance which are described later, but the main idea is that once your instance is loaded into a particular Session, it will *never change* its state without your explicit approval, regardless of what the database says about it.  
+A primary concept of the Session's underlying Unit of Work is that it is keeping track of all persistent instances; recall that a persistent instance has a database identity and is attached to a Session.  In particular, the Unit of Work must insure that only *one* copy of a particular persistent instance exists within the Session at any given time.   The UOW accomplishes this task using a dictionary known as an *Identity Map*.  When a `Query` is used to issue `select` or `get` requests to the database, it will in nearly all cases result in an actual SQL execution to the database, and a corresponding traversal of rows received from that execution.  However, when the underlying mapper *instantiates* objects corresponding to the result set rows it receives, it will check the session's identity map first before instantating a new object, and return the same instance already present in the identity map if it already exists, essentially *ignoring* the object state represented by that row.  There are several ways to override this behavior and truly refresh an already-loaded instance which are described later, but the main idea is that once your instance is loaded into a particular Session, it will *never change* its state without your explicit approval, regardless of what the database says about it.  
     
 For example; below, two separate calls to load an instance with database identity "15" are issued, and the results assigned to two separate variables.   However, since the same `Session` was used, the two instances are the same instance:
 
@@ -100,13 +100,25 @@ For example; below, two separate calls to load an instance with database identit
     
 The Identity Map is an instance of `weakref.WeakValueDictionary`, so that when an in-memory object falls out of scope, it will be removed automatically.  However, this may not be instant if there are circular references upon the object.  To guarantee that an instance is removed from the identity map before removing references to it, use the `expunge()` method, described later, to remove it.  
 
-The Session's identity map is accessible via the `identity_map` accessor:
+The Session supports an iterator interface in order to see all objects in the identity map:
 
     {python}
-    >>> objectstore.get_session().identity_map.values()
+    for obj in session:
+        print obj
+
+As well as `__contains__()`:
+
+    {python}
+    if obj in session:
+        print "Object is present"
+        
+The identity map itself is accessible via the `identity_map` accessor:
+
+    {python}
+    >>> session.identity_map.values()
     [<__main__.User object at 0x712630>, <__main__.Address object at 0x712a70>]
 
-The identity of each object instance is available via the _instance_key property attached to each object instance, and is a tuple consisting of the object's class and an additional tuple of primary key values, in the order that they appear within the table definition:
+The identity of each object instance is available via the `_instance_key` property attached to each object instance, and is a tuple consisting of the object's class and an additional tuple of primary key values, in the order that they appear within the table definition:
 
     {python}
     >>> obj._instance_key 
@@ -114,13 +126,13 @@ The identity of each object instance is available via the _instance_key property
     
 At the moment that an object is assigned this key within a `flush()` operation, it is also added to the session's identity map.  
     
-The get() method on `Query`, which retrieves an object based on primary key identity, also checks in the Session's identity map first to save a database round-trip if possible.  In the case of an object lazy-loading a single child object, the get() method is used as well, so scalar-based lazy loads may in some cases not query the database; this is particularly important for backreference relationships as it can save a lot of queries.
+The `get()` method on `Query`, which retrieves an object based on primary key identity, also checks in the Session's identity map first to save a database round-trip if possible.  In the case of an object lazy-loading a single child object, the `get()` method is used as well, so scalar-based lazy loads may in some cases not query the database; this is particularly important for backreference relationships as it can save a lot of queries.
 
 ### Whats Changed ? {@name=changed}    
 
-The next concept is that in addition to the Session storing a record of all objects loaded or saved, it also stores lists of all *newly created* (i.e. pending) objects,  lists of all persistent objects whose attributes have been *modified*, and lists of all persistent objects that have been marked as *deleted*.  These lists are used when a `flush()` call is issued to save all changes.  After the flush occurs, these lists are all cleared out.
+The next concept is that in addition to the `Session` storing a record of all objects loaded or saved, it also stores lists of all *newly created* (i.e. pending) objects,  lists of all persistent objects whose attributes have been *modified*, and lists of all persistent objects that have been marked as *deleted*.  These lists are used when a `flush()` call is issued to save all changes.  After the flush occurs, these lists are all cleared out.
     
-These records are all tracked by a collection of `Set` objects (which are a SQLAlchemy-specific instance called a `HashSet`) that are also viewable off the Session:
+These records are all tracked by a collection of `Set` objects (which are a SQLAlchemy-specific instance called a `HashSet`) that are also viewable off the `Session`:
 
     {python}
     # pending objects recently added to the Session
@@ -152,13 +164,13 @@ The `query()` function takes a class or `Mapper` as an argument, along with an o
     q = session.query(User, entity_name='alt_users')
     y = q.options(eagerload('orders')).select()
     
-"entity_name" is an optional keyword argument sent with a class object, in order to further qualify which primary mapper to be used; this only applies if there was a `Mapper` created with that particular class/entity name combination, else an exception is raised.  All of the methods on Session which take a class or mapper argument also take the "entity_name" argument, so that a given class can be properly matched to the desired primary mapper.
+`entity_name` is an optional keyword argument sent with a class object, in order to further qualify which primary mapper to be used; this only applies if there was a `Mapper` created with that particular class/entity name combination, else an exception is raised.  All of the methods on Session which take a class or mapper argument also take the `entity_name` argument, so that a given class can be properly matched to the desired primary mapper.
 
-All instances retrieved by the returned `Query` object will be stored as persistent instances within the originating Session.
+All instances retrieved by the returned `Query` object will be stored as persistent instances within the originating `Session`.
 
 #### get() {@name=get}
 
-Given a class or mapper, a scalar or tuple-based identity, and an optional "entity_name" keyword argument, creates a `Query` corresponding to the given mapper or class/entity_name combination, and calls the `get()` method with the given identity value.  If the object already exists within this Session, it is simply returned, else it is queried from the database.  If the instance is not found, the method returns `None`.
+Given a class or mapper, a scalar or tuple-based identity, and an optional `entity_name` keyword argument, creates a `Query` corresponding to the given mapper or class/entity_name combination, and calls the `get()` method with the given identity value.  If the object already exists within this Session, it is simply returned, else it is queried from the database.  If the instance is not found, the method returns `None`.
 
     {python}
     # get Employer primary key 5
@@ -181,13 +193,7 @@ load() is similar to get() except it will raise an exception if the instance doe
 
 #### save() {@name=save}
 
-save() is called with a single transient (unsaved, unattached) instance as an argument, which is then added to the Session and becomes pending.  When the session is next `flush()`ed, the instance will be saved to the database uponwhich it becomes persistent (saved, attached).  If the given instance is not transient, meaning it is either attached to an existing Session or it has a database identity, an exception is raised.
-
-save() is called automatically for new instances by the classes' associated mapper, if a default Session context is in effect (such as a thread-local session), which means that newly created instances automatically become pending.  If there is no default session available, then the instance remains transient (unattached) until it is explicitly added to a Session via the save() method.
-
-A transient instance also can be automatically `save()`ed if it is associated with a parent object which specifies `save-update` within its *cascade* rules, and that parent is already attached or becomes attached to a Session.  For more information on cascade, see the next section.
-
-The `save_or_update()` method is a convenience method which will call the `save()` or `update()` methods appropriately dependening on whether or not the instance has a database identity (but the instance still must be unattached).
+save() is called with a single transient (unsaved, unattached) instance as an argument, which is then added to the Session and becomes pending.  When the session is next `flush`ed, the instance will be saved to the database uponwhich it becomes persistent (saved, attached).  If the given instance is not transient, meaning it is either attached to an existing Session or it has a database identity, an exception is raised.
 
     {python}
     user1 = User(name='user1')
@@ -197,9 +203,15 @@ The `save_or_update()` method is a convenience method which will call the `save(
     
     session.flush()     # write changes to the database
 
+save() is called automatically for new instances by the classes' associated mapper, if a default Session context is in effect (such as a thread-local session), which means that newly created instances automatically become pending.  If there is no default session available, then the instance remains transient (unattached) until it is explicitly added to a Session via the save() method.
+
+A transient instance also can be automatically `save`ed if it is associated with a parent object which specifies `save-update` within its `cascade` rules, and that parent is already attached or becomes attached to a Session.  For more information on `cascade`, see the next section.
+
+The `save_or_update()` method, covered later, is a convenience method which will call the `save()` or `update()` methods appropriately dependening on whether or not the instance has a database identity (but the instance still must be unattached).
+
 #### flush() {@name=flush}    
 
-This is the main gateway to what the Unit of Work does best, which is save everything !  It should be clear by now that a flush looks like:
+This is the main gateway to what the Unit of Work does best, which is save everything !  It should be clear by now what a flush looks like:
     
     {python}
     session.flush()
@@ -211,7 +223,7 @@ It also can be called with a list of objects; in this form, the flush operation 
     # objects remain present in the session.
     session.flush(user1, address2)
     
-This second form of flush should be used more carefully as it will not necessarily locate other dependent objects within the session, whose database representation may have foreign constraint relationships with the objects being operated upon.
+This second form of flush should be used carefully as it will not necessarily locate other dependent objects within the session, whose database representation may have foreign constraint relationships with the objects being operated upon.
 
 ##### Notes on Flush {@name=whatis}        
 
@@ -219,15 +231,15 @@ A common misconception about the `flush()` operation is that once performed, the
 
 This misunderstanding is related to the observed behavior of backreferences ([datamapping_relations_backreferences](rel:datamapping_relations_backreferences)), which automatically associates an instance "A" with another instance "B", in response to the manual association of instance "B" to instance "A" by the user.  The backreference operation occurs completely externally to the `flush()` operation, and is pretty much the only example of a SQLAlchemy feature that manipulates the relationships of persistent objects.
 
-The primary guideline for dealing with flush() is, the developer is responsible for maintaining in-memory objects and their relationships to each other, the unit of work is responsible for maintaining the database representation of the in-memory objects.  The typical pattern is that the manipulation of objects *is* the way that changes get communicated to the unit of work, so that when the flush occurs, the objects are already in their correct in-memory representation and problems dont arise.  The manipulation of identifier attributes like integer key values as well as deletes in particular are a frequent source of confusion.
+The primary guideline for dealing with `flush()` is, the developer is responsible for maintaining in-memory objects and their relationships to each other, the unit of work is responsible for maintaining the database representation of the in-memory objects.  The typical pattern is that the manipulation of objects *is* the way that changes get communicated to the unit of work, so that when the flush occurs, the objects are already in their correct in-memory representation and problems dont arise.  The manipulation of identifier attributes like integer key values as well as deletes in particular are a frequent source of confusion.
         
 #### close() {@name=close}
 
-This method first calls `clear()`, removing all objects from this Session, and then insures that any transactional resources are closed.
+This method first calls `clear()`, removing all objects from this `Session`, and then insures that any transactional resources are closed.
 
 #### delete() {@name=delete}
 
-The delete call places an instance into the Unit of Work's list of objects to be marked as deleted:
+The `delete` method places an instance into the Unit of Work's list of objects to be marked as deleted:
 
     {python}
     # mark two objects to be deleted
@@ -277,21 +289,32 @@ Use `expunge` when youd like to remove an object altogether from memory, such as
 
 Both of these methods receive two arguments; in the case of `bind_mapper()`, it is a `Mapper` and an `Engine` or `Connection` instance; in the case of `bind_table()`, it is a `Table` instance or other `Selectable` (such as an `Alias`, `Select`, etc.), and an `Engine` or `Connection` instance.
 
-Normally, when a Session is created via `create_session()` with no arguments, the Session has no awareness of individual `Engines`, and when mappers use the `Session` to retreieve connections, the underlying `MetaData` each `Table` is associated with is expected to be "bound" to an `Engine`, else no engine can be located and an exception is raiased.  A second form of `create_session()` takes the argument `bind_to=engine_or_connection`, where all operations performed by this Session are done via the single Engine or Connection passed to the constructor.
+    {python}
+    engine1 = create_engine('sqlite:///file1.db')
+    engine2 = create_engine('mysql://localhost')
+    
+    sqlite_conneciton = engine1.connect()
+    
+    sess = create_session()
+    
+    sess.bind_mapper(mymapper, sqlite_connection)  # bind mymapper operations to a single SQLite connection
+    sess.bind_table(email_addresses_table, engine2) # bind operations with the email_addresses_table to mysql
+    
+Normally, when a `Session` is created via `create_session()` with no arguments, the Session has no awareness of individual `Engines`, and when mappers use the `Session` to retrieve connections, the underlying `MetaData` each `Table` is associated with is expected to be "bound" to an `Engine`, else no engine can be located and an exception is raised.  A second form of `create_session()` takes the argument `bind_to=engine_or_connection`, where all SQL operations performed by this `Session` use the single `Engine` or `Connection` passed to the constructor.  With `bind_mapper()` and `bind_table()`,  the operations of individual mapper and/or tables are bound to distinct engines or connections, thereby overriding not only the engine which may be "bound" to the underlying `MetaData`, but also the `Engine` or `Connection` which may have been passed to the `create_session()` function.  Configurations which interact with multiple explicit database connections at one time must use either or both of these methods in order to associate `Session` operations with the appropriate connection resource.  
 
-The point of these methods is to bind individual mapper and/or table operations to distinct engines or connections, thereby overriding not only the engine which may be "bound" to the underlying `MetaData`, but also the `Engine` or `Connection` which may have been passed to the constructor.  Configurations which interact with multiple explicit database connections at one time must use either or both of these methods in order to associate Session operations with the appropriate connection resource.  
-
-Binding a `Mapper` to a resource takes precedence over a `Table` bind, meaning if mapper A is associated with table B, and the Session binds mapper A to connection X and table B to connection Y, an opertaion with mapper A will use connection X, not connection Y.
+Binding a `Mapper` to a resource takes precedence over a `Table` bind, meaning if mapper A is associated with table B, and the Session binds mapper A to connection X and table B to connection Y, an operation with mapper A will use connection X, not connection Y.
 
 #### update() {@name=update}
 
-The update() method is used *only* with detached instances.  A detached instance only exists if its `Session` was cleared or closed, or the instance was `expunge()`d from its session.  `update()` will re-attach the detached instance with this Session, bringing it back to the persistent state.  If the instance is already attached to an existing Session, an exception is raised.
+The update() method is used *only* with detached instances.  A detached instance only exists if its `Session` was cleared or closed, or the instance was `expunge()`d from its session.  `update()` will re-attach the detached instance with this Session, bringing it back to the persistent state, and allowing any changes on the instance to be saved when the `Session` is next `flush`ed.  If the instance is already attached to an existing `Session`, an exception is raised.
+
+A detached instance also can be automatically `update`ed if it is associated with a parent object which specifies `save-update` within its `cascade` rules, and that parent is already attached or becomes attached to a Session.  For more information on `cascade`, see the next section.
 
 The `save_or_update()` method is a convenience method which will call the `save()` or `update()` methods appropriately dependening on whether or not the instance has a database identity (but the instance still must be unattached).
 
 #### save\_or\_update() {@name=saveorupdate}
 
-This method is a combination of the `save()` and `update()` methods, which will examine the given instance for a database identity (i.e. if it is transient or detached), and will call the implementation of `save()` or `update()` as appropriate.  Use `save_or_update()` to add unattached instances to a session when you're not sure if they were newly created or not.
+This method is a combination of the `save()` and `update()` methods, which will examine the given instance for a database identity (i.e. if it is transient or detached), and will call the implementation of `save()` or `update()` as appropriate.  Use `save_or_update()` to add unattached instances to a session when you're not sure if they were newly created or not.  Like `save()` and `update()`, `save_or_update()` cascades along the `save-update` cascade indicator, described in the `cascade` section below.
 
 #### merge() {@name=merge}
 
@@ -393,13 +416,31 @@ The other way is just to use the `Connection` referenced by the `SessionTransact
         
 The `connection()` method also exists on the `Session` object itself, and can be called regardless of whether or not a `SessionTransaction` is in progress.  If an `Engine` is being used with `threadlocal` strategy, the `Connection` returned will correspond to the connection resources that are bound to the current thread, if any.
 
+#### Using Engine-level Transactions with Sessions
+
+The transactions issued by `SessionTransaction` as well as internally by the `Session`'s `flush()` operation use the same `Transaction` object off of `Connection` that is publically available.  Recall that this object supports "nestable" behavior, meaning any number of actors can call `begin()` off a particular `Connection` object, and they will all be managed within the scope of a single transaction.  Therefore, the `flush()` operation can similarly take place within the scope of a regular `Transaction`:
+
+    {python title="Transactions with Sessions"}
+    connection = engine.connect()   # Connection
+    session = create_session(bind_to=connection) # Session bound to the Connection
+    trans = connection.begin()      # start transaction
+    try:
+        stuff = session.query(MyClass).select()     # Session operation uses connection
+        stuff[2].foo = 'bar'
+        connection.execute(mytable.insert(), dict(id=12, value="bar"))    # use connection explicitly
+        session.flush()     # Session flushes with "connection", using transaction "trans"
+        trans.commit()      # commit
+    except:
+        trans.rollback()    # or rollback
+        raise
+
 ### Analyzing Object Flushes {@name=logging}    
 
 The session module can log an extensive display of its "flush plans", which is a graph of its internal representation of objects before they are written to the database.  To turn this logging on:
 
     {python}
-    # make an engine with echo_uow
-    engine = create_engine('myengine...', echo_uow=True)
+    # make an Session with echo_uow
+    session = create_session(echo_uow=True)
     
 The `flush()` operation will then dump to the standard output displays like the following:
 

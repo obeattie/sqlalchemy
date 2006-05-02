@@ -634,13 +634,13 @@ class MetaData(SchemaItem):
         
         def do(conn):
             e = conn.engine
-            ts = self._sort_tables( tables, reverse=False )
+            ts = self._sort_tables( tables, reverse=True )
             for table in ts:
                 if e.dialect.has_table(conn, table.name):
                     conn.drop(table)
         engine.run_callable(do)
                 
-    def _sort_tables(self, tables, reverse=True):
+    def _sort_tables(self, tables, reverse=False):
         import sqlalchemy.sql_util
         sorter = sqlalchemy.sql_util.TableCollection()
         for t in self.tables.values():

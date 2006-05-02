@@ -11,14 +11,14 @@ class TableCollection(object):
     def add(self, table):
         self.tables.append(table)
 
-    def sort(self, reverse=True ):
+    def sort(self, reverse=False ):
         import sqlalchemy.orm.topological
         tuples = []
         class TVisitor(schema.SchemaVisitor):
             def visit_foreign_key(self, fkey):
                 parent_table = fkey.column.table
                 child_table = fkey.parent.table
-                tuples.append( ( child_table, parent_table ) )
+                tuples.append( ( parent_table, child_table ) )
         vis = TVisitor()        
         for table in self.tables:
             table.accept_schema_visitor(vis)

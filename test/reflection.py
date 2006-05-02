@@ -199,7 +199,7 @@ class CreateDropTest(PersistTest):
     def test_sorter( self ):
         tables = metadata._sort_tables(metadata.tables.values())
         table_names = [t.name for t in tables]
-        self.assertEqual( table_names, ['users', 'orders', 'items', 'email_addresses'] )
+        self.assert_( table_names == ['users', 'orders', 'items', 'email_addresses'] or table_names ==  ['users', 'email_addresses', 'orders', 'items'])
 
 
     def test_createdrop(self):
