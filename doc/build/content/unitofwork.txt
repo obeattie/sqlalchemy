@@ -19,13 +19,13 @@ SQLAlchemy's unit of work includes these functions:
 
 When dealing with mapped instances with regards to Sessions, an instance may be *attached* or *unattached* to a particular Session.  An instance also may or may not correspond to an actual row in the database.  The product of these two binary conditions yields us four general states a particular instance can have within the perspective of the Session:
 
-* Transient - a transient instance exists within memory only and is not associated with any Session.  It also has no database identity and does not have a corresponding record in the database.  When a new instance of a class is constructed, and no default session context exists with which to automatically attach the new instance, it is a transient instance.  The instance can then be saved to a particular session in which case it becomes a *pending* instance.  If a default session context exists, new instances are added to that Session by default and therefore become *pending* instances immediately.  
+* *Transient* - a transient instance exists within memory only and is not associated with any Session.  It also has no database identity and does not have a corresponding record in the database.  When a new instance of a class is constructed, and no default session context exists with which to automatically attach the new instance, it is a transient instance.  The instance can then be saved to a particular session in which case it becomes a *pending* instance.  If a default session context exists, new instances are added to that Session by default and therefore become *pending* instances immediately.  
 
-* Pending - a pending instance is a Session-attached object that has not yet been assigned a database identity.  When the Session is flushed (i.e. changes are persisted to the database), a pending instance becomes persistent.
+* *Pending* - a pending instance is a Session-attached object that has not yet been assigned a database identity.  When the Session is flushed (i.e. changes are persisted to the database), a pending instance becomes persistent.
 
-* Persistent - a persistent instance has a database identity and a corresponding record in the database, and is also associated with a particular Session.   By "database identity" we mean the object is associated with a table or relational concept in the database combined with a particular primary key in that table.  Objects that are loaded by SQLAlchemy in the context of a particular session are automatically considered persistent, as are formerly pending instances which have been subject to a session `flush()`.
+* *Persistent* - a persistent instance has a database identity and a corresponding record in the database, and is also associated with a particular Session.   By "database identity" we mean the object is associated with a table or relational concept in the database combined with a particular primary key in that table.  Objects that are loaded by SQLAlchemy in the context of a particular session are automatically considered persistent, as are formerly pending instances which have been subject to a session `flush()`.
 
-* Detached - a detached instance is an instance which has a database identity and corresponding row in the database, but is not attached to any Session.  This occurs when an instance has been removed from a Session, either because the session itself was cleared or closed, or the instance was explicitly removed from the Session.  The object can be re-attached with a session again in which case it becomes Persistent again.  Detached instances are useful when an application needs to represent a long-running operation across multiple Sessions, needs to store an object in a serialized state and then restore it later (such as within an HTTP "session" object), or in some cases where code needs to load instances locally which will later be associated with some other Session.
+* *Detached* - a detached instance is an instance which has a database identity and corresponding row in the database, but is not attached to any Session.  This occurs when an instance has been removed from a Session, either because the session itself was cleared or closed, or the instance was explicitly removed from the Session.  The object can be re-attached with a session again in which case it becomes Persistent again.  Detached instances are useful when an application needs to represent a long-running operation across multiple Sessions, needs to store an object in a serialized state and then restore it later (such as within an HTTP "session" object), or in some cases where code needs to load instances locally which will later be associated with some other Session.
 
 ### Acquiring a Session {@name=getting}
 
@@ -51,7 +51,7 @@ A common option used with `create_session()` is to specify a specific `Engine` o
     session = create_session(bind_to=conn)
     
 
-The session to which an object is attached can be acquired via the `object_session()` method, which returns the appropriate `Session` if the object is pending or persistent, or `None` if the object is transient or detached:
+The session to which an object is attached can be acquired via the `object_session()` function, which returns the appropriate `Session` if the object is pending or persistent, or `None` if the object is transient or detached:
 
     {python}
     session = object_session(obj)
@@ -238,7 +238,7 @@ Expunge removes an object from the Session, sending persistent instances to the 
     
 Use `expunge` when youd like to remove an object altogether from memory, such as before calling `del` on it, which will prevent any "ghost" operations occuring when the session is flushed.
 
-#### bind_mapper()/bind_table() {@name=bind}
+#### bind\_mapper() / bind\_table() {@name=bind}
 
 Both of these methods receive two arguments; in the case of `bind_mapper()`, it is a `Mapper` and an `Engine` or `Connection` instance; in the case of `bind_table()`, it is a `Table` instance or other `Selectable` (such as an `Alias`, `Select`, etc.), and an `Engine` or `Connection` instance.
 
@@ -254,7 +254,7 @@ The update() method is used *only* with detached instances.  A detached instance
 
 The `save_or_update()` method is a convenience method which will call the `save()` or `update()` methods appropriately dependening on whether or not the instance has a database identity (but the instance still must be unattached).
 
-#### save_or_update() {@name=save_or_update}
+#### save\_or\_update() {@name=saveorupdate}
 
 This method is a combination of the `save()` and `update()` methods, which will examine the given instance for a database identity (i.e. if it is transient or detached), and will call the implementation of `save()` or `update()` as appropriate.  Use `save_or_update()` to add unattached instances to a session when you're not sure if they were newly created or not.
 
@@ -296,6 +296,8 @@ Additionally, when a child item is attached to a parent item that specifies the 
 
 Note that cascading doesn't do anything that isn't possible by manually calling Session methods on individual instances within a hierarchy, it merely automates common operations on a group of associated instances.
 
+The default value for `cascade` on `relation()`s is `save-update`, and the `private=True` keyword argument is a synonym for `cascade="all, delete-orphan"`.
+
 ### SessionTransaction {@name=transaction}
 
 SessionTransaction is a multi-engine transaction manager, which aggregates one or more Engine/Connection pairs and keeps track of a Transaction object for each one.  As the Session receives requests to execute SQL statements, it uses the Connection that is referenced by the SessionTransaction.  At commit time, the underyling Session is flushed, and each Transaction is the committed.
@@ -319,15 +321,15 @@ The `create_transaction()` method creates a new SessionTransaction object but do
 
 `SessionTransaction`, like the `Transaction` off of `Connection` also supports "nested" behavior, and is safe to pass to other functions which then issue their own `begin()`/`commit()` pair; only the outermost `begin()`/`commit()` pair actually affects the transaction, and any call to `rollback()` within a particular call stack will issue a rollback.
 
-#### Analyzing Object Commits {@name=logging}    
+### Analyzing Object Flushes {@name=logging}    
 
-The objectstore module can log an extensive display of its "commit plans", which is a graph of its internal representation of objects before they are committed to the database.  To turn this logging on:
+The session module can log an extensive display of its "flush plans", which is a graph of its internal representation of objects before they are written to the database.  To turn this logging on:
 
     {python}
     # make an engine with echo_uow
     engine = create_engine('myengine...', echo_uow=True)
     
-Commits will then dump to the standard output displays like the following:
+The `flush()` operation will then dump to the standard output displays like the following:
 
     {code}
     Task dump:
@@ -355,4 +357,8 @@ Commits will then dump to the standard output displays like the following:
       |----
     
 The above graph can be read straight downwards to determine the order of operations.  It indicates "save User 6016624, process each element in the 'addresses' list on User 6016624, save Address 6034384, Address 6034256".
+
+Of course, one can also get a good idea of the order of operations just by logging the actual SQL statements executed.
+
+The format of the above display is definitely a work in progress and amazingly, is far simpler to read than it was in earlier releases.  It will hopefully be further refined in future releases to be more intuitive (while not losing any information).
     
