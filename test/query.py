@@ -111,14 +111,6 @@ class QueryTest(PersistTest):
         
         print repr(self.users.select().execute().fetchall())
         
-    def testtransaction(self):
-        def dostuff():
-            self.users.insert().execute(user_id = 7, user_name = 'john')
-            self.users.insert().execute(user_id = 8, user_name = 'jack')
-        
-        db.transaction(dostuff)
-        print repr(self.users.select().execute().fetchall())    
-
     def testselectlimit(self):
         self.users.insert().execute(user_id=1, user_name='john')
         self.users.insert().execute(user_id=2, user_name='jack')

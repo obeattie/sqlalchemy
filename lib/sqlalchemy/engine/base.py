@@ -115,11 +115,11 @@ class ExecutionContext(object):
     The pre_exec and post_exec methods will be called for compiled statements, afterwhich
     it is expected that the various methods last_inserted_ids, last_inserted_params, etc.
     will contain appropriate values, if applicable."""
-    def pre_exec(self, engine, proxy, compiled, parameters, **kwargs):
+    def pre_exec(self, engine, proxy, compiled, parameters):
         """called before an execution of a compiled statement.  proxy is a callable that
         takes a string statement and a bind parameter list/dictionary."""
         raise NotImplementedError()
-    def post_exec(self, engine, proxy, compiled, parameters, **kwargs):
+    def post_exec(self, engine, proxy, compiled, parameters):
         """called after the execution of a compiled statement.  proxy is a callable that
         takes a string statement and a bind parameter list/dictionary."""
         raise NotImplementedError()
@@ -191,29 +191,35 @@ class Connection(object):
             return row[0]
         else:
             return None
-    def execute(self, object, parameters=None, **kwargs):
-        return Connection.executors[type(object).__mro__[-2]](self, object, parameters, **kwargs)
-    def execute_text(self, statement, parameters, **kwargs):
-        cursor = self._execute_raw(statement, parameters, **kwargs)
-        return ResultProxy(self.engine, self, cursor)
-    def execute_clauseelement(self, elem, parameters, **kwargs):
-        # TODO: get this into ClauseElement
-        executemany = parameters is not None and (isinstance(parameters, list) or isinstance(parameters, tuple))
-        if executemany:
-            param = parameters[0]
-        else:
-            param = parameters
-        return self.execute_compiled(elem.compile(engine=self.engine, parameters=param, **kwargs), parameters, **kwargs)
-    def execute_default(self, default, parameters=None, **kwargs):
+    def execute(self, object, *multiparams, **params):
+        return Connection.executors[type(object).__mro__[-2]](self, object, *multiparams, **params)
+    def execute_default(self, default, **kwargs):
         return default.accept_schema_visitor(self.engine.dialect.defaultrunner(self.engine, self.proxy, **kwargs))
-    def execute_compiled(self, compiled, parameters, **kwargs):
+    def execute_text(self, statement, *multiparams, **params):
+        cursor = self._execute_raw(statement, self._conv_params(*multiparams, **params))
+        return ResultProxy(self.engine, self, cursor)
+    def _conv_params(self, *multiparams, **params):
+        if len(multiparams) == 0:
+            return params
+        elif len(multiparams) == 1:
+            return multiparams[0]
+        else:
+            return multiparams
+    def execute_clauseelement(self, elem, *multiparams, **params):
+        executemany = len(multiparams) > 0
+        if executemany:
+            param = multiparams[0]
+        else:
+            param = params
+        return self.execute_compiled(elem.compile(engine=self.engine, parameters=param), *multiparams, **params)
+    def execute_compiled(self, compiled, *multiparams, **params):
         """executes a sql.Compiled object."""
         cursor = self.connection.cursor()
-        executemany = parameters is not None and (isinstance(parameters, list) or isinstance(parameters, tuple))
+        executemany = len(multiparams) > 0
         if executemany:
-            parameters = [compiled.get_params(**m) for m in parameters]
-        elif parameters is not None:
-            parameters = compiled.get_params(**parameters)
+            parameters = [compiled.get_params(**m) for m in multiparams]
+        elif len(params):
+            parameters = compiled.get_params(**params)
         else:
             parameters = compiled.get_params()
         def proxy(statement=None, parameters=None):
@@ -224,9 +230,9 @@ class Connection(object):
             self._execute_raw(statement, parameters, cursor=cursor, context=context)
             return cursor
         context = self.engine.dialect.create_execution_context()
-        context.pre_exec(self.engine, proxy, compiled, parameters, **kwargs)
+        context.pre_exec(self.engine, proxy, compiled, parameters)
         proxy(str(compiled), parameters)
-        context.post_exec(self.engine, proxy, compiled, parameters, **kwargs)
+        context.post_exec(self.engine, proxy, compiled, parameters)
         return ResultProxy(self.engine, self, cursor, context, typemap=compiled.typemap)
         
     # poor man's multimethod/generic function thingy
@@ -387,13 +393,13 @@ class ComposedSQLEngine(sql.Engine):
             if connection is None:
                 conn.close()
         
-    def execute(self, *args, **kwargs):
+    def execute(self, statement, *multiparams, **params):
         connection = self.contextual_connect(close_with_result=True)
-        return connection.execute(*args, **kwargs)
+        return connection.execute(statement, *multiparams, **params)
         
-    def execute_compiled(self, compiled, parameters, **kwargs):
+    def execute_compiled(self, compiled, *multiparams, **params):
         connection = self.contextual_connect(close_with_result=True)
-        return connection.execute_compiled(compiled, parameters, **kwargs)
+        return connection.execute_compiled(compiled, *multiparams, **params)
         
     def compiler(self, statement, parameters, **kwargs):
         return self.dialect.compiler(statement, parameters, engine=self, **kwargs)

@@ -349,13 +349,10 @@ class Compiled(ClauseVisitor):
 
     def execute(self, *multiparams, **params):
         """executes this compiled object using the AbstractEngine it is bound to."""
-        if len(multiparams):
-            params = multiparams
-        
         e = self.engine
         if e is None:
             raise InvalidRequestError("This Compiled object is not bound to any engine.")
-        return e.execute_compiled(self, params)
+        return e.execute_compiled(self, *multiparams, **params)
 
     def scalar(self, *multiparams, **params):
         """executes this compiled object via the execute() method, then 

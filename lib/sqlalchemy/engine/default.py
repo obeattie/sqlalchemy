@@ -137,9 +137,9 @@ class DefaultDialect(base.Dialect):
 class DefaultExecutionContext(base.ExecutionContext):
     def __init__(self, dialect):
         self.dialect = dialect
-    def pre_exec(self, engine, proxy, compiled, parameters, **kwargs):
-        self._process_defaults(engine, proxy, compiled, parameters, **kwargs)
-    def post_exec(self, engine, proxy, compiled, parameters, **kwargs):
+    def pre_exec(self, engine, proxy, compiled, parameters):
+        self._process_defaults(engine, proxy, compiled, parameters)
+    def post_exec(self, engine, proxy, compiled, parameters):
         pass
     def get_rowcount(self, cursor):
         if hasattr(self, '_rowcount'):
@@ -156,7 +156,7 @@ class DefaultExecutionContext(base.ExecutionContext):
         return self._last_updated_params                
     def lastrow_has_defaults(self):
         return self._lastrow_has_defaults
-    def _process_defaults(self, engine, proxy, compiled, parameters, **kwargs):
+    def _process_defaults(self, engine, proxy, compiled, parameters):
         """INSERT and UPDATE statements, when compiled, may have additional columns added to their
         VALUES and SET lists corresponding to column defaults/onupdates that are present on the 
         Table object (i.e. ColumnDefault, Sequence, PassiveDefault).  This method pre-execs those
