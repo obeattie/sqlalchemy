@@ -243,9 +243,10 @@ class EngineAssert(proxy.BaseProxyEngine):
                 (query, params) = item
                 if callable(params):
                     params = params(ctx)
-
+                if params is not None and isinstance(params, list) and len(params) == 1:
+                    params = params[0]
+                        
                 query = self.convert_statement(query)
-
                 self.unittest.assert_(statement == query and (params is None or params == parameters), "Testing for query '%s' params %s, received '%s' with params %s" % (query, repr(params), statement, repr(parameters)))
             self.sql_count += 1
             return realexec(ctx, proxy, compiled, parameters, **kwargs)

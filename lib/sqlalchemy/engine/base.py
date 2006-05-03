@@ -195,14 +195,19 @@ class Connection(object):
         return Connection.executors[type(object).__mro__[-2]](self, object, *multiparams, **params)
     def execute_default(self, default, **kwargs):
         return default.accept_schema_visitor(self.engine.dialect.defaultrunner(self.engine, self.proxy, **kwargs))
-    def execute_text(self, statement, *multiparams, **params):
-        cursor = self._execute_raw(statement, self._conv_params(*multiparams, **params))
+    def execute_text(self, statement, parameters):
+        cursor = self._execute_raw(statement, parameters)
         return ResultProxy(self.engine, self, cursor)
-    def _conv_params(self, *multiparams, **params):
+    def _params_to_listofdicts(self, *multiparams, **params):
         if len(multiparams) == 0:
-            return params
+            return [params]
         elif len(multiparams) == 1:
-            return multiparams[0]
+            if multiparams[0] == None:
+                return [{}]
+            elif isinstance (multiparams[0], list) or isinstance (multiparams[0], tuple):
+                return multiparams[0]
+            else:
+                return [multiparams[0]]
         else:
             return multiparams
     def execute_clauseelement(self, elem, *multiparams, **params):
@@ -215,13 +220,9 @@ class Connection(object):
     def execute_compiled(self, compiled, *multiparams, **params):
         """executes a sql.Compiled object."""
         cursor = self.connection.cursor()
-        executemany = len(multiparams) > 0
-        if executemany:
-            parameters = [compiled.get_params(**m) for m in multiparams]
-        elif len(params):
-            parameters = compiled.get_params(**params)
-        else:
-            parameters = compiled.get_params()
+        parameters = [compiled.get_params(**m) for m in self._params_to_listofdicts(*multiparams, **params)]
+        if len(parameters) == 1:
+            parameters = parameters[0]
         def proxy(statement=None, parameters=None):
             if statement is None:
                 return cursor

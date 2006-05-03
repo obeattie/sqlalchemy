@@ -726,6 +726,7 @@ class Mapper(object):
                 if self.version_id_col is not None:
                     clause.clauses.append(self.version_id_col == sql.bindparam(self.version_id_col.key))
                 statement = table.delete(clause)
+                print "DELETE IS", delete
                 c = connection.execute(statement, delete)
                 if c.supports_sane_rowcount() and c.rowcount != len(delete):
                     raise CommitError("ConcurrencyError - updated rowcount %d does not match number of objects updated %d" % (c.cursor.rowcount, len(delete)))
