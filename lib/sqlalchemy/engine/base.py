@@ -337,10 +337,11 @@ class ComposedSQLEngine(sql.Engine):
         self.echo = echo
         self.logger = logger or util.Logger(origin='engine')
 
+
     def _get_name(self):
         return sys.modules[self.dialect.__module__].descriptor()['name']
     name = property(_get_name)
-
+    engine = property(lambda s:s)
     def dispose(self):
         self.connection_provider.dispose()
 
