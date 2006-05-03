@@ -78,7 +78,7 @@ The Engine provides methods by which literal SQL text as well as SQL clause cons
     {python title="Explicit Connection"}
     engine = create_engine('sqlite:///:memory:')
     connection = engine.connect()
-    result = connection.execute("select * from mytable where col1=:col1", {'col1':5})
+    result = connection.execute("select * from mytable where col1=:col1", col1=5)
     for row in result:
         print row['col1'], row['col2']
     connection.close()
@@ -87,7 +87,7 @@ The `close` method on `Connection` does not actually remove the underlying conne
 
     {python title="Implicit Connection"}
     engine = create_engine('sqlite:///:memory:')
-    result = engine.execute("select * from mytable where col1=:col1", {'col1':5})
+    result = engine.execute("select * from mytable where col1=:col1", col1=5)
     for row in result:
         print row['col1'], row['col2']
     result.close()
@@ -181,7 +181,7 @@ The `Connection` object provides a `begin()` method which returns a `Transaction
     trans = connection.begin()
     try:
         r1 = connection.execute(table1.select())
-        connection.execute(table1.insert().execute(col1=7, col2='this is some data))
+        connection.execute(table1.insert(), col1=7, col2='this is some data')
         trans.commit()
     except:
         trans.rollback()
@@ -205,7 +205,7 @@ The `Transaction` object also handles "nested" behavior by keeping track of the 
         trans.begin()
         try:
             connection.execute("insert into mytable values ('bat', 'lala')")
-            connection.execute(mytable.insert(), dict(col1='bat', col2='lala'))
+            connection.execute(mytable.insert(), col1='bat', col2='lala')
             trans.commit()  # transaction is not committed yet
         except:
             trans.rollback() # this rolls back the transaction unconditionally
