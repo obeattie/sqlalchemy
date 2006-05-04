@@ -68,7 +68,9 @@ This plugin solves many of the problems that `threadlocal` solves, but does it i
     u = User()
     
     ctx.current.flush()
-    
+
+### ActiveMapper
+
 ### ProxyEngine
 
 ### SelectResults
