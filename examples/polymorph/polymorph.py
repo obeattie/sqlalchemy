@@ -4,7 +4,7 @@ import sys
 # this example illustrates a polymorphic load of two classes, where each class has a very 
 # different set of properties
 
-db = create_engine('sqlite://', echo=True, echo_uow=False)
+db = create_engine('sqlite://', echo='debug', echo_uow=False)
 
 # a table to store companies
 companies = Table('companies', db, 
@@ -56,7 +56,13 @@ class Company(object):
 
 # create a union that represents both types of joins.  we have to use
 # nulls to pad out the disparate columns.
-person_join = select(
+person_join = polymorphic_union(
+    {
+        'engineer':people.join(engineers),
+        'manager':people.join(managers),
+        'person':people,
+    }, None, 'pjoin')
+p_person_join = select(
                     [
                         people, 
                         managers.c.status, 
@@ -87,6 +93,7 @@ person_join = select(
                         )
                 )
             ).alias('pjoin')
+
 
 person_mapper = mapper(Person, people, select_table=person_join, polymorphic_on=person_join.c.type, polymorphic_ident='person')
 mapper(Engineer, engineers, inherits=person_mapper, polymorphic_ident='engineer')

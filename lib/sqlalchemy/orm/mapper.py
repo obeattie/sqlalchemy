@@ -54,6 +54,7 @@ class Mapper(object):
                 polymorphic_on=None,
                 polymorphic_map=None,
                 polymorphic_ident=None,
+                concrete=False,
                 select_table=None):
 
         ext = MapperExtension()
@@ -98,7 +99,7 @@ class Mapper(object):
         # tables - a collection of underlying Table objects pulled from mapped_table
         
         for table in (local_table, select_table):
-            if table is not None and isinstance(local_table, sql.Select):
+            if table is not None and isinstance(local_table, sql.SelectBaseMixin):
                 # some db's, noteably postgres, dont want to select from a select
                 # without an alias.  also if we make our own alias internally, then
                 # the configured properties on the mapper are not matched against the alias 
@@ -115,19 +116,23 @@ class Mapper(object):
                 raise ArgumentError("Class '%s' does not inherit from '%s'" % (self.class_.__name__, inherits.class_.__name__))
             # inherit_condition is optional.
             if not local_table is inherits.local_table:
-                if inherit_condition is None:
-                    # figure out inherit condition from our table to the immediate table
-                    # of the inherited mapper, not its full table which could pull in other 
-                    # stuff we dont want (allows test/inheritance.InheritTest4 to pass)
-                    inherit_condition = sql.join(inherits.local_table, self.local_table).onclause
-                self.mapped_table = sql.join(inherits.mapped_table, self.local_table, inherit_condition)
-                #print "inherit condition", str(self.table.onclause)
+                if concrete:
+                    self._synchronizer= None
+                    self.mapped_table = self.local_table
+                else:
+                    if inherit_condition is None:
+                        # figure out inherit condition from our table to the immediate table
+                        # of the inherited mapper, not its full table which could pull in other 
+                        # stuff we dont want (allows test/inheritance.InheritTest4 to pass)
+                        inherit_condition = sql.join(inherits.local_table, self.local_table).onclause
+                    self.mapped_table = sql.join(inherits.mapped_table, self.local_table, inherit_condition)
+                    #print "inherit condition", str(self.table.onclause)
 
-                # generate sync rules.  similarly to creating the on clause, specify a 
-                # stricter set of tables to create "sync rules" by,based on the immediate
-                # inherited table, rather than all inherited tables
-                self._synchronizer = sync.ClauseSynchronizer(self, self, sync.ONETOMANY)
-                self._synchronizer.compile(self.mapped_table.onclause, util.HashSet([inherits.local_table]), sqlutil.TableFinder(self.local_table))
+                    # generate sync rules.  similarly to creating the on clause, specify a 
+                    # stricter set of tables to create "sync rules" by,based on the immediate
+                    # inherited table, rather than all inherited tables
+                    self._synchronizer = sync.ClauseSynchronizer(self, self, sync.ONETOMANY)
+                    self._synchronizer.compile(self.mapped_table.onclause, util.HashSet([inherits.local_table]), sqlutil.TableFinder(self.local_table))
             else:
                 self._synchronizer = None
             self.inherits = inherits

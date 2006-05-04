@@ -5,6 +5,7 @@
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
 import sets
+import sqlalchemy.sql as sql
 
 class CascadeOptions(object):
     """keeps track of the options sent to relation().cascade"""
@@ -18,4 +19,29 @@ class CascadeOptions(object):
         self.refresh_expire = "refresh-expire" in values or "all" in values
     def __contains__(self, item):
         return getattr(self, item.replace("-", "_"), False)
+    
+
+def polymorphic_union(table_map, typecolname, aliasname='p_union'):
+    colnames = sets.Set()
+    colnamemaps = {}
+    for table in table_map.values():
+        m = {}
+        for c in table.c:
+            colnames.add(c.name)
+            m[c.name] = c
+        colnamemaps[table] = m
         
+    def col(name, table):
+        try:
+            return colnamemaps[table][name]
+        except KeyError:
+            return sql.null().label(name)
+
+    result = []
+    for type, table in table_map.iteritems():
+        if typecolname is not None:
+            result.append(sql.select([col(name, table) for name in colnames] + [sql.column("'%s'" % type).label(typecolname)], from_obj=[table]))
+        else:
+            result.append(sql.select([col(name, table) for name in colnames], from_obj=[table]))
+    return sql.union_all(*result).alias(aliasname)
+    

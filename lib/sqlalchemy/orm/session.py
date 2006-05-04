@@ -436,8 +436,8 @@ global_attributes = unitofwork.global_attributes
 _sessions = weakref.WeakValueDictionary() 
 
 def current_session(obj=None):
-    if hasattr(obj.__class__, '__sessioncontext__'):
-        return obj.__class__.__sessioncontext__()
+    if hasattr(obj, '__session__'):
+        return obj.__session__()
     else:
         return _default_session(obj=obj)
         

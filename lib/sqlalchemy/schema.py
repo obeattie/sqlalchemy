@@ -40,7 +40,10 @@ class SchemaItem(object):
         to which this item is bound"""
         return None
     def _get_engine(self):
-        return self._derived_metadata().engine
+        try:
+            return self._derived_metadata().engine
+        except AttributeError:
+            return None
     engine = property(lambda s:s._get_engine())
     metadata = property(lambda s:s._derived_metadata())
     

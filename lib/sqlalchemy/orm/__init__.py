@@ -14,11 +14,12 @@ import sqlalchemy.engine as engine
 import sqlalchemy.util as util
 from exceptions import *
 from mapper import *
+from util import polymorphic_union
 from properties import *
 
 __all__ = ['relation', 'backref', 'eagerload', 'lazyload', 'noload', 'deferred', 'defer', 'undefer',
         'mapper', 'clear_mappers', 'sql', 'extension', 'class_mapper', 'object_mapper', 'MapperExtension',
-        'cascade_mappers'
+        'cascade_mappers', 'polymorphic_union'
         ]
 
 def relation(*args, **kwargs):
