@@ -12,6 +12,7 @@
         'adv_datamapping',
         'types',
         'pooling',
+        'plugins',
         'docstrings',
         ]
 

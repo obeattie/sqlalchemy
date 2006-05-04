@@ -33,6 +33,8 @@ class PlainEngineStrategy(EngineStrategy):
 
         poolargs = kwargs.copy()
         poolargs['echo'] = poolargs.get('echo_pool', False)
+        poolargs['pool_size'] = poolargs.get('pool_size', False)
+        poolargs['max_overflow'] = poolargs.get('max_overflow', False)
         poolclass = getattr(module, 'poolclass', None)
         if poolclass is not None:
             poolargs.setdefault('poolclass', poolclass)
@@ -53,6 +55,8 @@ class ThreadLocalEngineStrategy(EngineStrategy):
 
         poolargs = kwargs.copy()
         poolargs['echo'] = poolargs.get('echo_pool', False)
+        poolargs['pool_size'] = poolargs.get('pool_size', False)
+        poolargs['max_overflow'] = poolargs.get('max_overflow', False)
         poolclass = getattr(module, 'poolclass', None)
         if poolclass is not None:
             poolargs.setdefault('poolclass', poolclass)

@@ -37,6 +37,8 @@ Available drivernames are `sqlite`, `mysql`, `postgres`, `oracle`, `mssql`, and 
     mysql_db = create_engine('mysql://localhost/foo')
     oracle_db = create_engine('oracle://scott:tiger@dsn')
 
+The `Engine` will create its first connection to the database when a SQL statement is executed.  As concurrent statements are executed, the underlying connection pool will grow to a default size of five connections, and will allow a default "overflow" of ten.   Since the `Engine` is essentially "home base" for the connection pool, it follows that you should keep a single `Engine` per database established within an application, rather than creating a new one for each connection.
+
 ### Database Engine Options {@name=options}
 
 Keyword options can also be specified to `create_engine()`, following the string URL as follows:
@@ -61,6 +63,8 @@ Example:
     
     engine = create_engine('mysql', pool=pool.QueuePool(getconn, pool_size=20, max_overflow=40))
 
+* pool_size=5 : the number of connections to keep open inside the connection pool.  This is only used with `QueuePool`.
+* max_overflow=10 : the number of connections to allow in "overflow", that is connections that can be opened above and beyond the initial five.  this is only used with `QueuePool`.
 * echo=False : if True, the Engine will log all statements as well as a repr() of their parameter lists to the engines logger, which defaults to sys.stdout.  A SQLEngine instances' "echo" data member can be modified at any time to turn logging on and off.  If set to the string 'debug', result rows will be printed to the standard output as well.
 * logger=None : a file-like object where logging output can be sent, if echo is set to True.  This defaults to sys.stdout.
 * module=None : used by Oracle and Postgres, this is a reference to a DBAPI2 module to be used instead of the engine's default module.  For Postgres, the default is psycopg2, or psycopg1 if 2 cannot be found.  For Oracle, its cx_Oracle.

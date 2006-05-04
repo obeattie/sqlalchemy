@@ -611,7 +611,7 @@ class MetaData(SchemaItem):
     def table_iterator(self, reverse=True):
         return self._sort_tables(self.tables.values(), reverse=reverse)
         
-    def create_all(self, tables=None, engine=None):
+    def create_all(self, engine=None, tables=None):
         if not tables:
             tables = self.tables.values()
 
@@ -627,7 +627,7 @@ class MetaData(SchemaItem):
                 conn.create(table)
         engine.run_callable(do)
         
-    def drop_all(self, tables=None, engine=None):
+    def drop_all(self, engine=None, tables=None):
         if not tables:
             tables = self.tables.values()
 
