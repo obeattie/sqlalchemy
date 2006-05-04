@@ -53,7 +53,7 @@ class Mapper(object):
                 version_id_col = None,
                 polymorphic_on=None,
                 polymorphic_map=None,
-                polymorphic_ident=None,
+                polymorphic_identity=None,
                 concrete=False,
                 select_table=None):
 
@@ -136,9 +136,9 @@ class Mapper(object):
             else:
                 self._synchronizer = None
             self.inherits = inherits
-            if polymorphic_ident is not None:
-                inherits.add_polymorphic_mapping(polymorphic_ident, self)
-            self.polymorphic_ident = polymorphic_ident
+            if polymorphic_identity is not None:
+                inherits.add_polymorphic_mapping(polymorphic_identity, self)
+            self.polymorphic_identity = polymorphic_identity
             if self.polymorphic_on is None:
                 self.effective_polymorphic_on = inherits.effective_polymorphic_on
             else:
@@ -147,9 +147,9 @@ class Mapper(object):
             self._synchronizer = None
             self.inherits = None
             self.mapped_table = self.local_table
-            if polymorphic_ident is not None:
-                self.add_polymorphic_mapping(polymorphic_ident, self)
-            self.polymorphic_ident = polymorphic_ident
+            if polymorphic_identity is not None:
+                self.add_polymorphic_mapping(polymorphic_identity, self)
+            self.polymorphic_identity = polymorphic_identity
             self.effective_polymorphic_on = self.polymorphic_on
 
         if select_table is not None:
@@ -608,7 +608,7 @@ class Mapper(object):
                                 params[col.key] = value
                     elif self.effective_polymorphic_on is not None and col.original is self.effective_polymorphic_on.original:
                         if isinsert:
-                            value = self.polymorphic_ident
+                            value = self.polymorphic_identity
                             if col.default is None or value is not None:
                                 params[col.key] = value
                     else:

@@ -63,9 +63,9 @@ person_join = polymorphic_union(
         'person':people.select(people.c.type=='person'),
     }, None, 'pjoin')
 
-person_mapper = mapper(Person, people, select_table=person_join, polymorphic_on=person_join.c.type, polymorphic_ident='person')
-mapper(Engineer, engineers, inherits=person_mapper, polymorphic_ident='engineer')
-mapper(Manager, managers, inherits=person_mapper, polymorphic_ident='manager')
+person_mapper = mapper(Person, people, select_table=person_join, polymorphic_on=person_join.c.type, polymorphic_identity='person')
+mapper(Engineer, engineers, inherits=person_mapper, polymorphic_identity='engineer')
+mapper(Manager, managers, inherits=person_mapper, polymorphic_identity='manager')
 
 mapper(Company, companies, properties={
     'employees': relation(Person, lazy=True, private=True, backref='company')

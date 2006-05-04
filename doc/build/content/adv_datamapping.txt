@@ -411,8 +411,8 @@ With polymorphic loading, the SQL query to do the actual polymorphic load must b
     }, 'type', 'pjoin')
 
     employee_mapper = mapper(Employee, pjoin, polymorphic_on=pjoin.c.type)
-    manager_mapper = mapper(Manager, managers_table, inherits=employee_mapper, concrete=True, polymorphic_ident='manager')
-    engineer_mapper = mapper(Engineer, engineers_table, inherits=employee_mapper, concrete=True, polymorphic_ident='engineer')
+    manager_mapper = mapper(Manager, managers_table, inherits=employee_mapper, concrete=True, polymorphic_identity='manager')
+    engineer_mapper = mapper(Engineer, engineers_table, inherits=employee_mapper, concrete=True, polymorphic_identity='engineer')
 
 A future release of SQLALchemy might better merge the generated UNION into the mapper construction phase.    
 
@@ -441,9 +441,9 @@ A future release of SQLALchemy might better merge the generated UNION into the m
             'person':people.select(people.c.type=='person'),
         }, None, 'pjoin')
 
-    person_mapper = mapper(Person, people, select_table=person_join, polymorphic_on=person_join.c.type, polymorphic_ident='person')
-    mapper(Engineer, engineers, inherits=person_mapper, polymorphic_ident='engineer')
-    mapper(Manager, managers, inherits=person_mapper, polymorphic_ident='manager')
+    person_mapper = mapper(Person, people, select_table=person_join, polymorphic_on=person_join.c.type, polymorphic_identity='person')
+    mapper(Engineer, engineers, inherits=person_mapper, polymorphic_identity='engineer')
+    mapper(Manager, managers, inherits=person_mapper, polymorphic_identity='manager')
 
 The join condition in an inheritance relationship can be specified explicitly, using `inherit_condition`:
 
