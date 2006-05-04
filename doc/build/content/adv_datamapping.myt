@@ -39,6 +39,26 @@
        
        </&>
 
+### Overriding Properties {@name=overriding}
+
+A common request is the ability to create custom class properties that override the behavior of setting/getting an attribute.  Currently, the easiest way to do this in SQLAlchemy is how it would be done in any Python program; define your attribute with a different name, such as "_attribute", and use a property to get/set its value.  The mapper just needs to be told of the special name:
+
+   {python}
+   class MyClass(object):
+       def _set_email(self, email):
+           self._email = email
+       def _get_email(self, email):
+           return self._email
+       email = property(_get_email, _set_email)
+
+   m = mapper(MyClass, mytable, properties = {
+           # map the '_email' attribute to the "email" column
+           # on the table
+           '_email': mytable.c.email
+   })
+
+In a later release, SQLAlchemy will also allow _get_email and _set_email to be attached directly to the "email" property created by the mapper, and will also allow this association to occur via decorators.
+
 <&|doclib.myt:item, name="relations", description="More On Relations" &>
     <&|doclib.myt:item, name="customjoin", description="Custom Join Conditions" &>
         <p>When creating relations on a mapper, most examples so far have illustrated the mapper and relationship joining up based on the foreign keys of the tables they represent.  in fact, this "automatic" inspection can be completely circumvented using the <span class="codeline">primaryjoin</span> and <span class="codeline">secondaryjoin</span> arguments to <span class="codeline">relation</span>, as in this example which creates a User object which has a relationship to all of its Addresses which are in Boston:

@@ -93,7 +93,7 @@ And `Table` provides an interface to the table's properties as well as that of i
     # get the table related by a foreign key
     fcolumn = employees.c.employee_dept.foreign_key.column.table
 
-#### Binding MetaData to an Engine
+#### Binding MetaData to an Engine {@name=binding}
 
 A MetaData object can be associated with one or more Engine instances.  This allows the MetaData and the elements within it to perform operations automatically, using the connection resources of that Engine.  This includes being able to "reflect" the columns of tables, as well as to perform create and drop operations without needing to pass an `Engine` or `Connection` around.  It also allows SQL constructs to be created which know how to execute themselves (called "implicit execution").
 
