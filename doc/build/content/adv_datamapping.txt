@@ -119,8 +119,6 @@ A complication arises with the above pattern if you want the relations to be eag
     })
     
     {sql}u = User.mapper.select()
-
-    <&|formatting.myt:codepopper, link="sql" &>
     SELECT users.user_id AS users_user_id, users.user_name AS users_user_name, 
     users.password AS users_password, 
     addresses_EF45.address_id AS addresses_EF45_address_id, addresses_EF45.user_id AS addresses_EF45_user_id, 
@@ -147,8 +145,8 @@ Keyword options to the `relation` function include:
 * secondaryjoin - a ClauseElement that will be used as the join of an association table to the child object.  By default, this value is computed based on the foreign key relationships of the association and child tables.
 * foreignkey - specifies which column in this relationship is "foreign", i.e. which column refers to the parent object.  This value is automatically determined in all cases, based on the primary and secondary join conditions, except in the case of a self-referential mapper, where it is needed to indicate the child object's reference back to it's parent.
 * uselist - a boolean that indicates if this property should be loaded as a list or a scalar.  In most cases, this value is determined based on the type and direction of the relationship - one to many forms a list, one to one forms a scalar, many to many is a list.  If a scalar is desired where normally a list would be present, set uselist to False.
-* private - indicates if these child objects are "private" to the parent; removed items will also be deleted, and if the parent item is deleted, all child objects are deleted as well.  See the example in <&formatting.myt:link, path="datamapping_relations_private"&>.
-* backreference - indicates the name of a property to be placed on the related mapper's class that will handle this relationship in the other direction, including synchronizing the object attributes on both sides of the relation.  See the example in <&formatting.myt:link, path="datamapping_relations_backreferences"&>.
+* private - indicates if these child objects are "private" to the parent; removed items will also be deleted, and if the parent item is deleted, all child objects are deleted as well.  See the example in [datamapping_relations_private](rel:datamapping_relations_private).
+* backreference - indicates the name of a property to be placed on the related mapper's class that will handle this relationship in the other direction, including synchronizing the object attributes on both sides of the relation.  See the example in [datamapping_relations_backreferences](rel:datamapping_relations_backreferences).
 * order_by - indicates the ordering that should be applied when loading these items.  See the section [advdatamapping_orderby](rel:advdatamapping_orderby) for details.
 * association - When specifying a many to many relationship with an association object, this keyword should reference the mapper of the target object of the association.  See the example in [datamapping_association](rel:datamapping_association).
 * post_update - this indicates that the relationship should be handled by a second UPDATE statement after an INSERT, or before a DELETE.  using this flag essentially means the relationship will not incur any "dependency" between parent and child item, as the particular foreign key relationship between them is handled by a second statement.  use this flag when a particular mapping arrangement will incur two rows that are dependent on each other, such as a table that has a one-to-many relationship to a set of child rows, and also has a column that references a single child row within that list (i.e. both tables contain a foreign key to each other).  If a flush() operation returns an error that a "cyclical dependency" was detected, this is a cue that you might want to use post_update.
@@ -340,6 +338,8 @@ There is also a concept of `polymorphic` loading, which indicates if multiple ki
 
 SQLAlchemy supports all three kinds of inheritance.  Additionally, true `polymorphic` loading is supported in a straightfoward way for single table inheritance, and has some more manually-configured features that can make it happen for concrete and multiple table inheritance.
 
+Working examples of polymorphic inheritance come with the distribution in the directory `examples/polymorphic`.
+
 Here are the classes we will use to represent an inheritance relationship:
 
     {python}
@@ -402,189 +402,209 @@ Without polymorphic loading, you just define a separate mapper for each class.
     manager_mapper = mapper(Manager, managers_table)
     engineer_mapper = mapper(Engineer, engineers_table)
     
-With polymorphic loading, the SQL query to do the actual polymorphic load must be constructed, usually as a UNION.  Additionally, each query composed into the UNION must have the same set of column names, as well as an extra column to indicate the "polymorphic identity" of each row:
+With polymorphic loading, the SQL query to do the actual polymorphic load must be constructed, usually as a UNION.  There is a helper function to create these UNIONS called `polymorphic_union`.
 
     {python}
-    colnames = ['employee_id', 'name', 'manager_data', 'engineer_info']
-    def col(name, table):
-        try:
-            return table.c[name]
-        except KeyError:
-            return null().label(name)
-
-    pjoin = select(
-                [col(name, managers_table) for name in colnames] + [column("'manager'").label('type')]
-        ).union_all(
-            select(
-                [col(name, engineers_table) for name in colnames] + [column("'engineer'").label('type')]
-            )).alias('pjoin')
+    pjoin = polymorphic_union({
+        'manager':managers_table,
+        'engineer':engineers_table
+    }, 'type', 'pjoin')
 
     employee_mapper = mapper(Employee, pjoin, polymorphic_on=pjoin.c.type)
     manager_mapper = mapper(Manager, managers_table, inherits=employee_mapper, concrete=True, polymorphic_ident='manager')
     engineer_mapper = mapper(Engineer, engineers_table, inherits=employee_mapper, concrete=True, polymorphic_ident='engineer')
-    
+
+A future release of SQLALchemy might better merge the generated UNION into the mapper construction phase.    
+
+#### Multiple Table Inheritance
 
     {python}
-Table Inheritance indicates the pattern where two tables, in a parent-child relationship, are mapped to an inheritance chain of classes.  If a table "employees" contains additional information about managers in the table "managers", a corresponding object inheritance pattern would have an Employee class and a Manager class.  Loading a Manager object means you are joining managers to employees.  For SQLAlchemy, this pattern is just a special case of a mapper that maps against a joined relationship, and is provided via the `inherits` keyword.
+    people = Table('people', metadata, 
+       Column('person_id', Integer, primary_key=True),
+       Column('name', String(50)),
+       Column('type', String(30)))
+
+    engineers = Table('engineers', metadata, 
+       Column('person_id', Integer, ForeignKey('people.person_id'), primary_key=True),
+       Column('engineer_info', String(50)),
+      )
+
+    managers = Table('managers', metadata, 
+       Column('person_id', Integer, ForeignKey('people.person_id'), primary_key=True),
+       Column('manager_data', String(50)),
+       )
+
+    person_join = polymorphic_union(
+        {
+            'engineer':people.join(engineers),
+            'manager':people.join(managers),
+            'person':people.select(people.c.type=='person'),
+        }, None, 'pjoin')
+
+    person_mapper = mapper(Person, people, select_table=person_join, polymorphic_on=person_join.c.type, polymorphic_ident='person')
+    mapper(Engineer, engineers, inherits=person_mapper, polymorphic_ident='engineer')
+    mapper(Manager, managers, inherits=person_mapper, polymorphic_ident='manager')
+
+The join condition in an inheritance relationship can be specified explicitly, using `inherit_condition`:
+
     {python}
-        class User(object):
-            """a user object."""
-            pass
-        User.mapper = mapper(User, users)
-
-        class AddressUser(User):
-            """a user object that also has the users mailing address."""
-            pass
-
-        # define a mapper for AddressUser that inherits the User.mapper, and joins on the user_id column
-        AddressUser.mapper = mapper(
-		AddressUser,
-                addresses, inherits=User.mapper
-                )
-        
-        items = AddressUser.mapper.select()
-    
-Above, the join condition is determined via the foreign keys between the users and the addresses table.  To specify the join condition explicitly, use `inherit_condition`:
-{python}
     AddressUser.mapper = mapper(
             AddressUser,
             addresses, inherits=User.mapper, 
             inherit_condition=users.c.user_id==addresses.c.user_id
         )
-### Mapping a Class against Multiple Tables {@name=joins}
-    The more general case of the pattern described in "table inheritance" is a mapper that maps against more than one table.  The `join` keyword from the SQL package creates a neat selectable unit comprised of multiple tables, complete with its own composite primary key, which can be passed in to a mapper as the table.
-    {python}
-        # a class
-        class AddressUser(object):
-            pass
 
-        # define a Join
-        j = join(users, addresses)
-        
-        # map to it - the identity of an AddressUser object will be 
-        # based on (user_id, address_id) since those are the primary keys involved
-        m = mapper(AddressUser, j)
-        
+### Mapping a Class against Multiple Tables {@name=joins}
+
+Mappers can be constructed against arbitrary relational units (called `Selectables`) as well as plain `Tables`.  For example, The `join` keyword from the SQL package creates a neat selectable unit comprised of multiple tables, complete with its own composite primary key, which can be passed in to a mapper as the table.
+
+    {python}
+    # a class
+    class AddressUser(object):
+        pass
+
+    # define a Join
+    j = join(users, addresses)
+    
+    # map to it - the identity of an AddressUser object will be 
+    # based on (user_id, address_id) since those are the primary keys involved
+    m = mapper(AddressUser, j)
 
     A second example:        
     {python}
-        # many-to-many join on an association table
-        j = join(users, userkeywords, 
-                users.c.user_id==userkeywords.c.user_id).join(keywords, 
-                   userkeywords.c.keyword_id==keywords.c.keyword_id)
-         
-        # a class 
-        class KeywordUser(object):
-            pass
+    # many-to-many join on an association table
+    j = join(users, userkeywords, 
+            users.c.user_id==userkeywords.c.user_id).join(keywords, 
+               userkeywords.c.keyword_id==keywords.c.keyword_id)
+     
+    # a class 
+    class KeywordUser(object):
+        pass
 
-        # map to it - the identity of a KeywordUser object will be
-        # (user_id, keyword_id) since those are the primary keys involved
-        m = mapper(KeywordUser, j)
+    # map to it - the identity of a KeywordUser object will be
+    # (user_id, keyword_id) since those are the primary keys involved
+    m = mapper(KeywordUser, j)
+
 ### Mapping a Class against Arbitary Selects {@name=selects}
+
 Similar to mapping against a join, a plain select() object can be used with a mapper as well.  Below, an example select which contains two aggregate functions and a group_by is mapped to a class:
+
     {python}
-        s = select([customers, 
-                    func.count(orders).label('order_count'), 
-                    func.max(orders.price).label('highest_order')],
-                    customers.c.customer_id==orders.c.customer_id,
-                    group_by=[c for c in customers.c]
-                    )
-        class Customer(object):
-            pass
-        
-        mapper = mapper(Customer, s)
+    s = select([customers, 
+                func.count(orders).label('order_count'), 
+                func.max(orders.price).label('highest_order')],
+                customers.c.customer_id==orders.c.customer_id,
+                group_by=[c for c in customers.c]
+                )
+    class Customer(object):
+        pass
+    
+    m = mapper(Customer, s)
     
 Above, the "customers" table is joined against the "orders" table to produce a full row for each customer row, the total count of related rows in the "orders" table, and the highest price in the "orders" table, grouped against the full set of columns in the "customers" table.  That query is then mapped against the Customer class.  New instances of Customer will contain attributes for each column in the "customers" table as well as an "order_count" and "highest_order" attribute.  Updates to the Customer object will only be reflected in the "customers" table and not the "orders" table.  This is because the primary keys of the "orders" table are not represented in this mapper and therefore the table is not affected by save or delete operations.
+
 ### Multiple Mappers for One Class {@name=multiple}
-    By now it should be apparent that the mapper defined for a class is in no way the only mapper that exists for that class.  Other mappers can be created at any time; either explicitly or via the `options` method, to provide different loading behavior.
-    
-    However, its not as simple as that.  The mapper serves a dual purpose; one is to generate select statements and load objects from executing those statements; the other is to keep track of the defined dependencies of that object when save and delete operations occur, and to extend the attributes of the object so that they store information about their history and communicate with the unit of work system.  For this reason, it is a good idea to be aware of the behavior of multiple mappers.  When creating dependency relationships between objects, one should insure that only the primary mappers are used in those relationships, else deep object traversal operations will fail to load in the expected properties, and update operations will not take all the dependencies into account.  
-    
-    Generally its as simple as, the <i>first</i> mapper that is defined for a particular class is the one that gets to define that classes' relationships to other mapped classes, and also decorates its attributes and constructors with special behavior.  Any subsequent mappers created for that class will be able to load new instances, but object manipulation operations will still function via the original mapper.  The special keyword `is_primary` will override this behavior, and make any mapper the new "primary" mapper.
-    
+
+The first mapper created for a certain class is known as that class's "primary mapper."  Other mappers can be created as well, these come in two varieties.
+
+* **secondary mapper** - this is a mapper that must be constructed with the keyword argument `non_primary=True`, and represents a load-only mapper.  Objects that are loaded with a secondary mapper will have their save operation processed by the primary mapper.  It is also invalid to add new `relation()`s to a non-primary mapper. To use this mapper with the Session, specify it to the `query` method:
+
+example:
+
     {python}
-        class User(object):
-            pass
-        
-        # mapper one - mark it as "primary", meaning this mapper will handle
-        # saving and class-level properties
-        m1 = mapper(User, users, is_primary=True)
-        
-        # mapper two - this one will also eager-load address objects in
-        m2 = mapper(User, users, properties={
-                'addresses' : relation(mapper(Address, addresses), lazy=False)
-            })
-        
-        # get a user.  this user will not have an 'addreses' property
-        u1 = m1.select(User.c.user_id==10)
-        
-        # get another user.  this user will have an 'addreses' property.
-        u2 = m2.select(User.c.user_id==27)
-        
-        # make some modifications, including adding an Address object.
-        u1.user_name = 'jack'
-        u2.user_name = 'jane'
-        u2.addresses.append(Address('123 green street'))
-        
-        # upon commit, the User objects will be saved. 
-        # the Address object will not, since the primary mapper for User
-        # does not have an 'addresses' relationship defined
-        objectstore.commit()
+    # primary mapper
+    mapper(User, users_table)
+    
+    # make a secondary mapper to load User against a join
+    othermapper = mapper(User, users_table.join(someothertable), non_primary=True)
+    
+    # select
+    result = session.query(othermapper).select()
+
+* **entity name mapper** - this is a mapper that is a fully functioning primary mapper for a class, which is distinguished from the regular primary mapper by an `entity_name` parameter.  Instances loaded with this mapper will be totally managed by this new mapper and have no connection to the original one.  Most methods on `Session` include an optional `entity_name` parameter in order to specify this condition.
+
+example:
+
+    {python}
+    # primary mapper
+    mapper(User, users_table)
+    
+    # make an entity name mapper that stores User objects in another table
+    mapper(User, alternate_users_table, entity_name='alt')
+    
+    # make two User objects
+    user1 = User()
+    user2 = User()
+    
+    # save one in in the "users" table
+    session.save(user1)
+    
+    # save the other in the "alternate_users_table"
+    session.save(user2, entity_name='alt')
+    
+    session.flush()
+    
+    # select from the alternate mapper
+    session.query(User, entity_name='alt').select()
+
 ### Circular Mapping {@name=circular}
-Oftentimes it is necessary for two mappers to be related to each other.  With a datamodel that consists of Users that store Addresses, you might have an Address object and want to access the "user" attribute on it, or have a User object and want to get the list of Address objects.  The easiest way to do this is via the `backreference` keyword described in <&formatting.myt:link, path="datamapping_relations_backreferences"&>.  Although even when backreferences are used, it is sometimes necessary to explicitly specify the relations on both mappers pointing to each other.
+
+Oftentimes it is necessary for two mappers to be related to each other.  With a datamodel that consists of Users that store Addresses, you might have an Address object and want to access the "user" attribute on it, or have a User object and want to get the list of Address objects.  The easiest way to do this is via the `backreference` keyword described in [datamapping_relations_backreferences](rel:datamapping_relations_backreferences).  Although even when backreferences are used, it is sometimes necessary to explicitly specify the relations on both mappers pointing to each other.
 To achieve this involves creating the first mapper by itself, then creating the second mapper referencing the first, then adding references to the first mapper to reference the second:
-{python}
-    class User(object):
-        pass
-    class Address(object):
-        pass
-    User.mapper = mapper(User, users)
-    Address.mapper = mapper(Address, addresses, properties={
-        'user':relation(User.mapper)
-    })
-    User.mapper.add_property('addresses', relation(Address.mapper))
 
-Note that with a circular relationship as above, you cannot declare both relationships as "eager" relationships, since that produces a circular query situation which will generate a recursion exception.  So what if you want to load an Address and its User eagerly?  Just make a second mapper using options:
-{python}
-    eagermapper = Address.mapper.options(eagerload('user'))
-    s = eagermapper.select(Address.c.address_id==12)
-### Self Referential Mappers {@name=recursive}
-A self-referential mapper is a mapper that is designed to operate with an <b>adjacency list</b> table.  This is a table that contains one or more foreign keys back to itself, and is usually used to create hierarchical tree structures.  SQLAlchemy's default model of saving items based on table dependencies is not sufficient in this case, as an adjacency list table introduces dependencies between individual rows.  Fortunately, SQLAlchemy will automatically detect a self-referential mapper and do the extra lifting to make it work.  
     {python}
-        # define a self-referential table
-        trees = Table('treenodes', engine,
-            Column('node_id', Integer, primary_key=True),
-            Column('parent_node_id', Integer, ForeignKey('treenodes.node_id'), nullable=True),
-            Column('node_name', String(50), nullable=False),
-            )
+    usermapper = mapper(User, users)
+    mapper(Address, addresses, properties={
+        'user':relation(User)
+    })
 
-        # treenode class
-        class TreeNode(object):
-            pass
+    usermapper.add_property('addresses', relation(Address))
 
-        # mapper defines "children" property, pointing back to TreeNode class,
-        # with the mapper unspecified.  it will point back to the primary 
-        # mapper on the TreeNode class.
-        TreeNode.mapper = mapper(TreeNode, trees, properties={
-                'children' : relation(
-                                TreeNode, 
-                                private=True
-                             ),
-                }
-            )
-            
-        # or, specify the circular relationship after establishing the original mapper:
-        mymapper = mapper(TreeNode, trees)
+Note that with a circular relationship as above, you cannot declare both relationships as "eager" relationships, since that produces a circular query situation which will generate a recursion exception.  So what if you want to load an Address and its User eagerly?  Just use eager options:
+
+    {python}
+    eagerquery = session.query(Address).options(eagerload('user'))
+    s = eagerquery.select(Address.c.address_id==12)
+
+### Self Referential Mappers {@name=recursive}
+
+A self-referential mapper is a mapper that is designed to operate with an <b>adjacency list</b> table.  This is a table that contains one or more foreign keys back to itself, and is usually used to create hierarchical tree structures.  SQLAlchemy's default model of saving items based on table dependencies is not sufficient in this case, as an adjacency list table introduces dependencies between individual rows.  Fortunately, SQLAlchemy will automatically detect a self-referential mapper and do the extra lifting to make it work.  
+
+    {python}
+    # define a self-referential table
+    trees = Table('treenodes', engine,
+        Column('node_id', Integer, primary_key=True),
+        Column('parent_node_id', Integer, ForeignKey('treenodes.node_id'), nullable=True),
+        Column('node_name', String(50), nullable=False),
+        )
+
+    # treenode class
+    class TreeNode(object):
+        pass
+
+    # mapper defines "children" property, pointing back to TreeNode class,
+    # with the mapper unspecified.  it will point back to the primary 
+    # mapper on the TreeNode class.
+    TreeNode.mapper = mapper(TreeNode, trees, properties={
+            'children' : relation(
+                            TreeNode, 
+                            private=True
+                         ),
+            }
+        )
         
-        mymapper.add_property('children', relation(
-                                mymapper, 
-                                private=True
-                             ))
-        
-        
-    This kind of mapper goes through a lot of extra effort when saving and deleting items, to determine the correct dependency graph of nodes within the tree.
+    # or, specify the circular relationship after establishing the original mapper:
+    mymapper = mapper(TreeNode, trees)
     
-    A self-referential mapper where there is more than one relationship on the table requires that all join conditions be explicitly spelled out.  Below is a self-referring table that contains a "parent_node_id" column to reference parent/child relationships, and a "root_node_id" column which points child nodes back to the ultimate root node:
+    mymapper.add_property('children', relation(
+                            mymapper, 
+                            private=True
+                         ))
+        
+This kind of mapper goes through a lot of extra effort when saving and deleting items, to determine the correct dependency graph of nodes within the tree.
+    
+A self-referential mapper where there is more than one relationship on the table requires that all join conditions be explicitly spelled out.  Below is a self-referring table that contains a "parent_node_id" column to reference parent/child relationships, and a "root_node_id" column which points child nodes back to the ultimate root node:
+
     {python}
     # define a self-referential table with several relations
     trees = Table('treenodes', engine,
@@ -616,199 +636,133 @@ A self-referential mapper is a mapper that is designed to operate with an <b>adj
         
 The "root" property on a TreeNode is a many-to-one relationship.  By default, a self-referential mapper declares relationships as one-to-many, so the extra parameter `foreignkey`, pointing to the "many" side of a relationship, is needed to indicate a "many-to-one" self-referring relationship.
 Both TreeNode examples above are available in functional form in the `examples/adjacencytree` directory of the distribution.    
+
 ### Result-Set Mapping {@name=resultset}
-    Take any result set and feed it into a mapper to produce objects.  Multiple mappers can be combined to retrieve unrelated objects from the same row in one step.  The `instances` method on mapper takes a ResultProxy object, which is the result type generated from SQLEngine, and delivers object instances.
-    <&|formatting.myt:code, title="single object"&>
-        class User(object):
-            pass
 
-        User.mapper = mapper(User, users)
-        
-        # select users
-        c = users.select().execute()
+Take any result set and feed it into a mapper to produce objects.  Multiple mappers can be combined to retrieve unrelated objects from the same row in one step.  The `instances` method on mapper takes a ResultProxy object, which is the result type generated from SQLEngine, and delivers object instances.
 
-        # get objects
-        userlist = User.mapper.instances(c)
-    
-    
-    <&|formatting.myt:code, title="multiple objects"&>
-        # define a second class/mapper
-        class Address(object):
-            pass
-            
-        Address.mapper = mapper(Address, addresses)
-
-        # select users and addresses in one query
-        s = select([users, addresses], users.c.user_id==addresses.c.user_id)
-
-        # execute it, and process the results with the User mapper, chained to the Address mapper
-        r = User.mapper.instances(s.execute(), Address.mapper)
-        
-        # result rows are an array of objects, one for each mapper used
-        for entry in r:
-            user = r[0]
-            address = r[1]
-### Mapper Arguments {@name=arguments}
-Other arguments not covered above include:
-<ul>
-    <li>version_id_col=None - an integer-holding Column object that will be assigned an incrementing
-    counter, which is added to the WHERE clause used by UPDATE and DELETE statements.  The matching row
-    count returned by the database is compared to the expected row count, and an exception is raised if they dont match.  This is a basic "optimistic concurrency" check.  Without the version id column, SQLAlchemy still compares the updated rowcount.</li>
-    <li>always_refresh=False - this option will cause the mapper to refresh all the attributes of all objects loaded by select/get statements, regardless of if they already exist in the current session.  this includes all lazy- and eager-loaded relationship attributes, and will also overwrite any changes made to attributes on the column.</li>
-    <li>entity_name=None - this is an optional "entity name" that will be appended to the key used to associate classes to this mapper.  What this basically means is, several primary mappers can be made against the same class by using different entity names; object instances will have the entity name tagged to them, so that all operations will occur on them relative to that mapper.  When instantiating new objects, use <code>_sa_entity='name'</code> to tag them to the appropriate mapper.</li> 
-</ul>
-### Extending Mapper {@name=extending}
-Mappers can have functionality augmented or replaced at many points in its execution via the usage of the MapperExtension class.  This class is just a series of "hooks" where various functionality takes place.  An application can make its own MapperExtension objects, overriding only the methods it needs.
-        {python}
-        class MapperExtension(object):
-            def create_instance(self, mapper, row, imap, class_):
-                """called when a new object instance is about to be created from a row.  
-                the method can choose to create the instance itself, or it can return 
-                None to indicate normal object creation should take place.
-                
-                mapper - the mapper doing the operation
-                row - the result row from the database
-                imap - a dictionary that is storing the running set of objects collected from the
-                current result set
-                class_ - the class we are mapping.
-                """
-            def append_result(self, mapper, row, imap, result, instance, isnew, populate_existing=False):
-                """called when an object instance is being appended to a result list.
-                
-                If it returns True, it is assumed that this method handled the appending itself.
-
-                mapper - the mapper doing the operation
-                row - the result row from the database
-                imap - a dictionary that is storing the running set of objects collected from the
-                current result set
-                result - an instance of util.HistoryArraySet(), which may be an attribute on an
-                object if this is a related object load (lazy or eager).  use result.append_nohistory(value)
-                to append objects to this list.
-                instance - the object instance to be appended to the result
-                isnew - indicates if this is the first time we have seen this object instance in the current result
-                set.  if you are selecting from a join, such as an eager load, you might see the same object instance
-                many times in the same result set.
-                populate_existing - usually False, indicates if object instances that were already in the main 
-                identity map, i.e. were loaded by a previous select(), get their attributes overwritten
-                """
-            def before_insert(self, mapper, instance):
-                """called before an object instance is INSERTed into its table.
-                
-                this is a good place to set up primary key values and such that arent handled otherwise."""
-            def after_insert(self, mapper, instance):
-                """called after an object instance has been INSERTed"""
-            def before_delete(self, mapper, instance):
-                """called before an object instance is DELETEed"""
-        
-        
-        To use MapperExtension, make your own subclass of it and just send it off to a mapper:
-        {python}
-            mapper = mapper(User, users, extension=MyExtension())
-        
-        An existing mapper can create a copy of itself using an extension via the `extension` option:
-        {python}
-            extended_mapper = mapper.options(extension(MyExtension()))
-### How Mapper Modifies Mapped Classes {@name=class}
-This section is a quick summary of what's going on when you send a class to the `mapper()` function.  This material, not required to be able to use SQLAlchemy, is a little more dense and should be approached patiently!
-
-The primary changes to a class that is mapped involve attaching property objects to it which represent table columns.  These property objects essentially track changes.  In addition, the __init__ method of the object is decorated to track object creates.
-Here is a quick rundown of all the changes in code form:
     {python}
-        # step 1 - override __init__ to 'register_new' with the Unit of Work
-        oldinit = myclass.__init__
-        def init(self, *args, **kwargs):
-            nohist = kwargs.pop('_mapper_nohistory', False)
-            oldinit(self, *args, **kwargs)
-            if not nohist:
-                # register_new with Unit Of Work
-                objectstore.uow().register_new(self)
-        myclass.__init__ = init
-        
-        # step 2 - set a string identifier that will 
-        # locate the classes' primary mapper
-        myclass._mapper = mapper.hashkey
-        
-        # step 3 - add column accessor
-        myclass.c = mapper.columns
-
-        # step 4 - attribute decorating.  
-        # this happens mostly within the package sqlalchemy.attributes
-        
-        # this dictionary will store a series of callables 
-        # that generate "history" containers for
-        # individual object attributes
-        myclass._class_managed_attributes = {}
-
-        # create individual properties for each column - 
-        # these objects know how to talk 
-        # to the attribute package to create appropriate behavior.
-        # the next example examines the attributes package more closely.
-        myclass.column1 = SmartProperty().property('column1', uselist=False)
-        myclass.column2 = SmartProperty().property('column2', uselist=True)
-    
-The attribute package is used when save operations occur to get a handle on modified values.  In the example below,
-a full round-trip attribute tracking operation is illustrated:
-{python}
-    import sqlalchemy.attributes as attributes
-    
-    # create an attribute manager.  
-    # the sqlalchemy.mapping package keeps one of these around as 
-    # 'objectstore.global_attributes'
-    manager = attributes.AttributeManager()
-
-    # regular old new-style class
-    class MyClass(object):
+    class User(object):
         pass
+
+    User.mapper = mapper(User, users)
     
-    # register a scalar and a list attribute
-    manager.register_attribute(MyClass, 'column1', uselist=False)
-    manager.register_attribute(MyClass, 'column2', uselist=True)
+    # select users
+    c = users.select().execute()
+
+    # get objects
+    userlist = User.mapper.instances(c)
+    
+    {python}
+    # define a second class/mapper
+    class Address(object):
+        pass
         
-    # create/modify an object
-    obj = MyClass()
-    obj.column1 = 'this is a new value'
-    obj.column2.append('value 1')
-    obj.column2.append('value 2')
+    Address.mapper = mapper(Address, addresses)
 
-    # get history objects
-    col1_history = manager.get_history(obj, 'column1')
-    col2_history = manager.get_history(obj, 'column2')
+    # select users and addresses in one query
+    s = select([users, addresses], users.c.user_id==addresses.c.user_id)
 
-    # whats new ?
-    >>> col1_history.added_items()
-    ['this is a new value']
+    # execute it, and process the results with the User mapper, chained to the Address mapper
+    r = User.mapper.instances(s.execute(), Address.mapper)
     
-    >>> col2_history.added_items()
-    ['value1', 'value2']
+    # result rows are an array of objects, one for each mapper used
+    for entry in r:
+        user = r[0]
+        address = r[1]
+
+### Mapper Arguments {@name=arguments}
+
+Other arguments not covered above include:
+
+* select_table=None - often used with polymorphic mappers, this is a `Selectable` which will take the place of the `Mapper`'s main table argument when performing queries.
+* version_id_col=None - an integer-holding Column object that will be assigned an incrementing
+counter, which is added to the WHERE clause used by UPDATE and DELETE statements.  The matching row
+count returned by the database is compared to the expected row count, and an exception is raised if they dont match.  This is a basic "optimistic concurrency" check.  Without the version id column, SQLAlchemy still compares the updated rowcount.
+* always_refresh=False - this option will cause the mapper to refresh all the attributes of all objects loaded by select/get statements, regardless of if they already exist in the current session.  this includes all lazy- and eager-loaded relationship attributes, and will also overwrite any changes made to attributes on the column. 
+
+### Extending Mapper {@name=extending}
+
+Mappers can have functionality augmented or replaced at many points in its execution via the usage of the MapperExtension class.  This class is just a series of "hooks" where various functionality takes place.  An application can make its own MapperExtension objects, overriding only the methods it needs.  Methods that are not overridden return the special value `sqlalchemy.orm.mapper.EXT_PASS`, which indicates the operation should proceed as normally.
+
+    {python}
+    class MapperExtension(object):
+        def select_by(self, query, *args, **kwargs):
+            """overrides the select_by method of the Query object"""
+        def select(self, query, *args, **kwargs):
+            """overrides the select method of the Query object"""
+        def create_instance(self, mapper, session, row, imap, class_):
+            """called when a new object instance is about to be created from a row.  
+            the method can choose to create the instance itself, or it can return 
+            None to indicate normal object creation should take place.
+
+            mapper - the mapper doing the operation
+
+            row - the result row from the database
+
+            imap - a dictionary that is storing the running set of objects collected from the
+            current result set
+
+            class_ - the class we are mapping.
+            """
+        def append_result(self, mapper, session, row, imap, result, instance, isnew, populate_existing=False):
+            """called when an object instance is being appended to a result list.
+
+            If this method returns True, it is assumed that the mapper should do the appending, else
+            if this method returns False, it is assumed that the append was handled by this method.
+
+            mapper - the mapper doing the operation
+
+            row - the result row from the database
+
+            imap - a dictionary that is storing the running set of objects collected from the
+            current result set
+
+            result - an instance of util.HistoryArraySet(), which may be an attribute on an
+            object if this is a related object load (lazy or eager).  use result.append_nohistory(value)
+            to append objects to this list.
+
+            instance - the object instance to be appended to the result
+
+            isnew - indicates if this is the first time we have seen this object instance in the current result
+            set.  if you are selecting from a join, such as an eager load, you might see the same object instance
+            many times in the same result set.
+
+            populate_existing - usually False, indicates if object instances that were already in the main 
+            identity map, i.e. were loaded by a previous select(), get their attributes overwritten
+            """
+        def populate_instance(self, mapper, session, instance, row, identitykey, imap, isnew):
+            """called right before the mapper, after creating an instance from a row, passes the row
+            to its MapperProperty objects which are responsible for populating the object's attributes.
+            If this method returns True, it is assumed that the mapper should do the appending, else
+            if this method returns False, it is assumed that the append was handled by this method.
+
+            Essentially, this method is used to have a different mapper populate the object:
+
+                def populate_instance(self, mapper, session, instance, row, identitykey, imap, isnew):
+                    othermapper.populate_instance(session, instance, row, identitykey, imap, isnew, frommapper=mapper)
+                    return True
+            """
+        def before_insert(self, mapper, connection, instance):
+            """called before an object instance is INSERTed into its table.
+
+            this is a good place to set up primary key values and such that arent handled otherwise."""
+        def before_update(self, mapper, connection, instance):
+            """called before an object instnace is UPDATED"""
+        def after_update(self, mapper, connection, instance):
+            """called after an object instnace is UPDATED"""
+        def after_insert(self, mapper, connection, instance):
+            """called after an object instance has been INSERTed"""
+        def before_delete(self, mapper, connection, instance):
+            """called before an object instance is DELETEed"""
+        
+To use MapperExtension, make your own subclass of it and just send it off to a mapper:
+
+    {python}
+    m = mapper(User, users, extension=MyExtension())
+
+Multiple extensions will be chained together and processed in order; they are specified as a list:
+
+    {python}
+    m = mapper(User, users, extension=[ext1, ext2, ext3])
     
-    # commit changes
-    manager.commit(obj)
-
-    # the new values become the "unchanged" values
-    >>> col1_history.added_items()
-    []
-
-    >>> col1_history.unchanged_items()
-    ['this is a new value']
-    
-    >>> col2_history.added_items()
-    []
-
-    >>> col2_history.unchanged_items()
-    ['value1', 'value2']
-
-The above AttributeManager also includes a method `value_changed` which is triggered whenever change events occur on the managed object attributes.  The Unit of Work (objectstore) package overrides this method in order to receive change events; its essentially this:
-`
-    import sqlalchemy.attributes as attributes
-    class UOWAttributeManager(attributes.AttributeManager):
-        def value_changed(self, obj, key, value):
-            if hasattr(obj, '_instance_key'):
-                uow().register_dirty(obj)
-            else:
-                uow().register_new(obj)
-                
-    global_attributes = UOWAttributeManager()
-
-Objects that contain the attribute "_instance_key" are already registered with the Identity Map, and are assumed to have come from the database.  They therefore get marked as "dirty" when changes happen.  Objects without an "_instance_key" are not from the database, and get marked as "new" when changes happen, although usually this will already have occured via the object's __init__ method.
-
-
