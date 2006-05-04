@@ -1,0 +1,78 @@
+Plugins  {@name=plugins}
+======================
+
+(SECTION UNDER CONSTRUCTION)
+
+SQLAlchemy has a variety of extensions and "mods" available which provide extra functionality to SA, either via explicit usage or by augmenting the core behavior.
+
+### threadlocal
+
+    {python}
+    import sqlalchemy.mods.threadlocal
+    from sqlalchemy import *
+    
+    metadata = BoundMetaData('sqlite:///')
+    user_table = Table('users', metadata,
+        Column('user_id', Integer, primary_key=True),
+        Column('user_name', String(50), nullable=False)
+    )
+    
+    class User(object):
+        pass
+    mapper(User, user_table)
+    
+    # thread local session
+    session = get_session()
+    
+    # "user" object is added to the session automatically
+    user = User()
+    
+    session.flush()
+    
+Establishes 'threadlocal' as the default strategy for new `Engine`s, and installs a thread local Session context for the `get_session()` function.  Usually this is used in combination with `BoundMetaData` or `DynamicMetaData` for `Table` objects, so that the `Session` does not need to be bound to any `Engine` explicitly. 
+
+#### get_session() Method {@name=getsession}
+#### objectstore Namespace {@name=objectstore}
+#### Attaching Mappers to their Class {@name=attaching}
+
+A full-blown "monkeypatch" function that creates a primary mapper, attaches the mapper to the class, and also the  methods `get, get_by, select, select_by, selectone, selectfirst, commit, expire, refresh, expunge` and `delete`:
+
+    {python}
+    # "assign" a mapper to the User class/users table
+    assign_mapper(User, users)
+    
+    # methods are attached to the class for selecting
+    userlist = User.select_by(user_id=12)
+    
+    myuser = User.get(1)
+    
+    # mark an object as deleted for the next commit
+    myuser.delete()
+    
+    # flush the changes on a specific object
+    myotheruser.flush()
+    
+### SessionContext
+
+This plugin solves many of the problems that `threadlocal` solves, but does it in a more class-localized way.
+
+    {python}
+    
+    ctx = SessionContext()
+    class User(object):
+        __session__ = ctx
+    
+    mapper(User, users_table)
+
+    # 'u' is automatically added to the current session of 'ctx'
+    u = User()
+    
+    ctx.current.flush()
+    
+### ProxyEngine
+
+### SelectResults
+
+### LegacySession
+
+(this plugin probably doesnt even work right now)
