@@ -143,6 +143,8 @@ class Mapper(object):
                 self.effective_polymorphic_on = inherits.effective_polymorphic_on
             else:
                 self.effective_polymorphic_on = self.polymorphic_on
+            if self.order_by is False:
+                self.order_by = inherits.order_by
         else:
             self._synchronizer = None
             self.inherits = None

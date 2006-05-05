@@ -721,7 +721,9 @@ class TypeClause(ClauseElement):
         self.type = type
     def accept_visitor(self, visitor):
         visitor.visit_typeclause(self)
-               
+    def _get_from_objects(self): 
+        return []
+
 class TextClause(ClauseElement):
     """represents literal a SQL text fragment.  public constructor is the 
     text() function.  

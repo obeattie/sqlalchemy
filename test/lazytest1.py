@@ -68,6 +68,8 @@ class LazyTest(AssertMixin):
         class Data(object):
         	pass
 
+        session = create_session()
+        
         # Create the basic mappers, with no frills or modifications
         Information.mapper = mapper(Information, info_table)
         Data.mapper = mapper(Data, data_table)
@@ -81,7 +83,7 @@ class LazyTest(AssertMixin):
 
         Information.mapper.add_property('rels', relation(Relation.mapper))
 
-        info = Information.mapper.get(1)
+        info = session.query(Information).get(1)
         assert info
         assert len(info.rels) == 2
         assert len(info.rels[0].datas) == 3
