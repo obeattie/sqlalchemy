@@ -8,17 +8,13 @@
 the mapper package provides object-relational functionality, building upon the schema and sql
 packages and tying operations to class properties and constructors.
 """
-import sqlalchemy.sql as sql
-import sqlalchemy.schema as schema
-import sqlalchemy.engine as engine
-import sqlalchemy.util as util
-import sqlalchemy.exceptions as exceptions
+from sqlalchemy import sql, schema, engine, util, exceptions
 from mapper import *
 from mapper import mapper_registry
 from util import polymorphic_union
 import properties
-from sqlalchemy.orm.session import current_session
-from sqlalchemy.orm.session import Session as create_session
+from session import current_session
+from session import Session as create_session
 
 __all__ = ['relation', 'backref', 'eagerload', 'lazyload', 'noload', 'deferred', 'defer', 'undefer',
         'mapper', 'clear_mappers', 'sql', 'extension', 'class_mapper', 'object_mapper', 'MapperExtension',
