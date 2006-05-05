@@ -6,11 +6,8 @@
 
 
 import session as sessionlib
-import sqlalchemy.sql as sql
-import sqlalchemy.util as util
-from sqlalchemy.exceptions import *
+from sqlalchemy import sql, util, exceptions
 import mapper
-from sqlalchemy.exceptions import *
 
 class Query(object):
     """encapsulates the object-fetching operations provided by Mappers."""
@@ -100,7 +97,7 @@ class Query(object):
         ret = self.select_whereclause(self._by_clause(*args, **params), limit=2)
         if len(ret) == 1:
             return ret[0]
-        raise InvalidRequestError('Multiple rows returned for selectone_by')
+        raise exceptions.InvalidRequestError('Multiple rows returned for selectone_by')
 
     def count_by(self, *args, **params):
         """returns the count of instances based on the given clauses and key/value criterion.
@@ -122,7 +119,7 @@ class Query(object):
         ret = list(self.select(*args, **params)[0:2])
         if len(ret) == 1:
             return ret[0]
-        raise InvalidRequestError('Multiple rows returned for selectone')
+        raise exceptions.InvalidRequestError('Multiple rows returned for selectone')
 
     def select(self, arg=None, **kwargs):
         """selects instances of the object from the database.  
@@ -199,7 +196,7 @@ class Query(object):
                 continue
             c = self._get_criterion(self.mapper, key, value)
             if c is None:
-                raise InvalidRequestError("Cant find criterion for property '"+ key + "'")
+                raise exceptions.InvalidRequestError("Cant find criterion for property '"+ key + "'")
             if clause is None:
                 clause = c
             else:                

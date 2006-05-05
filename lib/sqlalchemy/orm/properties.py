@@ -4,25 +4,19 @@
 # This module is part of SQLAlchemy and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
-"""defines a set of MapperProperty objects, including basic column properties as 
+"""defines a set of mapper.MapperProperty objects, including basic column properties as 
 well as relationships.  also defines some MapperOptions that can be used with the
 properties."""
 
-from mapper import *
-import sqlalchemy.sql as sql
-import sqlalchemy.schema as schema
-import sqlalchemy.engine as engine
-import sqlalchemy.util as util
-import sqlalchemy.attributes as attributes
+from sqlalchemy import sql, schema, util, attributes, exceptions
 import sync
 import mapper
 import session as sessionlib
 import dependency
 import util as mapperutil
-from sqlalchemy.exceptions import *
 import sets, random
 
-class ColumnProperty(MapperProperty):
+class ColumnProperty(mapper.MapperProperty):
     """describes an object attribute that corresponds to a table column."""
     def __init__(self, *columns):
         """the list of columns describes a single object property. if there
@@ -114,7 +108,7 @@ class DeferredColumnProperty(ColumnProperty):
 
 mapper.ColumnProperty = ColumnProperty
 
-class PropertyLoader(MapperProperty):
+class PropertyLoader(mapper.MapperProperty):
     ONETOMANY = 0
     MANYTOONE = 1
     MANYTOMANY = 2
@@ -200,7 +194,7 @@ class PropertyLoader(MapperProperty):
         self.parent = parent
 
         if self.secondaryjoin is not None and self.secondary is None:
-            raise ArgumentError("Property '" + self.key + "' specified with secondary join condition but no secondary argument")
+            raise exceptions.ArgumentError("Property '" + self.key + "' specified with secondary join condition but no secondary argument")
         # if join conditions were not specified, figure them out based on foreign keys
         if self.secondary is not None:
             if self.secondaryjoin is None:
@@ -246,7 +240,7 @@ class PropertyLoader(MapperProperty):
             if self.backref is not None:
                 self.backref.compile(self)
         elif not sessionlib.global_attributes.is_class_managed(parent.class_, key):
-            raise ArgumentError("Attempting to assign a new relation '%s' to a non-primary mapper on class '%s'.  New relations can only be added to the primary mapper, i.e. the very first mapper created for class '%s' " % (key, parent.class_.__name__, parent.class_.__name__))
+            raise exceptions.ArgumentError("Attempting to assign a new relation '%s' to a non-primary mapper on class '%s'.  New relations can only be added to the primary mapper, i.e. the very first mapper created for class '%s' " % (key, parent.class_.__name__, parent.class_.__name__))
 
         self.do_init_subclass(key, parent)
         
@@ -270,7 +264,7 @@ class PropertyLoader(MapperProperty):
         elif self.foreigntable == self.parent.unjoined_table:
             return sync.MANYTOONE
         else:
-            raise ArgumentError("Cant determine relation direction")
+            raise exceptions.ArgumentError("Cant determine relation direction")
             
     def _find_dependent(self):
         """searches through the primary join condition to determine which side
@@ -284,18 +278,18 @@ class PropertyLoader(MapperProperty):
                 return
             if isinstance(binary.left, schema.Column) and binary.left.primary_key:
                 if dependent[0] is binary.left.table:
-                    raise ArgumentError("bidirectional dependency not supported...specify foreignkey")
+                    raise exceptions.ArgumentError("bidirectional dependency not supported...specify foreignkey")
                 dependent[0] = binary.right.table
                 self.foreignkey= binary.right
             elif isinstance(binary.right, schema.Column) and binary.right.primary_key:
                 if dependent[0] is binary.right.table:
-                    raise ArgumentError("bidirectional dependency not supported...specify foreignkey")
+                    raise exceptions.ArgumentError("bidirectional dependency not supported...specify foreignkey")
                 dependent[0] = binary.left.table
                 self.foreignkey = binary.left
         visitor = BinaryVisitor(foo)
         self.primaryjoin.accept_visitor(visitor)
         if dependent[0] is None:
-            raise ArgumentError("cant determine primary foreign key in the join relationship....specify foreignkey=<column> or foreignkey=[<columns>]")
+            raise exceptions.ArgumentError("cant determine primary foreign key in the join relationship....specify foreignkey=<column> or foreignkey=[<columns>]")
         else:
             self.foreigntable = dependent[0]
 
@@ -622,7 +616,7 @@ class EagerLoader(PropertyLoader):
         row = self._row_decorator(row)
         return self.mapper._instance(session, row, imap, result_list)
 
-class GenericOption(MapperOption):
+class GenericOption(mapper.MapperOption):
     """a mapper option that can handle dotted property names,
     descending down through the relations of a mapper until it
     reaches the target."""

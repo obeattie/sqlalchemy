@@ -2,7 +2,7 @@ from testbase import PersistTest, AssertMixin
 import testbase
 import unittest, sys, os
 from sqlalchemy import *
-
+import sqlalchemy.exceptions as exceptions
 
 from tables import *
 import tables
@@ -255,7 +255,7 @@ class MapperTest(MapperSuperTest):
                     'user_name' : relation(mapper(Address, addresses)),
                 })
             self.assert_(False, "should have raised ArgumentError")
-        except ArgumentError, e:
+        except exceptions.ArgumentError, e:
             self.assert_(True)
         
         clear_mappers()

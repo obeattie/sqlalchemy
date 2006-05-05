@@ -9,11 +9,11 @@ import datetime, sys, StringIO, string, types, re
 import sqlalchemy.util as util
 import sqlalchemy.sql as sql
 import sqlalchemy.engine as engine
+import sqlalchemy.engine.default as default
 import sqlalchemy.schema as schema
 import sqlalchemy.ansisql as ansisql
 import sqlalchemy.types as sqltypes
-from sqlalchemy.exceptions import *
-from sqlalchemy import *
+import sqlalchemy.exceptions as exceptions
 import information_schema as ischema
 
 try:
@@ -202,7 +202,7 @@ class PGDialect(ansisql.ANSIDialect):
         self.use_oids = use_oids
         if module is None:
             if psycopg is None:
-                raise ArgumentError("Couldnt locate psycopg1 or psycopg2: specify postgres module argument")
+                raise exceptions.ArgumentError("Couldnt locate psycopg1 or psycopg2: specify postgres module argument")
             self.module = psycopg
         else:
             self.module = module
@@ -250,7 +250,7 @@ class PGDialect(ansisql.ANSIDialect):
         
     def last_inserted_ids(self):
         if self.context.last_inserted_ids is None:
-            raise InvalidRequestError("no INSERT executed, or cant use cursor.lastrowid without Postgres OIDs enabled")
+            raise exceptions.InvalidRequestError("no INSERT executed, or cant use cursor.lastrowid without Postgres OIDs enabled")
         else:
             return self.context.last_inserted_ids
 
@@ -330,7 +330,7 @@ class PGSchemaGenerator(ansisql.ANSISchemaGenerator):
         
     def get_column_specification(self, column, override_pk=False, **kwargs):
         colspec = column.name
-        if column.primary_key and isinstance(column.type, types.Integer) and (column.default is None or (isinstance(column.default, schema.Sequence) and column.default.optional)):
+        if column.primary_key and isinstance(column.type, sqltypes.Integer) and (column.default is None or (isinstance(column.default, schema.Sequence) and column.default.optional)):
             colspec += " SERIAL"
         else:
             colspec += " " + column.type.engine_impl(self.engine).get_col_spec()
@@ -364,7 +364,7 @@ class PGDefaultRunner(ansisql.ANSIDefaultRunner):
             if isinstance(column.default, schema.PassiveDefault):
                 c = self.proxy("select %s" % column.default.arg)
                 return c.fetchone()[0]
-            elif isinstance(column.type, types.Integer) and (column.default is None or (isinstance(column.default, schema.Sequence) and column.default.optional)):
+            elif isinstance(column.type, sqltypes.Integer) and (column.default is None or (isinstance(column.default, schema.Sequence) and column.default.optional)):
                 sch = column.table.schema
                 if sch is not None:
                     exc = "select nextval('%s.%s_%s_seq')" % (sch, column.table.name, column.name)

@@ -31,10 +31,10 @@ class PlainEngineStrategy(EngineStrategy):
 
         dialect = module.dialect(**kwargs)
 
-        poolargs = kwargs.copy()
-        poolargs['echo'] = poolargs.get('echo_pool', False)
-        poolargs['pool_size'] = poolargs.get('pool_size', False)
-        poolargs['max_overflow'] = poolargs.get('max_overflow', False)
+        poolargs = {}
+        for key in (('echo', 'echo_pool'), ('pool_size', 'pool_size'), ('max_overflow', 'max_overflow'), ('poolclass', 'poolclass'), ('pool_timeout','timeout')):
+            if kwargs.has_key(key[0]):
+                poolargs[key[1]] = kwargs[key[0]]
         poolclass = getattr(module, 'poolclass', None)
         if poolclass is not None:
             poolargs.setdefault('poolclass', poolclass)
@@ -53,10 +53,10 @@ class ThreadLocalEngineStrategy(EngineStrategy):
 
         dialect = module.dialect(**kwargs)
 
-        poolargs = kwargs.copy()
-        poolargs['echo'] = poolargs.get('echo_pool', False)
-        poolargs['pool_size'] = poolargs.get('pool_size', False)
-        poolargs['max_overflow'] = poolargs.get('max_overflow', False)
+        poolargs = {}
+        for key in (('echo', 'echo_pool'), ('pool_size', 'pool_size'), ('max_overflow', 'max_overflow'), ('poolclass', 'poolclass'), ('pool_timeout','timeout')):
+            if kwargs.has_key(key[0]):
+                poolargs[key[1]] = kwargs[key[0]]
         poolclass = getattr(module, 'poolclass', None)
         if poolclass is not None:
             poolargs.setdefault('poolclass', poolclass)

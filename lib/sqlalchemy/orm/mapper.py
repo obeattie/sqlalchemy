@@ -4,19 +4,15 @@
 # This module is part of SQLAlchemy and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
-
-import sqlalchemy.sql as sql
-import sqlalchemy.schema as schema
-import sqlalchemy.util as util
+from sqlalchemy import sql, schema, util, exceptions
+from sqlalchemy import sql_util as sqlutil
 import util as mapperutil
-import sqlalchemy.sql_util as sqlutil
 import sync
-from sqlalchemy.exceptions import *
 import query as querylib
 import session as sessionlib
-import sys
-import weakref
-import sets
+import sys, weakref, sets
+
+__all__ = ['Mapper', 'MapperExtension', 'class_mapper', 'object_mapper']
 
 # a dictionary mapping classes to their primary mappers
 mapper_registry = weakref.WeakKeyDictionary()
@@ -85,7 +81,7 @@ class Mapper(object):
             self.polymorphic_map = polymorphic_map
         
         if not issubclass(class_, object):
-            raise ArgumentError("Class '%s' is not a new-style class" % class_.__name__)
+            raise exceptions.ArgumentError("Class '%s' is not a new-style class" % class_.__name__)
 
         # set up various Selectable units:
         
@@ -105,7 +101,7 @@ class Mapper(object):
                 # the configured properties on the mapper are not matched against the alias 
                 # we make, theres workarounds but it starts to get really crazy (its crazy enough
                 # the SQL that gets generated) so just require an alias
-                raise ArgumentError("Mapping against a Select object requires that it has a name.  Use an alias to give it a name, i.e. s = select(...).alias('myselect')")
+                raise exceptions.ArgumentError("Mapping against a Select object requires that it has a name.  Use an alias to give it a name, i.e. s = select(...).alias('myselect')")
 
         self.local_table = local_table
 
@@ -113,7 +109,7 @@ class Mapper(object):
             if isinstance(inherits, type):
                 inherits = class_mapper(inherits)
             if self.class_.__mro__[1] != inherits.class_:
-                raise ArgumentError("Class '%s' does not inherit from '%s'" % (self.class_.__name__, inherits.class_.__name__))
+                raise exceptions.ArgumentError("Class '%s' does not inherit from '%s'" % (self.class_.__name__, inherits.class_.__name__))
             # inherit_condition is optional.
             if not local_table is inherits.local_table:
                 if concrete:
@@ -180,7 +176,7 @@ class Mapper(object):
                 except KeyError:
                     l = self.pks_by_table.setdefault(t, util.HashSet(ordered=True))
                 if not len(t.primary_key):
-                    raise ArgumentError("Table " + t.name + " has no primary key columns. Specify primary_key argument to mapper.")
+                    raise exceptions.ArgumentError("Table " + t.name + " has no primary key columns. Specify primary_key argument to mapper.")
                 for k in t.primary_key:
                     l.append(k)
 
@@ -223,7 +219,7 @@ class Mapper(object):
                 #prop.columns.append(column)
             else:
                 if not allow_column_override:
-                    raise ArgumentError("WARNING: column '%s' not being added due to property '%s'.  Specify 'allow_column_override=True' to mapper() to ignore this condition." % (column.key, repr(prop)))
+                    raise exceptions.ArgumentError("WARNING: column '%s' not being added due to property '%s'.  Specify 'allow_column_override=True' to mapper() to ignore this condition." % (column.key, repr(prop)))
                 else:
                     continue
         
@@ -236,7 +232,7 @@ class Mapper(object):
             sessionlib.global_attributes.reset_class_managed(self.class_)
             self._init_class()
         elif not non_primary:
-            raise ArgumentError("Class '%s' already has a primary mapper defined.  Use is_primary=True to assign a new primary mapper to the class, or use non_primary=True to create a non primary Mapper" % self.class_)
+            raise exceptions.ArgumentError("Class '%s' already has a primary mapper defined.  Use is_primary=True to assign a new primary mapper to the class, or use non_primary=True to create a non primary Mapper" % self.class_)
 
         for key in self.polymorphic_map.keys():
             if isinstance(self.polymorphic_map[key], type):
@@ -351,14 +347,14 @@ class Mapper(object):
             try:
                 prop = self.select_table._get_col_by_original(prop)
             except KeyError:
-                raise ArgumentError("Column '%s' is not represented in mapper's table" % prop._label)
+                raise exceptions.ArgumentError("Column '%s' is not represented in mapper's table" % prop._label)
             self.columns[key] = prop
             prop = ColumnProperty(prop)
         elif isinstance(prop, list) and sql.is_column(prop[0]):
             try:
                 prop = [self.select_table._get_col_by_original(p) for p in prop]
             except KeyError, e:
-                raise ArgumentError("Column '%s' is not represented in mapper's table" % e.args[0])
+                raise exceptions.ArgumentError("Column '%s' is not represented in mapper's table" % e.args[0])
             self.columns[key] = prop[0]
             prop = ColumnProperty(*prop)
         self.props[key] = prop
@@ -526,11 +522,11 @@ class Mapper(object):
                 prop = self.props[column.key]
                 if not raiseerror:
                     return None
-                raise InvalidRequestError("Column '%s.%s' is not available, due to conflicting property '%s':%s" % (column.table.name, column.name, column.key, repr(prop)))
+                raise exceptions.InvalidRequestError("Column '%s.%s' is not available, due to conflicting property '%s':%s" % (column.table.name, column.name, column.key, repr(prop)))
             except KeyError:
                 if not raiseerror:
                     return None
-                raise InvalidRequestError("No column %s.%s is configured on mapper %s..." % (column.table.name, column.name, str(self)))
+                raise exceptions.InvalidRequestError("No column %s.%s is configured on mapper %s..." % (column.table.name, column.name, str(self)))
         return prop[0]
         
     def _getattrbycolumn(self, obj, column, raiseerror=True):
@@ -1060,7 +1056,7 @@ def object_mapper(object, raiseerror=True, entity_name=None):
         return mapper_registry[ClassKey(object.__class__, getattr(object, '_entity_name', entity_name))]
     except KeyError:
         if raiseerror:
-            raise InvalidRequestError("Class '%s' entity name '%s' has no mapper associated with it" % (object.__class__.__name__, getattr(object, '_entity_name', None)))
+            raise exceptions.InvalidRequestError("Class '%s' entity name '%s' has no mapper associated with it" % (object.__class__.__name__, getattr(object, '_entity_name', None)))
         else:
             return None
 
@@ -1069,4 +1065,4 @@ def class_mapper(class_, entity_name=None):
     try:
         return mapper_registry[ClassKey(class_, entity_name)]
     except (KeyError, AttributeError):
-        raise InvalidRequestError("Class '%s' entity name '%s' has no mapper associated with it" % (class_.__name__, entity_name))
+        raise exceptions.InvalidRequestError("Class '%s' entity name '%s' has no mapper associated with it" % (class_.__name__, entity_name))

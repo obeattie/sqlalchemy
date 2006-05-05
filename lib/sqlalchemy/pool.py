@@ -199,12 +199,13 @@ class SingletonThreadPool(Pool):
     
 class QueuePool(Pool):
     """uses Queue.Queue to maintain a fixed-size list of connections."""
-    def __init__(self, creator, pool_size = 5, max_overflow = 10, **params):
+    def __init__(self, creator, pool_size = 5, max_overflow = 10, timeout=30, **params):
         Pool.__init__(self, **params)
         self._creator = creator
         self._pool = Queue.Queue(pool_size)
         self._overflow = 0 - pool_size
         self._max_overflow = max_overflow
+        self._timeout = timeout
     
     def do_return_conn(self, conn):
         try:
@@ -218,7 +219,7 @@ class QueuePool(Pool):
         
     def do_get(self):
         try:
-            return self._pool.get(self._max_overflow > -1 and self._overflow >= self._max_overflow)
+            return self._pool.get(self._max_overflow > -1 and self._overflow >= self._max_overflow, self._timeout)
         except Queue.Empty:
             self._overflow += 1
             return self._creator()

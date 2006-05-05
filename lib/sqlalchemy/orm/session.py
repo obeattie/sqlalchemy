@@ -4,12 +4,10 @@
 # This module is part of SQLAlchemy and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
-from sqlalchemy import util
-from sqlalchemy.exceptions import *
+from sqlalchemy import util, exceptions, sql
 import unitofwork, query
 import weakref
 import sqlalchemy
-import sqlalchemy.sql as sql
 
 class SessionTransaction(object):
     def __init__(self, session, parent=None, autoflush=True):
@@ -26,7 +24,7 @@ class SessionTransaction(object):
         return SessionTransaction(self.session, self)
     def add(self, connection_or_engine):
         if self.connections.has_key(connection_or_engine.engine):
-            raise InvalidRequestError("Session already has a Connection associated for the given Connection's Engine")
+            raise exceptions.InvalidRequestError("Session already has a Connection associated for the given Connection's Engine")
         return self.get_or_add(connection_or_engine)
     def get_or_add(self, connection_or_engine):
         # we reference the 'engine' attribute on the given object, which in the case of 
@@ -222,10 +220,10 @@ class Session(object):
     
     def begin(self, *obj):
         """deprecated"""
-        raise InvalidRequestError("Session.begin() is deprecated.  use install_mod('legacy_session') to enable the old behavior")    
+        raise exceptions.InvalidRequestError("Session.begin() is deprecated.  use install_mod('legacy_session') to enable the old behavior")    
     def commit(self, *obj):
         """deprecated"""
-        raise InvalidRequestError("Session.commit() is deprecated.  use install_mod('legacy_session') to enable the old behavior")    
+        raise exceptions.InvalidRequestError("Session.commit() is deprecated.  use install_mod('legacy_session') to enable the old behavior")    
 
     def flush(self, objects=None):
         """flushes all the object modifications present in this session to the database.  'objects'
@@ -314,7 +312,7 @@ class Session(object):
                 ident = mapper.identity(object)
                 for k in ident:
                     if k is None:
-                        raise InvalidRequestError("Instance '%s' does not have a full set of identity values, and does not represent a saved entity in the database.  Use the add() method to add unsaved instances to this Session." % repr(obj))
+                        raise exceptions.InvalidRequestError("Instance '%s' does not have a full set of identity values, and does not represent a saved entity in the database.  Use the add() method to add unsaved instances to this Session." % repr(obj))
                 key = mapper.identity_key(ident)
             u = self.uow
             if u.identity_map.has_key(key):
@@ -330,7 +328,7 @@ class Session(object):
     def _save_impl(self, object, **kwargs):
         if hasattr(object, '_instance_key'):
             if not self.uow.has_key(object._instance_key):
-                raise InvalidRequestError("Instance '%s' is already persistent in a different Session" % repr(object))
+                raise exceptions.InvalidRequestError("Instance '%s' is already persistent in a different Session" % repr(object))
         else:
             entity_name = kwargs.get('entity_name', None)
             if entity_name is not None:
@@ -342,7 +340,7 @@ class Session(object):
         if self._is_attached(object) and object not in self.deleted:
             return
         if not hasattr(object, '_instance_key'):
-            raise InvalidRequestError("Instance '%s' is not persisted" % repr(object))
+            raise exceptions.InvalidRequestError("Instance '%s' is not persisted" % repr(object))
         if global_attributes.is_modified(object):
             self._register_dirty(object)
         else:
@@ -366,7 +364,7 @@ class Session(object):
         if getattr(obj, '_sa_session_id', None) != self.hash_key:
             old = getattr(obj, '_sa_session_id', None)
             if old is not None:
-                raise InvalidRequestError("Object '%s' is already attached to session '%s'" % (repr(obj), old))
+                raise exceptions.InvalidRequestError("Object '%s' is already attached to session '%s'" % (repr(obj), old))
                 
                 # auto-removal from the old session is disabled.  but if we decide to 
                 # turn it back on, do it as below: gingerly since _sessions is a WeakValueDict
@@ -384,7 +382,7 @@ class Session(object):
             
     def _unattach(self, obj):
         if not self._is_attached(obj): #getattr(obj, '_sa_session_id', None) != self.hash_key:
-            raise InvalidRequestError("Object '%s' is not attached to this Session" % repr(obj))
+            raise exceptions.InvalidRequestError("Object '%s' is not attached to this Session" % repr(obj))
         del obj._sa_session_id
         
     def _is_attached(self, obj):
@@ -416,9 +414,6 @@ def get_id_key(ident, class_, entity_name=None):
 def get_row_key(row, class_, primary_key, entity_name=None):
     return Session.get_row_key(row, class_, primary_key, entity_name)
 
-def mapper(*args, **params):
-    return sqlalchemy.orm.mapper(*args, **params)
-
 def object_mapper(obj, **kwargs):
     return sqlalchemy.orm.object_mapper(obj, **kwargs)
 
@@ -448,9 +443,9 @@ def required_current_session(obj=None):
     s = current_session(obj)
     if s is None:
         if obj is None:
-            raise InvalidRequestError("No global-level Session context is established.  Use 'import sqlalchemy.mods.threadlocal' to establish a default thread-local context.")
+            raise exceptions.InvalidRequestError("No global-level Session context is established.  Use 'import sqlalchemy.mods.threadlocal' to establish a default thread-local context.")
         else:
-            raise InvalidRequestError("No Session context is established for class '%s', and no global-level Session context is established.  Use 'import sqlalchemy.mods.threadlocal' to establish a default thread-local context." % (obj.__class__))
+            raise exceptions.InvalidRequestError("No Session context is established for class '%s', and no global-level Session context is established.  Use 'import sqlalchemy.mods.threadlocal' to establish a default thread-local context." % (obj.__class__))
     return s
     
 def _default_session(obj=None):

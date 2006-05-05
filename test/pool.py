@@ -1,5 +1,5 @@
 from testbase import PersistTest
-import unittest, sys, os
+import unittest, sys, os, time
 
 from pysqlite2 import dbapi2 as sqlite
 import sqlalchemy.pool as pool
@@ -90,6 +90,15 @@ class PoolTest(PersistTest):
             c2 = None
         self.assert_(status(p) == (3, 2, 0, 1))
     
+    def test_timeout(self):
+        p = pool.QueuePool(creator = lambda: sqlite.connect('foo.db'), pool_size = 3, max_overflow = 0, use_threadlocal = False, echo = False, timeout=2)
+        c1 = p.get()
+        c2 = p.get()
+        c3 = p.get()
+        now = time.time()
+        c4 = p.get()
+        assert int(time.time() - now) == 2
+        
     def testthreadlocal_del(self):
         self._do_testthreadlocal(useclose=False)
 

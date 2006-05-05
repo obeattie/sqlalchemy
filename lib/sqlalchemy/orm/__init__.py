@@ -12,38 +12,41 @@ import sqlalchemy.sql as sql
 import sqlalchemy.schema as schema
 import sqlalchemy.engine as engine
 import sqlalchemy.util as util
-from exceptions import *
+import sqlalchemy.exceptions as exceptions
 from mapper import *
+from mapper import mapper_registry
 from util import polymorphic_union
-from properties import *
+import properties
+from sqlalchemy.orm.session import current_session
+from sqlalchemy.orm.session import Session as create_session
 
 __all__ = ['relation', 'backref', 'eagerload', 'lazyload', 'noload', 'deferred', 'defer', 'undefer',
         'mapper', 'clear_mappers', 'sql', 'extension', 'class_mapper', 'object_mapper', 'MapperExtension',
-        'cascade_mappers', 'polymorphic_union'
+        'cascade_mappers', 'polymorphic_union', 'current_session', 'create_session'
         ]
 
 def relation(*args, **kwargs):
     """provides a relationship of a primary Mapper to a secondary Mapper, which corresponds
     to a parent-child or associative table relationship."""
     if len(args) > 1 and isinstance(args[0], type):
-        raise ArgumentError("relation(class, table, **kwargs) is deprecated.  Please use relation(class, **kwargs) or relation(mapper, **kwargs).")
+        raise exceptions.ArgumentError("relation(class, table, **kwargs) is deprecated.  Please use relation(class, **kwargs) or relation(mapper, **kwargs).")
     return _relation_loader(*args, **kwargs)
 
 def _relation_loader(mapper, secondary=None, primaryjoin=None, secondaryjoin=None, lazy=True, **kwargs):
     if lazy:
-        return LazyLoader(mapper, secondary, primaryjoin, secondaryjoin, **kwargs)
+        return properties.LazyLoader(mapper, secondary, primaryjoin, secondaryjoin, **kwargs)
     elif lazy is None:
-        return PropertyLoader(mapper, secondary, primaryjoin, secondaryjoin, **kwargs)
+        return properties.PropertyLoader(mapper, secondary, primaryjoin, secondaryjoin, **kwargs)
     else:
-        return EagerLoader(mapper, secondary, primaryjoin, secondaryjoin, **kwargs)
+        return properties.EagerLoader(mapper, secondary, primaryjoin, secondaryjoin, **kwargs)
 
 def backref(name, **kwargs):
-    return BackRef(name, **kwargs)
+    return properties.BackRef(name, **kwargs)
     
 def deferred(*columns, **kwargs):
     """returns a DeferredColumnProperty, which indicates this object attributes should only be loaded 
     from its corresponding table column when first accessed."""
-    return DeferredColumnProperty(*columns, **kwargs)
+    return properties.DeferredColumnProperty(*columns, **kwargs)
     
 def mapper(class_, table=None, *args, **params):
     """returns a new or already cached Mapper object."""
@@ -70,26 +73,26 @@ def extension(ext):
 def eagerload(name, **kwargs):
     """returns a MapperOption that will convert the property of the given name
     into an eager load.  Used with mapper.options()"""
-    return EagerLazyOption(name, toeager=True, **kwargs)
+    return properties.EagerLazyOption(name, toeager=True, **kwargs)
 
 def lazyload(name, **kwargs):
     """returns a MapperOption that will convert the property of the given name
     into a lazy load.  Used with mapper.options()"""
-    return EagerLazyOption(name, toeager=False, **kwargs)
+    return properties.EagerLazyOption(name, toeager=False, **kwargs)
 
 def noload(name, **kwargs):
     """returns a MapperOption that will convert the property of the given name
     into a non-load.  Used with mapper.options()"""
-    return EagerLazyOption(name, toeager=None, **kwargs)
+    return properties.EagerLazyOption(name, toeager=None, **kwargs)
 
 def defer(name, **kwargs):
     """returns a MapperOption that will convert the column property of the given 
     name into a deferred load.  Used with mapper.options()"""
-    return DeferredOption(name, defer=True)
+    return properties.DeferredOption(name, defer=True)
 def undefer(name, **kwargs):
     """returns a MapperOption that will convert the column property of the given
     name into a non-deferred (regular column) load.  Used with mapper.options."""
-    return DeferredOption(name, defer=False)
+    return properties.DeferredOption(name, defer=False)
     
 
 
