@@ -245,7 +245,7 @@ class Query(object):
 
     def _compile(self, whereclause = None, **kwargs):
         order_by = kwargs.pop('order_by', False)
-        from_obj = kwargs.pop('from_obj', False)
+        from_obj = kwargs.pop('from_obj', [])
         if order_by is False:
             order_by = self.order_by
         if order_by is False:
