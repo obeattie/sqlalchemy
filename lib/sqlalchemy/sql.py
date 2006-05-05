@@ -899,9 +899,9 @@ class BinaryClause(ClauseElement):
         self.operator = operator
         self.type = sqltypes.to_instance(type)
         self.parens = False
-        if isinstance(self.left, BinaryClause):
+        if isinstance(self.left, BinaryClause) or isinstance(self.left, Selectable):
             self.left.parens = True
-        if isinstance(self.right, BinaryClause):
+        if isinstance(self.right, BinaryClause) or isinstance(self.right, Selectable):
             self.right.parens = True
     def copy_container(self):
         return BinaryClause(self.left.copy_container(), self.right.copy_container(), self.operator)
