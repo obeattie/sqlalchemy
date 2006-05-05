@@ -649,9 +649,9 @@ class Mapper(object):
             if len(update):
                 clause = sql.and_()
                 for col in self.pks_by_table[table]:
-                    clause.clauses.append(col == sql.bindparam(col._label))
+                    clause.clauses.append(col == sql.bindparam(col._label, type=col.type))
                 if self.version_id_col is not None:
-                    clause.clauses.append(self.version_id_col == sql.bindparam(self.version_id_col._label))
+                    clause.clauses.append(self.version_id_col == sql.bindparam(self.version_id_col._label, type=col.type))
                 statement = table.update(clause)
                 rows = 0
                 supports_sane_rowcount = True
@@ -727,9 +727,9 @@ class Mapper(object):
             if len(delete):
                 clause = sql.and_()
                 for col in self.pks_by_table[table]:
-                    clause.clauses.append(col == sql.bindparam(col.key))
+                    clause.clauses.append(col == sql.bindparam(col.key, type=col.type))
                 if self.version_id_col is not None:
-                    clause.clauses.append(self.version_id_col == sql.bindparam(self.version_id_col.key))
+                    clause.clauses.append(self.version_id_col == sql.bindparam(self.version_id_col.key, type=self.version_id_col.type))
                 statement = table.delete(clause)
                 print "DELETE IS", delete
                 c = connection.execute(statement, delete)

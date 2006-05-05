@@ -38,7 +38,11 @@ To start, heres the tables we will work with again:
         Column('user_id', INT, ForeignKey("users")),
         Column('keyword_id', INT, ForeignKey("keywords"))
     )
-### Overriding Properties {@name=overriding}
+
+
+### More On Mapper Properties {@name=properties}
+
+#### Overriding Properties {@name=overriding}
 
 A common request is the ability to create custom class properties that override the behavior of setting/getting an attribute.  Currently, the easiest way to do this in SQLAlchemy is how it would be done in any Python program; define your attribute with a different name, such as "_attribute", and use a property to get/set its value.  The mapper just needs to be told of the special name:
 
@@ -58,7 +62,27 @@ A common request is the ability to create custom class properties that override 
 
 In a later release, SQLAlchemy will also allow _get_email and _set_email to be attached directly to the "email" property created by the mapper, and will also allow this association to occur via decorators.
 
-### More On Relations {@name=relations}
+### Overriding Column Names {@name=colname}
+
+When mappers are constructed, by default the column names in the Table metadata are used as the names of attributes on the mapped class.  This can be customzed within the properties by stating the key/column combinations explicitly:
+
+    {python}
+    user_mapper = mapper(User, users_table, properties={
+        'id' : users_table.c.user_id,
+        'name' : users_table.c.user_name,
+    })
+
+In the situation when column names overlap in a mapper against multiple tables, columns may be referenced together with a list:
+
+    {python}
+    # join users and addresses
+    usersaddresses = sql.join(users_table, addresses_table, users_table.c.user_id == addresses_table.c.user_id)
+    m = mapper(User, usersaddresses,   
+        properties = {
+            'id' : [users_table.c.user_id, addresses_table.c.user_id],
+        }
+        )
+
 
 #### Custom Join Conditions {@name=customjoin}
         
@@ -70,10 +94,10 @@ When creating relations on a mapper, most examples so far have illustrated the m
     class Address(object):
         pass
     
-    mapper(Address, addresses)
-    mapper(User, users, properties={
+    mapper(Address, addresses_table)
+    mapper(User, users_table, properties={
         'boston_addreses' : relation(Address, primaryjoin=
-                    and_(users.c.user_id==Address.c.user_id, 
+                    and_(users_table.c.user_id==Address.c.user_id, 
                     Addresses.c.city=='Boston'))
     })
         
@@ -85,9 +109,9 @@ Many to many relationships can be customized by one or both of `primaryjoin` and
     class Keyword(object):
         pass
     Keyword.mapper = mapper(Keyword, keywords)
-    User.mapper = mapper(User, users, properties={
+    User.mapper = mapper(User, users_table, properties={
         'keywords':relation(Keyword.mapper, 
-            primaryjoin=users.c.user_id==userkeywords.c.user_id,
+            primaryjoin=users_table.c.user_id==userkeywords.c.user_id,
             secondaryjoin=userkeywords.c.keyword_id==keywords.c.keyword_id
             )
     })
@@ -97,19 +121,19 @@ Many to many relationships can be customized by one or both of `primaryjoin` and
 The previous example leads in to the idea of joining against the same table multiple times.  Below is a User object that has lists of its Boston and New York addresses, both lazily loaded when they are first accessed:
 
     {python}
-    User.mapper = mapper(User, users, properties={
+    User.mapper = mapper(User, users_table, properties={
         'boston_addreses' : relation(Address.mapper, primaryjoin=
-                    and_(users.c.user_id==Address.c.user_id, 
+                    and_(users_table.c.user_id==Address.c.user_id, 
                     Addresses.c.city=='Boston')),
         'newyork_addresses' : relation(Address.mapper, primaryjoin=
-                    and_(users.c.user_id==Address.c.user_id, 
+                    and_(users_table.c.user_id==Address.c.user_id, 
                     Addresses.c.city=='New York')),
     })
         
 A complication arises with the above pattern if you want the relations to be eager loaded.  Since there will be two separate joins to the addresses table during an eager load, an alias needs to be used to separate them.  You can create an alias of the addresses table to separate them, but then you are in effect creating a brand new mapper for each property, unrelated to the main Address mapper, which can create problems with commit operations.  So an additional argument `use_alias` can be used with an eager relationship to specify the alias to be used just within the eager query:
 
     {python}
-    User.mapper = mapper(User, users, properties={
+    User.mapper = mapper(User, users_table, properties={
         'boston_addreses' : relation(Address.mapper, primaryjoin=
                     and_(User.c.user_id==Address.c.user_id, 
                     Addresses.c.city=='Boston'), lazy=False, use_alias=True),
@@ -159,35 +183,35 @@ The "order_by" parameter can be sent to a mapper, overriding the per-engine orde
 
     {python}
     # disable all ordering
-    mapper = mapper(User, users, order_by=None)
+    mapper = mapper(User, users_table, order_by=None)
 
     # order by a column
-    mapper = mapper(User, users, order_by=users.c.user_id)
+    mapper = mapper(User, users_table, order_by=users_tableusers_table.c.user_id)
     
     # order by multiple items
-    mapper = mapper(User, users, order_by=[users.c.user_id, desc(users.c.user_name)])
+    mapper = mapper(User, users_table, order_by=[users_table.c.user_id, desc(users_table.c.user_name)])
 
 "order_by" can also be specified to an individual `select` method, overriding all other per-engine/per-mapper orderings:
 
     {python}
     # order by a column
-    l = mapper.select(users.c.user_name=='fred', order_by=users.c.user_id)
+    l = mapper.select(users_table.c.user_name=='fred', order_by=users_table.c.user_id)
     
     # order by multiple criterion
-    l = mapper.select(users.c.user_name=='fred', order_by=[users.c.user_id, desc(users.c.user_name)])
+    l = mapper.select(users_table.c.user_name=='fred', order_by=[users_table.c.user_id, desc(users_table.c.user_name)])
 
 For relations, the "order_by" property can also be specified to all forms of relation:
 
     {python}
     # order address objects by address id
-    mapper = mapper(User, users, properties = {
-        'addresses' : relation(mapper(Address, addresses), order_by=addresses.c.address_id)
+    mapper = mapper(User, users_table, properties = {
+        'addresses' : relation(mapper(Address, addresses_table), order_by=addresses_table.c.address_id)
     })
     
     # eager load with ordering - the ORDER BY clauses of parent/child will be organized properly
-    mapper = mapper(User, users, properties = {
-        'addresses' : relation(mapper(Address, addresses), order_by=desc(addresses.c.email_address), eager=True)
-    }, order_by=users.c.user_id)
+    mapper = mapper(User, users_table, properties = {
+        'addresses' : relation(mapper(Address, addresses_table), order_by=desc(addresses_table.c.email_address), eager=True)
+    }, order_by=users_table.c.user_id)
     
 ### Limiting Rows {@name=limits}
 
@@ -197,7 +221,7 @@ You can limit rows in a regular SQL query by specifying `limit` and `offset`.  A
     class User(object):
         pass
     
-    mapper(User, users)
+    mapper(User, users_table)
     {sql}r = session.query(User).select(limit=20, offset=10)
     SELECT users.user_id AS users_user_id, 
     users.user_name AS users_user_name, users.password AS users_password 
@@ -212,8 +236,8 @@ However, things get tricky when dealing with eager relationships, since a straig
         pass
     class Address(object):
         pass
-        mapper(User, users, properties={
-        'addresses' : relation(mapper(Address, addresses), lazy=False)
+        mapper(User, users_table, properties={
+        'addresses' : relation(mapper(Address, addresses_table), lazy=False)
     })
     r = session.query(User).select(User.c.user_name.like('F%'), limit=20, offset=10)
     {opensql}SELECT users.user_id AS users_user_id, users.user_name AS users_user_name, 
@@ -230,26 +254,6 @@ However, things get tricky when dealing with eager relationships, since a straig
     
 The main WHERE clause as well as the limiting clauses are coerced into a subquery; this subquery represents the desired result of objects.  A containing query, which handles the eager relationships, is joined against the subquery to produce the result.
 
-### Overriding Column Names {@name=colname}
-
-When mappers are constructed, by default the column names in the Table metadata are used as the names of attributes on the mapped class.  This can be customzed within the properties by stating the key/column combinations explicitly:
-
-    {python}
-    user_mapper = mapper(User, users, properties={
-        'id' : users.c.user_id,
-        'name' : users.c.user_name,
-    })
-
-In the situation when column names overlap in a mapper against multiple tables, columns may be referenced together with a list:
-
-    {python}
-    # join users and addresses
-    usersaddresses = sql.join(users, addresses, users.c.user_id == addresses.c.user_id)
-    m = mapper(User, usersaddresses,   
-        properties = {
-            'id' : [users.c.user_id, addresses.c.user_id],
-        }
-        )
 
 ### Deferred Column Loading {@name=deferred}
 
@@ -314,8 +318,8 @@ An example of a mapper with a lazy load relationship, upgraded to an eager load 
         pass
     
     # a 'lazy' relationship
-    mapper(User, users, properties = {
-        'addreses':relation(mapper(Address, addresses), lazy=True)
+    mapper(User, users_table, properties = {
+        'addreses':relation(mapper(Address, addresses_table), lazy=True)
     })
 
     # copy the mapper and convert 'addresses' to be eager
@@ -450,8 +454,8 @@ The join condition in an inheritance relationship can be specified explicitly, u
     {python}
     AddressUser.mapper = mapper(
             AddressUser,
-            addresses, inherits=User.mapper, 
-            inherit_condition=users.c.user_id==addresses.c.user_id
+            addresses_table, inherits=User.mapper, 
+            inherit_condition=users_table.c.user_id==addresses_table.c.user_id
         )
 
 ### Mapping a Class against Multiple Tables {@name=joins}
@@ -464,7 +468,7 @@ Mappers can be constructed against arbitrary relational units (called `Selectabl
         pass
 
     # define a Join
-    j = join(users, addresses)
+    j = join(users_table, addresses_table)
     
     # map to it - the identity of an AddressUser object will be 
     # based on (user_id, address_id) since those are the primary keys involved
@@ -473,8 +477,8 @@ Mappers can be constructed against arbitrary relational units (called `Selectabl
     A second example:        
     {python}
     # many-to-many join on an association table
-    j = join(users, userkeywords, 
-            users.c.user_id==userkeywords.c.user_id).join(keywords, 
+    j = join(users_table, userkeywords, 
+            users_table.c.user_id==userkeywords.c.user_id).join(keywords, 
                userkeywords.c.keyword_id==keywords.c.keyword_id)
      
     # a class 
@@ -554,7 +558,7 @@ To achieve this involves creating the first mapper by itself, then creating the 
 
     {python}
     usermapper = mapper(User, users)
-    mapper(Address, addresses, properties={
+    mapper(Address, addresses_table, properties={
         'user':relation(User)
     })
 
@@ -645,10 +649,10 @@ Take any result set and feed it into a mapper to produce objects.  Multiple mapp
     class User(object):
         pass
 
-    User.mapper = mapper(User, users)
+    User.mapper = mapper(User, users_table)
     
     # select users
-    c = users.select().execute()
+    c = users_table.select().execute()
 
     # get objects
     userlist = User.mapper.instances(c)
@@ -658,10 +662,10 @@ Take any result set and feed it into a mapper to produce objects.  Multiple mapp
     class Address(object):
         pass
         
-    Address.mapper = mapper(Address, addresses)
+    Address.mapper = mapper(Address, addresses_table)
 
     # select users and addresses in one query
-    s = select([users, addresses], users.c.user_id==addresses.c.user_id)
+    s = select([users_table, addresses_table], users_table.c.user_id==addresses_table.c.user_id)
 
     # execute it, and process the results with the User mapper, chained to the Address mapper
     r = User.mapper.instances(s.execute(), Address.mapper)
@@ -759,10 +763,10 @@ Mappers can have functionality augmented or replaced at many points in its execu
 To use MapperExtension, make your own subclass of it and just send it off to a mapper:
 
     {python}
-    m = mapper(User, users, extension=MyExtension())
+    m = mapper(User, users_table, extension=MyExtension())
 
 Multiple extensions will be chained together and processed in order; they are specified as a list:
 
     {python}
-    m = mapper(User, users, extension=[ext1, ext2, ext3])
+    m = mapper(User, users_table, extension=[ext1, ext2, ext3])
     
