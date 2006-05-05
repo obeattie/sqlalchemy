@@ -439,7 +439,6 @@ def create_lazy_clause(table, primaryjoin, secondaryjoin, foreignkey):
             binary.left = binds.setdefault(binary.left,
                     sql.BindParamClause(bind_label(), None, shortname = binary.left.name))
             reverse[binary.right] = binds[col]
-            binary.swap()
 
         if isinstance(binary.right, schema.Column) and isinstance(binary.left, schema.Column) and ((not circular and binary.right.table is table) or (circular and binary.left is foreignkey)):
             col = binary.right
