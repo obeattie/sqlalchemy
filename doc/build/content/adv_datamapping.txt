@@ -42,27 +42,7 @@ To start, heres the tables we will work with again:
 
 ### More On Mapper Properties {@name=properties}
 
-#### Overriding Properties {@name=overriding}
-
-A common request is the ability to create custom class properties that override the behavior of setting/getting an attribute.  Currently, the easiest way to do this in SQLAlchemy is how it would be done in any Python program; define your attribute with a different name, such as "_attribute", and use a property to get/set its value.  The mapper just needs to be told of the special name:
-
-   {python}
-   class MyClass(object):
-       def _set_email(self, email):
-           self._email = email
-       def _get_email(self, email):
-           return self._email
-       email = property(_get_email, _set_email)
-
-   mapper(MyClass, mytable, properties = {
-           # map the '_email' attribute to the "email" column
-           # on the table
-           '_email': mytable.c.email
-   })
-
-In a later release, SQLAlchemy will also allow _get_email and _set_email to be attached directly to the "email" property created by the mapper, and will also allow this association to occur via decorators.
-
-### Overriding Column Names {@name=colname}
+#### Overriding Column Names {@name=colname}
 
 When mappers are constructed, by default the column names in the Table metadata are used as the names of attributes on the mapped class.  This can be customzed within the properties by stating the key/column combinations explicitly:
 
@@ -83,6 +63,25 @@ In the situation when column names overlap in a mapper against multiple tables, 
         }
         )
 
+#### Overriding Properties {@name=overriding}
+
+A common request is the ability to create custom class properties that override the behavior of setting/getting an attribute.  Currently, the easiest way to do this in SQLAlchemy is how it would be done in any Python program; define your attribute with a different name, such as "_attribute", and use a property to get/set its value.  The mapper just needs to be told of the special name:
+
+    {python}
+    class MyClass(object):
+        def _set_email(self, email):
+           self._email = email
+        def _get_email(self, email):
+           return self._email
+        email = property(_get_email, _set_email)
+    
+    mapper(MyClass, mytable, properties = {
+       # map the '_email' attribute to the "email" column
+       # on the table
+       '_email': mytable.c.email
+    })
+
+In a later release, SQLAlchemy will also allow `_get_email` and `_set_email` to be attached directly to the "email" property created by the mapper, and will also allow this association to occur via decorators.
 
 #### Custom Join Conditions {@name=customjoin}
         
@@ -108,71 +107,95 @@ Many to many relationships can be customized by one or both of `primaryjoin` and
         pass
     class Keyword(object):
         pass
-    Keyword.mapper = mapper(Keyword, keywords)
-    User.mapper = mapper(User, users_table, properties={
-        'keywords':relation(Keyword.mapper, 
-            primaryjoin=users_table.c.user_id==userkeywords.c.user_id,
-            secondaryjoin=userkeywords.c.keyword_id==keywords.c.keyword_id
+    mapper(Keyword, keywords_table)
+    mapper(User, users_table, properties={
+        'keywords':relation(Keyword, secondary=userkeywords_table
+            primaryjoin=users_table.c.user_id==userkeywords_table.c.user_id,
+            secondaryjoin=userkeywords_table.c.keyword_id==keywords_table.c.keyword_id
             )
     })
 
-### Lazy/Eager Joins Multiple Times to One Table {@name=multiplejoin}
+#### Lazy/Eager Joins Multiple Times to One Table {@name=multiplejoin}
 
-The previous example leads in to the idea of joining against the same table multiple times.  Below is a User object that has lists of its Boston and New York addresses, both lazily loaded when they are first accessed:
+The previous example leads in to the idea of joining against the same table multiple times.  Below is a User object that has lists of its Boston and New York addresses:
 
     {python}
-    User.mapper = mapper(User, users_table, properties={
-        'boston_addreses' : relation(Address.mapper, primaryjoin=
+    mapper(User, users_table, properties={
+        'boston_addreses' : relation(Address, primaryjoin=
                     and_(users_table.c.user_id==Address.c.user_id, 
                     Addresses.c.city=='Boston')),
-        'newyork_addresses' : relation(Address.mapper, primaryjoin=
+        'newyork_addresses' : relation(Address, primaryjoin=
                     and_(users_table.c.user_id==Address.c.user_id, 
                     Addresses.c.city=='New York')),
     })
-        
-A complication arises with the above pattern if you want the relations to be eager loaded.  Since there will be two separate joins to the addresses table during an eager load, an alias needs to be used to separate them.  You can create an alias of the addresses table to separate them, but then you are in effect creating a brand new mapper for each property, unrelated to the main Address mapper, which can create problems with commit operations.  So an additional argument `use_alias` can be used with an eager relationship to specify the alias to be used just within the eager query:
+
+Both lazy and eager loading support multiple joins equally well.
+
+#### Deferred Column Loading {@name=deferred}
+
+This feature allows particular columns of a table to not be loaded by default, instead being loaded later on when first referenced.  It is essentailly "column-level lazy loading".   This feature is useful when one wants to avoid loading a large text or binary field into memory when its not needed.  Individual columns can be lazy loaded by themselves or placed into groups that lazy-load together.
 
     {python}
-    User.mapper = mapper(User, users_table, properties={
-        'boston_addreses' : relation(Address.mapper, primaryjoin=
-                    and_(User.c.user_id==Address.c.user_id, 
-                    Addresses.c.city=='Boston'), lazy=False, use_alias=True),
-        'newyork_addresses' : relation(Address.mapper, primaryjoin=
-                    and_(User.c.user_id==Address.c.user_id, 
-                    Addresses.c.city=='New York'), lazy=False, use_alias=True),
+    book_excerpts = Table('books', db, 
+        Column('book_id', Integer, primary_key=True),
+        Column('title', String(200), nullable=False),
+        Column('summary', String(2000)),
+        Column('excerpt', String),
+        Column('photo', Binary)
+    )
+
+    class Book(object):
+        pass
+
+    # define a mapper that will load each of 'excerpt' and 'photo' in 
+    # separate, individual-row SELECT statements when each attribute
+    # is first referenced on the individual object instance
+    mapper(Book, book_excerpts, properties = {
+        'excerpt' : deferred(book_excerpts.c.excerpt),
+        'photo' : deferred(book_excerpts.c.photo)
     })
-    
-    {sql}u = User.mapper.select()
-    SELECT users.user_id AS users_user_id, users.user_name AS users_user_name, 
-    users.password AS users_password, 
-    addresses_EF45.address_id AS addresses_EF45_address_id, addresses_EF45.user_id AS addresses_EF45_user_id, 
-    addresses_EF45.street AS addresses_EF45_street, addresses_EF45.city AS addresses_EF45_city, 
-    addresses_EF45.state AS addresses_EF45_state, addresses_EF45.zip AS addresses_EF45_zip, 
-    addresses_63C5.address_id AS addresses_63C5_address_id, addresses_63C5.user_id AS addresses_63C5_user_id, 
-    addresses_63C5.street AS addresses_63C5_street, addresses_63C5.city AS addresses_63C5_city, 
-    addresses_63C5.state AS addresses_63C5_state, addresses_63C5.zip AS addresses_63C5_zip 
-    FROM users 
-    LEFT OUTER JOIN addresses AS addresses_EF45 ON users.user_id = addresses_EF45.user_id 
-    AND addresses_EF45.city = :addresses_city 
-    LEFT OUTER JOIN addresses AS addresses_63C5 ON users.user_id = addresses_63C5.user_id 
-    AND addresses_63C5.city = :addresses_city_1
-    ORDER BY users.oid, addresses_EF45.oid, addresses_63C5.oid
-    {'addresses_city_1': 'New York', 'addresses_city': 'Boston'}
+
+Deferred columns can be placed into groups so that they load together:
+
+    {python}
+    book_excerpts = Table('books', db, 
+        Column('book_id', Integer, primary_key=True),
+        Column('title', String(200), nullable=False),
+        Column('summary', String(2000)),
+        Column('excerpt', String),
+        Column('photo1', Binary),
+        Column('photo2', Binary),
+        Column('photo3', Binary)
+    )
+
+    class Book(object):
+        pass
+
+    # define a mapper with a 'photos' deferred group.  when one photo is referenced,
+    # all three photos will be loaded in one SELECT statement.  The 'excerpt' will 
+    # be loaded separately when it is first referenced.
+    mapper(Book, book_excerpts, properties = {
+        'excerpt' : deferred(book_excerpts.c.excerpt),
+        'photo1' : deferred(book_excerpts.c.photo1, group='photos'),
+        'photo2' : deferred(book_excerpts.c.photo2, group='photos'),
+        'photo3' : deferred(book_excerpts.c.photo3, group='photos')
+    })
 
 #### Relation Options {@name=relationoptions}
 
 Keyword options to the `relation` function include:
 
-* lazy=(True|False|None) - specifies how the related items should be loaded.  a value of True indicates they should be loaded when the property is first accessed.  A value of False indicates they should be loaded by joining against the parent object query, so parent and child are loaded in one round trip.  A value of None indicates the related items are not loaded by the mapper in any case; the application will manually insert items into the list in some other way.  A relationship with lazy=None is still important; items added to the list or removed will cause the appropriate updates and deletes upon commit().
+* lazy=(True|False|None) - specifies how the related items should be loaded.  a value of True indicates they should be loaded when the property is first accessed.  A value of False indicates they should be loaded by joining against the parent object query, so parent and child are loaded in one round trip.  A value of None indicates the related items are not loaded by the mapper in any case; the application will manually insert items into the list in some other way.  A relationship with lazy=None is still important; items added to the list or removed will cause the appropriate updates and deletes upon flush().  Future capabilities for lazy might also include "lazy='extra'", which would allow lazy loading of child elements one at a time, for very large collections.
+* cascade - a string list of **cascade rules** which determines how persistence operations should be "cascaded" from parent to child.  For a description of cascade rules, see [datamapping_relations_cycle](rel:datamapping_relations_lifecycle) and [unitofwork_cascade](rel:unitofwork_cascade).
 * secondary - for a many-to-many relationship, specifies the intermediary table.
 * primaryjoin - a ClauseElement that will be used as the primary join of this child object against the parent object, or in a many-to-many relationship the join of the primary object to the association table.  By default, this value is computed based on the foreign key relationships of the parent and child tables (or association table).
 * secondaryjoin - a ClauseElement that will be used as the join of an association table to the child object.  By default, this value is computed based on the foreign key relationships of the association and child tables.
-* foreignkey - specifies which column in this relationship is "foreign", i.e. which column refers to the parent object.  This value is automatically determined in all cases, based on the primary and secondary join conditions, except in the case of a self-referential mapper, where it is needed to indicate the child object's reference back to it's parent.
-* uselist - a boolean that indicates if this property should be loaded as a list or a scalar.  In most cases, this value is determined based on the type and direction of the relationship - one to many forms a list, one to one forms a scalar, many to many is a list.  If a scalar is desired where normally a list would be present, set uselist to False.
-* private - indicates if these child objects are "private" to the parent; removed items will also be deleted, and if the parent item is deleted, all child objects are deleted as well.  See the example in [datamapping_relations_private](rel:datamapping_relations_private).
-* backreference - indicates the name of a property to be placed on the related mapper's class that will handle this relationship in the other direction, including synchronizing the object attributes on both sides of the relation.  See the example in [datamapping_relations_backreferences](rel:datamapping_relations_backreferences).
+* foreignkey - specifies which column in this relationship is "foreign", i.e. which column refers to the parent object.  This value is automatically determined in most cases based on the primary and secondary join conditions, except in the case of a self-referential mapper, where it is needed to indicate the child object's reference back to it's parent, or in the case where the join conditions do not represent any primary key columns to properly represent the direction of the relationship.
+* uselist - a boolean that indicates if this property should be loaded as a list or a scalar.  In most cases, this value is determined based on the type and direction of the relationship - one to many forms a list, many to one forms a scalar, many to many is a list.  If a scalar is desired where normally a list would be present, such as a bi-directional one-to-one relationship, set uselist to False.
+* private - setting `private=True` is the equivalent of setting `cascade="all, delete-orphan"`, and indicates the lifecycle of child objects should be contained within that of the parent.   See the example in [datamapping_relations_cycle](rel:datamapping_relations_lifecycle).
+* backref - indicates the name of a property to be placed on the related mapper's class that will handle this relationship in the other direction, including synchronizing the object attributes on both sides of the relation.  Can also point to a `backref()` construct for more configurability.  See [datamapping_relations_backreferences](rel:datamapping_relations_backreferences).
 * order_by - indicates the ordering that should be applied when loading these items.  See the section [advdatamapping_orderby](rel:advdatamapping_orderby) for details.
-* association - When specifying a many to many relationship with an association object, this keyword should reference the mapper of the target object of the association.  See the example in [datamapping_association](rel:datamapping_association).
+* association - When specifying a many to many relationship with an association object, this keyword should reference the mapper or class of the target object of the association.  See the example in [datamapping_association](rel:datamapping_association).
 * post_update - this indicates that the relationship should be handled by a second UPDATE statement after an INSERT, or before a DELETE.  using this flag essentially means the relationship will not incur any "dependency" between parent and child item, as the particular foreign key relationship between them is handled by a second statement.  use this flag when a particular mapping arrangement will incur two rows that are dependent on each other, such as a table that has a one-to-many relationship to a set of child rows, and also has a column that references a single child row within that list (i.e. both tables contain a foreign key to each other).  If a flush() operation returns an error that a "cyclical dependency" was detected, this is a cue that you might want to use post_update.
 
 ### Controlling Ordering {@name=orderby}
@@ -254,57 +277,7 @@ However, things get tricky when dealing with eager relationships, since a straig
     
 The main WHERE clause as well as the limiting clauses are coerced into a subquery; this subquery represents the desired result of objects.  A containing query, which handles the eager relationships, is joined against the subquery to produce the result.
 
-
-### Deferred Column Loading {@name=deferred}
-
-This feature allows particular columns of a table to not be loaded by default, instead being loaded later on when first referenced.  It is essentailly "column-level lazy loading".   This feature is useful when one wants to avoid loading a large text or binary field into memory when its not needed.  Individual columns can be lazy loaded by themselves or placed into groups that lazy-load together.
-
-    {python}
-    book_excerpts = Table('books', db, 
-        Column('book_id', Integer, primary_key=True),
-        Column('title', String(200), nullable=False),
-        Column('summary', String(2000)),
-        Column('excerpt', String),
-        Column('photo', Binary)
-    )
-
-    class Book(object):
-        pass
-    
-    # define a mapper that will load each of 'excerpt' and 'photo' in 
-    # separate, individual-row SELECT statements when each attribute
-    # is first referenced on the individual object instance
-    mapper(Book, book_excerpts, properties = {
-        'excerpt' : deferred(book_excerpts.c.excerpt),
-        'photo' : deferred(book_excerpts.c.photo)
-    })
-
-Deferred columns can be placed into groups so that they load together:
-
-    {python}
-    book_excerpts = Table('books', db, 
-        Column('book_id', Integer, primary_key=True),
-        Column('title', String(200), nullable=False),
-        Column('summary', String(2000)),
-        Column('excerpt', String),
-        Column('photo1', Binary),
-        Column('photo2', Binary),
-        Column('photo3', Binary)
-    )
-
-    class Book(object):
-        pass
-
-    # define a mapper with a 'photos' deferred group.  when one photo is referenced,
-    # all three photos will be loaded in one SELECT statement.  The 'excerpt' will 
-    # be loaded separately when it is first referenced.
-    mapper(Book, book_excerpts, properties = {
-        'excerpt' : deferred(book_excerpts.c.excerpt),
-        'photo1' : deferred(book_excerpts.c.photo1, group='photos'),
-        'photo2' : deferred(book_excerpts.c.photo2, group='photos'),
-        'photo3' : deferred(book_excerpts.c.photo3, group='photos')
-    })
-    
+   
 ### More on Mapper Options {@name=options}
 
 The `options` method on the `Query` object, first introduced in [datamapping_relations_options](rel:datamapping_relations_options), produces a new `Query` object by creating a copy of the underlying `Mapper` and placing modified properties on it.  The `options` method is also directly available off the `Mapper` object itself, so that the newly copied `Mapper` can be dealt with directly.  The `options` method takes a variable number of `MapperOption` objects which know how to change specific things about the mapper.  The five available options are `eagerload`, `lazyload`, `noload`, `deferred` and `extension`.
@@ -592,7 +565,7 @@ A self-referential mapper is a mapper that is designed to operate with an <b>adj
     TreeNode.mapper = mapper(TreeNode, trees, properties={
             'children' : relation(
                             TreeNode, 
-                            private=True
+                            cascade="all, delete-orphan"
                          ),
             }
         )
@@ -602,7 +575,7 @@ A self-referential mapper is a mapper that is designed to operate with an <b>adj
     
     mymapper.add_property('children', relation(
                             mymapper, 
-                            private=True
+                            cascade="all, delete-orphan"
                          ))
         
 This kind of mapper goes through a lot of extra effort when saving and deleting items, to determine the correct dependency graph of nodes within the tree.
@@ -627,7 +600,7 @@ A self-referential mapper where there is more than one relationship on the table
             'children' : relation(
                             TreeNode, 
                             primaryjoin=trees.c.parent_node_id==trees.c.node_id
-                            private=True
+                            cascade="all, delete-orphan"
                          ),
             'root' : relation(
                     TreeNode,

@@ -287,15 +287,15 @@ Also notice that when we created a Mapper on the User class which defined an 'ad
 
 Note that when creating a relation with the `relation()` function, the target can either be a class, in which case the primary mapper for that class is used as the target, or a `Mapper` instance itself, as returned by the `mapper()` function.
 
-#### Useful Feature: Private Relations {@name=private}
+#### Useful Feature: Lifecycle Relations {@name=lifecycle}
 
-So our one address that was removed from the list, was updated to have a user_id of `None`, and a new address object was inserted to correspond to the new Address added to the User.  But now, theres a mailing address with no user_id floating around in the database of no use to anyone.  How can we avoid this ?  This is acheived by using the `private=True` parameter of `relation`:
+So our one address that was removed from the list, was updated to have a user_id of `None`, and a new address object was inserted to correspond to the new Address added to the User.  But now, theres a mailing address with no user_id floating around in the database of no use to anyone.  How can we avoid this ?  This is acheived by using the `cascade` parameter of `relation`:
 
     {python}
     clear_mappers()  # clear mappers from the previous example
     mapper(Address, addresses_table)
     mapper(User, users_table, properties = {
-            'addresses' : relation(Address, private=True)
+            'addresses' : relation(Address, cascade="all, delete-orphan")
         }
       )
 
@@ -309,9 +309,9 @@ So our one address that was removed from the list, was updated to have a user_id
     DELETE FROM addresses WHERE addresses.address_id = :address_id
     [{'address_id': 2}]
 
-In this case, with the private flag set, the element that was removed from the addresses list was also removed from the database.  The "private" flag indicates that the Address object is a *lifecycle object* of User.
+In this case, with `delete-orphan` set, the element that was removed from the addresses list was also removed from the database.  The `delete-orphan` cascade rule indicates that the lifecycle of an `Address` object bounded by that of the `User`.
 
-`private` is also a synonym for a more configurable set of rules called **cascade rules**.  Cascading is described in [session_cascade](rel:session_cascade).
+Cascading is described fully in [unitofwork_cascade](rel:unitofwork_cascade).
 
 #### Useful Feature: Backreferences {@name=backreferences}
 
@@ -347,7 +347,7 @@ The backreference feature also works with many-to-many relationships, which are 
 
     mapper(User, users, properties = {
             'addresses' : relation(Address, 
-                backref=backref('user', lazy=False, private=True)
+                backref=backref('user', lazy=False, cascade="all, delete-orphan")
             )
         }
       )
@@ -359,7 +359,7 @@ We've seen how the `relation` specifier affects the saving of an object and its 
     {python}
     # define a mapper
     mapper(User, users_table, properties = {
-          'addresses' : relation(mapper(Address, addresses_table), private=True)
+          'addresses' : relation(mapper(Address, addresses_table), cascade="all,delete-orphan")
         })
     
     # select users where username is 'jane', get the first element of the list
@@ -517,7 +517,7 @@ The above examples focused on the "one-to-many" relationship.  To do other forms
     mapper(UserPrefs, prefs_table)
     
     mapper(User, users_table, properties = dict(
-        preferences = relation(UserPrefs, lazy=False, private=True),
+        preferences = relation(UserPrefs, lazy=False, cascade="all, delete-orphan"),
     ))
     
     # select
