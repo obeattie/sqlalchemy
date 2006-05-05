@@ -245,6 +245,7 @@ class Query(object):
 
     def _compile(self, whereclause = None, **kwargs):
         order_by = kwargs.pop('order_by', False)
+        from_obj = kwargs.pop('from_obj', False)
         if order_by is False:
             order_by = self.order_by
         if order_by is False:
@@ -252,7 +253,8 @@ class Query(object):
                 order_by = self.table.default_order_by()
 
         if self._should_nest(**kwargs):
-            s2 = sql.select(self.table.primary_key, whereclause, use_labels=True, from_obj=[self.table], **kwargs)
+            from_obj.append(self.table)
+            s2 = sql.select(self.table.primary_key, whereclause, use_labels=True, from_obj=from_obj, **kwargs)
 #            raise "ok first thing", str(s2)
             if not kwargs.get('distinct', False) and order_by:
                 s2.order_by(*util.to_list(order_by))
@@ -265,7 +267,8 @@ class Query(object):
             if order_by:
                 statement.order_by(*util.to_list(order_by))
         else:
-            statement = sql.select([], whereclause, from_obj=[self.table], use_labels=True, **kwargs)
+            from_obj.append(self.table)
+            statement = sql.select([], whereclause, from_obj=from_obj, use_labels=True, **kwargs)
             if order_by:
                 statement.order_by(*util.to_list(order_by))
             # for a DISTINCT query, you need the columns explicitly specified in order
