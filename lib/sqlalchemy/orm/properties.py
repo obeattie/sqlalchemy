@@ -67,7 +67,7 @@ class DeferredColumnProperty(ColumnProperty):
             sessionlib.global_attributes.register_attribute(parent.class_, key, uselist=False, callable_=lambda i:self.setup_loader(i))
     def setup_loader(self, instance):
         if not self.parent.is_assigned(instance):
-            return object_mapper(instance).props[self.key].setup_loader(instance)
+            return mapper.object_mapper(instance).props[self.key].setup_loader(instance)
         def lazyload():
             session = sessionlib.object_session(instance)
             connection = session.connection(self.parent)
@@ -181,13 +181,13 @@ class PropertyLoader(mapper.MapperProperty):
     def do_init(self, key, parent):
         import sqlalchemy.orm
         if isinstance(self.argument, type):
-            self.mapper = sqlalchemy.orm.class_mapper(self.argument)
+            self.mapper = mapper.class_mapper(self.argument)
         else:
             self.mapper = self.argument
 
         if self.association is not None:
             if isinstance(self.association, type):
-                self.association = sqlalchemy.orm.class_mapper(self.association)
+                self.association = mapper.class_mapper(self.association)
         
         self.target = self.mapper.select_table
         self.key = key
@@ -363,7 +363,7 @@ class LazyLoader(PropertyLoader):
 
     def setup_loader(self, instance):
         if not self.parent.is_assigned(instance):
-            return object_mapper(instance).props[self.key].setup_loader(instance)
+            return mapper.object_mapper(instance).props[self.key].setup_loader(instance)
         def lazyload():
             params = {}
             allparams = True
