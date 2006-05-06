@@ -20,14 +20,13 @@ Underneath the public-facing API of `ComposedSQLEngine`, several components are 
 
 ### Supported Databases {@name=supported}
 
-Engines exist for SQLite, Postgres, MySQL, MS-SQL, and Oracle, using the Pysqlite, Psycopg (1 or 2), MySQLDB, adodbapi or pymssql, and cx_Oracle modules.  There is also not-well tested support for Firebird.   For each engine, a distinct Python module exists in the `sqlalchemy.databases` package, which provides implementations of some of the objects mentioned in the previous section.
+Engines exist for SQLite, Postgres, MySQL, and Oracle, using the Pysqlite, Psycopg (1 or 2), MySQLDB, and cx_Oracle modules.  There is also preliminary support for MS-SQL using adodbapi or pymssql, as well as Firebird.   For each engine, a distinct Python module exists in the `sqlalchemy.databases` package, which provides implementations of some of the objects mentioned in the previous section.
 
 ### Establishing a Database Engine {@name=establishing}
 
 SQLAlchemy 0.2 indicates the source of an Engine strictly via [RFC-1738](http://rfc.net/rfc1738.html) style URLs, combined with optional keyword arguments to specify options for the Engine.  The form of the URL is:
 
-    {python}
-    driver://username:password@host:port/database
+    $ driver://username:password@host:port/database
 
 Available drivernames are `sqlite`, `mysql`, `postgres`, `oracle`, `mssql`, and `firebird`.  For sqlite, the database name is the filename to connect to, or the special name ":memory:" which indicates an in-memory database.  The URL is typically sent as a string to the `create_engine()` function:
 
@@ -66,13 +65,13 @@ Example:
 * pool_size=5 : the number of connections to keep open inside the connection pool.  This is only used with `QueuePool`.
 * max_overflow=10 : the number of connections to allow in "overflow", that is connections that can be opened above and beyond the initial five.  this is only used with `QueuePool`.
 * pool_timeout=30 : number of seconds to wait before giving up on getting a connection from the pool.  This is only used with `QueuePool`.
-* echo=False : if True, the Engine will log all statements as well as a repr() of their parameter lists to the engines logger, which defaults to sys.stdout.  A SQLEngine instances' "echo" data member can be modified at any time to turn logging on and off.  If set to the string 'debug', result rows will be printed to the standard output as well.
-* logger=None : a file-like object where logging output can be sent, if echo is set to True.  This defaults to sys.stdout.
-* module=None : used by Oracle and Postgres, this is a reference to a DBAPI2 module to be used instead of the engine's default module.  For Postgres, the default is psycopg2, or psycopg1 if 2 cannot be found.  For Oracle, its cx_Oracle.
-* use_ansi=True : used only by Oracle;  when False, the Oracle driver attempts to support a particular "quirk" of some Oracle databases, that the LEFT OUTER JOIN SQL syntax is not supported, and the "Oracle join" syntax of using &lt;column1&gt;(+)=&lt;column2&gt; must be used in order to achieve a LEFT OUTER JOIN.  Its advised that the Oracle database be configured to have full ANSI support instead of using this feature.
-* use_oids=False : used only by Postgres, will enable the column name "oid" as the object ID column.  Postgres as of 8.1 has object IDs disabled by default.
-* convert_unicode=False : if set to True, all String/character based types will convert Unicode values to raw byte values going into the database, and all raw byte values to Python Unicode coming out in result sets.  This is an engine-wide method to provide unicode across the board.  For unicode conversion on a column-by-column level, use the Unicode column type instead.
-* encoding='utf-8' : the encoding to use for Unicode translations - passed to all encode/decode methods.
+* echo=False : if True, the Engine will log all statements as well as a repr() of their parameter lists to the engines logger, which defaults to sys.stdout.  The `echo` attribute of `ComposedSQLEngine` can be modified at any time to turn logging on and off.  If set to the string `"debug"`, result rows will be printed to the standard output as well.
+* logger=None : a file-like object where logging output can be sent, if echo is set to True.  Newlines will not be sent with log messages.  This defaults to an internal logging object which references `sys.stdout`.
+* module=None : used by database implementations which support multiple DBAPI modules, this is a reference to a DBAPI2 module to be used instead of the engine's default module.  For Postgres, the default is psycopg2, or psycopg1 if 2 cannot be found.  For Oracle, its cx_Oracle.
+* use_ansi=True : used only by Oracle;  when False, the Oracle driver attempts to support a particular "quirk" of Oracle versions 8 and previous, that the LEFT OUTER JOIN SQL syntax is not supported, and the "Oracle join" syntax of using `&lt;column1&gt;(+)=&lt;column2&gt;` must be used in order to achieve a LEFT OUTER JOIN.  
+* use_oids=False : used only by Postgres, will enable the column name "oid" as the object ID column, which is also used for the default sort order of tables.  Postgres as of 8.1 has object IDs disabled by default.
+* convert_unicode=False : if set to True, all String/character based types will convert Unicode values to raw byte values going into the database, and all raw byte values to Python Unicode coming out in result sets.  This is an engine-wide method to provide unicode across the board.  For unicode conversion on a column-by-column level, use the `Unicode` column type instead.
+* encoding='utf-8' : the encoding to use for all Unicode translations, both by engine-wide unicode conversion as well as the `Unicode` type object.
 
 ### Using Connections {@name=connections}
 
@@ -211,7 +210,7 @@ The `Transaction` object also handles "nested" behavior by keeping track of the 
     {python}
     # method_a starts a transaction and calls method_b
     def method_a(connection):
-        trans = connection.begin()
+        trans = connection.begin() # open a transaction
         try:
             method_b(connection)
             trans.commit()  # transaction is committed here
@@ -221,7 +220,7 @@ The `Transaction` object also handles "nested" behavior by keeping track of the 
 
     # method_b also starts a transaction
     def method_b(connection):
-        trans.begin()
+        trans = connection.begin() # open a transaction - this runs in the context of method_a's transaction
         try:
             connection.execute("insert into mytable values ('bat', 'lala')")
             connection.execute(mytable.insert(), col1='bat', col2='lala')

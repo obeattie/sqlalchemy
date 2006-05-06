@@ -180,25 +180,7 @@ Within the `MetaData` collection, this table will be identified by the combinati
     
 ### Creating and Dropping Database Tables {@name=creating}    
 
-Creating and dropping individual tables can be done via a `Connection`:
-
-    {python}
-    employees = Table('employees', meta, 
-        Column('employee_id', Integer, primary_key=True),
-        Column('employee_name', String(60), nullable=False, key='name'),
-        Column('employee_dept', Integer, ForeignKey("departments.department_id"))
-    )
-
-    conn = engine.connect()
-    {sql}conn.create(employees)
-    CREATE TABLE employees(
-    employee_id SERIAL NOT NULL PRIMARY KEY,
-    employee_name VARCHAR(60) NOT NULL,
-    employee_dept INTEGER REFERENCES departments(department_id)
-    )
-    {}            
-
-Or off the `create()` method of the `Table` itself; this method takes an optional `engine` parameter which references an `Engine` or a `Connection`.  If not supplied, the `Engine` bound to the `MetaData` will be used, else an error is raised:
+Creating and dropping individual tables can be done via the `create()` and `drop()` methods of `Table`; these methods take an optional `engine` parameter which references an `Engine` or a `Connection`.  If not supplied, the `Engine` bound to the `MetaData` will be used, else an error is raised:
 
     {python}
     meta = BoundMetaData('sqlite:///:memory:')
@@ -215,7 +197,7 @@ Or off the `create()` method of the `Table` itself; this method takes an optiona
     )
     {}            
 
-Similarly, both `Connection` and `Table` have a `drop()` method:
+`drop()` method:
     
     {python}
     {sql}employees.drop(engine=e)
@@ -335,7 +317,7 @@ A create call for the above table will produce:
         mycolumn datetime default sysdate
     )
         
-PassiveDefaults also send a message to the SQLEngine that data is available after update or insert.  The object-relational mapper system uses this information to post-fetch rows after insert or update, so that instances can be refreshed with the new data.  Below is a simplified version:
+PassiveDefaults also send a message to the `Engine` that data is available after update or insert.  The object-relational mapper system uses this information to post-fetch rows after insert or update, so that instances can be refreshed with the new data.  Below is a simplified version:
 
     {python}
     # table with passive defaults
@@ -375,7 +357,7 @@ A table with a sequence looks like:
         Column("createdate", DateTime())
     )
         
-The Sequence is used with Postgres or Oracle to indicate the name of a Sequence that will be used to create default values for a column.  When a table with a Sequence on a column is created by SQLAlchemy, the Sequence object is also created.   Similarly, the Sequence is dropped when the table is dropped.  Sequences are typically used with primary key columns.  When using Postgres, if an integer primary key column defines no explicit Sequence or other default method, SQLAlchemy will create the column with the SERIAL keyword, and will pre-execute a sequence named "tablename_columnname_seq" in order to retrieve new primary key values.   Oracle, which has no "auto-increment" keyword, requires that a Sequence be created for a table if automatic primary key generation is desired.  Note that for all databases, primary key values can always be explicitly stated within the bind parameters for any insert statement as well, removing the need for any kind of default generation function.
+The Sequence is used with Postgres or Oracle to indicate the name of a database sequence that will be used to create default values for a column.  When a table with a Sequence on a column is created in the database by SQLAlchemy, the database sequence object is also created.   Similarly, the database sequence is dropped when the table is dropped.  Sequences are typically used with primary key columns.  When using Postgres, if an integer primary key column defines no explicit Sequence or other default method, SQLAlchemy will create the column with the SERIAL keyword, and will pre-execute a sequence named "tablename_columnname_seq" in order to retrieve new primary key values, if they were not otherwise explicitly stated.   Oracle, which has no "auto-increment" keyword, requires that a Sequence be created for a table if automatic primary key generation is desired.  
     
 A Sequence object can be defined on a Table that is then used for a non-sequence-supporting database.  In that case, the Sequence object is simply ignored.  Note that a Sequence object is **entirely optional for all databases except Oracle**, as other databases offer options for auto-creating primary key values, such as AUTOINCREMENT, SERIAL, etc.  SQLAlchemy will use these default methods for creating primary key values if no Sequence is present on the table metadata.
     

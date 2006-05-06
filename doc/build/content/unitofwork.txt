@@ -401,20 +401,19 @@ To associate a specific `Connection` with the `SessionTransaction`, use the `add
 
 The `add()` method will key the `Connection`'s underlying `Engine` to this `SessionTransaction`.  When mapper operations are performed against this `Engine`, the `Connection` explicitly added will be used.  This **overrides** any other `Connection` objects that the underlying Session was associated with, corresponding to the underlying `Engine` of that `Connection`.  However, if the `SessionTransaction` itself is already associated with a `Connection`, then an exception is thrown.
 
-The other way is just to use the `Connection` referenced by the `SessionTransaction`.  This is performed via the `connection()` method, and requires passing in a `Mapper` which indicates which underlying `Connection` should be returned.  If the `Mapper` argument is `None`, then the `Session` must be globally bound to a specific `Engine` when it was constructed, else the method returns `None`.
+The other way is just to use the `Connection` referenced by the `SessionTransaction`.  This is performed via the `connection()` method, and requires passing in a class or `Mapper` which indicates which underlying `Connection` should be returned (recall that different `Mappers` may use different underlying `Engines`).  If the `class_or_mapper` argument is `None`, then the `Session` must be globally bound to a specific `Engine` when it was constructed, else the method returns `None`.
 
     {python title="Get a Connection from the SessionTransaction"}
     trans = session.create_transaction()
     try:
-        usermapper = session.get_mapper(UserClass)  # a convenience method to get a Mapper
-        connection = trans.connection(usermapper)   # get the Connection used by the UserClass' Mapper
+        connection = trans.connection(UserClass)   # get the Connection used by the UserClass' Mapper
         connection.execute(mytable.update(), {'col1':4, 'col2':17})
         trans.commit()
     except:
         trans.rollback()
         raise
         
-The `connection()` method also exists on the `Session` object itself, and can be called regardless of whether or not a `SessionTransaction` is in progress.  If an `Engine` is being used with `threadlocal` strategy, the `Connection` returned will correspond to the connection resources that are bound to the current thread, if any.
+The `connection()` method also exists on the `Session` object itself, and can be called regardless of whether or not a `SessionTransaction` is in progress.  If a `SessionTransaction` is in progress, it will return the connection referenced by the transaction.  If an `Engine` is being used with `threadlocal` strategy, the `Connection` returned will correspond to the connection resources that are bound to the current thread, if any (i.e. it is obtained by calling `contextual_connection()`).
 
 #### Using Engine-level Transactions with Sessions
 

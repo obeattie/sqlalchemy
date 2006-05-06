@@ -363,7 +363,7 @@ This will support polymorphic loading via the `Employee` mapper.
 
 Without polymorphic loading, you just define a separate mapper for each class.
 
-    {python}
+    {python title="Concrete Inheritance, Non-polymorphic"}
     managers_table = Table('managers', metadata, 
         Column('employee_id', Integer, primary_key=True),
         Column('name', String(50)),
@@ -381,7 +381,7 @@ Without polymorphic loading, you just define a separate mapper for each class.
     
 With polymorphic loading, the SQL query to do the actual polymorphic load must be constructed, usually as a UNION.  There is a helper function to create these UNIONS called `polymorphic_union`.
 
-    {python}
+    {python title="Concrete Inheritance, Polymorphic"}
     pjoin = polymorphic_union({
         'manager':managers_table,
         'engineer':engineers_table
@@ -395,7 +395,9 @@ A future release of SQLALchemy might better merge the generated UNION into the m
 
 #### Multiple Table Inheritance
 
-    {python}
+Like concrete table inheritance, this can be done non-polymorphically, or with a little more complexity, polymorphically:
+
+    {python title="Multiple Table Inheritance, Non-polymorphic"}
     people = Table('people', metadata, 
        Column('person_id', Integer, primary_key=True),
        Column('name', String(50)),
@@ -411,6 +413,13 @@ A future release of SQLALchemy might better merge the generated UNION into the m
        Column('manager_data', String(50)),
        )
 
+    person_mapper = mapper(Person, people)
+    mapper(Engineer, engineers, inherits=person_mapper)
+    mapper(Manager, managers, inherits=person_mapper)
+
+Polymorphic:
+
+    {python title="Multiple Table Inheritance, Polymorphic"}
     person_join = polymorphic_union(
         {
             'engineer':people.join(engineers),
@@ -422,7 +431,7 @@ A future release of SQLALchemy might better merge the generated UNION into the m
     mapper(Engineer, engineers, inherits=person_mapper, polymorphic_identity='engineer')
     mapper(Manager, managers, inherits=person_mapper, polymorphic_identity='manager')
 
-The join condition in an inheritance relationship can be specified explicitly, using `inherit_condition`:
+The join condition in a multiple table inheritance relationship can be specified explicitly, using `inherit_condition`:
 
     {python}
     AddressUser.mapper = mapper(
@@ -652,11 +661,11 @@ Take any result set and feed it into a mapper to produce objects.  Multiple mapp
 
 Other arguments not covered above include:
 
-* select_table=None - often used with polymorphic mappers, this is a `Selectable` which will take the place of the `Mapper`'s main table argument when performing queries.
-* version_id_col=None - an integer-holding Column object that will be assigned an incrementing
+* select\_table=None - often used with polymorphic mappers, this is a `Selectable` which will take the place of the `Mapper`'s main table argument when performing queries.
+* version\_id\_col=None - an integer-holding Column object that will be assigned an incrementing
 counter, which is added to the WHERE clause used by UPDATE and DELETE statements.  The matching row
 count returned by the database is compared to the expected row count, and an exception is raised if they dont match.  This is a basic "optimistic concurrency" check.  Without the version id column, SQLAlchemy still compares the updated rowcount.
-* always_refresh=False - this option will cause the mapper to refresh all the attributes of all objects loaded by select/get statements, regardless of if they already exist in the current session.  this includes all lazy- and eager-loaded relationship attributes, and will also overwrite any changes made to attributes on the column. 
+* always\_refresh=False - this option will cause the mapper to refresh all the attributes of all objects loaded by select/get statements, regardless of if they already exist in the current session.  this includes all lazy- and eager-loaded relationship attributes, and will also overwrite any changes made to attributes on the column. 
 
 ### Extending Mapper {@name=extending}
 

@@ -364,7 +364,7 @@ We've seen how the `relation` specifier affects the saving of an object and its 
     
     # select users where username is 'jane', get the first element of the list
     # this will incur a load operation for the parent table
-    {sql}user = session.query(User).select(user_name='jane')[0]   
+    {sql}user = session.query(User).select_by(user_name='jane')[0]   
     SELECT users.user_id AS users_user_id, 
     users.user_name AS users_user_name, users.password AS users_password
     FROM users WHERE users.user_name = :users_user_name ORDER BY users.oid
@@ -378,8 +378,9 @@ We've seen how the `relation` specifier affects the saving of an object and its 
     addresses.city AS addresses_city, addresses.state AS addresses_state, 
     addresses.zip AS addresses_zip FROM addresses
     WHERE addresses.user_id = :users_user_id ORDER BY addresses.oid
-    {'users_user_id': 1}            
-            print repr(a)
+    {'users_user_id': 1}
+        
+        print repr(a)
             
 ##### Useful Feature: Creating Joins via select_by {@name=relselectby}
     
@@ -405,7 +406,7 @@ The above example is shorthand for:
 
 #### Selecting from Relationships: Eager Load {@name=eagerload}
 
-With just a single parameter "lazy=False" specified to the relation object, the parent and child SQL queries can be joined together.
+With just a single parameter `lazy=False` specified to the relation object, the parent and child SQL queries can be joined together.
 
     {python}
     mapper(Address, addresses_table)
@@ -447,7 +448,7 @@ The generation of this query is also immune to the effects of additional joins b
     WHERE addresses.street = :addresses_street AND users.user_id = addresses.user_id ORDER BY users.oid, addresses_6ca7.oid
     {'addresses_street': '123 Green Street'}
                     
-The join implied by passing the "street" parameter is converted into an "aliasized" clause by the eager loader, so that it does not conflict with the join used to eager load the child address objects.
+The join implied by passing the "street" parameter is stated as an *additional* join between the `addresses` and `users` tables.  Also, since the eager join is "aliasized", no name conflict occurs.
     
 #### Switching Lazy/Eager, No Load {@name=options}
 
