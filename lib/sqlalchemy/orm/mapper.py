@@ -169,8 +169,10 @@ class Mapper(object):
                 if k.table != self.mapped_table:
                     # associate pk cols from subtables to the "main" table
                     self.pks_by_table.setdefault(self.mapped_table, util.HashSet(ordered=True)).append(k)
+                # TODO: need select_table, local_table properly accounted for when custom primary key is sent
         else:
             for t in self.tables + [self.mapped_table, self.select_table]:
+                print "SET UP PKS FOR ", str(t)
                 try:
                     l = self.pks_by_table[t]
                 except KeyError:
@@ -228,6 +230,18 @@ class Mapper(object):
             proplist = self.columntoproperty.setdefault(column.original, [])
             proplist.append(prop)
 
+        for column in self.mapped_table.columns:
+            if not self.columntoproperty.has_key(column.original):
+                proplist = []
+                self.columntoproperty[column.original] = proplist
+                # id like it to use this somehow
+                #col = self.select_table._get_col_by_original(column.original)
+                try:
+                    prop = self.props[column.key]
+                except KeyError:
+                    raise exceptions.ArgumentError("Selectable '%s' does not contain local table column '%s'" % (self.select_table, column.key))
+                proplist.append(prop)
+            
         if not non_primary and (not mapper_registry.has_key(self.class_key) or self.is_primary or (inherits is not None and inherits._is_primary_mapper())):
             sessionlib.global_attributes.reset_class_managed(self.class_)
             self._init_class()
@@ -546,9 +560,10 @@ class Mapper(object):
         an UPDATE statement for each table used by this mapper, for each element of the
         list."""
         
+        #print "SAVE_OBJ MAPPER", self.class_.__name__, objects
         connection = uow.transaction.connection(self)
         for table in self.tables:
-            #print "SAVE_OBJ table ", table.name
+            #print "SAVE_OBJ table ", self.class_.__name__, table.name
             # looping through our set of tables, which are all "real" tables, as opposed
             # to our main table which might be a select statement or something non-writeable
             
@@ -557,6 +572,7 @@ class Mapper(object):
             # they are separate execs via execute(), not executemany()
             
             if not self._has_pks(table):
+                #print "NO PKS ?", str(table)
                 # if we dont have a full set of primary keys for this table, we cant really
                 # do any CRUD with it, so skip.  this occurs if we are mapping against a query
                 # that joins on other tables so its not really an error condition.
