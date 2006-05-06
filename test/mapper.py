@@ -283,6 +283,27 @@ class MapperTest(MapperSuperTest):
             self.assert_result(l, User, *user_address_result)
         self.assert_sql_count(db, go, 0)
 
+    def testeagerdegrade(self):
+        """tests that an eager relation automatically degrades to a lazy relation if eager columns are not available"""
+        sess = create_session()
+        usermapper = mapper(User, users, properties = dict(
+            addresses = relation(mapper(Address, addresses), lazy = False)
+        ))
+
+        # first test straight eager load, 1 statement
+        def go():
+            l = usermapper.query(sess).select()
+            self.assert_result(l, User, *user_address_result)
+        self.assert_sql_count(db, go, 1)
+        
+        # then select just from users.  run it into instances.
+        # then assert the data, which will launch 3 more lazy loads
+        def go():
+            r = users.select().execute()
+            l = usermapper.instances(r, sess)
+            self.assert_result(l, User, *user_address_result)
+        self.assert_sql_count(db, go, 4)
+        
     def testlazyoptions(self):
         """tests that an eager relation can be upgraded to a lazy relation via the options method"""
         sess = create_session()

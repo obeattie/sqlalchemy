@@ -762,7 +762,7 @@ class Mapper(object):
             for c in prop.cascade_iterator(type, object, recursive):
                 yield c
 
-    def _identity_key(self, row):
+    def _row_identity_key(self, row):
         return sessionlib.get_row_key(row, self.class_, self.pks_by_table[self.select_table], self.entity_name)
 
     def _instance(self, session, row, imap, result = None, populate_existing = False):
@@ -784,7 +784,7 @@ class Mapper(object):
         # been exposed to being modified by the application.
         
         populate_existing = populate_existing or self.always_refresh
-        identitykey = self._identity_key(row)
+        identitykey = self._row_identity_key(row)
         if session.has_key(identitykey):
             instance = session._get(identitykey)
             isnew = False

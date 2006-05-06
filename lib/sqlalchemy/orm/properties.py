@@ -448,9 +448,11 @@ def create_lazy_clause(table, primaryjoin, secondaryjoin, foreignkey):
     return (lazywhere, binds, reverse)
         
 
-class EagerLoader(PropertyLoader):
+class EagerLoader(LazyLoader):
     """loads related objects inline with a parent query."""
     def do_init_subclass(self, key, parent, recursion_stack=None):
+        if recursion_stack is None:
+            LazyLoader.do_init_subclass(self, key, parent)
         parent._has_eager = True
 
         self.eagertarget = self.target.alias()
@@ -566,6 +568,15 @@ class EagerLoader(PropertyLoader):
         """receive a row.  tell our mapper to look for a new object instance in the row, and attach
         it to a list on the parent instance."""
         
+        decorated_row = self._decorate_row(row)
+        try:
+            # check for identity key
+            identity_key = self.mapper._row_identity_key(decorated_row)
+        except KeyError:
+            # else degrade to a lazy loader
+            LazyLoader.execute(self, session, instance, row, identitykey, imap, isnew)
+            return
+                
         if isnew:
             # new row loaded from the database.  initialize a blank container on the instance.
             # this will override any per-class lazyloading type of stuff.
@@ -603,9 +614,8 @@ class EagerLoader(PropertyLoader):
             map[parent._label] = c
             map[parent.name] = c
         return DecoratorDict
-        
-    def _instance(self, session, row, imap, result_list=None):
-        """gets an instance from a row, via this EagerLoader's mapper."""
+
+    def _decorate_row(self, row):
         # since the EagerLoader makes an Alias of its mapper's table,
         # we translate the actual result columns back to what they 
         # would normally be into a "virtual row" which is passed to the child mapper.
@@ -613,8 +623,15 @@ class EagerLoader(PropertyLoader):
         # (neither do any MapperExtensions).  The row is keyed off the Column object
         # (which is what mappers use) as well as its "label" (which might be what
         # user-defined code is using)
-        row = self._row_decorator(row)
-        return self.mapper._instance(session, row, imap, result_list)
+        try:
+            return self._row_decorator(row)
+        except AttributeError:
+            self._create_eager_chain()
+            return self._row_decorator(row)
+
+    def _instance(self, session, row, imap, result_list=None):
+        """gets an instance from a row, via this EagerLoader's mapper."""
+        return self.mapper._instance(session, self._decorate_row(row), imap, result_list)
 
 class GenericOption(mapper.MapperOption):
     """a mapper option that can handle dotted property names,
