@@ -87,9 +87,9 @@ For the purposes of this tutorial, we will stick with "bound" objects.  There is
     {python}
     >>> dynamic = DynamicMetaData()  # create a Dynamic metadata object
     >>> dynamic.connect('sqlite:///:memory:')  # connect it to SQLite
-    >>> dynamic.connect('postgres:///scott:tiger@localhost/mydb')  # connect it to PostGres
+    >>> dynamic.connect('postgres://scott:tiger@localhost/mydb')  # connect it to PostGres
     
-    >>> myengine = create_engine('mysql:///127.0.0.1')
+    >>> myengine = create_engine('mysql://127.0.0.1')
     >>> dynamic.connect(myengine)  # connect to an externally-defined engine
 
 The `DynamicMetaData` object binds to different engines on a thread local basis.  This means that one thread of your application can be connected to one database, while another is connected to a different database.  The `DynamicMetaData` object also keeps a reference to each bound engine internally, so that each connection string is only initialized once.

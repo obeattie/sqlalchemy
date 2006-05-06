@@ -1,3 +1,10 @@
+# orm/dependency.py
+# Copyright (C) 2005,2006 Michael Bayer mike_mp@zzzcomputing.com
+#
+# This module is part of SQLAlchemy and is released under
+# the MIT License: http://www.opensource.org/licenses/mit-license.php
+
+
 """bridges the PropertyLoader (i.e. a relation()) and the UOWTransaction 
 together to allow processing of scalar- and list-based dependencies at flush time."""
 
@@ -20,7 +27,7 @@ class DependencyProcessor(object):
 
     class MapperStub(object):
         """poses as a Mapper representing the association table in a many-to-many
-        join, when performing a commit().  
+        join, when performing a flush().  
 
         The Task objects in the objectstore module treat it just like
         any other Mapper, but in fact it only serves as a "dependency" placeholder
@@ -97,11 +104,9 @@ class DependencyProcessor(object):
         else:
             raise AssertionError(" no foreign key ?")
 
-    # TODO: this method should be moved to an external object
     def get_object_dependencies(self, obj, uowcommit, passive = True):
         return uowcommit.uow.attributes.get_history(obj, self.key, passive = passive)
 
-    # TODO: this method should be moved to an external object
     def whose_dependent_on_who(self, obj1, obj2):
         """given an object pair assuming obj2 is a child of obj1, returns a tuple
         with the dependent object second, or None if they are equal.  
@@ -114,7 +119,6 @@ class DependencyProcessor(object):
         else:
             return (obj2, obj1)
 
-    # TODO: this method should be moved to an external object
     def process_dependencies(self, task, deplist, uowcommit, delete = False):
         """this method is called during a commit operation to synchronize data between a parent and child object.  
         it also can establish child or parent objects within the unit of work as "to be saved" or "deleted" 
@@ -248,7 +252,6 @@ class DependencyProcessor(object):
                         elif childlist.hasparent(child) is False:
                             uowcommit.register_object(child, isdelete=True)
 
-    # TODO: this method should be moved to an external object
     def _synchronize(self, obj, child, associationrow, clearkeys):
         """called during a commit to execute the full list of syncrules on the 
         given object/child/optional association row"""

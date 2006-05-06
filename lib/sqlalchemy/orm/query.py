@@ -1,4 +1,4 @@
-# mapper/query.py
+# orm/query.py
 # Copyright (C) 2005,2006 Michael Bayer mike_mp@zzzcomputing.com
 #
 # This module is part of SQLAlchemy and is released under
@@ -11,8 +11,11 @@ import mapper
 
 class Query(object):
     """encapsulates the object-fetching operations provided by Mappers."""
-    def __init__(self, mapper, session=None, **kwargs):
-        self.mapper = mapper
+    def __init__(self, class_or_mapper, session=None, entity_name=None, **kwargs):
+        if isinstance(class_or_mapper, type):
+            self.mapper = class_mapper(class_or_mapper, entity_name=entity_name)
+        else:
+            self.mapper = class_or_mapper
         self.always_refresh = kwargs.pop('always_refresh', self.mapper.always_refresh)
         self.order_by = kwargs.pop('order_by', self.mapper.order_by)
         self.extension = kwargs.pop('extension', self.mapper.extension)

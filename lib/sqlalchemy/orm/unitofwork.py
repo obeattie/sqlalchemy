@@ -1,4 +1,4 @@
-# unitofwork.py
+# orm/unitofwork.py
 # Copyright (C) 2005,2006 Michael Bayer mike_mp@zzzcomputing.com
 #
 # This module is part of SQLAlchemy and is released under
@@ -629,8 +629,6 @@ class UOWTask(object):
                         
                     for o in childlist:
                         if o is None:
-                            # this can be None due to the many-to-one dependency processor added
-                            # for deleted items, line 385 properties.py
                             continue
                         if not o in childtask.objects:
                             # item needs to be saved since its added, or attached to a deleted object

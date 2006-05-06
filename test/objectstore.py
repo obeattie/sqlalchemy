@@ -54,7 +54,7 @@ class HistoryTest(AssertMixin):
         self.assert_result([u], data[0], *data[1:])
 
     def testbackref(self):
-        s = Session()
+        s = create_session()
         class User(object):pass
         class Address(object):pass
         am = mapper(Address, addresses)
@@ -97,7 +97,7 @@ class VersioningTest(AssertMixin):
     
     @testbase.unsupported('mysql')
     def testbasic(self):
-        s = Session()
+        s = create_session()
         class Foo(object):pass
         assign_mapper(Foo, version_table, version_id_col=version_table.c.version_id)
         f1 =Foo(value='f1', _sa_session=s)
@@ -117,7 +117,7 @@ class VersioningTest(AssertMixin):
             # a concurrent session has modified this, should throw
             # an exception
             s.flush()
-        except SQLAlchemyError, e:
+        except exceptions.SQLAlchemyError, e:
             #print e
             success = True
         assert success
@@ -133,7 +133,7 @@ class VersioningTest(AssertMixin):
         success = False
         try:
             s.flush()
-        except SQLAlchemyError, e:
+        except exceptions.SQLAlchemyError, e:
             #print e
             success = True
         assert success

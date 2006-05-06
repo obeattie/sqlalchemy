@@ -6,9 +6,8 @@
 
 """defines the base components of SQL expression trees."""
 
-import util
-import types as sqltypes
-from exceptions import *
+from sqlalchemy import util, exceptions
+from sqlalchemy import types as sqltypes
 import string, re, random
 types = __import__('types')
 
@@ -351,7 +350,7 @@ class Compiled(ClauseVisitor):
         """executes this compiled object using the AbstractEngine it is bound to."""
         e = self.engine
         if e is None:
-            raise InvalidRequestError("This Compiled object is not bound to any engine.")
+            raise exceptions.InvalidRequestError("This Compiled object is not bound to any engine.")
         return e.execute_compiled(self, *multiparams, **params)
 
     def scalar(self, *multiparams, **params):
@@ -552,6 +551,8 @@ class CompareMixin(object):
         return self._operate('*', other)
     def __div__(self, other):
         return self._operate('/', other)
+    def __mod__(self, other):
+        return self._operate('%', other)        
     def __truediv__(self, other):
         return self._operate('/', other)
     def _bind_param(self, obj):
@@ -560,7 +561,7 @@ class CompareMixin(object):
         if _is_literal(obj):
             if obj is None:
                 if operator != '=':
-                    raise ArgumentError("Only '=' operator can be used with NULL")
+                    raise exceptions.ArgumentError("Only '=' operator can be used with NULL")
                 return BooleanExpression(self._compare_self(), null(), 'IS')
             else:
                 obj = self._bind_param(obj)
@@ -654,7 +655,7 @@ class FromClause(Selectable):
             if not raiseerr:
                 return None
             else:
-                raise InvalidRequestError("cant get orig for " + str(column) + " with table " + column.table.name + " from table " + self.name)
+                raise exceptions.InvalidRequestError("cant get orig for " + str(column) + " with table " + column.table.name + " from table " + self.name)
                 
     def _get_exported_attribute(self, name):
         try:
@@ -970,7 +971,7 @@ class Join(FromClause):
                     crit.append(secondary._get_col_by_original(fk.column) == fk.parent)
                     self.foreignkey = fk.parent
         if len(crit) == 0:
-            raise ArgumentError("Cant find any foreign key relationships between '%s' and '%s'" % (primary.name, secondary.name))
+            raise exceptions.ArgumentError("Cant find any foreign key relationships between '%s' and '%s'" % (primary.name, secondary.name))
         elif len(crit) == 1:
             return (crit[0])
         else:

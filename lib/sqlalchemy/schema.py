@@ -14,11 +14,7 @@ structure with its own clause-specific objects as well as the visitor interface,
 the schema package "plugs in" to the SQL package.
 
 """
-import sqlalchemy
-import sql
-from util import *
-from types import *
-import exceptions
+from sqlalchemy import sql, types, exceptions,util
 import copy, re, string
 
 __all__ = ['SchemaItem', 'Table', 'Column', 'ForeignKey', 'Sequence', 'Index',
@@ -40,10 +36,7 @@ class SchemaItem(object):
         to which this item is bound"""
         return None
     def _get_engine(self):
-        try:
-            return self._derived_metadata().engine
-        except AttributeError:
-            return None
+        return self._derived_metadata().engine
     engine = property(lambda s:s._get_engine())
     metadata = property(lambda s:s._derived_metadata())
     
@@ -311,14 +304,16 @@ class Column(SchemaItem, sql.ColumnClause):
         if len(kwargs):
             raise ArgumentError("Unknown arguments passed to Column: " + repr(kwargs.keys()))
 
-    primary_key = SimpleProperty('_primary_key')
-    foreign_key = SimpleProperty('_foreign_key')
+    primary_key = util.SimpleProperty('_primary_key')
+    foreign_key = util.SimpleProperty('_foreign_key')
     original = property(lambda s: s._orig or s)
     parent = property(lambda s:s._parent or s)
     columns = property(lambda self:[self])
 
     def _derived_metadata(self):
         return self.table.metadata
+    def _get_engine(self):
+        return self.table.engine
         
     def __repr__(self):
        return "Column(%s)" % string.join(
@@ -676,7 +671,7 @@ class DynamicMetaData(MetaData):
     def __init__(self, name=None, threadlocal=True):
         super(DynamicMetaData, self).__init__(name)
         if threadlocal:
-            self.context = ThreadLocal()
+            self.context = util.ThreadLocal()
         else:
             self.context = self
         self.__engines = {}

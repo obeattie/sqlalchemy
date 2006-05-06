@@ -176,6 +176,20 @@ The `threadlocal` strategy is better suited to a programming style which relies 
 
 While the `close()` method is still available with the "threadlocal" strategy, it should be used carefully.  Above, if we issued a `close()` call on `r1`, and then tried to further work with results from `r2`, `r2` would be in an invalid state since its connection was already returned to the pool.  By relying on `__del__()` to automatically clean up resources, this condition will never occur.
 
+To get at the actual `Connection` object which is used by implicit executions, call the `contextual_connection()` method on `Engine`:
+
+    {python title="Contextual Connection"}
+    # threadlocal strategy
+    db = create_engine('mysql://localhost/test', strategy='threadlocal')
+    
+    conn1 = db.contextual_connection()
+    conn2 = db.contextual_connection()
+
+    >>> assert conn1 is conn2
+    True
+
+When the `plain` strategy is used, the `contextual_connection()` method is synonymous with the `connect()` method; both return a distinct connection from the pool.
+    
 At this point, you're probably saying, "wow, why would anyone *ever* want to use the [insert name here] strategy ??"  Advantages to `plain` include that connection resources are immediately returned to the connection pool, without any reliance upon the `__del__()` method; there is no chance of resources being left around by a Python implementation that doesn't necessarily call `__del__()` immediately.  Advantages to `threadlocal` include that resources can be left to clean up after themselves, application code can be more minimal, its guaranteed that only one connection is used per thread, and there is no chance of a "connection pool block", which is when an execution hangs because the current thread has already checked out all remaining resources.
 
 ### Transactions {@name=transactions}

@@ -1,4 +1,4 @@
-# mapper/mapper.py
+# orm/mapper.py
 # Copyright (C) 2005,2006 Michael Bayer mike_mp@zzzcomputing.com
 #
 # This module is part of SQLAlchemy and is released under
@@ -660,7 +660,7 @@ class Mapper(object):
                     self.extension.after_update(self, connection, obj)
                     rows += c.cursor.rowcount
                 if c.supports_sane_rowcount() and rows != len(update):
-                    raise CommitError("ConcurrencyError - updated rowcount %d does not match number of objects updated %d" % (rows, len(update)))
+                    raise exceptions.FlushError("ConcurrencyError - updated rowcount %d does not match number of objects updated %d" % (rows, len(update)))
             if len(insert):
                 statement = table.insert()
                 for rec in insert:
@@ -729,10 +729,9 @@ class Mapper(object):
                 if self.version_id_col is not None:
                     clause.clauses.append(self.version_id_col == sql.bindparam(self.version_id_col.key, type=self.version_id_col.type))
                 statement = table.delete(clause)
-                print "DELETE IS", delete
                 c = connection.execute(statement, delete)
                 if c.supports_sane_rowcount() and c.rowcount != len(delete):
-                    raise CommitError("ConcurrencyError - updated rowcount %d does not match number of objects updated %d" % (c.cursor.rowcount, len(delete)))
+                    raise exceptions.FlushError("ConcurrencyError - updated rowcount %d does not match number of objects updated %d" % (c.cursor.rowcount, len(delete)))
 
     def _has_pks(self, table):
         try:
