@@ -15,10 +15,12 @@ class SessionTransaction(object):
         self.connections = {}
         self.parent = parent
         self.autoflush = autoflush
-    def connection(self, mapper):
+    def connection(self, mapper_or_class, entity_name=None):
+        if isinstance(mapper_or_class, type):
+            mapper_or_class = class_mapper(mapper_or_class, entity_name=entity_name)
         if self.parent is not None:
-            return self.parent.connection(mapper)
-        engine = self.session.get_bind(mapper)
+            return self.parent.connection(mapper_or_class)
+        engine = self.session.get_bind(mapper_or_class)
         return self.get_or_add(engine)
     def _begin(self):
         return SessionTransaction(self.session, self)
