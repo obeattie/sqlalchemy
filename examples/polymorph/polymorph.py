@@ -4,35 +4,36 @@ import sys
 # this example illustrates a polymorphic load of two classes, where each class has a very 
 # different set of properties
 
-db = create_engine('sqlite://', echo='debug', echo_uow=False)
+metadata = BoundMetaData('sqlite://', echo='debug')
 
 # a table to store companies
-companies = Table('companies', db, 
+companies = Table('companies', metadata, 
    Column('company_id', Integer, primary_key=True),
-   Column('name', String(50))).create()
+   Column('name', String(50)))
 
 # we will define an inheritance relationship between the table "people" and "engineers",
 # and a second inheritance relationship between the table "people" and "managers"
-people = Table('people', db, 
+people = Table('people', metadata, 
    Column('person_id', Integer, primary_key=True),
    Column('company_id', Integer, ForeignKey('companies.company_id')),
    Column('name', String(50)),
-   Column('type', String(30))).create()
+   Column('type', String(30)))
    
-engineers = Table('engineers', db, 
+engineers = Table('engineers', metadata, 
    Column('person_id', Integer, ForeignKey('people.person_id'), primary_key=True),
    Column('status', String(30)),
    Column('engineer_name', String(50)),
    Column('primary_language', String(50)),
-  ).create()
+  )
    
-managers = Table('managers', db, 
+managers = Table('managers', metadata, 
    Column('person_id', Integer, ForeignKey('people.person_id'), primary_key=True),
    Column('status', String(30)),
    Column('manager_name', String(50))
-   ).create()
+   )
+   
+metadata.create_all()
 
-  
 # create our classes.  The Engineer and Manager classes extend from Person.
 class Person(object):
     def __init__(self, **kwargs):
@@ -54,8 +55,7 @@ class Company(object):
         return "Company %s" % self.name
 
 
-# create a union that represents both types of joins.  we have to use
-# nulls to pad out the disparate columns.
+# create a union that represents both types of joins.  
 person_join = polymorphic_union(
     {
         'engineer':people.join(engineers),
@@ -68,7 +68,7 @@ mapper(Engineer, engineers, inherits=person_mapper, polymorphic_identity='engine
 mapper(Manager, managers, inherits=person_mapper, polymorphic_identity='manager')
 
 mapper(Company, companies, properties={
-    'employees': relation(Person, lazy=True, private=True, backref='company')
+    'employees': relation(Person, lazy=False, private=True, backref='company')
 })
 
 session = create_session()
@@ -105,7 +105,4 @@ for e in c.employees:
 session.delete(c)
 session.flush()
 
-managers.drop()
-engineers.drop()
-people.drop()
-companies.drop()
+metadata.drop_all()

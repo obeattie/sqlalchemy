@@ -15,6 +15,7 @@ the schema package "plugs in" to the SQL package.
 
 """
 from sqlalchemy import sql, types, exceptions,util
+import sqlalchemy
 import copy, re, string
 
 __all__ = ['SchemaItem', 'Table', 'Column', 'ForeignKey', 'Sequence', 'Index',

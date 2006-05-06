@@ -584,18 +584,18 @@ class EagerLoader(LazyLoader):
             
         if not self.uselist:
             if isnew:
-                h.setattr_clean(self._instance(session, row, imap))
+                h.setattr_clean(self.mapper._instance(session, decorated_row, imap, None))
             else:
                 # call _instance on the row, even though the object has been created,
                 # so that we further descend into properties
-                self._instance(session, row, imap)
+                self.mapper._instance(session, decorated_row, imap, None)
                 
             return
         elif isnew:
             result_list = h
         else:
             result_list = getattr(instance, self.key)
-        self._instance(session, row, imap, result_list)
+        self.mapper._instance(session, decorated_row, imap, result_list)
 
     def _create_decorator_row(self):
         class DecoratorDict(object):
@@ -628,10 +628,6 @@ class EagerLoader(LazyLoader):
         except AttributeError:
             self._create_eager_chain()
             return self._row_decorator(row)
-
-    def _instance(self, session, row, imap, result_list=None):
-        """gets an instance from a row, via this EagerLoader's mapper."""
-        return self.mapper._instance(session, self._decorate_row(row), imap, result_list)
 
 class GenericOption(mapper.MapperOption):
     """a mapper option that can handle dotted property names,
