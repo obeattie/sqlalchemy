@@ -9,6 +9,7 @@ from sqlalchemy.types import TypeEngine
 import sqlalchemy.schema as schema
 import thread, weakref
 
+
 class BaseProxyEngine(sql.Engine):
     '''
     Basis for all proxy engines
@@ -39,29 +40,29 @@ class BaseProxyEngine(sql.Engine):
         raise AttributeError('No connection established in ProxyEngine: '
                              ' no access to %s' % attr)
 
+
 class AutoConnectEngine(BaseProxyEngine):
     '''
     An SQLEngine proxy that automatically connects when necessary.
     '''
     
-    def __init__(self, dburi, opts=None, **kwargs):
+    def __init__(self, dburi, **kwargs):
         BaseProxyEngine.__init__(self)
-        self.dburi= dburi
-        self.opts= opts
-        self.kwargs= kwargs
-        self._engine= None
+        self.dburi = dburi
+        self.kwargs = kwargs
+        self._engine = None
         
     def get_engine(self):
         if self._engine is None:
             if callable(self.dburi):
-                dburi= self.dburi()
+                dburi = self.dburi()
             else:
-                dburi= self.dburi
-            self._engine= create_engine( dburi, self.opts, **self.kwargs )
+                dburi = self.dburi
+            self._engine = create_engine(dburi, **self.kwargs)
         return self._engine
 
 
-            
+
 class ProxyEngine(BaseProxyEngine):
     """
     SQLEngine proxy. Supports lazy and late initialization by
@@ -76,14 +77,15 @@ class ProxyEngine(BaseProxyEngine):
         self.storage.connection = {}
         self.storage.engine = None
         self.kwargs = kwargs
-            
-    def connect(self, uri, opts=None, **kwargs):
+
+    def connect(self, *args, **kwargs):
         """Establish connection to a real engine.
         """
-        kw = self.kwargs.copy()
-        kw.update(kwargs)
-        kwargs = kw
-        key = "%s(%s,%s)" % (uri, repr(opts), repr(kwargs))
+        kwargs.update(self.kwargs)
+        if not kwargs:
+            key = repr(args)
+        else:
+            key = "%s, %s" % (repr(args), repr(sorted(kwargs.items())))
         try:
             map = self.storage.connection
         except AttributeError:
@@ -93,7 +95,7 @@ class ProxyEngine(BaseProxyEngine):
         try:
             self.engine = map[key]
         except KeyError:
-            map[key] = create_engine(uri, opts, **kwargs)
+            map[key] = create_engine(*args, **kwargs)
             self.storage.engine = map[key]
             
     def get_engine(self):
@@ -103,5 +105,3 @@ class ProxyEngine(BaseProxyEngine):
 
     def set_engine(self, engine):
         self.storage.engine = engine
-        
-
