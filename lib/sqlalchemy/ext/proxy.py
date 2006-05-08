@@ -5,15 +5,10 @@ except ImportError:
 
 from sqlalchemy import sql
 from sqlalchemy.engine import create_engine
-from sqlalchemy.types import TypeEngine
-import sqlalchemy.schema as schema
-import thread, weakref
 
 
 class BaseProxyEngine(sql.Engine):
-    '''
-    Basis for all proxy engines
-    '''
+    """Basis for all proxy engines."""
         
     def get_engine(self):
         raise NotImplementedError
@@ -23,28 +18,18 @@ class BaseProxyEngine(sql.Engine):
         
     engine = property(lambda s:s.get_engine(), lambda s,e:s.set_engine(e))
 
-    def execute_compiled(self, *args, **kwargs):
-        return self.get_engine().execute_compiled(*args, **kwargs)
-    def compiler(self, *args, **kwargs):
-        return self.get_engine().compiler(*args, **kwargs)
-
-    def hash_key(self):
-        return "%s(%s)" % (self.__class__.__name__, id(self))
-
     def __getattr__(self, attr):
         # call get_engine() to give subclasses a chance to change
         # connection establishment behavior
-        e= self.get_engine()
+        e = self.get_engine()
         if e is not None:
             return getattr(e, attr)
-        raise AttributeError('No connection established in ProxyEngine: '
-                             ' no access to %s' % attr)
+        raise AttributeError("No connection established in ProxyEngine: "
+                             " no access to %s" % attr)
 
 
 class AutoConnectEngine(BaseProxyEngine):
-    '''
-    An SQLEngine proxy that automatically connects when necessary.
-    '''
+    """An SQLEngine proxy that automatically connects when necessary."""
     
     def __init__(self, dburi, **kwargs):
         BaseProxyEngine.__init__(self)
@@ -62,12 +47,10 @@ class AutoConnectEngine(BaseProxyEngine):
         return self._engine
 
 
-
 class ProxyEngine(BaseProxyEngine):
-    """
-    SQLEngine proxy. Supports lazy and late initialization by
-    delegating to a real engine (set with connect()), and using proxy
-    classes for TypeEngine.
+    """Engine proxy for lazy and late initialization.
+    
+    This engine will delegate access to a real engine set with connect().
     """
 
     def __init__(self, **kwargs):
@@ -79,8 +62,8 @@ class ProxyEngine(BaseProxyEngine):
         self.kwargs = kwargs
 
     def connect(self, *args, **kwargs):
-        """Establish connection to a real engine.
-        """
+        """Establish connection to a real engine."""
+
         kwargs.update(self.kwargs)
         if not kwargs:
             key = repr(args)
@@ -100,7 +83,7 @@ class ProxyEngine(BaseProxyEngine):
             
     def get_engine(self):
         if self.storage.engine is None:
-            raise AttributeError('No connection established')
+            raise AttributeError("No connection established")
         return self.storage.engine
 
     def set_engine(self, engine):
