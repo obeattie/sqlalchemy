@@ -617,15 +617,8 @@ class ColumnElement(Selectable, CompareMixin):
         if len(s) == 0:
             s.add(self)
         self.__orig_set = s
-        self.__original = list(s)[0]
-    def _get_original(self):
-        try:
-            return self.__original
-        except AttributeError:
-            self.__original = list(self.orig_set)[0]
-            return self.__original
     orig_set = property(_get_orig_set, _set_orig_set,doc="""a Set containing Table-bound, non-proxied ColumnElements for which this ColumnElement is a proxy.  In all cases except for a column proxied from a Union (i.e. CompoundSelect), this set will be just one element.""")
-    original = property(_get_original, doc="Scalar version of orig_set, which is usually one element.  If orig_set contains multiple columns, this will represent just one of the columns.")
+
     def shares_lineage(self, othercolumn):
         for c in self.orig_set:
             if c in othercolumn.orig_set:
@@ -672,7 +665,7 @@ class FromClause(Selectable):
         if not hasattr(self, '_oid_column'):
             self._oid_column = self._locate_oid_column()
         return self._oid_column
-    def _get_col_by_original(self, column, raiseerr=True):
+    def corresponding_column(self, column, raiseerr=True):
         """given a ColumnElement, return the ColumnElement object from this 
         Selectable which corresponds to that original Column via a proxy relationship."""
         for c in column.orig_set:
@@ -717,7 +710,8 @@ class FromClause(Selectable):
                     for ci in cp.orig_set:
                         self._orig_cols[ci] = cp
         if self.oid_column is not None:
-            self._orig_cols[self.oid_column.original] = self.oid_column
+            for ci in self.oid_column.orig_set:
+                self._orig_cols[ci] = self.oid_column
     def _exportable_columns(self):
         return []
     def _proxy_column(self, column):
@@ -995,12 +989,12 @@ class Join(FromClause):
         crit = []
         for fk in secondary.foreign_keys:
             if fk.references(primary):
-                crit.append(primary._get_col_by_original(fk.column) == fk.parent)
+                crit.append(primary.corresponding_column(fk.column) == fk.parent)
                 self.foreignkey = fk.parent
         if primary is not secondary:
             for fk in primary.foreign_keys:
                 if fk.references(secondary):
-                    crit.append(secondary._get_col_by_original(fk.column) == fk.parent)
+                    crit.append(secondary.corresponding_column(fk.column) == fk.parent)
                     self.foreignkey = fk.parent
         if len(crit) == 0:
             raise exceptions.ArgumentError("Cant find any foreign key relationships between '%s' and '%s'" % (primary.name, secondary.name))
@@ -1128,7 +1122,7 @@ class ColumnClause(ColumnElement):
         
         for example, this could translate the column "name" from a Table object
         to an Alias of a Select off of that Table object."""
-        return selectable._get_col_by_original(self.original, False)
+        return selectable.corresponding_column(self.original, False)
     def _get_from_objects(self):
         if self.table is not None:
             return [self.table]
@@ -1175,7 +1169,8 @@ class TableClause(FromClause):
         except AttributeError:
             self._orig_cols= {}
             for c in self.columns:
-                self._orig_cols[c.original] = c
+                for ci in c.orig_set:
+                    self._orig_cols[ci] = c
             return self._orig_cols
     columns = property(lambda s:s._columns)
     c = property(lambda s:s._columns)

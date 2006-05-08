@@ -47,10 +47,10 @@ class SelectableTest(testbase.AssertMixin):
         s1 = table.select(use_labels=True)
         s2 = table2.select(use_labels=True)
         print ["%d %s" % (id(c),c.key) for c in u.c]
-        c = u._get_col_by_original(s1.c.table1_col2)
+        c = u.corresponding_column(s1.c.table1_col2)
         print "%d %s" % (id(c), c.key)
-        assert u._get_col_by_original(s1.c.table1_col2) is u.c.col2
-        assert u._get_col_by_original(s2.c.table2_col2) is u.c.col2
+        assert u.corresponding_column(s1.c.table1_col2) is u.c.col2
+        assert u.corresponding_column(s2.c.table2_col2) is u.c.col2
 
     def testaliasunion(self):
         # same as testunion, except its an alias of the union
@@ -60,10 +60,10 @@ class SelectableTest(testbase.AssertMixin):
         s1 = table.select(use_labels=True)
         s2 = table2.select(use_labels=True)
         print ["%d %s" % (id(c),c.key) for c in u.c]
-#        c = u._get_col_by_original(s1.c.table1_col2)
+#        c = u.corresponding_column(s1.c.table1_col2)
         print "%d %s" % (id(c), c.key)
-        assert u._get_col_by_original(s1.c.table1_col2) is u.c.col2
-        assert u._get_col_by_original(s2.c.table2_col2) is u.c.col2
+        assert u.corresponding_column(s1.c.table1_col2) is u.c.col2
+        assert u.corresponding_column(s2.c.table2_col2) is u.c.col2
 
     def testselectunion(self):
         # like testaliasunion, but off a Select off the union.
@@ -73,8 +73,8 @@ class SelectableTest(testbase.AssertMixin):
         s = select([u])
         s1 = table.select(use_labels=True)
         s2 = table2.select(use_labels=True)
-        assert s._get_col_by_original(s1.c.table1_col2) is s.c.col2
-        assert s._get_col_by_original(s2.c.table2_col2) is s.c.col2
+        assert s.corresponding_column(s1.c.table1_col2) is s.c.col2
+        assert s.corresponding_column(s2.c.table2_col2) is s.c.col2
 
     def testunionagainstjoin(self):
         # same as testunion, except its an alias of the union
@@ -82,8 +82,8 @@ class SelectableTest(testbase.AssertMixin):
                 select([table2.c.col1, table2.c.col2, table2.c.col3, null().label('colx'), table2.c.coly])
             ).alias('analias')
         j1 = table.join(table2)
-        assert u._get_col_by_original(j1.c.table1_colx) is u.c.colx
-        assert j1._get_col_by_original(u.c.colx) is j1.c.table1_colx
+        assert u.corresponding_column(j1.c.table1_colx) is u.c.colx
+        assert j1.corresponding_column(u.c.colx) is j1.c.table1_colx
         
     def testjoin(self):
         a = join(table, table2)

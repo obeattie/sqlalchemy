@@ -341,14 +341,14 @@ class Mapper(object):
 
         if sql.is_column(prop):
             try:
-                prop = self.select_table._get_col_by_original(prop)
+                prop = self.select_table.corresponding_column(prop)
             except KeyError:
                 raise exceptions.ArgumentError("Column '%s' is not represented in mapper's table" % prop._label)
             self.columns[key] = prop
             prop = ColumnProperty(prop)
         elif isinstance(prop, list) and sql.is_column(prop[0]):
             try:
-                prop = [self.select_table._get_col_by_original(p) for p in prop]
+                prop = [self.select_table.corresponding_column(p) for p in prop]
             except KeyError, e:
                 raise exceptions.ArgumentError("Column '%s' is not represented in mapper's table" % e.args[0])
             self.columns[key] = prop[0]
@@ -847,7 +847,7 @@ class Mapper(object):
         examples."""
         newrow = util.DictDecorator(row)
         for c in tomapper.select_table.c:
-            c2 = self.select_table._get_col_by_original(c)
+            c2 = self.select_table.corresponding_column(c)
             newrow[c] = row[c2]
         return newrow
         
@@ -1034,19 +1034,19 @@ class TranslatingDict(dict):
         super(TranslatingDict, self).__init__()
         self.selectable = selectable
     def __getitem__(self, col):
-        ourcol = self.selectable._get_col_by_original(col)
+        ourcol = self.selectable.corresponding_column(col)
         return super(TranslatingDict, self).__getitem__(ourcol)
     def has_key(self, col):
-        ourcol = self.selectable._get_col_by_original(col)
+        ourcol = self.selectable.corresponding_column(col)
         return super(TranslatingDict, self).has_key(ourcol)
     def __setitem__(self, col, value):
-        ourcol = self.selectable._get_col_by_original(col)
+        ourcol = self.selectable.corresponding_column(col)
         return super(TranslatingDict, self).__setitem__(ourcol, value)
     def __contains__(self, col):
-        ourcol = self.selectable._get_col_by_original(col)
+        ourcol = self.selectable.corresponding_column(col)
         return super(TranslatingDict, self).__contains__(ourcol)
     def setdefault(self, col, value):
-        ourcol = self.selectable._get_col_by_original(col)
+        ourcol = self.selectable.corresponding_column(col)
         return super(TranslatingDict, self).setdefault(ourcol, value)
             
 class ClassKey(object):

@@ -34,7 +34,7 @@ class ColumnProperty(mapper.MapperProperty):
     def setup(self, key, statement, eagertable=None, **options):
         for c in self.columns:
             if eagertable is not None:
-                statement.append_column(eagertable._get_col_by_original(c))
+                statement.append_column(eagertable.corresponding_column(c))
             else:
                 statement.append_column(c)
     def do_init(self, key, parent):
@@ -528,7 +528,7 @@ class EagerLoader(LazyLoader):
             orderby = util.to_list(orderby)
         for i in range(0, len(orderby)):
             if isinstance(orderby[i], schema.Column):
-                orderby[i] = self.eagertarget._get_col_by_original(orderby[i])
+                orderby[i] = self.eagertarget.corresponding_column(orderby[i])
             else:
                 orderby[i].accept_visitor(self.aliasizer)
         return orderby
@@ -609,7 +609,7 @@ class EagerLoader(LazyLoader):
                 return map.keys()
         map = {}        
         for c in self.eagertarget.c:
-            parent = self.target._get_col_by_original(c)
+            parent = self.target.corresponding_column(c)
             map[parent] = c
             map[parent._label] = c
             map[parent.name] = c
@@ -758,14 +758,14 @@ class Aliasizer(sql.ClauseVisitor):
         for i in range(0, len(clist.clauses)):
             if isinstance(clist.clauses[i], schema.Column) and self.tables.has_key(clist.clauses[i].table):
                 orig = clist.clauses[i]
-                clist.clauses[i] = self.get_alias(clist.clauses[i].table)._get_col_by_original(clist.clauses[i])
+                clist.clauses[i] = self.get_alias(clist.clauses[i].table).corresponding_column(clist.clauses[i])
                 if clist.clauses[i] is None:
                     raise "cant get orig for " + str(orig) + " against table " + orig.table.name + " " + self.get_alias(orig.table).name
     def visit_binary(self, binary):
         if isinstance(binary.left, schema.Column) and self.tables.has_key(binary.left.table):
-            binary.left = self.get_alias(binary.left.table)._get_col_by_original(binary.left)
+            binary.left = self.get_alias(binary.left.table).corresponding_column(binary.left)
         if isinstance(binary.right, schema.Column) and self.tables.has_key(binary.right.table):
-            binary.right = self.get_alias(binary.right.table)._get_col_by_original(binary.right)
+            binary.right = self.get_alias(binary.right.table).corresponding_column(binary.right)
 
 class BinaryVisitor(sql.ClauseVisitor):
     def __init__(self, func):

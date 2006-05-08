@@ -465,7 +465,7 @@ FROM myothertable UNION SELECT thirdtable.userid, thirdtable.otherstuff FROM thi
                 select([table2]),
                 select([table3])
             )
-            assert u._get_col_by_original(table2.c.otherid) is u.c.otherid
+            assert u.corresponding_column(table2.c.otherid) is u.c.otherid
             
             
     def testouterjoin(self):

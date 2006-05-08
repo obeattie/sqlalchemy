@@ -414,7 +414,7 @@ class ForeignKey(SchemaItem):
         
     def references(self, table):
         """returns True if the given table is referenced by this ForeignKey."""
-        return table._get_col_by_original(self.column, False) is not None
+        return table.corresponding_column(self.column, False) is not None
         
     def _init_column(self):
         # ForeignKey inits its remote column as late as possible, so tables can
@@ -426,10 +426,10 @@ class ForeignKey(SchemaItem):
                     raise ArgumentError("Invalid foreign key column specification: " + self._colspec)
                 if m.group(3) is None:
                     (tname, colname) = m.group(1, 2)
-                    schema = self.parent.original.table.schema
+                    schema = list(self.parent.orig_set)[0].table.schema
                 else:
                     (schema,tname,colname) = m.group(1,2,3)
-                table = Table(tname, self.parent.original.metadata, mustexist=True, schema=schema)
+                table = Table(tname, list(self.parent.orig_set)[0].metadata, mustexist=True, schema=schema)
                 if colname is None:
                     key = self.parent
                     self._column = table.c[self.parent.key]
