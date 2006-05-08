@@ -195,7 +195,7 @@ class Connection(object):
         return Connection.executors[type(object).__mro__[-2]](self, object, *multiparams, **params)
     def execute_default(self, default, **kwargs):
         return default.accept_schema_visitor(self.engine.dialect.defaultrunner(self.engine, self.proxy, **kwargs))
-    def execute_text(self, statement, parameters):
+    def execute_text(self, statement, parameters=None):
         cursor = self._execute_raw(statement, parameters)
         return ResultProxy(self.engine, self, cursor)
     def _params_to_listofdicts(self, *multiparams, **params):
