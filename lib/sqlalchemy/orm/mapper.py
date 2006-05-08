@@ -541,7 +541,6 @@ class Mapper(object):
         """called by a UnitOfWork object to save objects, which involves either an INSERT or
         an UPDATE statement for each table used by this mapper, for each element of the
         list."""
-        
         #print "SAVE_OBJ MAPPER", self.class_.__name__, objects
         connection = uow.transaction.connection(self)
         for table in self.tables:
@@ -702,7 +701,6 @@ class Mapper(object):
     def delete_obj(self, objects, uow):
         """called by a UnitOfWork object to delete objects, which involves a
         DELETE statement for each table used by this mapper, for each object in the list."""
-
         connection = uow.transaction.connection(self)
         
         for table in util.reversed(self.tables):
@@ -826,9 +824,6 @@ class Mapper(object):
         return instance
 
     def _create_instance(self, session):
-
-        #return self.class_(_mapper_nohistory=True, _sa_entity_name=self.entity_name, _sa_session=session)
-        
         obj = self.class_.__new__(self.class_)
         obj._entity_name = self.entity_name
         
@@ -836,8 +831,6 @@ class Mapper(object):
         # in order to save on KeyErrors later on
         sessionlib.global_attributes.init_attr(obj)
 
-#       TODO: this _attach should not be needed....
-#        session._attach(obj)
         return obj
 
     def translate_row(self, tomapper, row):

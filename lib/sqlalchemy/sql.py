@@ -208,8 +208,7 @@ def text(text, engine=None, *args, **kwargs):
     text - the text of the SQL statement to be created.  use :<param> to specify
     bind parameters; they will be compiled to their engine-specific format.
 
-    engine - an optional engine to be used for this text query.  Alternatively, call the
-    text() method off the engine directly.
+    engine - an optional engine to be used for this text query.
 
     bindparams - a list of bindparam() instances which can be used to define the
     types and/or initial values for the bind parameters within the textual statement;
@@ -246,13 +245,14 @@ def is_column(col):
     return isinstance(col, ColumnElement)
 
 class Engine(object):
-    """represents a 'thing that can produce Compiler objects and execute them'."""
+    """represents a 'thing that can produce Compiled objects and execute them'."""
     def execute_compiled(self, compiled, parameters, echo=None, **kwargs):
         raise NotImplementedError()
     def compiler(self, statement, parameters, **kwargs):
         raise NotImplementedError()
 
 class AbstractDialect(object):
+    """represents the behavior of a particular database.  Used by Compiled objects."""
     pass
     
 class ClauseParameters(util.OrderedDict):
@@ -457,7 +457,7 @@ class ClauseElement(object):
     def compile(self, engine=None, parameters=None, compiler=None, dialect=None):
         """compiles this SQL expression.
         
-        Uses the given Compiler, or the given Dialect or Engine to create a Compiler.  If no compiler
+        Uses the given Compiler, or the given AbstractDialect or Engine to create a Compiler.  If no compiler
         arguments are given, tries to use the underlying Engine this ClauseElement is bound
         to to create a Compiler, if any.  Finally, if there is no bound Engine, uses an ANSIDialect
         to create a default Compiler.
@@ -598,13 +598,13 @@ class Selectable(ClauseElement):
 class ColumnElement(Selectable, CompareMixin):
     """represents a column element within the list of a Selectable's columns.
     A ColumnElement can either be directly associated with a TableClause, or
-    a free-standing textual column with no table, or is a "proxied" column, indicating
-    it is placed on a Selectable such as an Alias or Select statement and corresponds 
-    to a TableClause attached column.  in the case of a CompositeSelect, a ColumnElement
-    may correspond to several TableClause-attached columns. """
+    a free-standing textual column with no table, or is a "proxy" column, indicating
+    it is placed on a Selectable such as an Alias or Select statement and ultimately corresponds 
+    to a TableClause-attached column (or in the case of a CompositeSelect, a proxy ColumnElement
+    may correspond to several TableClause-attached columns)."""
     
     primary_key = property(lambda self:getattr(self, '_primary_key', False), doc="primary key flag.  indicates if this Column represents part or whole of a primary key.")
-    foreign_key = property(lambda self:getattr(self, '_foreign_key', False), doc="foreign key accessor.  points to a ForeignKey object which represents a Foreign Key placed on this column")
+    foreign_key = property(lambda self:getattr(self, '_foreign_key', False), doc="foreign key accessor.  points to a ForeignKey object which represents a Foreign Key placed on this column's ultimate ancestor.")
     columns = property(lambda self:[self], doc="Columns accessor which just returns self, to provide compatibility with Selectable objects.")
 
     def _get_orig_set(self):
@@ -617,9 +617,10 @@ class ColumnElement(Selectable, CompareMixin):
         if len(s) == 0:
             s.add(self)
         self.__orig_set = s
-    orig_set = property(_get_orig_set, _set_orig_set,doc="""a Set containing Table-bound, non-proxied ColumnElements for which this ColumnElement is a proxy.  In all cases except for a column proxied from a Union (i.e. CompoundSelect), this set will be just one element.""")
+    orig_set = property(_get_orig_set, _set_orig_set,doc="""a Set containing TableClause-bound, non-proxied ColumnElements for which this ColumnElement is a proxy.  In all cases except for a column proxied from a Union (i.e. CompoundSelect), this set will be just one element.""")
 
     def shares_lineage(self, othercolumn):
+        """returns True if the given ColumnElement has a common ancestor to this ColumnElement."""
         for c in self.orig_set:
             if c in othercolumn.orig_set:
                 return True
@@ -627,10 +628,8 @@ class ColumnElement(Selectable, CompareMixin):
             return False
     def _make_proxy(self, selectable, name=None):
         """creates a new ColumnElement representing this ColumnElement as it appears in the select list
-        of an enclosing selectable.  The default implementation returns a ColumnClause if a name is given,
-        else just returns self.  This has various mechanics with sql.ColumnClause and sql.Label so that 
-        ColumnClause objects as well as non-column objects like Function and BinaryClause can both appear in the 
-        select list of an enclosing selectable."""
+        of a descending selectable.  The default implementation returns a ColumnClause if a name is given,
+        else just returns self."""
         if name is not None:
             co = ColumnClause(name, selectable)
             co.orig_set = self.orig_set
@@ -965,7 +964,6 @@ class Join(FromClause):
     def __init__(self, left, right, onclause=None, isouter = False):
         self.left = left
         self.right = right
-        # TODO: if no onclause, do NATURAL JOIN
         if onclause is None:
             self.onclause = self._match_primaries(left, right)
         else:
@@ -1085,7 +1083,6 @@ class Label(ColumnElement):
         self.type = sqltypes.to_instance(type)
         obj.parens=True
     key = property(lambda s: s.name)
-    
     _label = property(lambda s: s.name)
     orig_set = property(lambda s:s.obj.orig_set)
     def accept_visitor(self, visitor):
@@ -1220,8 +1217,6 @@ class TableClause(FromClause):
 
 class SelectBaseMixin(object):
     """base class for Select and CompoundSelects"""
-    def __init__(self):
-        self.name = None
     def order_by(self, *clauses):
         if len(clauses) == 1 and clauses[0] is None:
             self.order_by_clause = ClauseList()
@@ -1259,14 +1254,15 @@ class CompoundSelect(SelectBaseMixin, FromClause):
         self.group_by(*kwargs.get('group_by', [None]))
         self.order_by(*kwargs.get('order_by', [None]))
         self._col_map = {}
+
+    name = property(lambda s:s.keyword + " statement")
+    
     def _locate_oid_column(self):
         return self.selects[0].oid_column
-
     def _exportable_columns(self):
         for s in self.selects:
             for c in s.c:
                 yield c
-
     def _proxy_column(self, column):
         if self.use_labels:
             col = column._make_proxy(self, name=column._label)
@@ -1348,7 +1344,8 @@ class Select(SelectBaseMixin, FromClause):
         for f in from_obj:
             self.append_from(f)
         
-            
+    name = property(lambda s:"SELECT statement")
+    
     class CorrelatedVisitor(ClauseVisitor):
         """visits a clause, locates any Select clauses, and tells them that they should
         correlate their FROM list to that of their parent."""
@@ -1445,14 +1442,6 @@ class Select(SelectBaseMixin, FromClause):
         return union(self, other, **kwargs)
     def union_all(self, other, **kwargs):
         return union_all(self, other, **kwargs)
-
-#    def scalar(self, *multiparams, **params):
-        # need to set limit=1, but only in this thread.
-        # we probably need to make a copy of the select().  this
-        # is expensive.  I think cursor.fetchone(), then discard remaining results 
-        # should be fine with most DBs
-        # for now use base scalar() method
-        
     def _find_engine(self):
         """tries to return a Engine, either explicitly set in this object, or searched
         within the from clauses for one"""
@@ -1470,7 +1459,6 @@ class Select(SelectBaseMixin, FromClause):
 
 class UpdateBase(ClauseElement):
     """forms the base for INSERT, UPDATE, and DELETE statements."""
-    
     def _process_colparams(self, parameters):
         """receives the "values" of an INSERT or UPDATE statement and constructs
         appropriate ind parameters."""
@@ -1499,10 +1487,8 @@ class UpdateBase(ClauseElement):
                 except KeyError:
                     del parameters[key]
         return parameters
-
     def _find_engine(self):
         return self.table.engine
-        
 
 class Insert(UpdateBase):
     def __init__(self, table, values=None, **params):
