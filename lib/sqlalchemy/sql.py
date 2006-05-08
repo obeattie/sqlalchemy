@@ -626,7 +626,12 @@ class ColumnElement(Selectable, CompareMixin):
             return self.__original
     orig_set = property(_get_orig_set, _set_orig_set,doc="""a Set containing Table-bound, non-proxied ColumnElements for which this ColumnElement is a proxy.  In all cases except for a column proxied from a Union (i.e. CompoundSelect), this set will be just one element.""")
     original = property(_get_original, doc="Scalar version of orig_set, which is usually one element.  If orig_set contains multiple columns, this will represent just one of the columns.")
-    
+    def shares_lineage(self, othercolumn):
+        for c in self.orig_set:
+            if c in othercolumn.orig_set:
+                return True
+        else:
+            return False
     def _make_proxy(self, selectable, name=None):
         """creates a new ColumnElement representing this ColumnElement as it appears in the select list
         of an enclosing selectable.  The default implementation returns a ColumnClause if a name is given,

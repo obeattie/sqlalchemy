@@ -496,7 +496,7 @@ class ResultProxy:
             if self.connection.close_with_result and self.dialect.supports_autoclose_results:
                 self.connection.close()
     def _get_col(self, row, key):
-        if isinstance(key, schema.Column) or isinstance(key, sql.ColumnElement):
+        if isinstance(key, sql.ColumnElement):
             try:
                 rec = self.props[key._label.lower()]
                 #print "GOT IT FROM LABEL FOR ", key._label

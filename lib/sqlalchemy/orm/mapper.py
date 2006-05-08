@@ -191,7 +191,7 @@ class Mapper(object):
         # table columns mapped to lists of MapperProperty objects
         # using a list allows a single column to be defined as 
         # populating multiple object attributes
-        self.columntoproperty = {}
+        self.columntoproperty = TranslatingDict(self.select_table)
         
         # load custom properties 
         if properties is not None:
@@ -204,7 +204,7 @@ class Mapper(object):
             if not self.columns.has_key(column.key):
                 self.columns[column.key] = column
 
-            if self.columntoproperty.has_key(column.original):
+            if self.columntoproperty.has_key(column):
                 continue
                 
             prop = self.props.get(column.key, None)
@@ -227,9 +227,8 @@ class Mapper(object):
         
             # its a ColumnProperty - match the ultimate table columns
             # back to the property
-            for c in column.orig_set:
-                proplist = self.columntoproperty.setdefault(c.original, [])
-                proplist.append(prop)
+            proplist = self.columntoproperty.setdefault(column, [])
+            proplist.append(prop)
             
         if not non_primary and (not mapper_registry.has_key(self.class_key) or self.is_primary or (inherits is not None and inherits._is_primary_mapper())):
             sessionlib.global_attributes.reset_class_managed(self.class_)
@@ -252,12 +251,6 @@ class Mapper(object):
         for key, prop in l:
             if getattr(prop, 'key', None) is None:
                 prop.init(key, self)
-
-        # this prints a summary of the object attributes and how they
-        # will be mapped to table columns
-        #print "mapper %s, columntoproperty:" % (self.class_.__name__)
-        #for key, value in self.columntoproperty.iteritems():
-        #    print key.table.name, key.key, [(v.key, v) for v in value]
 
     def add_polymorphic_mapping(self, key, class_or_mapper, entity_name=None):
         if isinstance(class_or_mapper, type):
@@ -363,9 +356,8 @@ class Mapper(object):
         self.props[key] = prop
         if isinstance(prop, ColumnProperty):
             for col in prop.columns:
-                for c in col.orig_set:
-                    proplist = self.columntoproperty.setdefault(c.original, [])
-                    proplist.append(prop)
+                proplist = self.columntoproperty.setdefault(col, [])
+                proplist.append(prop)
 
         if init:
             prop.init(key, self)
@@ -520,7 +512,7 @@ class Mapper(object):
             
     def _getpropbycolumn(self, column, raiseerror=True):
         try:
-            prop = self.columntoproperty[column.original]
+            prop = self.columntoproperty[column]
         except KeyError:
             try:
                 prop = self.props[column.key]
@@ -540,7 +532,7 @@ class Mapper(object):
         return prop.getattr(obj)
 
     def _setattrbycolumn(self, obj, column, value):
-        self.columntoproperty[column.original][0].setattr(obj, value)
+        self.columntoproperty[column][0].setattr(obj, value)
     
     def primary_mapper(self):
         return mapper_registry[self.class_key]
@@ -610,7 +602,7 @@ class Mapper(object):
                             value = self._getattrbycolumn(obj, col)
                             if value is not None:
                                 params[col.key] = value
-                    elif self.effective_polymorphic_on is not None and col.original is self.effective_polymorphic_on.original:
+                    elif self.effective_polymorphic_on is not None and self.effective_polymorphic_on.shares_lineage(col):
                         if isinsert:
                             value = self.polymorphic_identity
                             if col.default is None or value is not None:
@@ -742,7 +734,7 @@ class Mapper(object):
     def _has_pks(self, table):
         try:
             for k in self.pks_by_table[table]:
-                if not self.columntoproperty.has_key(k.original):
+                if not self.columntoproperty.has_key(k):
                     return False
             else:
                 return True
@@ -1033,6 +1025,30 @@ class MapperExtension(object):
         if self.next is not None:
             self.next.before_delete(mapper, connection, instance)
 
+class TranslatingDict(dict):
+    """a dictionary that stores ColumnElement objects as keys.  incoming ColumnElement
+    keys are translated against those of an underling FromClause for all operations.
+    This way the columns from any Selectable that is derived from or underlying this
+    TranslatingDict's selectable can be used as keys."""
+    def __init__(self, selectable):
+        super(TranslatingDict, self).__init__()
+        self.selectable = selectable
+    def __getitem__(self, col):
+        ourcol = self.selectable._get_col_by_original(col)
+        return super(TranslatingDict, self).__getitem__(ourcol)
+    def has_key(self, col):
+        ourcol = self.selectable._get_col_by_original(col)
+        return super(TranslatingDict, self).has_key(ourcol)
+    def __setitem__(self, col, value):
+        ourcol = self.selectable._get_col_by_original(col)
+        return super(TranslatingDict, self).__setitem__(ourcol, value)
+    def __contains__(self, col):
+        ourcol = self.selectable._get_col_by_original(col)
+        return super(TranslatingDict, self).__contains__(ourcol)
+    def setdefault(self, col, value):
+        ourcol = self.selectable._get_col_by_original(col)
+        return super(TranslatingDict, self).setdefault(ourcol, value)
+            
 class ClassKey(object):
     """keys a class and an entity name to a mapper, via the mapper_registry"""
     def __init__(self, class_, entity_name):
