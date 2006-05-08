@@ -10,7 +10,19 @@ class URL(object):
         self.port = port
         self.database= database
     def __str__(self):
-        return "%s:%s@%s:%s/%s" % (self.username,self.password, self.host,self.port,self.database)
+        s = self.drivername + "://"
+        if self.username is not None:
+            s += self.username
+            if self.password is not None:
+                s += ':' + self.password
+            s += "@"
+        if self.host is not None:
+            s += self.host
+        if self.port is not None:
+            s += ':' + self.port
+        if self.database is not None:
+            s += '/' + self.database
+        return s
     def get_module(self):
         return getattr(__import__('sqlalchemy.databases.%s' % self.drivername).databases, self.drivername)
     def translate_connect_args(self, names):

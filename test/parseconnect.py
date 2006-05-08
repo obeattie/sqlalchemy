@@ -15,11 +15,13 @@ class ParseConnectTest(PersistTest):
             'dbtype://hostspec',
             'dbtype:///database',
             'dbtype:///:memory:',
+            'dbtype:///foo/bar/im/a/file',
+            'dbtype:///E:/work/src/LEM/db/hello.db',
             'dbtype://'
         ):
             u = url.make_url(text)
-            # TODO: assertion conditions
-            print u
+            print u, text
+            assert str(u) == text
 
             
 if __name__ == "__main__":
