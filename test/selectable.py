@@ -15,6 +15,7 @@ table = Table('table1', db,
     Column('col1', Integer, primary_key=True),
     Column('col2', String(20)),
     Column('col3', Integer),
+    Column('colx', Integer),
     redefine=True
 )
 
@@ -22,6 +23,7 @@ table2 = Table('table2', db,
     Column('col1', Integer, primary_key=True),
     Column('col2', Integer, ForeignKey('table1.col1')),
     Column('col3', String(20)),
+    Column('coly', Integer),
     redefine=True
 )
 
@@ -36,6 +38,53 @@ class SelectableTest(testbase.AssertMixin):
         print str(j)
         self.assert_(criterion.compare(j.onclause))
 
+    def testunion(self):
+        # tests that we can correspond a column in a Select statement with a certain Table, against
+        # a column in a Union where one of its underlying Selects matches to that same Table
+        u = select([table.c.col1, table.c.col2, table.c.col3, table.c.colx, null().label('coly')]).union(
+                select([table2.c.col1, table2.c.col2, table2.c.col3, null().label('colx'), table2.c.coly])
+            )
+        s1 = table.select(use_labels=True)
+        s2 = table2.select(use_labels=True)
+        print ["%d %s" % (id(c),c.key) for c in u.c]
+        c = u._get_col_by_original(s1.c.table1_col2)
+        print "%d %s" % (id(c), c.key)
+        assert u._get_col_by_original(s1.c.table1_col2) is u.c.col2
+        assert u._get_col_by_original(s2.c.table2_col2) is u.c.col2
+
+    def testaliasunion(self):
+        # same as testunion, except its an alias of the union
+        u = select([table.c.col1, table.c.col2, table.c.col3, table.c.colx, null().label('coly')]).union(
+                select([table2.c.col1, table2.c.col2, table2.c.col3, null().label('colx'), table2.c.coly])
+            ).alias('analias')
+        s1 = table.select(use_labels=True)
+        s2 = table2.select(use_labels=True)
+        print ["%d %s" % (id(c),c.key) for c in u.c]
+#        c = u._get_col_by_original(s1.c.table1_col2)
+        print "%d %s" % (id(c), c.key)
+        assert u._get_col_by_original(s1.c.table1_col2) is u.c.col2
+        assert u._get_col_by_original(s2.c.table2_col2) is u.c.col2
+
+    def testselectunion(self):
+        # like testaliasunion, but off a Select off the union.
+        u = select([table.c.col1, table.c.col2, table.c.col3, table.c.colx, null().label('coly')]).union(
+                select([table2.c.col1, table2.c.col2, table2.c.col3, null().label('colx'), table2.c.coly])
+            ).alias('analias')
+        s = select([u])
+        s1 = table.select(use_labels=True)
+        s2 = table2.select(use_labels=True)
+        assert s._get_col_by_original(s1.c.table1_col2) is s.c.col2
+        assert s._get_col_by_original(s2.c.table2_col2) is s.c.col2
+
+    def testunionagainstjoin(self):
+        # same as testunion, except its an alias of the union
+        u = select([table.c.col1, table.c.col2, table.c.col3, table.c.colx, null().label('coly')]).union(
+                select([table2.c.col1, table2.c.col2, table2.c.col3, null().label('colx'), table2.c.coly])
+            ).alias('analias')
+        j1 = table.join(table2)
+        assert u._get_col_by_original(j1.c.table1_colx) is u.c.colx
+        assert j1._get_col_by_original(u.c.colx) is j1.c.table1_colx
+        
     def testjoin(self):
         a = join(table, table2)
         print str(a.select(use_labels=True))

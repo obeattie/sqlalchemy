@@ -300,14 +300,14 @@ class Column(SchemaItem, sql.ColumnClause):
         if self.index is not None and self.unique is not None:
             raise ArgumentError("Column may not define both index and unique")
         self._foreign_key = None
-        self._orig = None
+        self._original = None
         self._parent = None
         if len(kwargs):
             raise ArgumentError("Unknown arguments passed to Column: " + repr(kwargs.keys()))
 
     primary_key = util.SimpleProperty('_primary_key')
     foreign_key = util.SimpleProperty('_foreign_key')
-    original = property(lambda s: s._orig or s)
+    original = property(lambda s: s._original or s)
     parent = property(lambda s:s._parent or s)
     columns = property(lambda self:[self])
 
@@ -366,7 +366,8 @@ class Column(SchemaItem, sql.ColumnClause):
             fk = self.foreign_key.copy()
         c = Column(name or self.name, self.type, fk, self.default, key = name or self.key, primary_key = self.primary_key, nullable = self.nullable, hidden = self.hidden)
         c.table = selectable
-        c._orig = self.original
+        c._original = self.original
+        c._orig_set = self.orig_set
         c._parent = self
         if not c.hidden:
             selectable.columns[c.key] = c

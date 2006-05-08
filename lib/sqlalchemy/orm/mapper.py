@@ -172,7 +172,6 @@ class Mapper(object):
                 # TODO: need select_table, local_table properly accounted for when custom primary key is sent
         else:
             for t in self.tables + [self.mapped_table, self.select_table]:
-                print "SET UP PKS FOR ", str(t)
                 try:
                     l = self.pks_by_table[t]
                 except KeyError:
@@ -217,6 +216,7 @@ class Mapper(object):
                 # column at index 0 determines which result column is used to populate the object
                 # attribute, in the case of mapping against a join with column names repeated
                 # (and particularly in an inheritance relationship)
+                # TODO: clarify this comment
                 prop.columns.insert(0, column)
                 #prop.columns.append(column)
             else:
@@ -227,19 +227,8 @@ class Mapper(object):
         
             # its a ColumnProperty - match the ultimate table columns
             # back to the property
-            proplist = self.columntoproperty.setdefault(column.original, [])
-            proplist.append(prop)
-
-        for column in self.mapped_table.columns:
-            if not self.columntoproperty.has_key(column.original):
-                proplist = []
-                self.columntoproperty[column.original] = proplist
-                # id like it to use this somehow
-                #col = self.select_table._get_col_by_original(column.original)
-                try:
-                    prop = self.props[column.key]
-                except KeyError:
-                    raise exceptions.ArgumentError("Selectable '%s' does not contain local table column '%s'" % (self.select_table, column.key))
+            for c in column.orig_set:
+                proplist = self.columntoproperty.setdefault(c.original, [])
                 proplist.append(prop)
             
         if not non_primary and (not mapper_registry.has_key(self.class_key) or self.is_primary or (inherits is not None and inherits._is_primary_mapper())):
@@ -374,8 +363,9 @@ class Mapper(object):
         self.props[key] = prop
         if isinstance(prop, ColumnProperty):
             for col in prop.columns:
-                proplist = self.columntoproperty.setdefault(col.original, [])
-                proplist.append(prop)
+                for c in col.orig_set:
+                    proplist = self.columntoproperty.setdefault(c.original, [])
+                    proplist.append(prop)
 
         if init:
             prop.init(key, self)
@@ -864,10 +854,9 @@ class Mapper(object):
         bare keynames to accomplish this.  So far this works for the various polymorphic
         examples."""
         newrow = util.DictDecorator(row)
-        for c in self.select_table.c:
-            newrow[c.name] = row[c]
         for c in tomapper.select_table.c:
-            newrow[c] = newrow[c.name]
+            c2 = self.select_table._get_col_by_original(c)
+            newrow[c] = row[c2]
         return newrow
         
     def populate_instance(self, session, instance, row, identitykey, imap, isnew, frommapper=None):

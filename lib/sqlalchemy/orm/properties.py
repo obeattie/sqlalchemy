@@ -609,7 +609,7 @@ class EagerLoader(LazyLoader):
                 return map.keys()
         map = {}        
         for c in self.eagertarget.c:
-            parent = self.target._get_col_by_original(c.original)
+            parent = self.target._get_col_by_original(c)
             map[parent] = c
             map[parent._label] = c
             map[parent.name] = c

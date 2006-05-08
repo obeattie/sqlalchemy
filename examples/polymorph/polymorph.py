@@ -1,5 +1,5 @@
 from sqlalchemy import *
-import sys
+import sys, sets
 
 # this example illustrates a polymorphic load of two classes, where each class has a very 
 # different set of properties
@@ -63,7 +63,8 @@ person_join = polymorphic_union(
         'person':people.select(people.c.type=='person'),
     }, None, 'pjoin')
 
-person_mapper = mapper(Person, people, select_table=person_join, polymorphic_on=person_join.c.type, polymorphic_identity='person')
+#person_mapper = mapper(Person, people, select_table=person_join, polymorphic_on=person_join.c.type, polymorphic_identity='person')
+person_mapper = mapper(Person, people, select_table=person_join,polymorphic_on=person_join.c.type, polymorphic_identity='person')
 mapper(Engineer, engineers, inherits=person_mapper, polymorphic_identity='engineer')
 mapper(Manager, managers, inherits=person_mapper, polymorphic_identity='manager')
 
@@ -71,7 +72,7 @@ mapper(Company, companies, properties={
     'employees': relation(Person, lazy=False, private=True, backref='company')
 })
 
-session = create_session()
+session = create_session(echo_uow=False)
 c = Company(name='company1')
 c.employees.append(Manager(name='pointy haired boss', status='AAB', manager_name='manager1'))
 c.employees.append(Engineer(name='dilbert', status='BBA', engineer_name='engineer1', primary_language='java'))
@@ -79,14 +80,15 @@ c.employees.append(Person(name='joesmith', status='HHH'))
 c.employees.append(Engineer(name='wally', status='CGG', engineer_name='engineer2', primary_language='python'))
 c.employees.append(Manager(name='jsmith', status='ABA', manager_name='manager2'))
 session.save(c)
+print session.new
 session.flush()
-
+#sys.exit()
 session.clear()
 
 c = session.query(Company).get(1)
 for e in c.employees:
     print e, e._instance_key, e.company
-
+assert sets.Set([e.name for e in c.employees]) == sets.Set(['pointy haired boss', 'dilbert', 'joesmith', 'wally', 'jsmith'])
 print "\n"
 
 dilbert = session.query(Person).get_by(name='dilbert')

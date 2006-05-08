@@ -8,7 +8,7 @@
 
 from sqlalchemy import util, exceptions
 from sqlalchemy import types as sqltypes
-import string, re, random
+import string, re, random, sets
 types = __import__('types')
 
 __all__ = ['text', 'table', 'column', 'func', 'select', 'update', 'insert', 'delete', 'join', 'and_', 'or_', 'not_', 'between_', 'cast', 'union', 'union_all', 'null', 'desc', 'asc', 'outerjoin', 'alias', 'subquery', 'literal', 'bindparam', 'exists']
@@ -602,9 +602,22 @@ class ColumnElement(Selectable, CompareMixin):
     of the single column, providing the same list-based interface as a FromClause."""
     primary_key = property(lambda self:getattr(self, '_primary_key', False))
     foreign_key = property(lambda self:getattr(self, '_foreign_key', False))
-    original = property(lambda self:getattr(self, '_original', self))
-    parent = property(lambda self:getattr(self, '_parent', self))
+    
+    # TODO: parent can probably go away
+    parent = property(lambda self:getattr(self, '_parent', self), doc="the immediate parent column of this column")
+    
     columns = property(lambda self:[self])
+
+    def _default_orig_set(self):
+        try:
+            return self._orig_set
+        except AttributeError:
+            self._orig_set = sets.Set([self.original])
+            return self._orig_set
+    # TODO: merge orig_set and original into just one Set
+    orig_set = property(_default_orig_set, doc="""a Set containing Table-bound, non-proxied ColumnElements for which this ColumnElement is a proxy.  In all cases except for a column proxied from a Union (i.e. CompoundSelect), this set will be just one element.""")
+    original = property(lambda self:getattr(self, '_original', self), doc="Scalar version of orig_set, which is usually one element.  For a column proxied through a CompoundSelect, this will be just one of the columns in orig_set.")
+    
     def _make_proxy(self, selectable, name=None):
         """creates a new ColumnElement representing this ColumnElement as it appears in the select list
         of an enclosing selectable.  The default implementation returns a ColumnClause if a name is given,
@@ -613,6 +626,8 @@ class ColumnElement(Selectable, CompareMixin):
         select list of an enclosing selectable."""
         if name is not None:
             co = ColumnClause(name, selectable)
+            co._original = self
+            co._orig_set = self.orig_set
             selectable.columns[name]= co
             return co
         else:
@@ -645,17 +660,18 @@ class FromClause(Selectable):
             self._oid_column = self._locate_oid_column()
         return self._oid_column
     def _get_col_by_original(self, column, raiseerr=True):
-        """given a column which is a ColumnClause object attached to a TableClause object
-        (i.e. an "original" column), return the Column object from this 
-        Selectable which corresponds to that original Column, or None if this Selectable
-        does not contain the column."""
-        try:
-            return self.original_columns[column.original]
-        except KeyError:
+        """given a ColumnElement, return the ColumnElement object from this 
+        Selectable which corresponds to that original Column via a proxy relationship."""
+        for c in column.orig_set:
+            try:
+                return self.original_columns[c]
+            except KeyError:
+                pass
+        else:
             if not raiseerr:
                 return None
             else:
-                raise exceptions.InvalidRequestError("cant get orig for " + str(column) + " with table " + column.table.name + " from table " + self.name)
+                raise exceptions.InvalidRequestError("cant get orig for " + str(column) + " with table " + str(column.table.name) + " from table " + str(self.name))
                 
     def _get_exported_attribute(self, name):
         try:
@@ -667,10 +683,12 @@ class FromClause(Selectable):
     c = property(lambda s:s._get_exported_attribute('_columns'))
     primary_key = property(lambda s:s._get_exported_attribute('_primary_key'))
     foreign_keys = property(lambda s:s._get_exported_attribute('_foreign_keys'))
-    original_columns = property(lambda s:s._get_exported_attribute('_orig_cols'))
+    original_columns = property(lambda s:s._get_exported_attribute('_orig_cols'), doc="a dictionary mapping an original Table-bound column to a proxied column in this FromClause.")
     oid_column = property(_get_oid_column)
     
     def _export_columns(self):
+        """this method is called the first time any of the "exported attrbutes" are called. it receives from the Selectable
+        a list of all columns to be exported and creates "proxy" columns for each one."""
         if hasattr(self, '_columns'):
             # TODO: put a mutex here ?  this is a key place for threading probs
             return
@@ -683,7 +701,8 @@ class FromClause(Selectable):
             if column.is_selectable():
                 for co in column.columns:
                     cp = self._proxy_column(co)
-                    self._orig_cols[co.original] = cp
+                    for ci in cp.orig_set:
+                        self._orig_cols[ci] = cp
         if self.oid_column is not None:
             self._orig_cols[self.oid_column.original] = self.oid_column
     def _exportable_columns(self):
@@ -939,7 +958,6 @@ class Join(FromClause):
     def __init__(self, left, right, onclause=None, isouter = False):
         self.left = left
         self.right = right
-        
         # TODO: if no onclause, do NATURAL JOIN
         if onclause is None:
             self.onclause = self._match_primaries(left, right)
@@ -947,6 +965,7 @@ class Join(FromClause):
             self.onclause = onclause
         self.isouter = isouter
 
+    name = property(lambda s: "Join object on " + s.left.name + " " + s.right.name)
     def _locate_oid_column(self):
         return self.left.oid_column
     
@@ -1034,6 +1053,7 @@ class Alias(FromClause):
             return None
     
     def _exportable_columns(self):
+        #return self.selectable._exportable_columns()
         return self.selectable.columns
 
     def accept_visitor(self, visitor):
@@ -1110,6 +1130,7 @@ class ColumnClause(ColumnElement):
     def _make_proxy(self, selectable, name = None):
         c = ColumnClause(name or self.name, selectable, hidden=self.hidden)
         c._original = self.original
+        c._orig_set = self.orig_set
         if not self.hidden:
             selectable.columns[c.name] = c
         return c
@@ -1193,6 +1214,8 @@ class TableClause(FromClause):
 
 class SelectBaseMixin(object):
     """base class for Select and CompoundSelects"""
+    def __init__(self):
+        self.name = None
     def order_by(self, *clauses):
         if len(clauses) == 1 and clauses[0] is None:
             self.order_by_clause = ClauseList()
@@ -1217,6 +1240,7 @@ class SelectBaseMixin(object):
             
 class CompoundSelect(SelectBaseMixin, FromClause):
     def __init__(self, keyword, *selects, **kwargs):
+        SelectBaseMixin.__init__(self)
         self.keyword = keyword
         self.selects = selects
         self.use_labels = kwargs.pop('use_labels', False)
@@ -1228,7 +1252,7 @@ class CompoundSelect(SelectBaseMixin, FromClause):
             s.order_by(None)
         self.group_by(*kwargs.get('group_by', [None]))
         self.order_by(*kwargs.get('order_by', [None]))
-
+        self._col_map = {}
     def _locate_oid_column(self):
         return self.selects[0].oid_column
 
@@ -1239,10 +1263,19 @@ class CompoundSelect(SelectBaseMixin, FromClause):
 
     def _proxy_column(self, column):
         if self.use_labels:
-            return column._make_proxy(self, name=column._label)
+            col = column._make_proxy(self, name=column._label)
         else:
-            return column._make_proxy(self, name=column.name)
+            col = column._make_proxy(self, name=column.name)
         
+        try:
+            colset = self._col_map[col.name]
+        except KeyError:
+            colset = sets.Set()
+            self._col_map[col.name] = colset
+        [colset.add(c) for c in col.orig_set]
+        col._orig_set = colset
+        return col
+    
     def accept_visitor(self, visitor):
         self.order_by_clause.accept_visitor(visitor)
         self.group_by_clause.accept_visitor(visitor)
@@ -1261,9 +1294,9 @@ class Select(SelectBaseMixin, FromClause):
     """represents a SELECT statement, with appendable clauses, as well as 
     the ability to execute itself and return a result set."""
     def __init__(self, columns=None, whereclause = None, from_obj = [], order_by = None, group_by=None, having=None, use_labels = False, distinct=False, for_update=False, engine=None, limit=None, offset=None, scalar=False, correlate=True):
+        SelectBaseMixin.__init__(self)
         self._froms = util.OrderedDict()
         self.use_labels = use_labels
-        self.name = None
         self.whereclause = None
         self.having = None
         self._engine = engine
@@ -1350,8 +1383,6 @@ class Select(SelectBaseMixin, FromClause):
     def _exportable_columns(self):
         return self._raw_columns
     def _proxy_column(self, column):
-        if column.name == 'oid':
-            raise "hi"
         if self.use_labels:
             return column._make_proxy(self, name=column._label)
         else:
