@@ -301,14 +301,12 @@ class Column(SchemaItem, sql.ColumnClause):
             raise ArgumentError("Column may not define both index and unique")
         self._foreign_key = None
         self._original = None
-        self._parent = None
         if len(kwargs):
             raise ArgumentError("Unknown arguments passed to Column: " + repr(kwargs.keys()))
 
     primary_key = util.SimpleProperty('_primary_key')
     foreign_key = util.SimpleProperty('_foreign_key')
     original = property(lambda s: s._original or s)
-    parent = property(lambda s:s._parent or s)
     columns = property(lambda self:[self])
 
     def _derived_metadata(self):

@@ -603,9 +603,6 @@ class ColumnElement(Selectable, CompareMixin):
     primary_key = property(lambda self:getattr(self, '_primary_key', False))
     foreign_key = property(lambda self:getattr(self, '_foreign_key', False))
     
-    # TODO: parent can probably go away
-    parent = property(lambda self:getattr(self, '_parent', self), doc="the immediate parent column of this column")
-    
     columns = property(lambda self:[self])
 
     def _default_orig_set(self):
@@ -1081,7 +1078,6 @@ class Label(ColumnElement):
     
     _label = property(lambda s: s.name)
     original = property(lambda s:s.obj.original)
-    parent = property(lambda s:s.obj.parent)
     def accept_visitor(self, visitor):
         self.obj.accept_visitor(visitor)
         visitor.visit_label(self)
