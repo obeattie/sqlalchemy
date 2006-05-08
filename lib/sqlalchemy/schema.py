@@ -300,13 +300,11 @@ class Column(SchemaItem, sql.ColumnClause):
         if self.index is not None and self.unique is not None:
             raise ArgumentError("Column may not define both index and unique")
         self._foreign_key = None
-        self._original = None
         if len(kwargs):
             raise ArgumentError("Unknown arguments passed to Column: " + repr(kwargs.keys()))
 
     primary_key = util.SimpleProperty('_primary_key')
     foreign_key = util.SimpleProperty('_foreign_key')
-    original = property(lambda s: s._original or s)
     columns = property(lambda self:[self])
 
     def _derived_metadata(self):
@@ -364,8 +362,7 @@ class Column(SchemaItem, sql.ColumnClause):
             fk = self.foreign_key.copy()
         c = Column(name or self.name, self.type, fk, self.default, key = name or self.key, primary_key = self.primary_key, nullable = self.nullable, hidden = self.hidden)
         c.table = selectable
-        c._original = self.original
-        c._orig_set = self.orig_set
+        c.orig_set = self.orig_set
         c._parent = self
         if not c.hidden:
             selectable.columns[c.key] = c

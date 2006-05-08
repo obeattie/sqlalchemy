@@ -265,6 +265,7 @@ class ClauseParameters(util.OrderedDict):
         self[key] = value
         self.binds[key] = bindparam
     def get_original(self, key):
+        """returns the given parameter as it was originally placed in this ClauseParameters object, without any Type conversion"""
         return super(ClauseParameters, self).__getitem__(key)
     def __getitem__(self, key):
         v = super(ClauseParameters, self).__getitem__(key)
@@ -595,25 +596,36 @@ class Selectable(ClauseElement):
         return True
 
 class ColumnElement(Selectable, CompareMixin):
-    """represents a column element within the list of a Selectable's columns.  Provides 
-    default implementations for the things a "column" needs, including a "primary_key" flag,
-    a "foreign_key" accessor, an "original" accessor which represents the ultimate column
-    underlying a string of labeled/select-wrapped columns, and "columns" which returns a list
-    of the single column, providing the same list-based interface as a FromClause."""
-    primary_key = property(lambda self:getattr(self, '_primary_key', False))
-    foreign_key = property(lambda self:getattr(self, '_foreign_key', False))
+    """represents a column element within the list of a Selectable's columns.
+    A ColumnElement can either be directly associated with a TableClause, or
+    a free-standing textual column with no table, or is a "proxied" column, indicating
+    it is placed on a Selectable such as an Alias or Select statement and corresponds 
+    to a TableClause attached column.  in the case of a CompositeSelect, a ColumnElement
+    may correspond to several TableClause-attached columns. """
     
-    columns = property(lambda self:[self])
+    primary_key = property(lambda self:getattr(self, '_primary_key', False), doc="primary key flag.  indicates if this Column represents part or whole of a primary key.")
+    foreign_key = property(lambda self:getattr(self, '_foreign_key', False), doc="foreign key accessor.  points to a ForeignKey object which represents a Foreign Key placed on this column")
+    columns = property(lambda self:[self], doc="Columns accessor which just returns self, to provide compatibility with Selectable objects.")
 
-    def _default_orig_set(self):
+    def _get_orig_set(self):
         try:
-            return self._orig_set
+            return self.__orig_set
         except AttributeError:
-            self._orig_set = sets.Set([self.original])
-            return self._orig_set
-    # TODO: merge orig_set and original into just one Set
-    orig_set = property(_default_orig_set, doc="""a Set containing Table-bound, non-proxied ColumnElements for which this ColumnElement is a proxy.  In all cases except for a column proxied from a Union (i.e. CompoundSelect), this set will be just one element.""")
-    original = property(lambda self:getattr(self, '_original', self), doc="Scalar version of orig_set, which is usually one element.  For a column proxied through a CompoundSelect, this will be just one of the columns in orig_set.")
+            self.__orig_set = sets.Set([self])
+            return self.__orig_set
+    def _set_orig_set(self, s):
+        if len(s) == 0:
+            s.add(self)
+        self.__orig_set = s
+        self.__original = list(s)[0]
+    def _get_original(self):
+        try:
+            return self.__original
+        except AttributeError:
+            self.__original = list(self.orig_set)[0]
+            return self.__original
+    orig_set = property(_get_orig_set, _set_orig_set,doc="""a Set containing Table-bound, non-proxied ColumnElements for which this ColumnElement is a proxy.  In all cases except for a column proxied from a Union (i.e. CompoundSelect), this set will be just one element.""")
+    original = property(_get_original, doc="Scalar version of orig_set, which is usually one element.  If orig_set contains multiple columns, this will represent just one of the columns.")
     
     def _make_proxy(self, selectable, name=None):
         """creates a new ColumnElement representing this ColumnElement as it appears in the select list
@@ -623,8 +635,7 @@ class ColumnElement(Selectable, CompareMixin):
         select list of an enclosing selectable."""
         if name is not None:
             co = ColumnClause(name, selectable)
-            co._original = self
-            co._orig_set = self.orig_set
+            co.orig_set = self.orig_set
             selectable.columns[name]= co
             return co
         else:
@@ -1077,7 +1088,7 @@ class Label(ColumnElement):
     key = property(lambda s: s.name)
     
     _label = property(lambda s: s.name)
-    original = property(lambda s:s.obj.original)
+    orig_set = property(lambda s:s.obj.orig_set)
     def accept_visitor(self, visitor):
         self.obj.accept_visitor(visitor)
         visitor.visit_label(self)
@@ -1125,8 +1136,7 @@ class ColumnClause(ColumnElement):
             return BindParamClause(self._label, obj, shortname = self.name, type=self.type)
     def _make_proxy(self, selectable, name = None):
         c = ColumnClause(name or self.name, selectable, hidden=self.hidden)
-        c._original = self.original
-        c._orig_set = self.orig_set
+        c.orig_set = self.orig_set
         if not self.hidden:
             selectable.columns[c.name] = c
         return c
@@ -1269,7 +1279,7 @@ class CompoundSelect(SelectBaseMixin, FromClause):
             colset = sets.Set()
             self._col_map[col.name] = colset
         [colset.add(c) for c in col.orig_set]
-        col._orig_set = colset
+        col.orig_set = colset
         return col
     
     def accept_visitor(self, visitor):
