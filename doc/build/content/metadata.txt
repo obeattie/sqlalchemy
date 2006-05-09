@@ -117,6 +117,8 @@ Another form of `MetaData` exists which allows connecting to any number of engin
     
     meta.connect('mysql://user@host/dsn')   # create a new Engine and connect
 
+`DynamicMetaData` is ideal for applications that need to use the same set of `Tables` for many different database connections in the same process, such as a CherryPy web application which handles multiple application instances in one process.
+
 #### Reflecting Tables
 
 Once you have a `BoundMetaData` or a connected `DynamicMetaData`, you can create `Table` objects without specifying their columns, just their names, using `autoload=True`:

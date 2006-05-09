@@ -80,19 +80,9 @@ An equivalent operation is to create the `BoundMetaData` object directly with an
     {python}
     >>> metadata = BoundMetaData('sqlite:///tutorial.db')
 
-When creating MetaData objects that are bound to Engines, all objects within the MetaData or which are derived from it are similarly bound to that engine; this includes tables and SQL statement constructs.  A SQL construct that is bound to an Engine supports "connectionless execution", that is, each object knows how to retrieve connections and use them automatically for its own execution, without you having to worry about it.  However, note that the "binding" of schema and SQL constructs to engines is **entirely optional**.  SQLAlchemy includes full support for explicit Connections used with schema and SQL constructs that are entirely unbound to any Engine.
+Now, when we tell "metadata" about the tables in our database, we can issue CREATE statements for those tables, as well as create and execute SQL statements derived from them, without needing to open or close any connections; that will be all done automatically.  Note that this feature is **entirely optional**.  SQLAlchemy includes full support for explicit Connections used with schema and SQL constructs that are entirely unbound to any Engine.
 
-For the purposes of this tutorial, we will stick with "bound" objects.  There is also a more flexible "dynamic" metadata object that supports runtime binding to multiple engines:
-
-    {python}
-    >>> dynamic = DynamicMetaData()  # create a Dynamic metadata object
-    >>> dynamic.connect('sqlite:///:memory:')  # connect it to SQLite
-    >>> dynamic.connect('postgres://scott:tiger@localhost/mydb')  # connect it to PostGres
-    
-    >>> myengine = create_engine('mysql://127.0.0.1')
-    >>> dynamic.connect(myengine)  # connect to an externally-defined engine
-
-The `DynamicMetaData` object binds to different engines on a thread local basis.  This means that one thread of your application can be connected to one database, while another is connected to a different database.  The `DynamicMetaData` object also keeps a reference to each bound engine internally, so that each connection string is only initialized once.
+For the purposes of this tutorial, we will stick with "bound" objects, as it makes the code simpler and easier to read.  
 
 ### Creating a Table {@name=table}
 
@@ -389,7 +379,7 @@ Then to send all of our changes to the database, we `flush()` the Session.  Lets
     INSERT INTO users (user_name, password) VALUES (?, ?)
     ['Ed', 'edspassword']
     DELETE FROM users WHERE users.user_id = ?
-    [[3]]
+    [3]
     COMMIT
 
 ### Relationships
@@ -431,7 +421,7 @@ We can then treat the `addresses` attribute on each `User` object like a regular
     >>> print [a for a in mary.addresses]
     SELECT email_addresses.user_id AS email_addresses_user_id, email_addresses.address_id AS email_addresses_address_id, email_addresses.email_address AS email_addresses_email_address 
     FROM email_addresses 
-    WHERE email_addresses.user_id = ? ORDER BY email_addresses.oid
+    WHERE ? = email_addresses.user_id ORDER BY email_addresses.oid
     [1]
     [(Address mary@mary.com)]
 
@@ -476,7 +466,7 @@ You may have noticed from the example above that when we say `session.flush()`, 
     ['Ed', 'Harry', 'Mary']
     SELECT email_addresses.user_id AS email_addresses_user_id, email_addresses.address_id AS email_addresses_address_id, email_addresses.email_address AS email_addresses_email_address 
     FROM email_addresses 
-    WHERE email_addresses.user_id = ? ORDER BY email_addresses.oid
+    WHERE ? = email_addresses.user_id ORDER BY email_addresses.oid
     [4]
     UPDATE email_addresses SET user_id=? WHERE email_addresses.address_id = ?
     [None, 3]
