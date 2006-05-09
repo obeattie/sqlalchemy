@@ -522,6 +522,21 @@ class LazyTest(MapperSuperTest):
             {'user_id' : 9, 'addresses' : (Address, [])}
             )
 
+    def testorderby_select(self):
+        """tests that a regular mapper select on a single table can order by a relation to a second table"""
+        m = mapper(Address, addresses)
+
+        m = mapper(User, users, properties = dict(
+            addresses = relation(m, lazy = True),
+        ))
+        q = create_session().query(m)
+        l = q.select(users.c.user_id==addresses.c.user_id, order_by=addresses.c.email_address)
+
+        self.assert_result(l, User,
+            {'user_id' : 8, 'addresses' : (Address, [{'email_address':'ed@wood.com'}, {'email_address':'ed@bettyboop.com'}, {'email_address':'ed@lala.com'}, ])},
+            {'user_id' : 7, 'addresses' : (Address, [{'email_address' : 'jack@bean.com'}])},
+        )
+        
     def testorderby_desc(self):
         m = mapper(Address, addresses)
 
