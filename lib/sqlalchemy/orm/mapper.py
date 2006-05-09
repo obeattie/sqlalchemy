@@ -466,7 +466,7 @@ class Mapper(object):
     def identity_key(self, primary_key):
         """returns the instance key for the given identity value.  this is a global tracking object used by the Session, and is usually available off a mapped object as instance._instance_key."""
         return sessionlib.get_id_key(util.to_list(primary_key), self.class_, self.entity_name)
-    
+
     def instance_key(self, instance):
         """returns the instance key for the given instance.  this is a global tracking object used by the Session, and is usually available off a mapped object as instance._instance_key."""
         return self.identity_key(self.identity(instance))
@@ -486,8 +486,7 @@ class Mapper(object):
         mapper.__dict__.update(kwargs)
         mapper.props = self.props.copy()
         return mapper
-    
-        
+
     def options(self, *options, **kwargs):
         """uses this mapper as a prototype for a new mapper with different behavior.
         *options is a list of options directives, which include eagerload(), lazyload(), and noload()"""
@@ -835,9 +834,7 @@ class Mapper(object):
 
     def translate_row(self, tomapper, row):
         """attempts to take a row and translate its values to a row that can
-        be understood by another mapper.  breaks the column references down to their
-        bare keynames to accomplish this.  So far this works for the various polymorphic
-        examples."""
+        be understood by another mapper."""
         newrow = util.DictDecorator(row)
         for c in tomapper.select_table.c:
             c2 = self.select_table.corresponding_column(c)
@@ -847,7 +844,6 @@ class Mapper(object):
     def populate_instance(self, session, instance, row, identitykey, imap, isnew, frommapper=None):
         if frommapper is not None:
             row = frommapper.translate_row(self, row)
-            
         for prop in self.props.values():
             prop.execute(session, instance, row, identitykey, imap, isnew)
         

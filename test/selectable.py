@@ -59,11 +59,10 @@ class SelectableTest(testbase.AssertMixin):
             ).alias('analias')
         s1 = table.select(use_labels=True)
         s2 = table2.select(use_labels=True)
-        print ["%d %s" % (id(c),c.key) for c in u.c]
-#        c = u.corresponding_column(s1.c.table1_col2)
-        print "%d %s" % (id(c), c.key)
         assert u.corresponding_column(s1.c.table1_col2) is u.c.col2
         assert u.corresponding_column(s2.c.table2_col2) is u.c.col2
+        assert u.corresponding_column(s2.c.table2_coly) is u.c.coly
+        assert s2.corresponding_column(u.c.coly) is s2.c.table2_coly
 
     def testselectunion(self):
         # like testaliasunion, but off a Select off the union.
