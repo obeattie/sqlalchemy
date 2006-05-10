@@ -10,24 +10,33 @@ class Foo(object):
 
 class SelectResultsTest(PersistTest):
     def setUpAll(self):
+        self.install_threadlocal()
         global foo
         foo = Table('foo', testbase.db,
                     Column('id', Integer, Sequence('foo_id_seq'), primary_key=True),
-                    Column('bar', Integer))
+                    Column('bar', Integer),
+                    Column('range', Integer))
         
         assign_mapper(Foo, foo, extension=SelectResultsExt())
         foo.create()
         for i in range(100):
-            Foo(bar=i)
+            Foo(bar=i, range=i%10)
         objectstore.flush()
     
     def setUp(self):
-        self.orig = Foo.mapper.select_whereclause()
-        self.res = Foo.select()
+        self.query = Foo.mapper.query()
+        self.orig = self.query.select_whereclause()
+        self.res = self.query.select()
         
     def tearDownAll(self):
         global foo
         foo.drop()
+        self.uninstall_threadlocal()
+    
+    def test_selectby(self):
+        res = self.query.select_by(range=5)
+        assert res.order_by([Foo.c.bar])[0].bar == 5
+        assert res.order_by([desc(Foo.c.bar)])[0].bar == 95
         
     def test_slice(self):
         assert self.res[1] == self.orig[1]
