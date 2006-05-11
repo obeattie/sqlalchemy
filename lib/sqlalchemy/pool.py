@@ -137,6 +137,7 @@ class ConnectionFairy(object):
     def invalidate(self):
         if self.pool.echo:
             self.pool.log("Invalidate connection %s" % repr(self.connection))
+        self.connection.rollback()
         self.connection = None
         self.pool.return_invalid()
     def cursor(self):
@@ -158,6 +159,7 @@ class ConnectionFairy(object):
         if self.connection is not None:
             if self.pool.echo:
                 self.pool.log("Connection %s being returned to pool" % repr(self.connection))
+            self.connection.rollback()
             self.pool.return_conn(self)
             self.pool = None
             self.connection = None
