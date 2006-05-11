@@ -67,11 +67,9 @@ class SessionTransaction(object):
         
 class Session(object):
     """encapsulates a set of objects being operated upon within an object-relational operation."""
-    def __init__(self, bind_to=None, hash_key=None, new_imap=True, import_session=None, echo_uow=False):
+    def __init__(self, bind_to=None, hash_key=None, import_session=None, echo_uow=False):
         if import_session is not None:
             self.uow = unitofwork.UnitOfWork(identity_map=import_session.uow.identity_map)
-        elif new_imap is False:
-            self.uow = unitofwork.UnitOfWork(identity_map=current_session().uow.identity_map)
         else:
             self.uow = unitofwork.UnitOfWork()
         

@@ -257,75 +257,8 @@ class Mapper(object):
             class_or_mapper = class_mapper(class_or_mapper, entity_name=entity_name)
         self.polymorphic_map[key] = class_or_mapper
         
-    def using(self, session):
-        return querylib.Query(self, session=session)
-    def query(self, session=None):
-        """returns an instance of sqlalchemy.orm.query.Query, which implements all the query-constructing
-        methods such as get(), select(), select_by(), etc."""
-        if session is not None:
-            return querylib.Query(self, session=session)
-            
-        try:
-            if self._query.mapper is not self:
-                self._query = querylib.Query(self)
-            return self._query
-        except AttributeError:
-            self._query = querylib.Query(self)
-            return self._query
+        
     
-    def get(self, ident, **kwargs):
-        """calls get() on this mapper's default Query object."""
-        return self.query().get(ident, **kwargs)
-        
-    def _get(self, key, ident=None, reload=False):
-        return self.query()._get(key, ident=ident, reload=reload)
-        
-    def get_by(self, *args, **params):
-        """calls get_by() on this mapper's default Query object."""
-        return self.query().get_by(*args, **params)
-
-    def select_by(self, *args, **params):
-        """calls select_by() on this mapper's default Query object."""
-        return self.query().select_by(*args, **params)
-
-    def selectfirst_by(self, *args, **params):
-        """calls selectfirst_by() on this mapper's default Query object."""
-        return self.query().selectfirst_by(*args, **params)
-
-    def selectone_by(self, *args, **params):
-        """calls selectone_by() on this mapper's default Query object."""
-        return self.query().selectone_by(*args, **params)
-
-    def count_by(self, *args, **params):
-        """calls count_by() on this mapper's default Query object."""
-        return self.query().count_by(*args, **params)
-
-    def selectfirst(self, *args, **params):
-        """calls selectfirst() on this mapper's default Query object."""
-        return self.query().selectfirst(*args, **params)
-
-    def selectone(self, *args, **params):
-        """calls selectone() on this mapper's default Query object."""
-        return self.query().selectone(*args, **params)
-
-    def select(self, arg=None, **kwargs):
-        """calls select() on this mapper's default Query object."""
-        return self.query().select(arg=arg, **kwargs)
-
-    def select_whereclause(self, whereclause=None, params=None, **kwargs):
-        """calls select_whereclause() on this mapper's default Query object."""
-        return self.query().select_whereclause(whereclause=whereclause, params=params, **kwargs)
-
-    def count(self, whereclause=None, params=None, **kwargs):
-        """calls count() on this mapper's default Query object."""
-        return self.query().count(whereclause=whereclause, params=params, **kwargs)
-
-    def select_statement(self, statement, **params):
-        """calls select_statement() on this mapper's default Query object."""
-        return self.query().select_statement(statement, **params)
-
-    def select_text(self, text, **params):
-        return self.query().select_text(text, **params)
     
     def add_properties(self, dict_of_properties):
         """adds the given dictionary of properties to this mapper, using add_property."""
@@ -400,18 +333,12 @@ class Mapper(object):
             # in order to save on KeyErrors later on
             sessionlib.global_attributes.init_attr(self)
             
-            nohist = kwargs.pop('_mapper_nohistory', False)
             if kwargs.has_key('_sa_session'):
                 session = kwargs.pop('_sa_session')
             else:
                 session = sessionlib.current_session(self)
             if session is not None:
-                if not nohist:
-                    session._register_new(self)
-                else:
-                    pass
-                    # TODO: this _attach should not be needed....
-                    #session._attach(self)
+                session._register_new(self)
             if oldinit is not None:
                 oldinit(self, *args, **kwargs)
         # override oldinit, insuring that its not already one of our
@@ -475,10 +402,6 @@ class Mapper(object):
         """returns the identity (list of primary key values) for the given instance.  The list of values can be fed directly into the get() method as mapper.get(*key)."""
         return [self._getattrbycolumn(instance, column) for column in self.pks_by_table[self.select_table]]
         
-    def compile(self, whereclause = None, **options):
-        """works like select, except returns the SQL statement object without 
-        compiling or executing it"""
-        return self.query()._compile(whereclause, **options)
 
     def copy(self, **kwargs):
         mapper = Mapper.__new__(Mapper)
@@ -501,13 +424,6 @@ class Mapper(object):
             self._options[optkey] = mapper
             return mapper
 
-    def __getattr__(self, key):
-        if (key.startswith('select_by_') or key.startswith('get_by_')):
-            return getattr(self.query(), key)
-        else:
-            if key == 'table':
-                raise "what!? " + key #AttributeError(key)
-            raise AttributeError(key)
             
     def _getpropbycolumn(self, column, raiseerror=True):
         try:
@@ -846,6 +762,75 @@ class Mapper(object):
             row = frommapper.translate_row(self, row)
         for prop in self.props.values():
             prop.execute(session, instance, row, identitykey, imap, isnew)
+
+    # deprecated query methods.  Query is constructed from Session, and the rest 
+    # of these methods are called off of Query now.
+    def query(self, session=None):
+        """deprecated. use Query instead."""
+        if session is not None:
+            return querylib.Query(self, session=session)
+
+        try:
+            if self._query.mapper is not self:
+                self._query = querylib.Query(self)
+            return self._query
+        except AttributeError:
+            self._query = querylib.Query(self)
+            return self._query
+    def using(self, session):
+        """deprecated. use Query instead."""
+        return querylib.Query(self, session=session)
+    def __getattr__(self, key):
+        """deprecated. use Query instead."""
+        if (key.startswith('select_by_') or key.startswith('get_by_')):
+            return getattr(self.query(), key)
+        else:
+            raise AttributeError(key)
+    def compile(self, whereclause = None, **options):
+        """deprecated. use Query instead."""
+        return self.query()._compile(whereclause, **options)
+    def get(self, ident, **kwargs):
+        """deprecated. use Query instead."""
+        return self.query().get(ident, **kwargs)
+    def _get(self, key, ident=None, reload=False):
+        """deprecated. use Query instead."""
+        return self.query()._get(key, ident=ident, reload=reload)
+    def get_by(self, *args, **params):
+        """deprecated. use Query instead."""
+        return self.query().get_by(*args, **params)
+    def select_by(self, *args, **params):
+        """deprecated. use Query instead."""
+        return self.query().select_by(*args, **params)
+    def selectfirst_by(self, *args, **params):
+        """deprecated. use Query instead."""
+        return self.query().selectfirst_by(*args, **params)
+    def selectone_by(self, *args, **params):
+        """deprecated. use Query instead."""
+        return self.query().selectone_by(*args, **params)
+    def count_by(self, *args, **params):
+        """deprecated. use Query instead."""
+        return self.query().count_by(*args, **params)
+    def selectfirst(self, *args, **params):
+        """deprecated. use Query instead."""
+        return self.query().selectfirst(*args, **params)
+    def selectone(self, *args, **params):
+        """deprecated. use Query instead."""
+        return self.query().selectone(*args, **params)
+    def select(self, arg=None, **kwargs):
+        """deprecated. use Query instead."""
+        return self.query().select(arg=arg, **kwargs)
+    def select_whereclause(self, whereclause=None, params=None, **kwargs):
+        """deprecated. use Query instead."""
+        return self.query().select_whereclause(whereclause=whereclause, params=params, **kwargs)
+    def count(self, whereclause=None, params=None, **kwargs):
+        """deprecated. use Query instead."""
+        return self.query().count(whereclause=whereclause, params=params, **kwargs)
+    def select_statement(self, statement, **params):
+        """deprecated. use Query instead."""
+        return self.query().select_statement(statement, **params)
+    def select_text(self, text, **params):
+        """deprecated. use Query instead."""
+        return self.query().select_text(text, **params)
         
 class MapperProperty(object):
     """an element attached to a Mapper that describes and assists in the loading and saving 
