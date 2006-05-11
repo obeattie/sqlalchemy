@@ -152,7 +152,16 @@ class ExecutionContext(object):
         indicating that the database inserted data beyond that which we gave it. this value is thread-local."""
         raise NotImplementedError()
 
-class Connection(object):
+class Connectable(object):
+    """interface for an object that can provide an Engine and a Connection object which correponds to that Engine."""
+    def contextual_connect(self):
+        """returns a Connection object which may be part of an ongoing context."""
+        raise NotImplementedError()
+    def _not_impl(self):
+        raise NotImplementedError()
+    engine = property(_not_impl, doc="returns the Engine which this Connectable is associated with.")
+            
+class Connection(Connectable):
     """represents a single DBAPI connection returned from the underlying connection pool.  Provides
     execution support for string-based SQL statements as well as ClauseElement, Compiled and DefaultGenerator objects.
     provides a begin method to return Transaction objects."""
@@ -341,7 +350,7 @@ class Transaction(object):
             self.__connection._commit_impl()
             self.__is_active = False
         
-class ComposedSQLEngine(sql.Engine):
+class ComposedSQLEngine(sql.Engine, Connectable):
     """
     Connects a ConnectionProvider, a Dialect and a CompilerFactory together to 
     provide a default implementation of SchemaEngine.

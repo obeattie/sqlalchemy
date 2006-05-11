@@ -24,25 +24,21 @@ class SessionTransaction(object):
         return self.get_or_add(engine)
     def _begin(self):
         return SessionTransaction(self.session, self)
-    def add(self, connection_or_engine):
-        if self.connections.has_key(connection_or_engine.engine):
+    def add(self, connectable):
+        if self.connections.has_key(connectable.engine):
             raise exceptions.InvalidRequestError("Session already has a Connection associated for the given Connection's Engine")
-        return self.get_or_add(connection_or_engine)
-    def get_or_add(self, connection_or_engine):
+        return self.get_or_add(connectable)
+    def get_or_add(self, connectable):
         # we reference the 'engine' attribute on the given object, which in the case of 
         # Connection, ProxyEngine, Engine, ComposedSQLEngine, whatever, should return the original
         # "Engine" object that is handling the connection.
-        if self.connections.has_key(connection_or_engine.engine):
-            return self.connections[connection_or_engine.engine][0]
-        if isinstance(connection_or_engine, sqlalchemy.engine.base.Connection):
-            e = connection_or_engine.engine
-            c = connection_or_engine
-        else:
-            e = connection_or_engine
-            c = connection_or_engine.contextual_connect()
-        if not self.connections.has_key(e.engine):
-            self.connections[e.engine] = (c, c.begin())
-        return self.connections[e.engine][0]
+        if self.connections.has_key(connectable.engine):
+            return self.connections[connectable.engine][0]
+        e = connectable.engine
+        c = connectable.contextual_connect()
+        if not self.connections.has_key(e):
+            self.connections[e] = (c, c.begin())
+        return self.connections[e][0]
     def commit(self):
         if self.parent is not None:
             return
