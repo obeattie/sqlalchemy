@@ -47,11 +47,10 @@ Getting Started {@name=gettingstarted}
 
 ### Imports
 
-SQLAlchemy provides the entire namespace of everything you'll need under the module name `sqlalchemy`.  For the purposes of this tutorial, we will import its full list of symbols into our own local namespace.  We also will be using a *mod* that provides access to thread-managed connection and session objects, which will greatly simplifies our code.  A *mod* is a module that augments the core functionality of SQLAlchemy with additional functionality, and only needs to be imported once within an application.
+SQLAlchemy provides the entire namespace of everything you'll need under the module name `sqlalchemy`.  For the purposes of this tutorial, we will import its full list of symbols into our own local namespace.  
 
     {python}
     >>> from sqlalchemy import *
-    >>> import sqlalchemy.mods.threadlocal
 
 ### Connecting to the Database
 
@@ -287,10 +286,10 @@ The `mapper` function returns a new instance of `Mapper`.  As it is the first Ma
 
 After you create a Mapper, all operations with that Mapper require the usage of an important object called a `Session`.  All objects loaded or saved by the Mapper must be *attached* to a `Session` object, which represents a kind of "workspace" of objects that are loaded into memory.  A particular object instance can only be attached to one `Session` at a time.
 
-By default, you have to create a `Session` object explicitly before you can load or save objects.  But recall that we imported a special *mod* called `threadlocal`, which has made life easier for us by creating a `Session` that is automatically associated with the current thread.  So now, lets get a handle to that `Session` and deal with it directly.  To locate the `Session` corresponding to the current thread, just use `current_session()`:
+By default, you have to create a `Session` object explicitly before you can load or save objects.  Theres several ways to manage sessions, but the most straightforward is to just create one, which we will do by saying, `create_session()`:
 
     {python}
-    >>> session = current_session()
+    >>> session = create_session()
     >>> session # doctest:+ELLIPSIS
     <sqlalchemy.orm.session.Session object at 0x...>
 
@@ -307,7 +306,7 @@ The Session has all kinds of methods on it to retrieve and store objects, and al
     ['Harry']
     [(User Harry,password:None)]
     
-All querying for objects is performed via an instance of `Query`.  The various `select` methods on an instance of `Mapper` also use an underlying `Query` object to perform the operation.  A `Query` can be bound to a specific `Session`, or it can also use `current_session()` to locate the session bound to the current thread, if one is available.
+All querying for objects is performed via an instance of `Query`.  The various `select` methods on an instance of `Mapper` also use an underlying `Query` object to perform the operation.  A `Query` is always bound to a specific `Session`.  
 
 Lets turn off the database echoing for a moment, and try out a few methods on `Query`.  Methods that end with the suffix `_by` primarily take keyword arguments which correspond to properties on the object.  Other methods take `ClauseElement` objects, which are constructed by using `Column` objects inside of Python expressions, in the same way as we did with our SQL select example in the previous section of this tutorial.  Using `ClauseElement` structures to query objects is more verbose but more flexible:
 
@@ -328,12 +327,13 @@ Notice that our `User` class has a special attribute `c` attached to it.  This '
 
 ### Making Changes {@name=changes}
 
-With a little experience in loading objects, lets see what its like to make changes.  First, lets create a new user "Ed".  We do this by just constructing the new object.  The `Mapper` for the `User` class will be called when we create the object, which will then automatically add it to the current thread's Session, if one is available:
+With a little experience in loading objects, lets see what its like to make changes.  First, lets create a new user "Ed".  We do this by just constructing the new object.  Then, we just add it to the session:
 
     {python}
     >>> ed = User()
     >>> ed.user_name = 'Ed'
     >>> ed.password = 'edspassword'
+    >>> session.save(ed)
     >>> ed in session
     True
 
@@ -352,7 +352,7 @@ At the moment, nothing has been saved to the database; all of our changes are in
     >>> mary is mary2
     True
     
-With the identity map, a single `Session` can be relied upon to keep all loaded instances straight, and when a thread-local Session is used, it becomes pretty hard for an application to lose track of the changes made on objects.  
+With the identity map, a single `Session` can be relied upon to keep all loaded instances straight.
 
 As far as the issue of the same object being modified in two different Sessions, that's an issue of concurrency detection; SQLAlchemy does some basic concurrency checks when saving objects, with the option for a stronger check using version ids.  See [adv_datamapping](rel:adv_datamapping) for more details.
 
@@ -374,8 +374,6 @@ Then to send all of our changes to the database, we `flush()` the Session.  Lets
     ['marysnewpassword', 1]
     UPDATE users SET password=? WHERE users.user_id = ?
     ['harrysnewpassword', 4]
-    INSERT INTO users (user_name, password) VALUES (?, ?)
-    [None, None]
     INSERT INTO users (user_name, password) VALUES (?, ?)
     ['Ed', 'edspassword']
     DELETE FROM users WHERE users.user_id = ?
@@ -455,6 +453,7 @@ You may have noticed from the example above that when we say `session.flush()`, 
     ...     fred.user_name = 'fred_again'
     ...     fred.addresses.append(Address('fred@fred.com'))
     ...     fred.addresses.append(Address('fredsnewemail@fred.com'))
+    ...     session.save(fred)
     ...     transaction.commit()
     ... except:
     ...     transaction.rollback()
@@ -476,9 +475,9 @@ You may have noticed from the example above that when we say `session.flush()`, 
     INSERT INTO users (user_name, password) VALUES (?, ?)
     ['fred_again', None]
     INSERT INTO email_addresses (email_address, user_id) VALUES (?, ?)
-    ['fred@fred.com', 7]
+    ['fred@fred.com', 6]
     INSERT INTO email_addresses (email_address, user_id) VALUES (?, ?)
-    ['fredsnewemail@fred.com', 7]
+    ['fredsnewemail@fred.com', 6]
     COMMIT
 
 Main documentation:  [unitofwork](rel:unitofwork)
