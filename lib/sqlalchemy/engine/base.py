@@ -304,7 +304,7 @@ class Connection(object):
         try:
             self.__engine.dialect.do_executemany(c, statement, parameters, context=context)
         except Exception, e:
-            self.__engine.dialect.do_rollback(self.__connection)
+            self._rollback_impl()
             if self.__close_with_result:
                 self.close()
             raise exceptions.SQLError(statement, parameters, e)
