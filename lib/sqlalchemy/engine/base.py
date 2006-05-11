@@ -157,10 +157,12 @@ class Connection(object):
     execution support for string-based SQL statements as well as ClauseElement, Compiled and DefaultGenerator objects.
     provides a begin method to return Transaction objects."""
     def __init__(self, engine, connection=None, close_with_result=False):
-        self.engine = engine
-        self.connection = connection or engine.raw_connection()
-        self.transaction = None
-        self.close_with_result = close_with_result
+        self.__engine = engine
+        self.__connection = connection or engine.raw_connection()
+        self.__transaction = None
+        self.__close_with_result = close_with_result
+    engine = property(lambda s:s.__engine, doc="The Engine with which this Connection is associated (read only)")
+    should_close_with_result = property(lambda s:s.__close_with_result, doc="Indicates if this Connection should be closed when a corresponding ResultProxy is closed; this is essentially an auto-release mode.")
     def _create_transaction(self, parent):
         return Transaction(self, parent)
     def connect(self):
@@ -170,21 +172,33 @@ class Connection(object):
         """contextual_connect() is implemented to return self so that an incoming Engine or Connection object can be treated similarly."""
         return self
     def begin(self):
-        if self.transaction is None:
-            self.transaction = self._create_transaction(None)
-            return self.transaction
+        if self.__transaction is None:
+            self.__transaction = self._create_transaction(None)
+            return self.__transaction
         else:
-            return self._create_transaction(self.transaction)
+            return self._create_transaction(self.__transaction)
+    def _begin_impl(self):
+        if self.__engine.echo:
+            self.__engine.log("BEGIN")
+        self.__engine.dialect.do_begin(self.__connection)
+    def _rollback_impl(self):
+        if self.__engine.echo:
+            self.__engine.log("ROLLBACK")
+        self.__engine.dialect.do_rollback(self.__connection)
+    def _commit_impl(self):
+        if self.__engine.echo:
+            self.__engine.log("COMMIT")
+        self.__engine.dialect.do_commit(self.__connection)
     def _autocommit(self, statement):
         """when no Transaction is present, this is called after executions to provide "autocommit" behavior."""
         # TODO: have the dialect determine if autocommit can be set on the connection directly without this 
         # extra step
-        if self.transaction is None and re.match(r'UPDATE|INSERT|CREATE|DELETE|DROP', statement.lstrip().upper()):
-            self.engine.dialect.do_commit(self.connection)
+        if self.__transaction is None and re.match(r'UPDATE|INSERT|CREATE|DELETE|DROP', statement.lstrip().upper()):
+            self._commit_impl()
     def close(self):
-        if self.connection is not None:
-            self.connection.close()
-            self.connection = None
+        if self.__connection is not None:
+            self.__connection.close()
+            self.__connection = None
     def scalar(self, object, parameters, **kwargs):
         row = self.execute(object, parameters, **kwargs).fetchone()
         if row is not None:
@@ -194,10 +208,10 @@ class Connection(object):
     def execute(self, object, *multiparams, **params):
         return Connection.executors[type(object).__mro__[-2]](self, object, *multiparams, **params)
     def execute_default(self, default, **kwargs):
-        return default.accept_schema_visitor(self.engine.dialect.defaultrunner(self.engine, self.proxy, **kwargs))
+        return default.accept_schema_visitor(self.__engine.dialect.defaultrunner(self.__engine, self.proxy, **kwargs))
     def execute_text(self, statement, parameters=None):
         cursor = self._execute_raw(statement, parameters)
-        return ResultProxy(self.engine, self, cursor)
+        return ResultProxy(self.__engine, self, cursor)
     def _params_to_listofdicts(self, *multiparams, **params):
         if len(multiparams) == 0:
             return [params]
@@ -216,10 +230,10 @@ class Connection(object):
             param = multiparams[0]
         else:
             param = params
-        return self.execute_compiled(elem.compile(engine=self.engine, parameters=param), *multiparams, **params)
+        return self.execute_compiled(elem.compile(engine=self.__engine, parameters=param), *multiparams, **params)
     def execute_compiled(self, compiled, *multiparams, **params):
         """executes a sql.Compiled object."""
-        cursor = self.connection.cursor()
+        cursor = self.__connection.cursor()
         parameters = [compiled.get_params(**m) for m in self._params_to_listofdicts(*multiparams, **params)]
         if len(parameters) == 1:
             parameters = parameters[0]
@@ -227,14 +241,14 @@ class Connection(object):
             if statement is None:
                 return cursor
 
-            parameters = self.engine.dialect.convert_compiled_params(parameters)
+            parameters = self.__engine.dialect.convert_compiled_params(parameters)
             self._execute_raw(statement, parameters, cursor=cursor, context=context)
             return cursor
-        context = self.engine.dialect.create_execution_context()
-        context.pre_exec(self.engine, proxy, compiled, parameters)
+        context = self.__engine.dialect.create_execution_context()
+        context.pre_exec(self.__engine, proxy, compiled, parameters)
         proxy(str(compiled), parameters)
-        context.post_exec(self.engine, proxy, compiled, parameters)
-        return ResultProxy(self.engine, self, cursor, context, typemap=compiled.typemap)
+        context.post_exec(self.__engine, proxy, compiled, parameters)
+        return ResultProxy(self.__engine, self, cursor, context, typemap=compiled.typemap)
         
     # poor man's multimethod/generic function thingy
     executors = {
@@ -246,24 +260,24 @@ class Connection(object):
     
     def create(self, entity, **kwargs):
         """creates a table or index given an appropriate schema object."""
-        return self.engine.create(entity, connection=self, **kwargs)
+        return self.__engine.create(entity, connection=self, **kwargs)
     def drop(self, entity, **kwargs):
         """drops a table or index given an appropriate schema object."""
-        return self.engine.drop(entity, connection=self, **kwargs)
+        return self.__engine.drop(entity, connection=self, **kwargs)
     def reflecttable(self, table, **kwargs):
         """reflects the columns in the given table from the database."""
-        return self.engine.reflecttable(table, connection=self, **kwargs)
+        return self.__engine.reflecttable(table, connection=self, **kwargs)
     def default_schema_name(self):
-        return self.engine.dialect.get_default_schema_name(self)
+        return self.__engine.dialect.get_default_schema_name(self)
     def run_callable(self, callable_):
         callable_(self)
     def _execute_raw(self, statement, parameters=None, cursor=None, echo=None, context=None, **kwargs):
         if cursor is None:
-            cursor = self.connection.cursor()
+            cursor = self.__connection.cursor()
         try:
-            if echo is True or self.engine.echo is not False:
-                self.engine.log(statement)
-                self.engine.log(repr(parameters))
+            if echo is True or self.__engine.echo is not False:
+                self.__engine.log(statement)
+                self.__engine.log(repr(parameters))
             if parameters is not None and isinstance(parameters, list) and len(parameters) > 0 and (isinstance(parameters[0], list) or isinstance(parameters[0], dict)):
                 self._executemany(cursor, statement, parameters, context=context)
             else:
@@ -275,23 +289,23 @@ class Connection(object):
 
     def _execute(self, c, statement, parameters, context=None):
         if parameters is None:
-            if self.engine.dialect.positional:
+            if self.__engine.dialect.positional:
                 parameters = ()
             else:
                 parameters = {}
         try:
-            self.engine.dialect.do_execute(c, statement, parameters, context=context)
+            self.__engine.dialect.do_execute(c, statement, parameters, context=context)
         except Exception, e:
-            self.engine.dialect.do_rollback(self.connection)
-            if self.close_with_result:
+            self._rollback_impl()
+            if self.__close_with_result:
                 self.close()
             raise exceptions.SQLError(statement, parameters, e)
     def _executemany(self, c, statement, parameters, context=None):
         try:
-            self.engine.dialect.do_executemany(c, statement, parameters, context=context)
+            self.__engine.dialect.do_executemany(c, statement, parameters, context=context)
         except Exception, e:
-            self.engine.dialect.do_rollback(self.connection)
-            if self.close_with_result:
+            self.__engine.dialect.do_rollback(self.__connection)
+            if self.__close_with_result:
                 self.close()
             raise exceptions.SQLError(statement, parameters, e)
     def proxy(self, statement=None, parameters=None):
@@ -300,7 +314,7 @@ class Connection(object):
         This callable is a generic version of a connection/cursor-specific callable that
         is produced within the execute_compiled method, and is used for objects that require
         this style of proxy when outside of an execute_compiled method, primarily the DefaultRunner."""
-        parameters = self.engine.dialect.convert_compiled_params(parameters)
+        parameters = self.__engine.dialect.convert_compiled_params(parameters)
         return self._execute_raw(statement, parameters)
 
 class Transaction(object):
@@ -310,16 +324,12 @@ class Transaction(object):
         self.parent = parent or self
         self.is_active = True
         if self.parent is self:
-            self.connection.engine.dialect.do_begin(self.connection.connection)
-            if self.connection.engine.echo:
-                self.connection.engine.log("BEGIN")
+            self.connection._begin_impl()
     def rollback(self):
         if not self.parent.is_active:
             raise exceptions.InvalidRequestError("This transaction is inactive")
         if self.parent is self:
-            if self.connection.engine.echo:
-                self.connection.engine.log("ROLLBACK")
-            self.connection.engine.dialect.do_rollback(self.connection.connection)
+            self.connection._rollback_impl()
             self.is_active = False
         else:
             self.parent.rollback()
@@ -327,9 +337,7 @@ class Transaction(object):
         if not self.parent.is_active:
             raise exceptions.InvalidRequestError("This transaction is inactive")
         if self.parent is self:
-            if self.connection.engine.echo:
-                self.connection.engine.log("COMMIT")
-            self.connection.engine.dialect.do_commit(self.connection.connection)
+            self.connection._commit_impl()
             self.is_active = False
         
 class ComposedSQLEngine(sql.Engine):
@@ -493,7 +501,7 @@ class ResultProxy:
     def close(self):
         if not self.closed:
             self.closed = True
-            if self.connection.close_with_result and self.dialect.supports_autoclose_results:
+            if self.connection.should_close_with_result and self.dialect.supports_autoclose_results:
                 self.connection.close()
     def _get_col(self, row, key):
         if isinstance(key, sql.ColumnElement):
