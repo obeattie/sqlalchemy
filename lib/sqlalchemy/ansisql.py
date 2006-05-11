@@ -191,7 +191,7 @@ class ANSICompiler(sql.Compiled):
         self.strings[index] = index.name
     
     def visit_typeclause(self, typeclause):
-        self.strings[typeclause] = typeclause.type.engine_impl(self.engine).get_col_spec()
+        self.strings[typeclause] = typeclause.type.dialect_impl(self.dialect).get_col_spec()
             
     def visit_textclause(self, textclause):
         if textclause.parens and len(textclause.text):
@@ -626,9 +626,14 @@ class ANSISchemaGenerator(engine.SchemaIterator):
             if isinstance(column.default.arg, str):
                 return repr(column.default.arg)
             else:
-                return str(column.default.arg.compile(self.engine))
+                return str(self._compile(column.default.arg, None))
         else:
             return None
+
+    def _compile(self, tocompile, parameters):
+        compiler = self.engine.dialect.compiler(tocompile, parameters)
+        compiler.compile()
+        return compiler
 
     def visit_column(self, column):
         pass

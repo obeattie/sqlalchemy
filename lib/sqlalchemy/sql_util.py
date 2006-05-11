@@ -7,10 +7,8 @@ import sqlalchemy.schema as schema
 class TableCollection(object):
     def __init__(self):
         self.tables = []
-        
     def add(self, table):
         self.tables.append(table)
-
     def sort(self, reverse=False ):
         import sqlalchemy.orm.topological
         tuples = []

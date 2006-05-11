@@ -32,6 +32,7 @@ class TypeEngine(AbstractType):
     def __init__(self, *args, **params):
         pass
     def engine_impl(self, engine):
+        """deprecated; call dialect_impl with a dialect directly."""
         return self.dialect_impl(engine.dialect)
     def dialect_impl(self, dialect):
         try:
@@ -48,9 +49,9 @@ class TypeEngine(AbstractType):
     impl = property(_get_impl, _set_impl)
     def get_col_spec(self):
         raise NotImplementedError()
-    def convert_bind_param(self, value, engine):
+    def convert_bind_param(self, value, dialect):
         return value
-    def convert_result_value(self, value, engine):
+    def convert_result_value(self, value, dialect):
         return value
     def adapt(self, cls):
         return cls()

@@ -483,7 +483,7 @@ class ClauseElement(object):
                 
         if compiler is None:
             import sqlalchemy.ansisql as ansisql
-            compiler = ansisql.ANSIDialect().compiler(self, parameters=parameters, engine=engine)
+            compiler = ansisql.ANSIDialect().compiler(self, parameters=parameters)
         compiler.compile()
         return compiler
 

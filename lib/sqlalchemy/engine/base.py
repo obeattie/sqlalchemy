@@ -162,6 +162,7 @@ class Connection(object):
         self.__transaction = None
         self.__close_with_result = close_with_result
     engine = property(lambda s:s.__engine, doc="The Engine with which this Connection is associated (read only)")
+    connection = property(lambda s:s.__connection, doc="The underlying DBAPI connection managed by this Connection.")
     should_close_with_result = property(lambda s:s.__close_with_result, doc="Indicates if this Connection should be closed when a corresponding ResultProxy is closed; this is essentially an auto-release mode.")
     def _create_transaction(self, parent):
         return Transaction(self, parent)
@@ -320,46 +321,42 @@ class Connection(object):
 class Transaction(object):
     """represents a Transaction in progress"""
     def __init__(self, connection, parent):
-        self.connection = connection
-        self.parent = parent or self
-        self.is_active = True
-        if self.parent is self:
-            self.connection._begin_impl()
+        self.__connection = connection
+        self.__parent = parent or self
+        self.__is_active = True
+        if self.__parent is self:
+            self.__connection._begin_impl()
     def rollback(self):
-        if not self.parent.is_active:
+        if not self.__parent.__is_active:
             raise exceptions.InvalidRequestError("This transaction is inactive")
-        if self.parent is self:
-            self.connection._rollback_impl()
-            self.is_active = False
+        if self.__parent is self:
+            self.__connection._rollback_impl()
+            self.__is_active = False
         else:
-            self.parent.rollback()
+            self.__parent.rollback()
     def commit(self):
-        if not self.parent.is_active:
+        if not self.__parent.__is_active:
             raise exceptions.InvalidRequestError("This transaction is inactive")
-        if self.parent is self:
-            self.connection._commit_impl()
-            self.is_active = False
+        if self.__parent is self:
+            self.__connection._commit_impl()
+            self.__is_active = False
         
 class ComposedSQLEngine(sql.Engine):
     """
     Connects a ConnectionProvider, a Dialect and a CompilerFactory together to 
     provide a default implementation of SchemaEngine.
     """
-
     def __init__(self, connection_provider, dialect, echo=False, logger=None, **kwargs):
         self.connection_provider = connection_provider
         self.dialect=dialect
         self.echo = echo
         self.logger = logger or util.Logger(origin='engine')
 
-
-    def _get_name(self):
-        return sys.modules[self.dialect.__module__].descriptor()['name']
-    name = property(_get_name)
+    name = property(lambda s:sys.modules[s.dialect.__module__].descriptor()['name'])
     engine = property(lambda s:s)
+
     def dispose(self):
         self.connection_provider.dispose()
-
     def create(self, entity, connection=None, **kwargs):
         """creates a table or index within this engine's database connection given a schema.Table object."""
         self._run_visitor(self.dialect.schemagenerator, entity, connection=connection, **kwargs)
@@ -367,7 +364,7 @@ class ComposedSQLEngine(sql.Engine):
         """drops a table or index within this engine's database connection given a schema.Table object."""
         self._run_visitor(self.dialect.schemadropper, entity, connection=connection, **kwargs)
     def execute_default(self, default, **kwargs):
-        connection = self.contextual_connect(close_with_result=False)
+        connection = self.contextual_connect()
         try:
             return connection.execute_default(default, **kwargs)
         finally:
@@ -382,7 +379,7 @@ class ComposedSQLEngine(sql.Engine):
 
     def _run_visitor(self, visitorcallable, element, connection=None, **kwargs):
         if connection is None:
-            conn = self.contextual_connect(close_with_result=False)
+            conn = self.contextual_connect()
         else:
             conn = connection
         try:
@@ -391,13 +388,31 @@ class ComposedSQLEngine(sql.Engine):
             if connection is None:
                 conn.close()
     
-    def run_callable(self, callable_, connection=None):
+    def transaction(self, callable_, connection=None, *args, **kwargs):
         if connection is None:
-            conn = self.contextual_connect(close_with_result=False)
+            conn = self.contextual_connect()
         else:
             conn = connection
         try:
-            return callable_(conn)
+            trans = conn.begin()
+            try:
+                ret = callable_(conn, *args, **kwargs)
+                trans.commit()
+                return ret
+            except:
+                trans.rollback()
+                raise
+        finally:
+            if connection is None:
+                conn.close()
+            
+    def run_callable(self, callable_, connection=None, *args, **kwargs):
+        if connection is None:
+            conn = self.contextual_connect()
+        else:
+            conn = connection
+        try:
+            return callable_(conn, *args, **kwargs)
         finally:
             if connection is None:
                 conn.close()
@@ -425,7 +440,7 @@ class ComposedSQLEngine(sql.Engine):
     def reflecttable(self, table, connection=None):
         """given a Table object, reflects its columns and properties from the database."""
         if connection is None:
-            conn = self.contextual_connect(close_with_result=False)
+            conn = self.contextual_connect()
         else:
             conn = connection
         try:
@@ -495,7 +510,6 @@ class ResultProxy:
                 if self.props.setdefault(colname, rec) is not rec:
                     self.props[colname] = (ResultProxy.AmbiguousColumn(colname), 0)
                 self.keys.append(colname)
-                #print "COLNAME", colname
                 self.props[i] = rec
                 i+=1
     def close(self):
@@ -507,7 +521,6 @@ class ResultProxy:
         if isinstance(key, sql.ColumnElement):
             try:
                 rec = self.props[key._label.lower()]
-                #print "GOT IT FROM LABEL FOR ", key._label
             except KeyError:
                 try:
                     rec = self.props[key.key.lower()]
