@@ -6,6 +6,7 @@ except ImportError:
 from sqlalchemy import sql
 from sqlalchemy.engine import create_engine
 
+__all__ = ['BaseProxyEngine', 'AutoConnectEngine', 'ProxyEngine']
 
 class BaseProxyEngine(sql.Engine):
     """Basis for all proxy engines."""
