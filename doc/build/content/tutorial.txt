@@ -132,11 +132,13 @@ Since we created this insert statement object from the `users` table which is bo
     >>> i.execute(user_name='Mary', password='secure') # doctest:+ELLIPSIS
     INSERT INTO users (user_name, password) VALUES (?, ?)
     ['Mary', 'secure']
+    COMMIT
     <sqlalchemy.engine.base.ResultProxy instance at 0x...>
 
     >>> i.execute({'user_name':'Tom'}, {'user_name':'Fred'}, {'user_name':'Harry'}) # doctest:+ELLIPSIS,+NORMALIZE_WHITESPACE
     INSERT INTO users (user_name) VALUES (?)
     [['Tom'], ['Fred'], ['Harry']]
+    COMMIT
     <sqlalchemy.engine.base.ResultProxy instance at 0x...>
 
 
@@ -235,6 +237,7 @@ Next, lets put a few rows in:
     ...     {'email_address':'mary@mary.com', 'user_id':1}) #doctest:+ELLIPSIS
     INSERT INTO email_addresses (email_address, user_id) VALUES (?, ?)
     [['tom@tom.com', 2], ['mary@mary.com', 1]]
+    COMMIT
     <sqlalchemy.engine.base.ResultProxy instance at 0x...>
 
 With two related tables, we can now construct a join amongst them using the `join` method:
