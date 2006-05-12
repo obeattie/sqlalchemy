@@ -2,28 +2,14 @@
 <%attr>title='Modules and Classes'</%attr>
 <&|doclib.myt:item, name="docstrings", description="Modules and Classes" &>
 <%init>
-    import sqlalchemy.schema as schema
-    import sqlalchemy.engine as engine
-    import sqlalchemy.engine.strategies as strategies
-    import sqlalchemy.sql as sql
-    import sqlalchemy.pool as pool
-    import sqlalchemy.orm as orm
-    import sqlalchemy.exceptions as exceptions
-    import sqlalchemy.ext.proxy as proxy
-    import sqlalchemy.mods.threadlocal as threadlocal
+    import cPickle as pickle
+    import os
+    filename = os.path.join(os.path.dirname(self.file), 'compiled_docstrings.pickle')
+    data = pickle.load(file(filename))
 </%init>
 
-
-<& pydoc.myt:obj_doc, obj=sql, classes=[sql.Engine, sql.AbstractDialect, sql.ClauseParameters, sql.Compiled, sql.ClauseElement, sql.TableClause, sql.ColumnClause] &>
-<& pydoc.myt:obj_doc, obj=schema &>
-<& pydoc.myt:obj_doc, obj=engine, classes=[engine.ComposedSQLEngine, engine.Connection, engine.Transaction, engine.Dialect, engine.ConnectionProvider, engine.ExecutionContext, engine.ResultProxy, engine.RowProxy] &>
-<& pydoc.myt:obj_doc, obj=strategies &>
-<& pydoc.myt:obj_doc, obj=orm, classes=[orm.Mapper, orm.MapperExtension] &>
-<& pydoc.myt:obj_doc, obj=orm.query, classes=[orm.query.Query] &>
-<& pydoc.myt:obj_doc, obj=orm.session, classes=[orm.session.Session, orm.session.SessionTransaction] &>
-<& pydoc.myt:obj_doc, obj=threadlocal &>
-<& pydoc.myt:obj_doc, obj=exceptions &>
-<& pydoc.myt:obj_doc, obj=pool, classes=[pool.DBProxy, pool.Pool, pool.QueuePool, pool.SingletonThreadPool] &>
-<& pydoc.myt:obj_doc, obj=proxy &>
+% for obj in data:
+<& pydoc.myt:obj_doc, obj=obj &>
+%
 
 </&>
