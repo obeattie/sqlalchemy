@@ -39,6 +39,7 @@ class ColumnProperty(mapper.MapperProperty):
                 statement.append_column(c)
     def do_init(self, key, parent):
         self.key = key
+        self.parent = parent
         # establish a SmartProperty property manager on the object for this key
         if parent._is_primary_mapper():
             #print "regiser col on class %s key %s" % (parent.class_.__name__, key)
@@ -293,34 +294,11 @@ class PropertyLoader(mapper.MapperProperty):
         else:
             self.foreigntable = dependent[0]
 
-            
-    def get_criterion(self, query, key, value):
-        """given a key/value pair, determines if this PropertyLoader's mapper contains a key of the
-        given name in its property list, or if this PropertyLoader's association mapper, if any, 
-        contains a key of the given name in its property list, and returns a WHERE clause against
-        the given value if found.
-        
-        this is called by a mappers select_by method to formulate a set of key/value pairs into 
-        a WHERE criterion that spans multiple tables if needed."""
-        # TODO: optimization: change mapper to accept a WHERE clause with separate bind parameters
-        # then cache the generated WHERE clauses here, since the creation + the copy_container 
-        # is an extra expense
-        if self.mapper.props.has_key(key):
-            if self.secondaryjoin is not None:
-                c = (self.mapper.props[key].columns[0]==value) & self.primaryjoin & self.secondaryjoin
-            else:
-                c = (self.mapper.props[key].columns[0]==value) & self.primaryjoin
-            return c.copy_container()
-        elif self.mapper.mapped_table.c.has_key(key):
-            if self.secondaryjoin is not None:
-                c = (self.mapper.mapped_table.c[key].columns[0]==value) & self.primaryjoin & self.secondaryjoin
-            else:
-                c = (self.mapper.mapped_table.c[key].columns[0]==value) & self.primaryjoin
-            return c.copy_container()
-        elif self.association is not None:
-            c = query._get_criterion(self.mapper, key, value) & self.primaryjoin
-            return c.copy_container()
-        return None
+    def get_join(self):
+        if self.secondaryjoin is not None:
+            return self.primaryjoin & self.secondaryjoin
+        else:
+            return self.primaryjoin
 
     def execute(self, session, instance, row, identitykey, imap, isnew):
         if self.is_primary():

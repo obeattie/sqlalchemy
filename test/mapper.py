@@ -211,6 +211,25 @@ class MapperTest(MapperSuperTest):
         l = create_session().query(User).select(users.c.user_name.endswith('ed'))
         self.assert_result(l, User, *user_result[1:3])
 
+    def testjoinvia(self):
+        m = mapper(User, users, properties={
+            'orders':relation(mapper(Order, orders, properties={
+                'items':relation(mapper(Item, orderitems))
+            }))
+        })
+
+        q = create_session().query(m)
+
+        l = q.select((orderitems.c.item_name=='item 4') & q.join_via(['orders', 'items']))
+        self.assert_result(l, User, user_result[0])
+        
+        l = q.select_by(item_name='item 4')
+        self.assert_result(l, User, user_result[0])
+
+        l = q.select((orderitems.c.item_name=='item 4') & q.join_to('item_name'))
+        self.assert_result(l, User, user_result[0])
+
+        
     def testorderby(self):
         # TODO: make a unit test out of these various combinations
 #        m = mapper(User, users, order_by=desc(users.c.user_name))
@@ -469,6 +488,7 @@ class DeferredTest(MapperSuperTest):
             ("SELECT orders.order_id AS orders_order_id, orders.user_id AS orders_user_id, orders.description AS orders_description, orders.isopen AS orders_isopen FROM orders ORDER BY %s" % orderby, {}),
         ])
 
+        
     def testdeepoptions(self):
         m = mapper(User, users, properties={
             'orders':relation(mapper(Order, orders, properties={

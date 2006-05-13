@@ -65,7 +65,7 @@ class Query(object):
 
         e.g.   u = usermapper.get_by(user_name = 'fred')
         """
-        x = self.select_whereclause(self._by_clause(*args, **params), limit=1)
+        x = self.select_whereclause(self.join_by(*args, **params), limit=1)
         if x:
             return x[0]
         else:
@@ -75,6 +75,7 @@ class Query(object):
         """returns an array of object instances based on the given clauses and key/value criterion. 
 
         *args is a list of zero or more ClauseElements which will be connected by AND operators.
+
         **params is a set of zero or more key/value parameters which are converted into ClauseElements.
         the keys are mapped to property or column names mapped by this mapper's Table, and the values
         are coerced into a WHERE clause separated by AND operators.  If the local property/column
@@ -87,8 +88,73 @@ class Query(object):
         ret = self.extension.select_by(self, *args, **params)
         if ret is not mapper.EXT_PASS:
             return ret
-        return self.select_whereclause(self._by_clause(*args, **params))
+        return self.select_whereclause(self.join_by(*args, **params))
 
+    def join_by(self, *args, **params):
+        """like select_by, but returns a ClauseElement representing the WHERE clause that would normally
+        be sent to select_whereclause by select_by."""
+        clause = None
+        for arg in args:
+            if clause is None:
+                clause = arg
+            else:
+                clause &= arg
+
+        for key, value in params.iteritems():
+            (keys, prop) = self._locate_prop(key)
+            c = (prop.columns[0]==value) & self.join_via(keys)
+            if clause is None:
+                clause =  c
+            else:                
+                clause &= c
+        return clause
+
+    def _locate_prop(self, key):
+        import properties
+        keys = []
+        def search_for_prop(mapper):
+            if mapper.props.has_key(key):
+                return mapper.props[key]
+            else:
+                for prop in mapper.props.values():
+                    if not isinstance(prop, properties.PropertyLoader):
+                        continue
+                    x = search_for_prop(prop.mapper)
+                    if x:
+                        keys.insert(0, prop.key)
+                        return x
+                else:
+                    return None
+        p = search_for_prop(self.mapper)
+        if p is None:
+            raise exceptions.InvalidRequestError("Cant locate property named '%s'" % key)
+        return [keys, p]
+
+    def join_to(self, key):
+        """given the key name of a property, will recursively descend through all child properties
+        from this Query's mapper to locate the property, and will return a ClauseElement
+        representing a join from this Query's mapper to the endmost mapper."""
+        [keys, p] = self._locate_prop(key)
+        return self.join_via(keys)
+
+    def join_via(self, keys):
+        """given a list of keys that represents a path from this Query's mapper to a related mapper
+        based on names of relations from one mapper to the next, returns a 
+        ClauseElement representing a join from this Query's mapper to the endmost mapper.
+        """
+        mapper = self.mapper
+        clause = None
+        for key in keys:
+            prop = mapper.props[key]
+            if clause is None:
+                clause = prop.get_join()
+            else:
+                clause &= prop.get_join()
+            mapper = prop.mapper
+            
+        return clause
+    
+        
     def selectfirst_by(self, *args, **params):
         """works like select_by(), but only returns the first result by itself, or None if no 
         objects returned.  Synonymous with get_by()"""
@@ -96,7 +162,7 @@ class Query(object):
 
     def selectone_by(self, *args, **params):
         """works like selectfirst_by(), but throws an error if not exactly one result was returned."""
-        ret = self.select_whereclause(self._by_clause(*args, **params), limit=2)
+        ret = self.select_whereclause(self.join_by(*args, **params), limit=2)
         if len(ret) == 1:
             return ret[0]
         raise exceptions.InvalidRequestError('Multiple rows returned for selectone_by')
@@ -104,7 +170,7 @@ class Query(object):
     def count_by(self, *args, **params):
         """returns the count of instances based on the given clauses and key/value criterion.
         The criterion is constructed in the same way as the select_by() method."""
-        return self.count(self._by_clause(*args, **params))
+        return self.count(self.join_by(*args, **params))
 
     def selectfirst(self, *args, **params):
         """works like select(), but only returns the first result by itself, or None if no 
@@ -182,25 +248,6 @@ class Query(object):
         finally:
             result.close()
         
-    def _by_clause(self, *args, **params):
-        clause = None
-        for arg in args:
-            if clause is None:
-                clause = arg
-            else:
-                clause &= arg
-        for key, value in params.iteritems():
-            if value is False:
-                continue
-            c = self._get_criterion(self.mapper, key, value)
-            if c is None:
-                raise exceptions.InvalidRequestError("Cant find criterion for property '"+ key + "'")
-            if clause is None:
-                clause = c
-            else:                
-                clause &= c
-        return clause
-
     def _get(self, key, ident=None, reload=False):
         if not reload and not self.always_refresh:
             try:
@@ -278,18 +325,3 @@ class Query(object):
             value.setup(key, statement, **kwargs) 
         return statement
 
-    def _get_criterion(self, mapper, key, value):
-        """used by select_by to match a key/value pair against
-        local properties, column names, or a matching property in this mapper's
-        list of relations."""
-        if mapper.props.has_key(key):
-            return mapper.props[key].columns[0] == value
-        elif mapper.select_table.c.has_key(key):
-            return mapper.select_table.c[key] == value
-        else:
-            for prop in mapper.props.values():
-                c = prop.get_criterion(self, key, value)
-                if c is not None:
-                    return c
-            else:
-                return None
