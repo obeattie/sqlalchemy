@@ -660,6 +660,9 @@ class FromClause(Selectable):
         return Join(self, right, isouter = True, *args, **kwargs)
     def alias(self, name=None):
         return Alias(self, name)
+    def named_with_column(self):
+        """True if the name of this FromClause may be prepended to a column in a generated SQL statement"""
+        return False
     def _locate_oid_column(self):
         """subclasses override this to return an appropriate OID column"""
         return None
@@ -1059,7 +1062,9 @@ class Alias(FromClause):
             return self.selectable.oid_column._make_proxy(self)
         else:
             return None
-    
+
+    def named_with_column(self):
+        return True
     def _exportable_columns(self):
         #return self.selectable._exportable_columns()
         return self.selectable.columns
@@ -1107,7 +1112,7 @@ class ColumnClause(ColumnElement):
         self.__label = None
     def _get_label(self):
         if self.__label is None:
-            if self.table is not None and self.table.name is not None:
+            if self.table is not None and self.table.named_with_column():
                 self.__label =  self.table.name + "_" + self.name
             else:
                 self.__label = self.name
@@ -1129,10 +1134,7 @@ class ColumnClause(ColumnElement):
         else:
             return []
     def _bind_param(self, obj):
-        if self.table.name is None:
-            return BindParamClause(self.name, obj, shortname=self.name, type=self.type)
-        else:
-            return BindParamClause(self._label, obj, shortname = self.name, type=self.type)
+        return BindParamClause(self._label, obj, shortname = self.name, type=self.type)
     def _make_proxy(self, selectable, name = None):
         c = ColumnClause(name or self.name, selectable, hidden=self.hidden)
         c.orig_set = self.orig_set
@@ -1157,7 +1159,9 @@ class TableClause(FromClause):
         self._oid_column = ColumnClause('oid', self, hidden=True)
 
     indexes = property(lambda s:s._indexes)
-    
+
+    def named_with_column(self):
+        return True
     def append_column(self, c):
         self._columns[c.name] = c
         c.table = self
@@ -1347,8 +1351,10 @@ class Select(SelectBaseMixin, FromClause):
             
         for f in from_obj:
             self.append_from(f)
-        
-    name = property(lambda s:"SELECT statement")
+    
+    def _foo(self):
+        raise "wtf?"    
+    name = property(lambda s:s._foo()) #"SELECT statement")
     
     class CorrelatedVisitor(ClauseVisitor):
         """visits a clause, locates any Select clauses, and tells them that they should
@@ -1420,7 +1426,7 @@ class Select(SelectBaseMixin, FromClause):
         for f in self._froms.values():
             if f is self:
                 # TODO: why would we be in our own _froms list ?
-                continue
+                raise exceptions.AssertionError("Select statement should not be in its own _froms list")
             oid = f.oid_column
             if oid is not None:
                 return oid
