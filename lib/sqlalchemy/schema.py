@@ -70,11 +70,11 @@ class TableSingleton(type):
                 if redefine:
                     table.reload_values(*args)
                 elif not useexisting:
-                    raise ArgumentError("Table '%s.%s' is already defined. specify 'redefine=True' to remap columns, or 'useexisting=True' to use the existing table" % (schema, name))
+                    raise exceptions.ArgumentError("Table '%s.%s' is already defined. specify 'redefine=True' to remap columns, or 'useexisting=True' to use the existing table" % (schema, name))
             return table
         except KeyError:
             if mustexist:
-                raise ArgumentError("Table '%s.%s' not defined" % (schema, name))
+                raise exceptions.ArgumentError("Table '%s.%s' not defined" % (schema, name))
             table = type.__call__(self, name, metadata, **kwargs)
             table._set_parent(metadata)
             # load column definitions from the database if 'autoload' is defined
@@ -298,10 +298,10 @@ class Column(SchemaItem, sql.ColumnClause):
         self.unique = kwargs.pop('unique', None)
         self.onupdate = kwargs.pop('onupdate', None)
         if self.index is not None and self.unique is not None:
-            raise ArgumentError("Column may not define both index and unique")
+            raise exceptions.ArgumentError("Column may not define both index and unique")
         self._foreign_key = None
         if len(kwargs):
-            raise ArgumentError("Unknown arguments passed to Column: " + repr(kwargs.keys()))
+            raise exceptions.ArgumentError("Unknown arguments passed to Column: " + repr(kwargs.keys()))
 
     primary_key = util.SimpleProperty('_primary_key')
     foreign_key = util.SimpleProperty('_foreign_key')
@@ -331,7 +331,7 @@ class Column(SchemaItem, sql.ColumnClause):
             
     def _set_parent(self, table):
         if getattr(self, 'table', None) is not None:
-            raise ArgumentError("this Column already has a table!")
+            raise exceptions.ArgumentError("this Column already has a table!")
         table.append_column(self)
         if self.index or self.unique:
             table.append_index_column(self, index=self.index,
@@ -423,7 +423,7 @@ class ForeignKey(SchemaItem):
             if isinstance(self._colspec, str):
                 m = re.match(r"^([\w_-]+)(?:\.([\w_-]+))?(?:\.([\w_-]+))?$", self._colspec)
                 if m is None:
-                    raise ArgumentError("Invalid foreign key column specification: " + self._colspec)
+                    raise exceptions.ArgumentError("Invalid foreign key column specification: " + self._colspec)
                 if m.group(3) is None:
                     (tname, colname) = m.group(1, 2)
                     schema = list(self.parent.orig_set)[0].table.schema
@@ -562,12 +562,12 @@ class Index(SchemaItem):
             self.table.append_index(self)
         elif column.table != self.table:
             # all columns muse be from same table
-            raise ArgumentError("All index columns must be from same table. "
+            raise exceptions.ArgumentError("All index columns must be from same table. "
                                 "%s is from %s not %s" % (column,
                                                           column.table,
                                                           self.table))
         elif column.name in [ c.name for c in self.columns ]:
-            raise ArgumentError("A column may not appear twice in the "
+            raise exceptions.ArgumentError("A column may not appear twice in the "
                                 "same index (%s already has column %s)"
                                 % (self.name, column))
         self.columns.append(column)
