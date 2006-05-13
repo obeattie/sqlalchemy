@@ -1181,6 +1181,7 @@ class TableClause(FromClause):
     def _clear(self):
         """clears all attributes on this TableClause so that new items can be added again"""
         self.columns.clear()
+        self.indexes.clear()
         self.foreign_keys[:] = []
         self.primary_key[:] = []
         try:
@@ -1417,6 +1418,9 @@ class Select(SelectBaseMixin, FromClause):
         fromclause._process_from_dict(self._froms, True)
     def _locate_oid_column(self):
         for f in self._froms.values():
+            if f is self:
+                # TODO: why would we be in our own _froms list ?
+                continue
             oid = f.oid_column
             if oid is not None:
                 return oid

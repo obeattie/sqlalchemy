@@ -307,6 +307,12 @@ class Column(SchemaItem, sql.ColumnClause):
     foreign_key = util.SimpleProperty('_foreign_key')
     columns = property(lambda self:[self])
 
+    def __str__(self):
+        if self.table is not None:
+            return str(self.table) + "." + self.name
+        else:
+            return self.name
+    
     def _derived_metadata(self):
         return self.table.metadata
     def _get_engine(self):
