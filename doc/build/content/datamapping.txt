@@ -404,9 +404,9 @@ The above example is shorthand for:
              Address.c.street=='123 Green Street')
        )
 
-All keyword arguments sent to `select_by` are used to create query criterion.  This means that familiar `select` keyword options like `order_by` and `limit` are not directly available.  To enable these options with `select_by`, you can try the `SelectResults` extension which offers methods off the result of a `select_by` such as "order_by" as well as array slicing functions that generate queries.  Or you can use `select` in conjunction with `join_to`.
+All keyword arguments sent to `select_by` are used to create query criterion.  This means that familiar `select` keyword options like `order_by` and `limit` are not directly available.  To enable these options with `select_by`, you can try the `SelectResults` extension which offers methods off the result of a `select` or `select_by` such as `order_by()` and array slicing functions that generate new queries.  Or you can use `select` in conjunction with `join_to`.
 
-The `join_to` method of Query is a component of the `select_by` operation, and is given a keyname in order to return a "join path" from the Query's mapper to the mapper which contains the property of the given name:
+The `join_to` method of `Query` is a component of the `select_by` operation, and is given a keyname in order to return a "join path" from the Query's mapper to the mapper which contains the property of the given name:
 
     {python}
     >>> q = session.query(User)
@@ -424,6 +424,7 @@ Also available is the `join_via` function, which is similar to `join_to`, except
 
 Expressions produced by `join_to` and `join_via` can be used with `select` to create query criterion:
 
+    {python}
     >>> l = q.select(
         (addresses_table.c.street=='some address') &
         (items_table.c.item_name=='item #4') &
