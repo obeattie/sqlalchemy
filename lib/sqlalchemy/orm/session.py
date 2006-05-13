@@ -112,6 +112,9 @@ class Session(object):
         method will release the resources of the underlying Connection, otherwise its a no-op.
         """
         return self.connection(mapper, close_with_result=True).execute(clause, params, **kwargs)
+    def scalar(self, mapper, clause, params, **kwargs):
+        """works like execute() but returns a scalar result."""
+        return self.connection(mapper, close_with_result=True).scalar(clause, params, **kwargs)
         
     def close(self):
         """closes this Session.  

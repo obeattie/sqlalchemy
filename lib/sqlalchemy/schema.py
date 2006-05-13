@@ -648,7 +648,7 @@ class MetaData(SchemaItem):
         return self
     def _get_engine(self):
         if not self.is_bound():
-            raise exceptions.InvalidRequestError("Schema %s is not bound to any engine" % self.name)
+            raise exceptions.InvalidRequestError("MetaData '%s' is not bound to any engine" % self.name)
         return self._engine
                 
 class BoundMetaData(MetaData):

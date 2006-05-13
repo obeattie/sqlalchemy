@@ -146,13 +146,9 @@ class Query(object):
         statement = self._compile(whereclause, **kwargs)
         return self._select_statement(statement, params=params)
 
-        
     def count(self, whereclause=None, params=None, **kwargs):
         s = self.table.count(whereclause)
-        if params is not None:
-            return s.scalar(**params)
-        else:
-            return s.scalar()
+        return self.session.scalar(self.mapper, s, params=params)
 
     def select_statement(self, statement, **params):
         return self._select_statement(statement, params=params)
