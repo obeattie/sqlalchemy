@@ -25,6 +25,7 @@ def suite():
         # SQL syntax
         'select',
         'selectable',
+        'case_statement', 
         
         # assorted round-trip tests
         'query',

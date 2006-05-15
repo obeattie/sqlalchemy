@@ -1,6 +1,8 @@
 from sqlalchemy.util import ScopedRegistry
 from sqlalchemy.orm.mapper import MapperExtension
 
+__all__ = ['SessionContext', 'SessionContextExt']
+
 class SessionContext(object):
     """A simple wrapper for ScopedRegistry that provides a "current" property
     which can be used to get, set, or remove the session in the current scope.
