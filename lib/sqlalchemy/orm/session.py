@@ -169,7 +169,10 @@ class Session(object):
         elif self.bind_to is not None:
             return self.bind_to
         else:
-            return mapper.select_table.engine
+            e = mapper.select_table.engine
+            if e is None:
+                raise exceptions.InvalidRequestError("Could not locate any Engine bound to mapper '%s'" % str(mapper))
+            return e
     def query(self, mapper_or_class, entity_name=None):
         """given a mapper or Class, returns a new Query object corresponding to this Session and the mapper, or the classes' primary mapper."""
         if isinstance(mapper_or_class, type):

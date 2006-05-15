@@ -1049,12 +1049,13 @@ class Alias(FromClause):
         self.original = baseselectable
         self.selectable = selectable
         if alias is None:
-            n = getattr(self.original, 'name', None)
-            if n is None:
-                n = 'anon'
-            elif len(n) > 15:
-                n = n[0:15]
-            alias = n + "_" + hex(random.randint(0, 65535))[2:]
+            if self.original.named_with_column():
+                alias = getattr(self.original, 'name', None)
+            if alias is None:
+                alias = 'anon'
+            elif len(alias) > 15:
+                alias = alias[0:15]
+            alias = alias + "_" + hex(random.randint(0, 65535))[2:]
         self.name = alias
         
     def _locate_oid_column(self):
@@ -1263,7 +1264,10 @@ class CompoundSelect(SelectBaseMixin, FromClause):
         self.order_by(*kwargs.get('order_by', [None]))
         self._col_map = {}
 
-    name = property(lambda s:s.keyword + " statement")
+#    name = property(lambda s:s.keyword + " statement")
+    def _foo(self):
+        raise "this is a temporary assertion while we refactor SQL to not call 'name' on non-table Selectables"    
+    name = property(lambda s:s._foo()) #"SELECT statement")
     
     def _locate_oid_column(self):
         return self.selects[0].oid_column
@@ -1353,7 +1357,7 @@ class Select(SelectBaseMixin, FromClause):
             self.append_from(f)
     
     def _foo(self):
-        raise "wtf?"    
+        raise "this is a temporary assertion while we refactor SQL to not call 'name' on non-table Selectables"    
     name = property(lambda s:s._foo()) #"SELECT statement")
     
     class CorrelatedVisitor(ClauseVisitor):

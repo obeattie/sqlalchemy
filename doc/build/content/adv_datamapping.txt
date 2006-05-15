@@ -620,7 +620,7 @@ A self-referential mapper where there is more than one relationship on the table
             }
         )
         
-The "root" property on a TreeNode is a many-to-one relationship.  By default, a self-referential mapper declares relationships as one-to-many, so the extra parameter `foreignkey`, pointing to the "many" side of a relationship, is needed to indicate a "many-to-one" self-referring relationship.
+The "root" property on a TreeNode is a many-to-one relationship.  By default, a self-referential mapper declares relationships as one-to-many, so the extra parameter `foreignkey`, pointing to the remote side of a relationship, is needed to indicate a "many-to-one" self-referring relationship.
 Both TreeNode examples above are available in functional form in the `examples/adjacencytree` directory of the distribution.    
 
 ### Result-Set Mapping {@name=resultset}

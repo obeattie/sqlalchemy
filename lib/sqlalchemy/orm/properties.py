@@ -275,22 +275,22 @@ class PropertyLoader(mapper.MapperProperty):
         # set as a reference to allow assignment from inside a first-class function
         dependent = [None]
         def foo(binary):
-            if binary.operator != '=':
+            if binary.operator != '=' or not isinstance(binary.left, schema.Column) or not isinstance(binary.right, schema.Column):
                 return
-            if isinstance(binary.left, schema.Column) and binary.left.primary_key:
+            if binary.left.primary_key:
                 if dependent[0] is binary.left.table:
-                    raise exceptions.ArgumentError("bidirectional dependency not supported...specify foreignkey")
+                    raise exceptions.ArgumentError("Could not determine the parent/child relationship for property '%s', based on join condition '%s' (table '%s' appears on both sides of the relationship, or in an otherwise ambiguous manner). please specify the 'foreignkey' keyword parameter to the relation() function indicating a column on the remote side of the relationship" % (self.key, str(self.primaryjoin), str(binary.left.table)))
                 dependent[0] = binary.right.table
                 self.foreignkey= binary.right
-            elif isinstance(binary.right, schema.Column) and binary.right.primary_key:
+            elif binary.right.primary_key:
                 if dependent[0] is binary.right.table:
-                    raise exceptions.ArgumentError("bidirectional dependency not supported...specify foreignkey")
+                    raise exceptions.ArgumentError("Could not determine the parent/child relationship for property '%s', based on join condition '%s' (table '%s' appears on both sides of the relationship, or in an otherwise ambiguous manner). please specify the 'foreignkey' keyword parameter to the relation() function indicating a column on the remote side of the relationship" % (self.key, str(self.primaryjoin), str(binary.right.table)))
                 dependent[0] = binary.left.table
                 self.foreignkey = binary.left
         visitor = BinaryVisitor(foo)
         self.primaryjoin.accept_visitor(visitor)
         if dependent[0] is None:
-            raise exceptions.ArgumentError("cant determine primary foreign key in the join relationship....specify foreignkey=<column> or foreignkey=[<columns>]")
+            raise exceptions.ArgumentError("Could not determine the parent/child relationship for property '%s', based on join condition '%s' (no relationships joining tables '%s' and '%s' could be located). please specify the 'foreignkey' keyword parameter to the relation() function indicating a column on the remote side of the relationship" % (self.key, str(self.primaryjoin), str(binary.left.table), str(binary.right.table)))
         else:
             self.foreigntable = dependent[0]
 
