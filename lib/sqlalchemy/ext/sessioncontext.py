@@ -1,4 +1,5 @@
 from sqlalchemy.util import ScopedRegistry
+from sqlalchemy.orm.mapper import MapperExtension
 
 class SessionContext(object):
     """A simple wrapper for ScopedRegistry that provides a "current" property
@@ -31,88 +32,22 @@ class SessionContext(object):
     current = property(get_current, set_current, del_current,
         """Property used to get/set/del the session in the current scope""")
 
-    def create_metaclass(session_context):
-        """return a metaclass to be used by objects that wish to be bound to a
-        thread-local session upon instantiatoin.
-
-        Note non-standard use of session_context rather than self as the name
-        of the first arguement of this method.
-
-        Usage:
-            context = SessionContext(...)
-            class MyClass(object):
-                __metaclass__ = context.metaclass
-                ...
-        """
+    def _get_mapper_extension(self):
         try:
-            return session_context._metaclass
+            return self._extension
         except AttributeError:
-            class metaclass(type):
-                def __init__(cls, name, bases, dct):
-                    old_init = getattr(cls, "__init__")
-                    def __init__(self, *args, **kwargs):
-                        session_context.current.save(self)
-                        old_init(self, *args, **kwargs)
-                    setattr(cls, "__init__", __init__)
-                    super(metaclass, cls).__init__(name, bases, dct)
-            session_context._metaclass = metaclass
-            return metaclass
-    metaclass = property(create_metaclass)
-
-    def create_baseclass(session_context):
-        """return a baseclass to be used by objects that wish to be bound to a
-        thread-local session upon instantiatoin.
-
-        Note non-standard use of session_context rather than self as the name
-        of the first arguement of this method.
-
-        Usage:
-            context = SessionContext(...)
-            class MyClass(context.baseclass):
-                ...
-        """
-        try:
-            return session_context._baseclass
-        except AttributeError:
-            class baseclass(object):
-                def __init__(self, *args, **kwargs):
-                    session_context.current.save(self)
-                    super(baseclass, self).__init__(*args, **kwargs)
-            session_context._baseclass = baseclass
-            return baseclass
-    baseclass = property(create_baseclass)
+            self._extension = ext = SessionContextExt(self)
+            return ext
+    mapper_extension = property(_get_mapper_extension,
+        doc="""get a mapper extension that implements get_session using this context""")
 
 
-def test():
+class SessionContextExt(MapperExtension):
+    """a mapper extionsion that provides sessions to a mapper using SessionContext"""
 
-    def run_test(class_, context):
-        obj = class_()
-        assert context.current == get_session(obj)
-
-        # keep a reference so the old session doesn't get gc'd
-        old_session = context.current
-
-        context.current = create_session()
-        assert context.current != get_session(obj)
-        assert old_session == get_session(obj)
-
-        del context.current
-        assert context.current != get_session(obj)
-        assert old_session == get_session(obj)
-
-        obj2 = class_()
-        assert context.current == get_session(obj2)
-
-    # test metaclass
-    context = SessionContext(create_session)
-    class MyClass(object): __metaclass__ = context.metaclass
-    run_test(MyClass, context)
-
-    # test baseclass
-    context = SessionContext(create_session)
-    class MyClass(context.baseclass): pass
-    run_test(MyClass, context)
-
-if __name__ == "__main__":
-    test()
-    print "All tests passed!"
+    def __init__(self, context):
+        MapperExtension.__init__(self)
+        self.context = context
+    
+    def get_session(self):
+        return self.context.current

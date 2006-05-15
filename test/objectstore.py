@@ -434,7 +434,6 @@ class SaveTest(AssertMixin):
         # save two users
         u = User()
         u.user_name = 'savetester'
-
         m = mapper(User, users)
         u2 = User()
         u2.user_name = 'savetester2'

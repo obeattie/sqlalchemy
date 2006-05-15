@@ -430,42 +430,19 @@ global_attributes = unitofwork.global_attributes
 # acts as a Registry with which to locate Sessions.  this is to enable
 # object instances to be associated with Sessions without having to attach the
 # actual Session object directly to the object instance.
-_sessions = weakref.WeakValueDictionary() 
+_sessions = weakref.WeakValueDictionary()
 
-def current_session(obj=None):
-    if hasattr(obj, '__session__'):
-        return obj.__session__()
-    else:
-        return _default_session(obj=obj)
-        
-# deprecated
-get_session=current_session
-
-def required_current_session(obj=None):
-    s = current_session(obj)
-    if s is None:
-        if obj is None:
-            raise exceptions.InvalidRequestError("No global-level Session context is established.  Use 'import sqlalchemy.mods.threadlocal' to establish a default thread-local context.")
-        else:
-            raise exceptions.InvalidRequestError("No Session context is established for class '%s', and no global-level Session context is established.  Use 'import sqlalchemy.mods.threadlocal' to establish a default thread-local context." % (obj.__class__))
-    return s
-    
-def _default_session(obj=None):
-    return None
-def register_default_session(callable_):
-    global _default_session
-    _default_session = callable_            
-    
 def object_session(obj):
     hashkey = getattr(obj, '_sa_session_id', None)
     if hashkey is not None:
-        # ok, return that
-        try:
-            return _sessions[hashkey]
-        except KeyError:
-            return None
-    else:
-        return None
+        return _sessions.get(hashkey)
+    return None
 
 unitofwork.object_session = object_session
 
+
+def get_session(obj=None):
+    """deprecated"""
+    if obj is not None:
+        return object_session(obj)
+    raise exceptions.InvalidRequestError("get_session() is deprecated, and does not return the thread-local session anymore. Use the SessionContext.mapper_extension or import sqlalchemy.mod.threadlocal to establish a default thread-local context.")

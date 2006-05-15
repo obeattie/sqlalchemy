@@ -56,29 +56,21 @@ The session to which an object is attached can be acquired via the `object_sessi
     {python}
     session = object_session(obj)
 
-When default session contexts are enabled, the current contextual session can be acquired by the `current_session()` function.  This function takes an optional instance argument, which allows session contexts that are specific to particular class hierarchies to return the correct session.  When using the "threadlocal" session context, enabled via the *mod* `sqlalchemy.mods.threadlocal`, no instance argument is required:
+It is possible to install a default "threadlocal" session context by importing a *mod* called `sqlalchemy.mods.threadlocal`.  This mod creates a familiar SA 0.1 keyword `objectstore` in the `sqlalchemy` namespace.  The `objectstore` may be used directly like a session; all session actions performed on `sqlalchemy.objectstore` will be *proxied* to the thread-local Session:
 
     {python}
-    # enable the thread-local default session context (only need to call this once per application)
+    # install 'threadlocal' mod (only need to call this once per application)
     import sqlalchemy.mods.threadlocal
-    
-    # return the Session that is bound to the current thread
-    session = current_session()
 
-When using the `threadlocal` mod, a familiar SA 0.1 keyword `objectstore` is imported into the `sqlalchemy` namespace.  Using `objectstore`, methods can be called which will automatically be *proxied* to the Session that corresponds to `current_session()`:
-
-    {python}
-    # load the 'threadlocal' mod *first*
-    import sqlalchemy.mods.threadlocal
-    
     # then 'objectstore' is available within the 'sqlalchemy' namespace
-    from sqlalchemy import *
-    
-    # and then this...
-    current_session().flush()
-    
-    # is the same as this:
+    from sqlalchemy import objectstore
+
+    # flush the current thread-local session using the objectstore directly
     objectstore.flush()
+    
+    # which is the same as this (assuming we are still on the same thread):
+    session = objectstore.get_session()
+    session.flush()
 
 We will now cover some of the key concepts used by Sessions and its underlying Unit of Work.
 

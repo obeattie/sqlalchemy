@@ -40,6 +40,7 @@ def suite():
         'eagertest2',
         
         # ORM persistence
+        'sessioncontext', 
         'objectstore',
         'relationships',
         

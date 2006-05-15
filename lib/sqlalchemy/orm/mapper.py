@@ -63,7 +63,7 @@ class Mapper(object):
                 ext = ext_obj.chain(ext)
             
         self.extension = ext
-
+        
         self.class_ = class_
         self.entity_name = entity_name
         self.class_key = ClassKey(class_, entity_name)
@@ -325,6 +325,7 @@ class Mapper(object):
         """sets up our classes' overridden __init__ method, this mappers hash key as its
         '_mapper' property, and our columns as its 'c' property.  if the class already had a
         mapper, the old __init__ method is kept the same."""
+        ext = self.extension
         oldinit = self.class_.__init__
         def init(self, *args, **kwargs):
             self._entity_name = kwargs.pop('_sa_entity_name', None)
@@ -336,7 +337,9 @@ class Mapper(object):
             if kwargs.has_key('_sa_session'):
                 session = kwargs.pop('_sa_session')
             else:
-                session = sessionlib.current_session(self)
+                session = ext.get_session()
+                if session is EXT_PASS:
+                    session = None
             if session is not None:
                 session._register_new(self)
             if oldinit is not None:
@@ -349,6 +352,17 @@ class Mapper(object):
         mapper_registry[self.class_key] = self
         if self.entity_name is None:
             self.class_.c = self.c
+
+    def get_session(self):
+        """returns the contextual session provided by the mapper extension chain
+        
+        raises InvalidRequestError if a session cannot be retrieved from the
+        extension chain
+        """
+        s = self.extension.get_session()
+        if s is EXT_PASS:
+            raise exceptions.InvalidRequestError("No contextual Session is established.  Use a MapperExtension that implements get_session or use 'import sqlalchemy.mods.threadlocal' to establish a default thread-local contextual session.")
+        return s
     
     def has_eager(self):
         """returns True if one of the properties attached to this Mapper is eager loading"""
@@ -900,6 +914,14 @@ class MapperExtension(object):
     def chain(self, ext):
         self.next = ext
         return self    
+    def get_session(self):
+        """called to retrieve a contextual Session instance with which to
+        register a new object. Note: this is not called if a session is 
+        provided with the __init__ params (i.e. _sa_session)"""
+        if self.next is None:
+            return EXT_PASS
+        else:
+            return self.next.get_session()
     def select_by(self, query, *args, **kwargs):
         """overrides the select_by method of the Query object"""
         if self.next is None:

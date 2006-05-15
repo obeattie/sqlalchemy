@@ -7,7 +7,7 @@ SQLAlchemy has a variety of extensions and "mods" available which provide extra 
 
 ### threadlocal
 
-Establishes 'threadlocal' as the default strategy for new `Engine`s, and installs an implicitly-accessible threadlocal `Session` context for the `current_session()` function.  Usually this is used in combination with `Tables` that are associated with `BoundMetaData` or `DynamicMetaData`, so that the `Session` does not need to be bound to any `Engine` explicitly. 
+Establishes `threadlocal` as the default strategy for new `ComposedSQLEngine` objects, installs a threadlocal `SessionContext` that is attached to all Mappers via a global `MapperExtension`, and establishes the global `SessionContext` under the name `sqlalchemy.objectstore`.  Usually this is used in combination with `Tables` that are associated with `BoundMetaData` or `DynamicMetaData`, so that the `Session` does not need to be bound to any `Engine` explicitly. 
 
     {python}
     import sqlalchemy.mods.threadlocal
@@ -24,44 +24,41 @@ Establishes 'threadlocal' as the default strategy for new `Engine`s, and install
     mapper(User, user_table)
     
     # thread local session
-    session = current_session()
+    session = objectstore.get_session()
     
     # "user" object is added to the session automatically
     user = User()
     
     session.flush()
     
+All `Mapper` objects constructed after the `threadlocal` import will receive a default `MapperExtension` which implements the `get_session()` method, returning the `Session` that is associated with the current thread by the global `SessionContext`.  All newly constructed objects will automatically be attached to the `Session` corresponding to the current thread, i.e. they will skip the "transient" state and go right to "pending".
 
-#### current_session() Method {@name=currentsession}
-
-`current_session()` is a method that always exists in the `sqlalchemy.orm.session` module, however by default it returns `None`.  When `threadlocal` is installed, `current_session()` returns the `Session` that is associated with the current thread.  `current_session()` also takes an object instance as an optional argument, which is to allow objects or classes that are associated with a specific session context; this feature is not used by the `threadlocal` mod.
-
-This method is called when new, transient objects are created in order to locate a `Session` to which the new object can be attached to.  This occurs because when a `Mapper` is first constructed for a class, it decorates the classes' `__init__()` method in a manner like the following:
+This occurs because when a `Mapper` is first constructed for a class, it decorates the classes' `__init__()` method in a manner like the following:
 
     {python}
     oldinit = class_.__init__   # the previous init method
     def __init__(self):
-        session = current_session(self)
+        session = ext.get_session() # get Session from this Mapper's MapperExtension
+        if session is EXT_PASS:
+            session = None
         if session is not None:
             session.save(self)  # attach to the current session
         oldinit(self)   # call previous init method
 
-Since the `threadlocal` module provides an implementation for `current_session()` which returns the thread-associated `Session`, the result is that the `__init__()` method of all mapped classes will automatically add the new instance to the current thread's `Session`.
-
-An instance can be redirected at construction time to a different `Session` upon construction by specifying the keyword parameter `_sa_session`:
+An instance can be redirected at construction time to a different `Session` by specifying the keyword parameter `_sa_session`:
 
     {python}
     session = create_session()  # create a new session distinct from the thread-local session
     myuser = User(_sa_session=session)  # make a new User that is saved to this session
 
-Similarly, the **entity_name** parameter, which specifies an alternate `Mapper` to be used for persisting an instance, can be specified via `_sa_entity_name`:
+Similarly, the **entity_name** parameter, which specifies an alternate `Mapper` to be used when attaching this instance to the `Session`, can be specified via `_sa_entity_name`:
 
     {python}
     myuser = User(_sa_session=session, _sa_entity_name='altentity')
 
 #### Default Query Objects 
 
-`current_session()` is also used by the `Query` object to locate a `Session` with which to store newly loaded instances, if the `Query` is not already associated with a specific `Session`.  As a result, the `Query` can be constructed standalone from a mapper or class:
+The `MapperExtension` object's `get_session()` method is also used by the `Query` object to locate a `Session` with which to store newly loaded instances, if the `Query` is not already associated with a specific `Session`.  As a result, the `Query` can be constructed standalone from a mapper or class:
 
     {python}
     # create a Query from a class
@@ -75,7 +72,7 @@ Similarly, the **entity_name** parameter, which specifies an alternate `Mapper` 
     
 #### objectstore Namespace {@name=objectstore}
 
-The `objectstore` is an object added to the `sqlalchemy` namespace which provides a global proxy to the `Session` returned by `current_session()`.  `objectstore` can be treated just like the `Session` itself:
+The `objectstore` is an instance of `SessionContext`, available in the `sqlalchemy` namespace which provides a proxy to the underlying `Session` bound to the current thread.  `objectstore` can be treated just like the `Session` itself:
 
     {python}
     objectstore.save(instance)
@@ -85,7 +82,7 @@ The `objectstore` is an object added to the `sqlalchemy` namespace which provide
 
 #### Attaching Mappers to their Class {@name=attaching}
 
-With `current_session()` handling the details of providing a `Session` in all cases, the `assign_mapper` function provides some of the functionality of `Query` and `Session` directly off the mapped instances themselves.  This is a "monkeypatch" function that creates a primary mapper, attaches the mapper to the class, and also the  methods `get, get_by, select, select_by, selectone, selectfirst, commit, expire, refresh, expunge` and `delete`:
+With `get_session()` handling the details of providing a `Session` in all cases, the `assign_mapper` function provides some of the functionality of `Query` and `Session` directly off the mapped instances themselves.  This is a "monkeypatch" function that creates a primary mapper, attaches the mapper to the class, and also the  methods `get, get_by, select, select_by, selectone, selectfirst, commit, expire, refresh, expunge` and `delete`:
 
     {python}
     # "assign" a mapper to the User class/users table
@@ -113,11 +110,21 @@ An `Engine` created with the `threadlocal` strategy will use a thread-locally ma
     
 Above, the `result` variable holds onto a `ResultProxy` which is still referencing a connection returned by the connection pool.  `threadlocal` strategy means that a second `execute()` statement in the same thread will use the same connection as the one referenced by `result`, assuming `result` is still referenced in memory. 
 
-The `Mapper`, `Session`, and `Query` implementations have no dependency upon the strategy used by the underlying `Engine`;  `Session` provides explicit connections for all internal executions which are properly managed.  Additionally, when the `Session` uses a transaction, it internally insures that all operations are performed with the single `Connection` corresponding to the transaction.  However, when the `threadlocal` strategy is used, orm operations will make usage of the same `contextual_connection()` method which will return the same connection used by other implicit executions.
+The `Mapper`, `Session`, and `Query` implementations work equally well with either the `default` or `threadlocal` engine strategies.  However, using the `threadlocal` strategy means that `Session` operations will use the same underlying connection as that of straight `execute()` calls with constructed SQL objects:
+
+    {python}
+    # assume "threadlocal" strategy is enabled, and there is no transaction in progress
+    
+    result = table.select().execute()   # 'result' references a DBAPI connection, bound to the current thread
+    object = session.select()           # the 'select' operation also uses the current thread's connection,
+                                        # i.e. the same connection referenced by 'result'
+    result.close()                      # return the connection to the pool.  now there is no connection 
+                                        # associated with the current thread.  the next execution will re-check out a 
+                                        # connection and re-attach to the current thread.
 
 ### SessionContext
 
-This plugin solves many of the problems that `threadlocal` solves, but does it in a more class-localized way.
+This plugin is a generalized version of the `objectstore` object provided by the `threadlocal` plugin:
 
     {python}
     

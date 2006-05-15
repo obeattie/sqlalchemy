@@ -1,5 +1,7 @@
 from sqlalchemy import util, engine, mapper
-from sqlalchemy.orm import session, current_session
+from sqlalchemy.ext.sessioncontext import SessionContext
+from sqlalchemy.orm.mapper import global_extensions
+from sqlalchemy.orm.session import Session
 import sqlalchemy
 import sys, types
 
@@ -10,19 +12,19 @@ With this engine, connect() method will return the same connection on the same t
 from the pool.  this greatly helps functions that call multiple statements to be able to easily use just one connection
 without explicit "close" statements on result handles.
 
-on the Session side, the current_session() method will be modified to return a thread-local Session when no arguments
-are sent.  It will also install module-level methods within the objectstore module, such as flush(), delete(), etc.
-which call this method on the thread-local session returned by current_session().
+on the Session side, module-level methods will be installed within the objectstore module, such as flush(), delete(), etc.
+which call this method on the thread-local session.
 
-
+Note: this mod creates a global, thread-local session context named sqlalchemy.objectstore. All mappers created
+while this mod is installed will reference this global context when creating new mapped object instances.
 """
 
-class Objectstore(object):
+class Objectstore(SessionContext):
     def __getattr__(self, key):
-        return getattr(current_session(), key)
+        return getattr(self.current, key)
     def get_session(self):
-        return current_session()
-        
+        return self.current
+
 def monkeypatch_query_method(class_, name):
     def do(self, *args, **kwargs):
         query = class_.mapper.query()
@@ -31,7 +33,7 @@ def monkeypatch_query_method(class_, name):
 
 def monkeypatch_objectstore_method(class_, name):
     def do(self, *args, **kwargs):
-        session = current_session()
+        session = sqlalchemy.objectstore.current
         getattr(session, name)(self, *args, **kwargs)
     setattr(class_, name, do)
     
@@ -48,16 +50,19 @@ def assign_mapper(class_, *args, **kwargs):
         monkeypatch_query_method(class_, name)
     for name in ['flush', 'delete', 'expire', 'refresh', 'expunge', 'merge', 'update', 'save_or_update']:
         monkeypatch_objectstore_method(class_, name)
-    
+
+def _mapper_extension():
+    return SessionContext._get_mapper_extension(sqlalchemy.objectstore)
+
+objectstore = Objectstore(Session)
 def install_plugin():
-    reg = util.ScopedRegistry(session.Session)
-    session.register_default_session(lambda *args, **kwargs: reg())
+    sqlalchemy.objectstore = objectstore
+    global_extensions.append(_mapper_extension)
     engine.default_strategy = 'threadlocal'
-    sqlalchemy.objectstore = Objectstore()
     sqlalchemy.assign_mapper = assign_mapper
 
 def uninstall_plugin():
-    session.register_default_session(lambda *args, **kwargs:None)
     engine.default_strategy = 'plain'
-    
+    global_extensions.remove(_mapper_extension)
+
 install_plugin()

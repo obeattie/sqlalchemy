@@ -13,6 +13,7 @@ import sqlalchemy.pool as pool
 import sqlalchemy.orm as orm
 import sqlalchemy.exceptions as exceptions
 import sqlalchemy.ext.proxy as proxy
+import sqlalchemy.ext.sessioncontext as sessioncontext
 import sqlalchemy.mods.threadlocal as threadlocal
 
 objects = []
@@ -26,6 +27,7 @@ make_doc(obj=strategies)
 make_doc(obj=orm, classes=[orm.Mapper, orm.MapperExtension])
 make_doc(obj=orm.query, classes=[orm.query.Query])
 make_doc(obj=orm.session, classes=[orm.session.Session, orm.session.SessionTransaction])
+make_doc(obj=sessioncontext)
 make_doc(obj=threadlocal)
 make_doc(obj=exceptions)
 make_doc(obj=pool, classes=[pool.DBProxy, pool.Pool, pool.QueuePool, pool.SingletonThreadPool])

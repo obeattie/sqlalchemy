@@ -27,7 +27,7 @@ class Query(object):
         self._get_clause = self.mapper._get_clause
     def _get_session(self):
         if self._session is None:
-            return sessionlib.required_current_session()
+            return self.mapper.get_session()
         else:
             return self._session
     table = property(lambda s:s.mapper.select_table)
