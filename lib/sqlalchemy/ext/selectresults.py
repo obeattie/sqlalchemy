@@ -5,7 +5,7 @@ import sqlalchemy.orm as orm
 
 class SelectResultsExt(orm.MapperExtension):
     def select_by(self, query, *args, **params):
-        return SelectResults(query, query._by_clause(*args, **params))
+        return SelectResults(query, query.join_by(*args, **params))
     def select(self, query, arg=None, **kwargs):
         if arg is not None and isinstance(arg, sql.Selectable):
             return orm.EXT_PASS

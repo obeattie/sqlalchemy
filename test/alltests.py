@@ -14,7 +14,6 @@ def suite():
         
         # connectivity, execution
         'pool', 
-        'engine',
         'transaction',
         
         # schema/tables

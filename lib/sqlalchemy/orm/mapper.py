@@ -322,10 +322,8 @@ class Mapper(object):
         instance._entity_name = self.entity_name
         
     def _init_class(self):
-        """sets up our classes' overridden __init__ method, this mappers hash key as its
-        '_mapper' property, and our columns as its 'c' property.  if the class already had a
-        mapper, the old __init__ method is kept the same."""
-        ext = self.extension
+        """decorates the __init__ method on the mapped class to include auto-session attachment logic,
+        and assocites this Mapper with its class via the mapper_registry."""
         oldinit = self.class_.__init__
         def init(self, *args, **kwargs):
             self._entity_name = kwargs.pop('_sa_entity_name', None)
@@ -337,15 +335,19 @@ class Mapper(object):
             if kwargs.has_key('_sa_session'):
                 session = kwargs.pop('_sa_session')
             else:
-                session = ext.get_session()
-                if session is EXT_PASS:
+                # works for whatever mapper the class is associated with
+                mapper = mapper_registry.get(ClassKey(self.__class__, self._entity_name))
+                if mapper is not None:
+                    session = mapper.extension.get_session()
+                    if session is EXT_PASS:
+                        session = None
+                else:
                     session = None
             if session is not None:
                 session._register_new(self)
             if oldinit is not None:
                 oldinit(self, *args, **kwargs)
-        # override oldinit, insuring that its not already one of our
-        # own modified inits
+        # override oldinit, insuring that its not already a Mapper-decorated init method
         if oldinit is None or not hasattr(oldinit, '_sa_mapper_init'):
             init._sa_mapper_init = True
             self.class_.__init__ = init

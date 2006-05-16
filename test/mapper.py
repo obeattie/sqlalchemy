@@ -84,13 +84,14 @@ class MapperTest(MapperSuperTest):
         u2 = s.get(User, 7)
         self.assert_(u is not u2)
 
-
     def testrefresh(self):
         mapper(User, users, properties={'addresses':relation(mapper(Address, addresses))})
         s = create_session()
         u = s.get(User, 7)
         u.user_name = 'foo'
         a = Address()
+        import sqlalchemy.orm.session
+        assert sqlalchemy.orm.session.object_session(a) is None
         u.addresses.append(a)
 
         self.assert_(a in u.addresses)
