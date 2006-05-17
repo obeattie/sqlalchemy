@@ -147,8 +147,13 @@ This plugin is a generalized version of the `objectstore` object provided by the
 
 ### SelectResults
 
-    {python}
-    res = SelectResults(mapper, table.c.column == "something")
+SelectResults gives generator-like behavior to the results returned from the `select` and `select_by` method of `Query`.  It supports three modes of operation; per-query, per-mapper, and per-application.
+
+    {python title="SelectResults with a Query Object"}
+    from sqlalchemy.ext.selectresults import SelectResults
+    
+    query = session.query(MyClass)
+    res = SelectResults(query, table.c.column == "something")
     res = res.order_by([table.c.column]) #add an order clause
 
     for x in res[:10]:  # Fetch and print the top ten instances
@@ -159,6 +164,23 @@ This plugin is a generalized version of the `objectstore` object provided by the
     # Count how many instances that have column2 > 42
     # and column == "something"
     print res.filter(table.c.column2 > 42).count()
+
+
+Per mapper:
+
+    {python title="SelectResults with a Mapper Object"}
+    from sqlalchemy.ext.selectresults import SelectResultsExt
+    mapper(MyClass, mytable, extension=SelectResultsExt())
+    session.query(MyClass).select(mytable.c.column=="something").order_by([mytable.c.column])[2:7]
+    
+Or across an application via the `selectresults` mod:
+
+    {python title="SelectResults via mod"}
+    import sqlalchemy.mods.selectresults
+    
+    mapper(MyClass, mytable)
+    session.query(MyClass).select(mytable.c.column=="something").order_by([mytable.c.column])[2:7]
+    
 
 ### LegacySession
 
