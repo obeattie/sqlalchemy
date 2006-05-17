@@ -114,7 +114,10 @@ class Query(object):
         keys = []
         def search_for_prop(mapper):
             if mapper.props.has_key(key):
-                return mapper.props[key]
+                prop = mapper.props[key]
+                if isinstance(prop, properties.PropertyLoader):
+                    keys.insert(0, prop.key)
+                return prop
             else:
                 for prop in mapper.props.values():
                     if not isinstance(prop, properties.PropertyLoader):

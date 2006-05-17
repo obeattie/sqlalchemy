@@ -230,6 +230,8 @@ class MapperTest(MapperSuperTest):
         l = q.select((orderitems.c.item_name=='item 4') & q.join_to('item_name'))
         self.assert_result(l, User, user_result[0])
 
+        l = q.select((orderitems.c.item_name=='item 4') & q.join_to('items'))
+        self.assert_result(l, User, user_result[0])
         
     def testorderby(self):
         # TODO: make a unit test out of these various combinations

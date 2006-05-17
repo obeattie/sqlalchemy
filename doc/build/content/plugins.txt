@@ -30,6 +30,8 @@ Establishes `threadlocal` as the default strategy for new `ComposedSQLEngine` ob
     user = User()
     
     session.flush()
+
+#### get_session() Implemented on All Mappers
     
 All `Mapper` objects constructed after the `threadlocal` import will receive a default `MapperExtension` which implements the `get_session()` method, returning the `Session` that is associated with the current thread by the global `SessionContext`.  All newly constructed objects will automatically be attached to the `Session` corresponding to the current thread, i.e. they will skip the "transient" state and go right to "pending".
 
@@ -144,6 +146,19 @@ This plugin is a generalized version of the `objectstore` object provided by the
 ### ProxyEngine
 
 ### SelectResults
+
+    {python}
+    res = SelectResults(mapper, table.c.column == "something")
+    res = res.order_by([table.c.column]) #add an order clause
+
+    for x in res[:10]:  # Fetch and print the top ten instances
+      print x.column2
+
+    x = list(res) # execute the query
+
+    # Count how many instances that have column2 > 42
+    # and column == "something"
+    print res.filter(table.c.column2 > 42).count()
 
 ### LegacySession
 

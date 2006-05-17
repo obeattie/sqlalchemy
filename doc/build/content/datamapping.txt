@@ -79,13 +79,17 @@ The method `session.query(class_or_mapper)` returns a `Query` object.  Below is 
     # get a query from a Session given a Mapper:
     query = session.query(usermapper)
     
-    # select_by, using property names or column names as keys
-    # the keys are grouped together by an AND operator
+    # select_by, which takes keyword arguments.  the
+    # keyword arguments represent property names and the values
+    # represent values which will be compared via the = operator.
+    # the comparisons are joined together via "AND".
     result = query.select_by(name='john', street='123 green street')
 
-    # select_by can also combine SQL criterion with key/value properties
-    result = query.select_by(users.c.user_name=='john', 
-            addresses.c.zip_code=='12345', street=='123 green street')
+    # select_by can also combine ClauseElements with key/value properties.
+    # all ClauseElements and keyword-based criterion are combined together
+    # via "AND". 
+    result = query.select_by(users_table.c.user_name=='john', 
+            addresses_table.c.zip_code=='12345', street='123 green street')
     
     # get_by, which takes the same arguments as select_by
     # returns a single scalar result or None if no results
@@ -106,17 +110,17 @@ The method `session.query(class_or_mapper)` returns a `Query` object.  Below is 
     myobj = query.get((27, 3, 'receipts'))
     
     # using a WHERE criterion
-    result = query.select(or_(users.c.user_name == 'john', users.c.user_name=='fred'))
+    result = query.select(or_(users_table.c.user_name == 'john', users_table.c.user_name=='fred'))
     
     # using a WHERE criterion to get a scalar
-    u = query.selectfirst(users.c.user_name=='john')
+    u = query.selectfirst(users_table.c.user_name=='john')
     
     # selectone() is a stricter version of selectfirst() which
     # will raise an exception if there is not exactly one row
-    u = query.selectone(users.c.user_name=='john')
+    u = query.selectone(users_table.c.user_name=='john')
     
     # using a full select object
-    result = query.select(users.select(users.c.user_name=='john'))
+    result = query.select(users_table.select(users_table.c.user_name=='john'))
 
 Some of the above examples above illustrate the usage of the mapper's Table object to provide the columns for a WHERE Clause.  These columns are also accessible off of the mapped class directly.  When a mapper is assigned to a class, it also attaches a special property accessor `c` to the class itself, which can be used just like the table metadata to access the columns of the table:
 
@@ -197,7 +201,11 @@ SQLAlchemy will only put modified object attributes columns into the UPDATE stat
 
 ### Defining and Using Relationships {@name=relations}
 
-So that covers how to map the columns in a table to an object, how to load objects, create new ones, and save changes.  The next step is how to define an object's relationships to other database-persisted objects.  This is done via the `relation` function provided by the mapper module.  So with our User class, lets also define the User has having one or more mailing addresses.  First, the table metadata:
+So that covers how to map the columns in a table to an object, how to load objects, create new ones, and save changes.  The next step is how to define an object's relationships to other database-persisted objects.  This is done via the `relation` function provided by the `orm` module.  
+
+#### One to Many {@name=onetomany}
+
+So with our User class, lets also define the User has having one or more mailing addresses.  First, the table metadata:
 
     {python}
     from sqlalchemy import *
@@ -221,7 +229,7 @@ So that covers how to map the columns in a table to an object, how to load objec
         Column('zip', String(10))
     )
         
-Of importance here is the addresses table's definition of a *foreign key* relationship to the users table, relating the user_id column into a parent-child relationship.  When a `Mapper` wants to indicate a relation of one object to another, th `ForeignKey` relationships are the default method by which the relationship is determined (options also exist to describe the relationships explicitly).   
+Of importance here is the addresses table's definition of a *foreign key* relationship to the users table, relating the user_id column into a parent-child relationship.  When a `Mapper` wants to indicate a relation of one object to another, the `ForeignKey` relationships are the default method by which the relationship is determined (options also exist to describe the relationships explicitly).   
 
 So then lets define two classes, the familiar `User` class, as well as an `Address` class:
 
@@ -238,7 +246,7 @@ So then lets define two classes, the familiar `User` class, as well as an `Addre
             self.state = state
             self.zip = zip
         
-And then a Mapper that will define a relationship of the User and the Address classes to each other as well as their table metadata.  We will add an additional mapper keyword argument `properties` which is a dictionary relating the name of an object property to a database relationship, in this case a `relation` object against a newly defined  mapper for the Address class:
+And then a `Mapper` that will define a relationship of the `User` and the `Address` classes to each other as well as their table metadata.  We will add an additional mapper keyword argument `properties` which is a dictionary relating the names of class attributes to database relationships, in this case a `relation` object against a newly defined mapper for the Address class:
 
     {python}
     mapper(Address, addresses_table)
@@ -250,7 +258,7 @@ And then a Mapper that will define a relationship of the User and the Address cl
 Lets do some operations with these classes and see what happens:
 
     {python}
-    engine = create_engine('sqlite://filename=mydb')
+    engine = create_engine('sqlite:///mydb.db')
     metadata.create_all(engine)
     
     session = create_session(bind_to=engine)
@@ -268,9 +276,9 @@ Lets do some operations with these classes and see what happens:
     INSERT INTO addresses (user_id, street, city, state, zip) VALUES (:user_id, :street, :city, :state, :zip)
     {'city': 'some other city', 'state': 'OK', 'street': '1 Park Place', 'user_id':1, 'zip': '83923'}
         
-A lot just happened there!  The Mapper object figured out how to relate rows in the addresses table to the users table, and also upon flush had to determine the proper order in which to insert rows.  After the insert, all the User and Address objects have all their new primary and foreign keys populated.
+A lot just happened there!  The `Mapper` figured out how to relate rows in the addresses table to the users table, and also upon flush had to determine the proper order in which to insert rows.  After the insert, all the `User` and `Address` objects have their new primary and foreign key attributes populated.
 
-Also notice that when we created a Mapper on the User class which defined an 'addresses' relation, the newly created User instance magically had an "addresses" attribute which behaved like a list.   This list is in reality a property accessor function, which returns an instance of `sqlalchemy.util.HistoryArraySet`, which fulfills the full set of Python list accessors, but maintains a *unique* set of objects (based on their in-memory identity), and also tracks additions and deletions to the list:
+Also notice that when we created a `Mapper` on the `User` class which defined an `addresses` relation, the newly created `User` instance magically had an "addresses" attribute which behaved like a list.   This list is in reality a property function which returns an instance of `sqlalchemy.util.HistoryArraySet`.  This object fulfills the full set of Python list accessors, but maintains a *unique* set of objects (based on their in-memory identity), and also tracks additions and deletions to the list:
 
     {python}
     del u.addresses[1]
@@ -287,9 +295,9 @@ Also notice that when we created a Mapper on the User class which defined an 'ad
 
 Note that when creating a relation with the `relation()` function, the target can either be a class, in which case the primary mapper for that class is used as the target, or a `Mapper` instance itself, as returned by the `mapper()` function.
 
-#### Useful Feature: Lifecycle Relations {@name=lifecycle}
+#### Lifecycle Relations {@name=lifecycle}
 
-So our one address that was removed from the list, was updated to have a user_id of `None`, and a new address object was inserted to correspond to the new Address added to the User.  But now, theres a mailing address with no user_id floating around in the database of no use to anyone.  How can we avoid this ?  This is acheived by using the `cascade` parameter of `relation`:
+In the previous example, a single address was removed from the `addresses` attribute of a `User` object, resulting in the corresponding database row being updated to have a user_id of `None`.  But now, theres a mailing address with no user_id floating around in the database of no use to anyone.  How can we avoid this ?  This is acheived by using the `cascade` parameter of `relation`:
 
     {python}
     clear_mappers()  # clear mappers from the previous example
@@ -309,13 +317,13 @@ So our one address that was removed from the list, was updated to have a user_id
     DELETE FROM addresses WHERE addresses.address_id = :address_id
     [{'address_id': 2}]
 
-In this case, with `delete-orphan` set, the element that was removed from the addresses list was also removed from the database.  The `delete-orphan` cascade rule indicates that the lifecycle of an `Address` object bounded by that of the `User`.
+In this case, with the `delete-orphan` **cascade rule** set, the element that was removed from the addresses list was also removed from the database.  Specifying `cascade="all, delete-orphan"` means that every persistence operation performed on the parent object will be *cascaded* to the child object or objects handled by the relation, and additionally that each child object cannot exist without being attached to a parent.  Such a relationship indicates that the **lifecycle** of the `Address` objects are bounded by that of their parent `User` object.
 
 Cascading is described fully in [unitofwork_cascade](rel:unitofwork_cascade).
 
-#### Useful Feature: Backreferences {@name=backreferences}
+#### Backreferences {@name=backreferences}
 
-By creating relations with the `backref` keyword, a bi-directional relationship can be created which will keep both ends of the relationship updated automatically, even without any database queries being executed.  Below, the User mapper is created with an "addresses" property, and the corresponding Address mapper receives a "backreference" to the User object via the property name "user":
+By creating relations with the `backref` keyword, a bi-directional relationship can be created which will keep both ends of the relationship updated automatically, independently of database operations.  Below, the `User` mapper is created with an `addresses` property, and the corresponding `Address` mapper receives a "backreference" to the `User` object via the property name `user`:
 
     {python}
     Address = mapper(Address, addresses_table)
@@ -340,31 +348,37 @@ By creating relations with the `backref` keyword, a bi-directional relationship 
     >>> a1.user is user and a2.user is user
     True
 
-The backreference feature also works with many-to-many relationships, which are described later.  When creating a backreference, a corresponding property is placed on the child mapper.  The default arguments to this property can be overridden using the `backref()` function:
+The backreference feature also works with many-to-many relationships, which are described later.  When creating a backreference, a corresponding property (i.e. a second `relation()`) is placed on the child mapper.  The default arguments to this property can be overridden using the `backref()` function:
 
     {python}
-    mapper(Address, addresseses)
+    mapper(User, users_table)
+    mapper(Address, addresses_table, properties={
+        'user':relation(User, backref=backref('addresses', cascade="all, delete-orphan"))
+    })
 
-    mapper(User, users, properties = {
-            'addresses' : relation(Address, 
-                backref=backref('user', lazy=False, cascade="all, delete-orphan")
-            )
-        }
-      )
 
-#### Selecting from Relationships: Lazy Load {@name=lazyload}
+The `backref()` function is often used to set up a bi-directional one-to-one relationship.  This is because the `relation()` function by default creates a "one-to-many" relationship when presented with a primary key/foreign key relationship, but the `backref()` function can redefine the `uselist` property to make it a scalar:
 
-We've seen how the `relation` specifier affects the saving of an object and its child items, how does it affect selecting them?  By default, the relation keyword indicates that the related property should be attached a *Lazy Loader* when instances of the parent object are loaded from the database; this is just a callable function that when accessed will invoke a second SQL query to load the child objects of the parent.
+    {python}
+    mapper(User, users_table)
+    mapper(Address, addresses_table, properties={
+        'user' : relation(User, backref=backref('address', uselist=False))
+    })
+
+
+### Selecting from Relationships {@name=selectrelations}
+
+We've seen how the `relation` specifier affects the saving of an object and its child items, how does it affect selecting them?  By default, the relation keyword indicates that the related property should be attached a *lazy loader* when instances of the parent object are loaded from the database; this is just a callable function that when accessed will invoke a second SQL query to load the child objects of the parent.
     
     {python}
     # define a mapper
     mapper(User, users_table, properties = {
-          'addresses' : relation(mapper(Address, addresses_table), cascade="all,delete-orphan")
+          'addresses' : relation(mapper(Address, addresses_table))
         })
     
     # select users where username is 'jane', get the first element of the list
     # this will incur a load operation for the parent table
-    {sql}user = session.query(User).select_by(user_name='jane')[0]   
+    {sql}user = session.query(User).select(User.c.user_name=='jane')[0]   
     SELECT users.user_id AS users_user_id, 
     users.user_name AS users_user_name, users.password AS users_password
     FROM users WHERE users.user_name = :users_user_name ORDER BY users.oid
@@ -382,9 +396,9 @@ We've seen how the `relation` specifier affects the saving of an object and its 
         
         print repr(a)
             
-##### Useful Feature: Creating Joins Across Relations {@name=relselectby}
+#### Creating Joins Across Relations {@name=relselectby}
     
-For mappers that have relationships, the `select_by` method of the Query object can create queries that include automatically created joins.  Just specify a key in the argument list which is not present in the primary mapper's list of properties or columns, but *is* present in the property list of one of its relationships:
+For mappers that have relationships, the `select_by` method of the `Query` object can create queries that include automatically created joins.  Just specify a key in the argument list which is not present in the primary mapper's list of properties or columns, but *is* present in the property list of one of its relationships:
 
     {python}
     {sql}l = session.query(User).select_by(street='123 Green Street')
@@ -404,16 +418,28 @@ The above example is shorthand for:
              Address.c.street=='123 Green Street')
        )
 
-All keyword arguments sent to `select_by` are used to create query criterion.  This means that familiar `select` keyword options like `order_by` and `limit` are not directly available.  To enable these options with `select_by`, you can try the `SelectResults` extension which offers methods off the result of a `select` or `select_by` such as `order_by()` and array slicing functions that generate new queries.  Or you can use `select` in conjunction with `join_to`.
+All keyword arguments sent to `select_by` are used to create query criterion.  This means that familiar `select` keyword options like `order_by` and `limit` are not directly available.  To enable these options with `select_by`, you can try the [plugins_selectresults](rel:plugins_selectresults) extension which offers methods off the result of a `select` or `select_by` such as `order_by()` and array slicing functions that generate new queries.  
 
-The `join_to` method of `Query` is a component of the `select_by` operation, and is given a keyname in order to return a "join path" from the Query's mapper to the mapper which contains the property of the given name:
+Also, `select_by` will *not* create joins derived from `Column`-based expressions (i.e. `ClauseElement` objects); the reason is that a `Column`-based expression may include many columns, and `select_by` has no way to know which columns in the expression correspond to properties and which don't (it also prefers not to dig into column expressions which may be very complex).  The next section describes some ways to combine `Column` expressions with `select_by`'s auto-joining capabilities.
+
+#### More Granular Join Control Using join\_to, join\_via {@name=jointo}
+
+The `join_to` method of `Query` is a component of the `select_by` operation, and is given a keyname in order to return a "join path" from the Query's mapper to the mapper which is referenced by a `relation()` of the given name:
+
+    {python}
+    >>> q = session.query(User)
+    >>> j = q.join_to('addresses')
+    >>> print j
+    users.user_id=addresses.user_id
+
+`join_to` can also be given the name of a column-based property, in which case it will locate a path to the nearest mapper which has that property as a column:
 
     {python}
     >>> q = session.query(User)
     >>> j = q.join_to('street')
     >>> print j
     users.user_id=addresses.user_id
-    
+
 Also available is the `join_via` function, which is similar to `join_to`, except instead of traversing through all properties to find a path to the given key, its given an explicit path to the target property:
 
     {python}
@@ -422,18 +448,18 @@ Also available is the `join_via` function, which is similar to `join_to`, except
     >>> print j
     users.c.user_id==orders.c.user_id AND orders.c.item_id==items.c.item_id
 
-Expressions produced by `join_to` and `join_via` can be used with `select` to create query criterion:
+Expressions produced by `join_to` and `join_via` can be used with `select` to create more complicated query criterion across multiple relations:
 
     {python}
     >>> l = q.select(
         (addresses_table.c.street=='some address') &
         (items_table.c.item_name=='item #4') &
-        q.join_to('address') &
+        q.join_to('addresses') &
         q.join_via(['orders', 'items'])
         )
-    
-    
-#### Selecting from Relationships: Eager Load {@name=eagerload}
+
+
+#### Eager Loading {@name=eagerload}
 
 With just a single parameter `lazy=False` specified to the relation object, the parent and child SQL queries can be joined together.
 
@@ -479,7 +505,7 @@ The generation of this query is also immune to the effects of additional joins b
                     
 The join implied by passing the "street" parameter is stated as an *additional* join between the `addresses` and `users` tables.  Also, since the eager join is "aliasized", no name conflict occurs.
     
-#### Switching Lazy/Eager, No Load {@name=options}
+#### Using Options to Change the Loading Strategy {@name=options}
 
 The `options` method on the `Query` object provides an easy way to get alternate forms of a mapper query from an original one.  The most common use of this feature is to change the "eager/lazy" loading behavior of a particular mapper, via the functions `eagerload()`, `lazyload()` and `noload()`:
     
