@@ -24,7 +24,15 @@ class CascadeOptions(object):
 def polymorphic_union(table_map, typecolname, aliasname='p_union'):
     colnames = sets.Set()
     colnamemaps = {}
-    for table in table_map.values():
+    
+    for key in table_map.keys():
+        table = table_map[key]
+
+        # mysql doesnt like selecting from a select; make it an alias of the select
+        if isinstance(table, sql.Select):
+            table = table.alias()
+            table_map[key] = table
+
         m = {}
         for c in table.c:
             colnames.add(c.name)
