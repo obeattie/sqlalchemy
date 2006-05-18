@@ -1,6 +1,7 @@
 from sqlalchemy.ext.selectresults import *
+from sqlalchemy.orm.mapper import global_extensions
 
 
 def install_plugin():
-    orm.global_extensions.append(SelectResultsExt)
+    global_extensions.append(SelectResultsExt)
 install_plugin()
