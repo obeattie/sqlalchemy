@@ -214,15 +214,15 @@ class Table(SchemaItem, sql.TableClause):
         issue a SQL DROP statement."""
         key = _get_table_key(self.name, self.schema)
         del self.metadata.tables[key]
-    def create(self, engine=None):
-        if engine is not None:
-            engine.create(self)
+    def create(self, connectable=None):
+        if connectable is not None:
+            connectable.create(self)
         else:
             self.engine.create(self)
         return self
-    def drop(self, engine=None):
-        if engine is not None:
-            engine.drop(self)
+    def drop(self, connectable=None):
+        if connectable is not None:
+            connectable.drop(self)
         else:
             self.engine.drop(self)
     def tometadata(self, metadata, schema=None):
@@ -309,7 +309,11 @@ class Column(SchemaItem, sql.ColumnClause):
 
     def __str__(self):
         if self.table is not None:
-            return str(self.table) + "." + self.name
+            tname = self.table.displayname
+            if tname is not None:
+                return tname + "." + self.name
+            else:
+                return self.name
         else:
             return self.name
     

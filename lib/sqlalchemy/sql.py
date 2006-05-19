@@ -656,6 +656,12 @@ class FromClause(Selectable):
     """represents an element that can be used within the FROM clause of a SELECT statement."""
     def __init__(self, from_name = None):
         self.from_name = self.name = from_name
+    def _display_name(self):
+        if self.named_with_column():
+            return self.name
+        else:
+            return None
+    displayname = property(_display_name)
     def _get_from_objects(self):
         # this could also be [self], at the moment it doesnt matter to the Select object
         return []
@@ -681,7 +687,7 @@ class FromClause(Selectable):
         if not hasattr(self, '_oid_column'):
             self._oid_column = self._locate_oid_column()
         return self._oid_column
-    def corresponding_column(self, column, raiseerr=True):
+    def corresponding_column(self, column, raiseerr=True, keys_ok=False):
         """given a ColumnElement, return the ColumnElement object from this 
         Selectable which corresponds to that original Column via a proxy relationship."""
         for c in column.orig_set:
@@ -690,10 +696,15 @@ class FromClause(Selectable):
             except KeyError:
                 pass
         else:
+            if keys_ok:
+                try:
+                    return self.c[column.key]
+                except KeyError:
+                    pass
             if not raiseerr:
                 return None
             else:
-                raise exceptions.InvalidRequestError("cant get orig for " + str(column) + " with table " + str(column.table.name) + " from table " + str(self.name))
+                raise exceptions.InvalidRequestError("Given column '%s', attached to table '%s', failed to locate a corresponding column from table '%s'" % (str(column), str(column.table), self.name))
                 
     def _get_exported_attribute(self, name):
         try:

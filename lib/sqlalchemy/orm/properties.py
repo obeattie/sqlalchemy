@@ -186,11 +186,13 @@ class PropertyLoader(mapper.MapperProperty):
         else:
             self.mapper = self.argument
 
+        self.mapper = self.mapper.get_select_mapper()
+        
         if self.association is not None:
             if isinstance(self.association, type):
                 self.association = mapper.class_mapper(self.association)
         
-        self.target = self.mapper.select_table
+        self.target = self.mapper.mapped_table
         self.key = key
         self.parent = parent
 
@@ -316,8 +318,8 @@ class PropertyLoader(mapper.MapperProperty):
         
         The list of rules is used within commits by the _synchronize() method when dependent 
         objects are processed."""
-        parent_tables = util.HashSet(self.parent.tables + [self.parent.mapped_table, self.parent.select_table])
-        target_tables = util.HashSet(self.mapper.tables + [self.mapper.mapped_table, self.mapper.select_table])
+        parent_tables = util.HashSet(self.parent.tables + [self.parent.mapped_table])
+        target_tables = util.HashSet(self.mapper.tables + [self.mapper.mapped_table])
 
         self.syncrules = sync.ClauseSynchronizer(self.parent, self.mapper, self.direction)
         if self.direction == sync.MANYTOMANY:
@@ -360,7 +362,7 @@ class LazyLoader(PropertyLoader):
                 # to possibly save a DB round trip
                 if self.use_get:
                     ident = []
-                    for primary_key in self.mapper.pks_by_table[self.mapper.select_table]:
+                    for primary_key in self.mapper.pks_by_table[self.mapper.mapped_table]:
                         bind = self.lazyreverse[primary_key]
                         ident.append(params[bind.key])
                     return self.mapper.using(session).get(ident)

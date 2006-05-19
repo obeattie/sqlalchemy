@@ -164,12 +164,12 @@ class Session(object):
             return self.bind_to
         elif self.binds.has_key(mapper):
             return self.binds[mapper]
-        elif self.binds.has_key(mapper.select_table):
-            return self.binds[mapper.select_table]
+        elif self.binds.has_key(mapper.mapped_table):
+            return self.binds[mapper.mapped_table]
         elif self.bind_to is not None:
             return self.bind_to
         else:
-            e = mapper.select_table.engine
+            e = mapper.mapped_table.engine
             if e is None:
                 raise exceptions.InvalidRequestError("Could not locate any Engine bound to mapper '%s'" % str(mapper))
             return e

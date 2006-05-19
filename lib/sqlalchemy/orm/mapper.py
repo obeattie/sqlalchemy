@@ -79,6 +79,8 @@ class Mapper(object):
             self.polymorphic_map = {}
         else:
             self.polymorphic_map = polymorphic_map
+        self.__surrogate_mapper = None
+        self._surrogate_parent = None
         
         if not issubclass(class_, object):
             raise exceptions.ArgumentError("Class '%s' is not a new-style class" % class_.__name__)
@@ -152,10 +154,9 @@ class Mapper(object):
 
         if select_table is not None:
             self.select_table = select_table
-            self.unjoined_table = self.select_table
         else:
             self.select_table = self.mapped_table
-            self.unjoined_table = self.local_table
+        self.unjoined_table = self.local_table
             
         # locate all tables contained within the "table" passed in, which
         # may be a join or other construct
@@ -169,9 +170,9 @@ class Mapper(object):
                 if k.table != self.mapped_table:
                     # associate pk cols from subtables to the "main" table
                     self.pks_by_table.setdefault(self.mapped_table, util.HashSet(ordered=True)).append(k)
-                # TODO: need select_table, local_table properly accounted for when custom primary key is sent
+                # TODO: need local_table properly accounted for when custom primary key is sent
         else:
-            for t in self.tables + [self.mapped_table, self.select_table]:
+            for t in self.tables + [self.mapped_table]:
                 try:
                     l = self.pks_by_table[t]
                 except KeyError:
@@ -191,22 +192,31 @@ class Mapper(object):
         # table columns mapped to lists of MapperProperty objects
         # using a list allows a single column to be defined as 
         # populating multiple object attributes
-        self.columntoproperty = TranslatingDict(self.select_table)
+        self.columntoproperty = TranslatingDict(self.mapped_table)
         
         # load custom properties 
         if properties is not None:
             for key, prop in properties.iteritems():
                 self.add_property(key, prop, False)
 
+        if inherits is not None:
+            inherits._inheriting_mappers.add(self)
+            for key, prop in inherits.props.iteritems():
+                if not self.props.has_key(key):
+                    p = prop.copy()
+                    if p.adapt(self):
+                        self.add_property(key, p, init=False)
+
         # load properties from the main table object,
         # not overriding those set up in the 'properties' argument
-        for column in self.select_table.columns:
-            if not self.columns.has_key(column.key):
-                self.columns[column.key] = column
-
+        for column in self.mapped_table.columns:
+            
             if self.columntoproperty.has_key(column):
                 continue
                 
+            if not self.columns.has_key(column.key):
+                self.columns[column.key] = column
+
             prop = self.props.get(column.key, None)
             if prop is None:
                 prop = ColumnProperty(column)
@@ -229,7 +239,7 @@ class Mapper(object):
             # back to the property
             proplist = self.columntoproperty.setdefault(column, [])
             proplist.append(prop)
-            
+                
         if not non_primary and (not mapper_registry.has_key(self.class_key) or self.is_primary or (inherits is not None and inherits._is_primary_mapper())):
             sessionlib.global_attributes.reset_class_managed(self.class_)
             self._init_class()
@@ -240,54 +250,71 @@ class Mapper(object):
             if isinstance(self.polymorphic_map[key], type):
                 self.polymorphic_map[key] = class_mapper(self.polymorphic_map[key])
 
-        if inherits is not None:
-            inherits._inheriting_mappers.add(self)
-            for key, prop in inherits.props.iteritems():
-                if not self.props.has_key(key):
-                    self.props[key] = prop.copy()
-                    self.props[key].parent = self
-            #        self.props[key].key = None  # force re-init
         l = [(key, prop) for key, prop in self.props.iteritems()]
         for key, prop in l:
             if getattr(prop, 'key', None) is None:
                 prop.init(key, self)
 
+        # select_table specified...set up a surrogate mapper that will be used for selects
+        # select_table has to encompass all the columns of the mapped_table either directly
+        # or through proxying relationships
+        if self.select_table is not self.mapped_table:
+            props = {}
+            if properties is not None:
+                for key, prop in properties.iteritems():
+                    if sql.is_column(prop):
+                        props[key] = self.select_table.corresponding_column(prop)
+                    elif (isinstance(column, list) and sql.is_column(column[0])):
+                        props[key] = [self.select_table.corresponding_column(c) for c in prop]
+            self.__surrogate_mapper = Mapper(self.class_, self.select_table, non_primary=True, properties=props, polymorphic_map=self.polymorphic_map, polymorphic_on=self.polymorphic_on)
+            
     def add_polymorphic_mapping(self, key, class_or_mapper, entity_name=None):
         if isinstance(class_or_mapper, type):
             class_or_mapper = class_mapper(class_or_mapper, entity_name=entity_name)
         self.polymorphic_map[key] = class_or_mapper
-        
-        
-    
     
     def add_properties(self, dict_of_properties):
         """adds the given dictionary of properties to this mapper, using add_property."""
         for key, value in dict_of_properties.iteritems():
             self.add_property(key, value, True)
+    
+    def _create_prop_from_column(self, column, skipmissing=False):
+        if sql.is_column(column):
+            try:
+                column = self.mapped_table.corresponding_column(column)
+            except KeyError:
+                if skipmissing:
+                    return
+                raise exceptions.ArgumentError("Column '%s' is not represented in mapper's table" % prop._label)
+            return ColumnProperty(column)
+        elif isinstance(column, list) and sql.is_column(column[0]):
+            try:
+                column = [self.mapped_table.corresponding_column(c) for c in column]
+            except KeyError, e:
+                # TODO: want to take the columns we have from this
+                if skipmissing:
+                    return
+                raise exceptions.ArgumentError("Column '%s' is not represented in mapper's table" % e.args[0])
+            return ColumnProperty(*column)
+        else:
+            return None
             
-    def add_property(self, key, prop, init=True):
+    def add_property(self, key, prop, init=True, skipmissing=False):
         """adds an additional property to this mapper.  this is the same as if it were 
         specified within the 'properties' argument to the constructor.  if the named
         property already exists, this will replace it.  Useful for
         circular relationships, or overriding the parameters of auto-generated properties
         such as backreferences."""
 
-        if sql.is_column(prop):
-            try:
-                prop = self.select_table.corresponding_column(prop)
-            except KeyError:
-                raise exceptions.ArgumentError("Column '%s' is not represented in mapper's table" % prop._label)
-            self.columns[key] = prop
-            prop = ColumnProperty(prop)
-        elif isinstance(prop, list) and sql.is_column(prop[0]):
-            try:
-                prop = [self.select_table.corresponding_column(p) for p in prop]
-            except KeyError, e:
-                raise exceptions.ArgumentError("Column '%s' is not represented in mapper's table" % e.args[0])
-            self.columns[key] = prop[0]
-            prop = ColumnProperty(*prop)
+        if not isinstance(prop, MapperProperty):
+            prop = self._create_prop_from_column(prop, skipmissing=skipmissing)
+            if prop is None:
+                raise exceptions.ArgumentError("'%s' is not an instance of MapperProperty or Column" % repr(prop))
+
         self.props[key] = prop
+
         if isinstance(prop, ColumnProperty):
+            self.columns[key] = prop.columns[0]
             for col in prop.columns:
                 proplist = self.columntoproperty.setdefault(col, [])
                 proplist.append(prop)
@@ -297,11 +324,11 @@ class Mapper(object):
 
         for mapper in self._inheriting_mappers:
             p = prop.copy()
-            p.parent = mapper
-            mapper.add_property(key, p, init=False)
+            if p.adapt(mapper):
+                mapper.add_property(key, p, init=False)
         
     def __str__(self):
-        return "Mapper|" + self.class_.__name__ + "|" + (self.entity_name is not None and "/%s" % self.entity_name or "") + self.select_table.name
+        return "Mapper|" + self.class_.__name__ + "|" + (self.entity_name is not None and "/%s" % self.entity_name or "") + self.mapped_table.name
     
     def _is_primary_mapper(self):
         """returns True if this mapper is the primary mapper for its class key (class + entity_name)"""
@@ -416,7 +443,7 @@ class Mapper(object):
 
     def identity(self, instance):
         """returns the identity (list of primary key values) for the given instance.  The list of values can be fed directly into the get() method as mapper.get(*key)."""
-        return [self._getattrbycolumn(instance, column) for column in self.pks_by_table[self.select_table]]
+        return [self._getattrbycolumn(instance, column) for column in self.pks_by_table[self.mapped_table]]
         
 
     def copy(self, **kwargs):
@@ -690,21 +717,23 @@ class Mapper(object):
                 yield c
 
     def _row_identity_key(self, row):
-        return sessionlib.get_row_key(row, self.class_, self.pks_by_table[self.select_table], self.entity_name)
+        return sessionlib.get_row_key(row, self.class_, self.pks_by_table[self.mapped_table], self.entity_name)
 
+    def get_select_mapper(self):
+        return self.__surrogate_mapper or self
+        
     def _instance(self, session, row, imap, result = None, populate_existing = False):
         """pulls an object instance from the given row and appends it to the given result
         list. if the instance already exists in the given identity map, its not added.  in
         either case, executes all the property loaders on the instance to also process extra
         information in the row."""
-        
+
         if self.polymorphic_on is not None:
             discriminator = row[self.polymorphic_on]
             mapper = self.polymorphic_map[discriminator]
             if mapper is not self:
                 row = self.translate_row(mapper, row)
                 return mapper._instance(session, row, imap, result=result, populate_existing=populate_existing)
-            
         
         # look in main identity map.  if its there, we dont do anything to it,
         # including modifying any of its related items lists, as its already
@@ -730,7 +759,7 @@ class Mapper(object):
         if not exists:
             # check if primary key cols in the result are None - this indicates 
             # an instance of the object is not present in the row
-            for col in self.pks_by_table[self.select_table]:
+            for col in self.pks_by_table[self.mapped_table]:
                 if row[col] is None:
                     return None
             # plugin point
@@ -768,8 +797,8 @@ class Mapper(object):
         """attempts to take a row and translate its values to a row that can
         be understood by another mapper."""
         newrow = util.DictDecorator(row)
-        for c in tomapper.select_table.c:
-            c2 = self.select_table.corresponding_column(c)
+        for c in tomapper.mapped_table.c:
+            c2 = self.mapped_table.corresponding_column(c, keys_ok=True, raiseerr=True)
             newrow[c] = row[c2]
         return newrow
         
@@ -880,6 +909,14 @@ class MapperProperty(object):
         self.key = key
         self.parent = parent
         self.do_init(key, parent)
+    def adapt(self, newparent):
+        """adapts this MapperProperty to a new parent, assuming the new parent is an inheriting
+        descendant of the old parent.  Should return True if the adaptation was successful, or
+        False if this MapperProperty cannot be adapted to the new parent (the case for this is,
+        the parent mapper has a polymorphic select, and this property represents a column that is not
+        represented in the new mapper's mapped table)"""
+        self.parent = newparent
+        return True
     def do_init(self, key, parent):
         """template method for subclasses"""
         pass

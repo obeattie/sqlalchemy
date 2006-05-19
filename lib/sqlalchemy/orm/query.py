@@ -15,6 +15,8 @@ class Query(object):
             self.mapper = class_mapper(class_or_mapper, entity_name=entity_name)
         else:
             self.mapper = class_or_mapper
+        self.mapper = self.mapper.get_select_mapper()
+            
         self.always_refresh = kwargs.pop('always_refresh', self.mapper.always_refresh)
         self.order_by = kwargs.pop('order_by', self.mapper.order_by)
         self.extension = kwargs.pop('extension', self.mapper.extension)
@@ -31,7 +33,6 @@ class Query(object):
         else:
             return self._session
     table = property(lambda s:s.mapper.select_table)
-    props = property(lambda s:s.mapper.props)
     session = property(_get_session)
     
     def get(self, ident, **kwargs):

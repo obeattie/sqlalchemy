@@ -76,11 +76,11 @@ Example:
 
 ### Using Connections {@name=connections}
 
-In this section we describe the explicit interface available on Engine.  Note that when using the Object Relational Mapper (ORM) as well as when dealing with only with "bound" metadata objects (described later), SQLAlchemy deals with the Engine for you and you generally don't need to know much about it; in those cases, you can skip this section and go to [metadata](rel:metadata).
+In this section we describe the SQL execution interface available from an `Engine` instance.  Note that when using the Object Relational Mapper (ORM) as well as when dealing with with "bound" metadata objects (described later), SQLAlchemy deals with the Engine for you and you generally don't need to know much about it; in those cases, you can skip this section and go to [metadata](rel:metadata).
 
-The Engine provides methods by which literal SQL text as well as SQL clause constructs can be compiled and executed.  
+The Engine provides a `connect()` method which returns a `Connection` object.  This object provides methods by which literal SQL text as well as SQL clause constructs can be compiled and executed.  
 
-    {python title="Explicit Connection"}
+    {python}
     engine = create_engine('sqlite:///:memory:')
     connection = engine.connect()
     result = connection.execute("select * from mytable where col1=:col1", col1=5)
@@ -90,14 +90,6 @@ The Engine provides methods by which literal SQL text as well as SQL clause cons
 
 The `close` method on `Connection` does not actually remove the underlying connection to the database, but rather indicates that the underlying resources can be returned to the connection pool.  When using the `connect()` method, the DBAPI connection referenced by the `Connection` object is not referenced anywhere else. 
 
-    {python title="Implicit Connection"}
-    engine = create_engine('sqlite:///:memory:')
-    result = engine.execute("select * from mytable where col1=:col1", col1=5)
-    for row in result:
-        print row['col1'], row['col2']
-    result.close()
-
-When executing off the Engine directly, a Connection is created and used automatically.  The returned `ResultProxy` then has a `close()` method, which will return the resources used by the `Connection`.  This is a more abbreviated style of usage which is also the method used when dealing with "bound" schema and statement objects, which are described later.
 
 In both execution styles above, the `Connection` object will also automatically return its resources to the connection pool when the object is garbage collected, i.e. its `__del__()` method is called.  When using the standard C implementation of Python, this method is usually called immediately as soon as the object is dereferenced.  With other Python implementations such as Jython, this is not so guaranteed.  
     
@@ -110,7 +102,7 @@ The execute method on `Engine` and `Connection` can also receive SQL clause cons
         print row['col1'], row['col2']
     connection.close()
 
-In many cases, the `Connection` and `Engine` can be used interchangeably; as they both provide an `engine` attribute as well as similar `execute` methods, most SQLAlchemy functions which take an `Engine` as a parameter with which to execute SQL will also accept a `Connection`:
+Both `Connection` and `Engine` fulfill an interface known as `Connectable` which specifies common functionality between the two objects, such as getting a `Connection` and executing queries.  Therefore, most SQLAlchemy functions which take an `Engine` as a parameter with which to execute SQL will also accept a `Connection`:
 
     {python title="Specify Engine or Connection"}
     engine = create_engine('sqlite:///:memory:')
@@ -128,7 +120,18 @@ In many cases, the `Connection` and `Engine` can be used interchangeably; as the
 
 #### Implicit Connection Contexts {@name=context}
 
-"Implicit" connections refer to the example above when the `execute()` method is called directly off the `Engine` object, *without* the usage of a `Connection` object, and resources are released by calling the `close()` method on the result object.  When using "implicit" connections, the user has two choices, determined when the Engine is first created, as to how the resources of this connection should be used in relation to other connections.  This is determined by the `strategy` argument to `create_engine()`, which has two possible values: `plain` and `threadlocal`.  In `plain`, every `execute` call uses a distinct connection from the database, which is only released when the `close()` method on the Result is called, or the result object itself and its underlying Connection falls out of scope and is garbage collected.  In `threadlocal`, multiple calls to `execute()` within the same thread will use the already-checked out connection resource if one is available, or if none is available will request a connection resource.
+SQL operations can also be performed using the `Engine` alone without explicitly referencing a `Connection`.  The operation is executed with a connection that is allocated internally.  This type of connection, i.e. the automatically allocated connection when calling `execute()` directly off of an `Engine`, is called an **implicit connection**.
+
+    {python title="Implicit Connection"}
+    engine = create_engine('sqlite:///:memory:')
+    result = engine.execute("select * from mytable where col1=:col1", col1=5)
+    for row in result:
+        print row['col1'], row['col2']
+    result.close()
+
+When using implicit connections, the returned `ResultProxy` has a `close()` method which will return the resources used by the `Connection`.  While the implicit method of execution seems redundant in light of the explicit `Connection` object available, it is essentially the same methodology used by "bound" schema and statement objects to execute themselves, so the same rules of connection allocation apply.
+
+The user has two choices, determined when the Engine is first created, as to how the resources of this connection should be used in relation to other connections.  This is determined by the `strategy` argument to `create_engine()`, which has two possible values: `plain` and `threadlocal`.  In `plain`, every `execute` call uses a distinct connection from the database, which is only released when the `close()` method on the Result is called, or the result object itself and its underlying Connection falls out of scope and is garbage collected.  In `threadlocal`, multiple calls to `execute()` within the same thread will use the already-checked out connection resource if one is available, or if none is available will request a connection resource.
 
 It is crucial to note that the `plain` and `threadlocal` contexts **do not impact the connect() method on the Engine.**  If you are using explicit Connection objects returned by `connect()` method, you have full control over the connection resources used.
 

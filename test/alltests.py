@@ -52,6 +52,7 @@ def suite():
         'manytomany',
         'onetoone',
         'inheritance',
+	'polymorph',
         
         # extensions
         'proxy_engine',

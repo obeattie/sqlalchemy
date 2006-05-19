@@ -157,6 +157,13 @@ class Connectable(object):
     def contextual_connect(self):
         """returns a Connection object which may be part of an ongoing context."""
         raise NotImplementedError()
+    def create(self, entity, **kwargs):
+        """creates a table or index given an appropriate schema object."""
+        raise NotImplementedError()
+    def drop(self, entity, **kwargs):
+        raise NotImplementedError()
+    def execute(self, object, *multiparams, **params):
+        raise NotImplementedError()
     def _not_impl(self):
         raise NotImplementedError()
     engine = property(_not_impl, doc="returns the Engine which this Connectable is associated with.")
@@ -532,6 +539,7 @@ class ResultProxy:
             try:
                 rec = self.props[key._label.lower()]
             except KeyError:
+                print "DIDNT HAVE", key._label.lower()
                 try:
                     rec = self.props[key.key.lower()]
                 except KeyError:
