@@ -137,8 +137,8 @@ class MultipleTableTest(testbase.PersistTest):
         print session.new
         session.flush()
         session.clear()
-
-        c = session.query(Company).get(1)
+        id = c.company_id
+        c = session.query(Company).get(id)
         for e in c.employees:
             print e, e._instance_key, e.company
         if include_base:
@@ -157,7 +157,7 @@ class MultipleTableTest(testbase.PersistTest):
         session.flush()
         session.clear()
 
-        c = session.query(Company).get(1)
+        c = session.query(Company).get(id)
         for e in c.employees:
             print e, e._instance_key
 
