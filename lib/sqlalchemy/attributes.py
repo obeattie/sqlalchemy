@@ -96,8 +96,9 @@ class ManagedAttribute(object):
         pass
     def hasparent(self, item):
         return item.__class__._attribute_manager.attribute_history(item).get('_hasparent_' + self.key)
-    def sethasparent(self, item, value):    
-        item.__class__._attribute_manager.attribute_history(item)['_hasparent_' + self.key] = value
+    def sethasparent(self, item, value):
+        if item is not None:
+            item.__class__._attribute_manager.attribute_history(item)['_hasparent_' + self.key] = value
 
 class ScalarAttribute(ManagedAttribute):
     """Used by AttributeManager to track the history of a scalar attribute
