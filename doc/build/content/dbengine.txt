@@ -47,7 +47,7 @@ Keyword options can also be specified to `create_engine()`, following the string
 
 Options that can be specified include the following:
 
-* strategy='plain' : the Strategy describes the general configuration used to create this Engine.  The two available values are `plain`, which is the default, and `threadlocal`, which applies a "thread-local context" to implicit executions performed by the Engine.  This context is further described in the sections below.
+* strategy='plain' : the Strategy describes the general configuration used to create this Engine.  The two available values are `plain`, which is the default, and `threadlocal`, which applies a "thread-local context" to implicit executions performed by the Engine.  This context is further described in [dbengine_connections_context](rel:dbengine_connections_context).
 * pool=None : an instance of `sqlalchemy.pool.Pool` to be used as the underlying source for connections, overriding the engine's connect arguments (pooling is described in [pooling](rel:pooling)).  If None, a default `Pool` (usually `QueuePool`, or `SingletonThreadPool` in the case of SQLite) will be created using the engine's connect arguments.
 
 Example:
@@ -120,7 +120,7 @@ Both `Connection` and `Engine` fulfill an interface known as `Connectable` which
 
 #### Implicit Connection Contexts {@name=context}
 
-SQL operations can also be performed using the `Engine` alone without explicitly referencing a `Connection`.  The operation is executed with a connection that is allocated internally.  This type of connection, i.e. the automatically allocated connection when calling `execute()` directly off of an `Engine`, is called an **implicit connection**.
+An **implicit connection** refers to connections that are allocated by the `Engine` internally.  There are two general cases when this occurs:  when using the various `execute()` methods that are available off the `Engine` object itself, and when calling the `execute()` method on constructed SQL objects, which are described in [sqlconstruction](rel:sqlconstruction).
 
     {python title="Implicit Connection"}
     engine = create_engine('sqlite:///:memory:')
@@ -129,11 +129,13 @@ SQL operations can also be performed using the `Engine` alone without explicitly
         print row['col1'], row['col2']
     result.close()
 
-When using implicit connections, the returned `ResultProxy` has a `close()` method which will return the resources used by the `Connection`.  While the implicit method of execution seems redundant in light of the explicit `Connection` object available, it is essentially the same methodology used by "bound" schema and statement objects to execute themselves, so the same rules of connection allocation apply.
+When using implicit connections, the returned `ResultProxy` has a `close()` method which will return the resources used by the underlying `Connection`.   
 
-The user has two choices, determined when the Engine is first created, as to how the resources of this connection should be used in relation to other connections.  This is determined by the `strategy` argument to `create_engine()`, which has two possible values: `plain` and `threadlocal`.  In `plain`, every `execute` call uses a distinct connection from the database, which is only released when the `close()` method on the Result is called, or the result object itself and its underlying Connection falls out of scope and is garbage collected.  In `threadlocal`, multiple calls to `execute()` within the same thread will use the already-checked out connection resource if one is available, or if none is available will request a connection resource.
+The `strategy` keyword argument to `create_engine()` affects the algorithm used to retreive the underlying DBAPI connection used by implicit executions.  When set to `plain`, each implicit execution requests a unique connection from the connection pool, which is returned to the pool when the resulting `ResultProxy` falls out of scope (i.e. `__del__()` is called) or its `close()` method is called.  If a second implicit execution occurs while the `ResultProxy` from the previous execution is still open, then a second connection is pulled from the pool.
 
-It is crucial to note that the `plain` and `threadlocal` contexts **do not impact the connect() method on the Engine.**  If you are using explicit Connection objects returned by `connect()` method, you have full control over the connection resources used.
+When `strategy` is set to `threadlocal`, the `Engine` still checks out a connection which is closeable in the same manner via the `ResultProxy`, except the connection it checks out will be the **same** connection as one which is already checked out, assuming the operation is in the same thread.  When all `ResultProxy` objects are closed, the connection is returned to the pool normally.
+
+It is crucial to note that the `plain` and `threadlocal` contexts **do not impact the connect() method on the Engine.**  `connect()` always returns a unique connection.  Implicit connections use a different method off of `Engine` for their operations called `contextual_connect()`.
 
 The `plain` strategy is better suited to an application that insures the explicit releasing of the resources used by each execution.  This is because each execution uses its own distinct connection resource, and as those resources remain open, multiple connections can be checked out from the pool quickly.  Since the connection pool will block further requests when too many connections have been checked out, not keeping track of this can impact an application's stability.
 
@@ -155,7 +157,9 @@ The `plain` strategy is better suited to an application that insures the explici
     # release connection 2
     r2.close()
 
-The `threadlocal` strategy is better suited to a programming style which relies upon the `__del__()` method of Connection objects in order to return them to the connection pool, rather than explicitly issuing a `close()` statement upon the `Result` object.   This is because all of the executions within a single thread will share the same connection, if one has already been checked out in the current thread.  Using this style, an application will use only one connection per thread at most within the scope of all implicit executions.
+Advantages to `plain` include that connection resources are immediately returned to the connection pool, without any reliance upon the `__del__()` method; there is no chance of resources being left around by a Python implementation that doesn't necessarily call `__del__()` immediately. 
+
+The `threadlocal` strategy is better suited to a programming style which relies upon the `__del__()` method of Connection objects in order to return them to the connection pool, rather than explicitly issuing a `close()` statement upon the `ResultProxy` object.   This is because all of the executions within a single thread will share the same connection, if one has already been checked out in the current thread.  Using this style, an application will use only one connection per thread at most within the scope of all implicit executions.
 
     {python title="Threadlocal Strategy"}
     db = create_engine('mysql://localhost/test', strategy='threadlocal')
@@ -179,6 +183,8 @@ The `threadlocal` strategy is better suited to a programming style which relies 
 
 While the `close()` method is still available with the "threadlocal" strategy, it should be used carefully.  Above, if we issued a `close()` call on `r1`, and then tried to further work with results from `r2`, `r2` would be in an invalid state since its connection was already returned to the pool.  By relying on `__del__()` to automatically clean up resources, this condition will never occur.
 
+Advantages to `threadlocal` include that resources can be left to clean up after themselves, application code can be more minimal, its guaranteed that only one connection is used per thread, and there is no chance of a "connection pool block", which is when an execution hangs because the current thread has already checked out all remaining resources.
+
 To get at the actual `Connection` object which is used by implicit executions, call the `contextual_connection()` method on `Engine`:
 
     {python title="Contextual Connection"}
@@ -192,8 +198,6 @@ To get at the actual `Connection` object which is used by implicit executions, c
     True
 
 When the `plain` strategy is used, the `contextual_connection()` method is synonymous with the `connect()` method; both return a distinct connection from the pool.
-    
-At this point, you're probably saying, "wow, why would anyone *ever* want to use the [insert name here] strategy ??"  Advantages to `plain` include that connection resources are immediately returned to the connection pool, without any reliance upon the `__del__()` method; there is no chance of resources being left around by a Python implementation that doesn't necessarily call `__del__()` immediately.  Advantages to `threadlocal` include that resources can be left to clean up after themselves, application code can be more minimal, its guaranteed that only one connection is used per thread, and there is no chance of a "connection pool block", which is when an execution hangs because the current thread has already checked out all remaining resources.
 
 ### Transactions {@name=transactions}
 

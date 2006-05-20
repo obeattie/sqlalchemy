@@ -1,3 +1,6 @@
+[alpha_api]: javascript:alphaApi()
+[alpha_implementation]: javascript:alphaImplementation()
+
 Session / Unit of Work {@name=unitofwork}
 ============
 
@@ -310,6 +313,8 @@ This method is a combination of the `save()` and `update()` methods, which will 
 
 #### merge() {@name=merge}
 
+Feature Status: [Alpha Implementation][alpha_implementation] 
+
 `merge()` is used to return the persistent version of an instance that is not attached to this Session.  When passed an instance, if an instance with its database identity already exists within this Session, it is returned.  If the instance does not exist in this Session, it is loaded from the database and then returned.  
 
 A future version of `merge()` will also update the Session's instance with the state of the given instance (hence the name "merge").
@@ -327,6 +332,8 @@ This method is useful for bringing in objects which may have been restored from 
 Note that `merge()` *does not* associate the given instance with the Session; it remains detached (or attached to whatever Session it was already attached to).
         
 ### Cascade rules {@name=cascade}
+
+Feature Status: [Alpha Implementation][alpha_implementation] 
 
 Mappers support the concept of configurable *cascade* behavior on `relation()`s.  This behavior controls how the Session should treat the instances that have a parent-child relationship with another instance that is operated upon by the Session.  Cascade is indicated as a comma-separated list of string keywords, with the possible values `all`, `delete`, `save-update`, `refresh-expire`, `merge`, `expunge`, and `delete-orphan`.
 

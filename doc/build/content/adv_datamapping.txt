@@ -1,3 +1,6 @@
+[alpha_api]: javascript:alphaApi()
+[alpha_implementation]: javascript:alphaImplementation()
+
 Advanced Data Mapping {@name=advdatamapping}
 ======================
 
@@ -81,7 +84,49 @@ A common request is the ability to create custom class properties that override 
        '_email': mytable.c.email
     })
 
-In a later release, SQLAlchemy will also allow `_get_email` and `_set_email` to be attached directly to the "email" property created by the mapper, and will also allow this association to occur via decorators.
+In a later release, SQLAlchemy will also allow `_get_email` and `_set_email` to be attached directly to the "email" property created by the mapper, and 
+will also allow this association to occur via decorators.
+
+
+#### Custom List Classes {@name=customlist}
+
+Feature Status: [Alpha API][alpha_api] 
+
+A one-to-many or many-to-many relationship results in a list-holding element being attached to all instances of a class.  Currently, this list is an instance of `sqlalchemy.util.HistoryArraySet`, is a `UserDict` instance that *decorates* an underlying list object.  The implementation of this list can be controlled, and can in fact be any object that implements a `list`-style `append` and `__iter__` method.  A common need is for a list-based relationship to actually be a dictionary.  This can be achieved by subclassing `dict` to have `list`-like behavior.
+
+In this example, a class `MyClass` is defined, which is associated with a parent object `MyParent`.  The collection of `MyClass` objects on each `MyParent` object will be a dictionary, storing each `MyClass` instance keyed to its `name` attribute.
+
+    {python}
+    # a class to be stored in the list
+    class MyClass(object):
+        def __init__(self, name):
+            self.name = name
+            
+    # create a dictionary that will act like a list, and store
+    # instances of MyClass
+    class MyDict(dict):
+        def append(self, item):
+            self[item.name] = item
+        def __iter__(self):
+            return self.values()
+
+    # parent class
+    class MyParent(object):
+        # this class-level attribute provides the class to be
+        # used by the 'myclasses' attribute
+        myclasses = MyDict
+    
+    # mappers, constructed normally
+    mapper(MyClass, myclass_table)
+    mapper(MyParent, myparent_table, properties={
+        'myclasses' : relation(MyClass)
+    })
+    
+    # elements on 'myclasses' can be accessed via string keyname
+    myparent = MyParent()
+    myparent.myclasses.append(MyClass('this is myclass'))
+    myclass = myparent.myclasses['this is myclass']
+
 
 #### Custom Join Conditions {@name=customjoin}
         
@@ -277,7 +322,6 @@ However, things get tricky when dealing with eager relationships, since a straig
     
 The main WHERE clause as well as the limiting clauses are coerced into a subquery; this subquery represents the desired result of objects.  A containing query, which handles the eager relationships, is joined against the subquery to produce the result.
 
-   
 ### More on Mapper Options {@name=options}
 
 The `options` method on the `Query` object, first introduced in [datamapping_relations_options](rel:datamapping_relations_options), produces a new `Query` object by creating a copy of the underlying `Mapper` and placing modified properties on it.  The `options` method is also directly available off the `Mapper` object itself, so that the newly copied `Mapper` can be dealt with directly.  The `options` method takes a variable number of `MapperOption` objects which know how to change specific things about the mapper.  The five available options are `eagerload`, `lazyload`, `noload`, `deferred` and `extension`.
@@ -308,6 +352,8 @@ The `defer` and `undefer` options can control the deferred loading of attributes
     m = book_mapper.options(defer('photos.imagedata'))
     
 ### Mapping a Class with Table Inheritance {@name=inheritance}
+
+Feature Status: [Alpha Implementation][alpha_implementation] 
 
 Inheritance in databases comes in three forms:  *single table inheritance*, where several types of classes are stored in one table, *concrete table inheritance*, where each type of class is stored in its own table, and *multiple table inheritance*, where the parent/child classes are stored in their own tables that are joined together in a select.
 
@@ -535,7 +581,7 @@ example:
 
 ### Circular Mapping {@name=circular}
 
-Oftentimes it is necessary for two mappers to be related to each other.  With a datamodel that consists of Users that store Addresses, you might have an Address object and want to access the "user" attribute on it, or have a User object and want to get the list of Address objects.  The easiest way to do this is via the `backreference` keyword described in [datamapping_relations_backreferences](rel:datamapping_relations_backreferences).  Although even when backreferences are used, it is sometimes necessary to explicitly specify the relations on both mappers pointing to each other.
+Oftentimes it is necessary for two mappers to be related to each other.  With a datamodel that consists of Users that store Addresses, you might have an Address object and want to access the "user" attribute on it, or have a User object and want to get the list of Address objects.  The easiest way to do this is via the `backref` keyword described in [datamapping_relations_backreferences](rel:datamapping_relations_backreferences).  Although even when backreferences are used, it is sometimes necessary to explicitly specify the relations on both mappers pointing to each other.
 To achieve this involves creating the first mapper by itself, then creating the second mapper referencing the first, then adding references to the first mapper to reference the second:
 
     {python}
