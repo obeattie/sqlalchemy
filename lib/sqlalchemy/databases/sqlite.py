@@ -116,7 +116,7 @@ def descriptor():
     return {'name':'sqlite',
     'description':'SQLite',
     'arguments':[
-        ('host', "Database Filename",None)
+        ('database', "Database Filename",None)
     ]}
 
 

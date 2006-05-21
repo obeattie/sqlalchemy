@@ -255,9 +255,9 @@ class HistoryArraySet(UserList.UserList):
         """sets the data for this HistoryArraySet to be that of the given data.
         duplicates in the incoming list will be removed."""
         # first mark everything current as "deleted"
-        for i in self.data:
-            self.records[i] = False
-            self.do_value_deleted(value)
+        for item in self.data:
+            self.records[item] = False
+            self.do_value_deleted(item)
             
         # switch array
         self.data = data

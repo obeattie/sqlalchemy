@@ -1084,21 +1084,22 @@ class TranslatingDict(dict):
     def __init__(self, selectable):
         super(TranslatingDict, self).__init__()
         self.selectable = selectable
+    def __translate_col(self, col):
+        ourcol = self.selectable.corresponding_column(col, keys_ok=False, raiseerr=False)
+        if ourcol is None:
+            return col
+        else:
+            return ourcol
     def __getitem__(self, col):
-        ourcol = self.selectable.corresponding_column(col)
-        return super(TranslatingDict, self).__getitem__(ourcol)
+        return super(TranslatingDict, self).__getitem__(self.__translate_col(col))
     def has_key(self, col):
-        ourcol = self.selectable.corresponding_column(col)
-        return super(TranslatingDict, self).has_key(ourcol)
+        return super(TranslatingDict, self).has_key(self.__translate_col(col))
     def __setitem__(self, col, value):
-        ourcol = self.selectable.corresponding_column(col)
-        return super(TranslatingDict, self).__setitem__(ourcol, value)
+        return super(TranslatingDict, self).__setitem__(self.__translate_col(col), value)
     def __contains__(self, col):
-        ourcol = self.selectable.corresponding_column(col)
-        return super(TranslatingDict, self).__contains__(ourcol)
+        return self.has_key(col)
     def setdefault(self, col, value):
-        ourcol = self.selectable.corresponding_column(col)
-        return super(TranslatingDict, self).setdefault(ourcol, value)
+        return super(TranslatingDict, self).setdefault(self.__translate_col(col), value)
             
 class ClassKey(object):
     """keys a class and an entity name to a mapper, via the mapper_registry"""

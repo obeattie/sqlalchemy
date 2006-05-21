@@ -522,5 +522,8 @@ class AttributeManager(object):
         if not hasattr(class_, '_attribute_manager'):
             class_._attribute_manager = self
         typecallable = getattr(class_, key, None)
+        # TODO: look at existing properties on the class, and adapt them to the SmartProperty
+        if isinstance(typecallable, SmartProperty):
+            typecallable = None
         setattr(class_, key, self.create_prop(class_, key, uselist, callable_, typecallable=typecallable, **kwargs))
 
