@@ -101,15 +101,15 @@ class IndexTest(testbase.AssertMixin):
                                 sport='hockey', announcer='some canadian',
                                 winner='sweden')
         ss = events.select().execute().fetchall()
-        
+
         assert capt[0].strip().startswith('CREATE TABLE events')
-        assert capt[2].strip() == \
+        assert capt[3].strip() == \
             'CREATE UNIQUE INDEX ux_name ON events (name)'
-        assert capt[4].strip() == \
-            'CREATE INDEX ix_location ON events (location)'
         assert capt[6].strip() == \
+            'CREATE INDEX ix_location ON events (location)'
+        assert capt[9].strip() == \
             'CREATE UNIQUE INDEX sport_announcer ON events (sport, announcer)'
-        assert capt[8].strip() == \
+        assert capt[12].strip() == \
             'CREATE INDEX idx_winners ON events (winner)'
             
 if __name__ == "__main__":    

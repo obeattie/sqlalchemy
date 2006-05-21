@@ -1157,10 +1157,10 @@ class ColumnClause(ColumnElement):
         if self.__label is None:
             if self.table is not None and self.table.named_with_column():
                 self.__label =  self.table.name + "_" + self.name
+                if self.table.c.has_key(self.__label) or len(self.__label) >= 30:
+                    self.__label = self.__label[0:24] + "_" + hex(random.randint(0, 65535))[2:]
             else:
                 self.__label = self.name
-            if (self.table is not None and self.table.c.has_key(self.__label)) or len(self.__label) >= 30:
-                self.__label = self.__label[0:24] + "_" + hex(random.randint(0, 65535))[2:]
         return self.__label
     _label = property(_get_label)
     def accept_visitor(self, visitor): 

@@ -695,7 +695,8 @@ By throwing the `compile()` method onto the end of any query object, the query c
 
 The sql package tries to allow free textual placement in as many ways as possible.  In the examples below, note that the from_obj parameter is used only when no other information exists within the select object with which to determine table metadata.  Also note that in a query where there isnt even table metadata used, the SQLEngine to be used for the query has to be explicitly specified:
 
-    {python}# strings as column clauses
+    {python}
+    # strings as column clauses
     {sql}select(["user_id", "user_name"], from_obj=[users]).execute()
     SELECT user_id, user_name FROM users
     {}
@@ -736,19 +737,9 @@ The sql package tries to allow free textual placement in as many ways as possibl
     
     # a full query
     {sql}text("select user_name from users", engine=db).execute()
-    select user_name from users
+    SELECT user_name FROM users
     {}
     
-    # or call text() off of the engine
-    engine.text("select user_name from users").execute()
-    
-    # execute off the engine directly - you must use the engine's native bind parameter
-    # style (i.e. named, pyformat, positional, etc.)
-    {sql}db.execute(
-            "select user_name from users where user_id=:user_id", 
-            {'user_id':7}).execute()
-    select user_name from users where user_id=:user_id
-    {'user_id':7}
 
 #### Using Bind Parameters in Text Blocks {@name=textual_binds}
 

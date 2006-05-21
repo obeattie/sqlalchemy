@@ -56,7 +56,10 @@ class Mapper(object):
         ext = MapperExtension()
         
         for ext_class in global_extensions:
-            ext = ext_class().chain(ext)
+            if isinstance(ext_class, MapperExtension):
+                ext = ext_class.chain(ext)
+            else:
+                ext = ext_class().chain(ext)
 
         if extension is not None:
             for ext_obj in util.to_list(extension):

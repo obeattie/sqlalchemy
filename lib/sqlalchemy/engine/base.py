@@ -539,7 +539,6 @@ class ResultProxy:
             try:
                 rec = self.props[key._label.lower()]
             except KeyError:
-                print "DIDNT HAVE", key._label.lower()
                 try:
                     rec = self.props[key.key.lower()]
                 except KeyError:

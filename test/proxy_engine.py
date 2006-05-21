@@ -12,22 +12,28 @@ import testbase
 #
 
 
-module_engine = ProxyEngine(echo=testbase.echo)
-module_metadata = MetaData()
+class ProxyTestBase(PersistTest):
+    def setUpAll(self):
 
-users = Table('users', module_metadata, 
-              Column('user_id', Integer, primary_key=True),
-              Column('user_name', String(16)),
-              Column('password', String(20))
-              )
+        global users, User, module_engine, module_metadata
 
-class User(object):
-    pass
+        module_engine = ProxyEngine(echo=testbase.echo)
+        module_metadata = MetaData()
 
-User.mapper = mapper(User, users)
+        users = Table('users', module_metadata, 
+                      Column('user_id', Integer, primary_key=True),
+                      Column('user_name', String(16)),
+                      Column('password', String(20))
+                      )
 
+        class User(object):
+            pass
 
-class ConstructTest(PersistTest):
+        User.mapper = mapper(User, users)
+    def tearDownAll(self):
+        clear_mappers()
+
+class ConstructTest(ProxyTestBase):
     """tests that we can build SQL constructs without engine-specific parameters, particulary
     oid_column, being needed, as the proxy engine is usually not connected yet."""
 
@@ -40,7 +46,7 @@ class ConstructTest(PersistTest):
         j = join(t, t2)
         
 
-class ProxyEngineTest1(PersistTest):
+class ProxyEngineTest1(ProxyTestBase):
 
     def test_engine_connect(self):
         # connect to a real engine
@@ -76,7 +82,7 @@ class ProxyEngineTest1(PersistTest):
             module_metadata.drop_all(module_engine)
 
 
-class ThreadProxyTest(PersistTest):
+class ThreadProxyTest(ProxyTestBase):
 
     def tearDownAll(self):
         os.remove('threadtesta.db')
@@ -143,7 +149,7 @@ class ThreadProxyTest(PersistTest):
             raise res
 
 
-class ProxyEngineTest2(PersistTest):
+class ProxyEngineTest2(ProxyTestBase):
 
     def test_table_singleton_a(self):
         """set up for table singleton check

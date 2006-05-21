@@ -3,13 +3,26 @@ import unittest, sys, os
 from sqlalchemy import *
 import StringIO
 import testbase
+from sqlalchemy.orm.mapper import global_extensions
+from sqlalchemy.ext.sessioncontext import SessionContext
 
 from tables import *
 import tables
 
-class HistoryTest(AssertMixin):
+class SessionTest(AssertMixin):
     def setUpAll(self):
-        self.install_threadlocal()
+        global ctx
+        ctx = SessionContext(create_session)
+        global_extensions.append(ctx.mapper_extension)
+    def tearDownAll(self):
+        global_extensions.remove(ctx.mapper_extension)
+    def tearDown(self):
+        ctx.current.clear()
+        clear_mappers()
+
+class HistoryTest(SessionTest):
+    def setUpAll(self):
+        SessionTest.setUpAll(self)
         db.echo = False
         users.create()
         addresses.create()
@@ -19,10 +32,7 @@ class HistoryTest(AssertMixin):
         addresses.drop()
         users.drop()
         db.echo = testbase.echo
-        self.uninstall_threadlocal()
-    def setUp(self):
-        objectstore.clear()
-        clear_mappers()
+        SessionTest.tearDownAll(self)
         
     def testattr(self):
         """tests the rolling back of scalar and list attributes.  this kind of thing
@@ -45,7 +55,7 @@ class HistoryTest(AssertMixin):
         self.assert_result([u], data[0], *data[1:])
 
         self.echo(repr(u.addresses))
-        objectstore.get_session().uow.rollback_object(u)
+        ctx.current.uow.rollback_object(u)
         data = [User,
             {'user_name' : None,
              'addresses' : (Address, [])
@@ -62,10 +72,8 @@ class HistoryTest(AssertMixin):
             addresses = relation(am, backref='user', lazy=False))
         )
         
-        u = User()
-        a = Address()
-        s.save(u)
-        s.save(a)
+        u = User(_sa_session=s)
+        a = Address(_sa_session=s)
         a.user = u
         #print repr(a.__class__._attribute_manager.get_history(a, 'user').added_items())
         #print repr(u.addresses.added_items())
@@ -77,10 +85,10 @@ class HistoryTest(AssertMixin):
         print u.addresses[0].user
 
 
-class VersioningTest(AssertMixin):
+class VersioningTest(SessionTest):
     def setUpAll(self):
-        self.install_threadlocal()
-        objectstore.clear()
+        SessionTest.setUpAll(self)
+        ctx.current.clear()
         global version_table
         version_table = Table('version_test', db,
         Column('id', Integer, primary_key=True),
@@ -89,11 +97,10 @@ class VersioningTest(AssertMixin):
         ).create()
     def tearDownAll(self):
         version_table.drop()
-        self.uninstall_threadlocal()
+        SessionTest.tearDownAll(self)
     def tearDown(self):
         version_table.delete().execute()
-        objectstore.clear()
-        clear_mappers()
+        SessionTest.tearDown(self)
     
     @testbase.unsupported('mysql')
     def testbasic(self):
@@ -138,10 +145,9 @@ class VersioningTest(AssertMixin):
             success = True
         assert success
         
-class UnicodeTest(AssertMixin):
+class UnicodeTest(SessionTest):
     def setUpAll(self):
-        self.install_threadlocal()
-        objectstore.clear()
+        SessionTest.setUpAll(self)
         global uni_table
         uni_table = Table('uni_test', db,
             Column('id',  Integer, primary_key=True),
@@ -149,8 +155,7 @@ class UnicodeTest(AssertMixin):
 
     def tearDownAll(self):
         uni_table.drop()
-        uni_table.deregister()
-        self.uninstall_threadlocal()
+        SessionTest.tearDownAll(self)
 
     def testbasic(self):
         class Test(object):
@@ -162,13 +167,13 @@ class UnicodeTest(AssertMixin):
         txt = u"\u0160\u0110\u0106\u010c\u017d"
         t1 = Test(id=1, txt = txt)
         self.assert_(t1.txt == txt)
-        objectstore.flush()
+        ctx.current.flush()
         self.assert_(t1.txt == txt)
 
 
-class PKTest(AssertMixin):
+class PKTest(SessionTest):
     def setUpAll(self):
-        self.install_threadlocal()
+        SessionTest.setUpAll(self)
         db.echo = False
         global table
         global table2
@@ -202,10 +207,7 @@ class PKTest(AssertMixin):
         table2.drop()
         table3.drop()
         db.echo = testbase.echo
-        self.uninstall_threadlocal()
-    def setUp(self):
-        objectstore.clear()
-        clear_mappers()
+        SessionTest.tearDownAll(self)
         
     @testbase.unsupported('sqlite')
     def testprimarykey(self):
@@ -216,8 +218,8 @@ class PKTest(AssertMixin):
         e.name = 'entry1'
         e.value = 'this is entry 1'
         e.multi_rev = 2
-        objectstore.flush()
-        objectstore.clear()
+        ctx.current.flush()
+        ctx.current.clear()
         e2 = Entry.mapper.get((e.multi_id, 2))
         self.assert_(e is not e2 and e._instance_key == e2._instance_key)
     def testmanualpk(self):
@@ -228,7 +230,7 @@ class PKTest(AssertMixin):
         e.pk_col_1 = 'pk1'
         e.pk_col_2 = 'pk1_related'
         e.data = 'im the data'
-        objectstore.flush()
+        ctx.current.flush()
     def testkeypks(self):
         import datetime
         class Entity(object):
@@ -239,12 +241,12 @@ class PKTest(AssertMixin):
         e.secondary = 'pk2'
         e.assigned = datetime.date.today()
         e.data = 'some more data'
-        objectstore.flush()
+        ctx.current.flush()
 
-class PrivateAttrTest(AssertMixin):
+class PrivateAttrTest(SessionTest):
     """tests various things to do with private=True mappers"""
     def setUpAll(self):
-        self.install_threadlocal()
+        SessionTest.setUpAll(self)
         global a_table, b_table
         a_table = Table('a',testbase.db,
             Column('a_id', Integer, Sequence('next_a_id'), primary_key=True),
@@ -258,10 +260,7 @@ class PrivateAttrTest(AssertMixin):
     def tearDownAll(self):
         b_table.drop()
         a_table.drop()
-        self.uninstall_threadlocal()
-    def setUp(self):
-        objectstore.clear()
-        clear_mappers()
+        SessionTest.tearDownAll(self)
     
     def testsinglecommit(self):
         """tests that a commit of a single object deletes private relationships"""
@@ -284,10 +283,10 @@ class PrivateAttrTest(AssertMixin):
         a.bs.append(b2)
     
         # inserts both A and Bs
-        objectstore.flush([a])
+        ctx.current.flush([a])
     
-        objectstore.delete(a)
-        objectstore.flush([a])
+        ctx.current.delete(a)
+        ctx.current.flush([a])
         
         assert b_table.count().scalar() == 0
 
@@ -304,24 +303,24 @@ class PrivateAttrTest(AssertMixin):
         a2 = A(data='testa2')
         b = B(data='testb')
         b.a = a1
-        objectstore.flush()
-        objectstore.clear()
-        sess = objectstore.get_session()
+        ctx.current.flush()
+        ctx.current.clear()
+        sess = ctx.current
         a1 = A.mapper.get(a1.a_id)
         a2 = A.mapper.get(a2.a_id)
         assert a1.bs[0].a is a1
         b = a1.bs[0]
         b.a = a2
         assert b not in sess.deleted
-        objectstore.flush()
+        ctx.current.flush()
         assert b in sess.identity_map.values()
                 
-class DefaultTest(AssertMixin):
+class DefaultTest(SessionTest):
     """tests that when saving objects whose table contains DefaultGenerators, either python-side, preexec or database-side,
     the newly saved instances receive all the default values either through a post-fetch or getting the pre-exec'ed 
     defaults back from the engine."""
     def setUpAll(self):
-        self.install_threadlocal()
+        SessionTest.setUpAll(self)
         #db.echo = 'debug'
         use_string_defaults = db.engine.__module__.endswith('postgres') or db.engine.__module__.endswith('oracle') or db.engine.__module__.endswith('sqlite')
 
@@ -342,7 +341,7 @@ class DefaultTest(AssertMixin):
         self.table.create()
     def tearDownAll(self):
         self.table.drop()
-        self.uninstall_threadlocal()
+        SessionTest.tearDownAll(self)
     def setUp(self):
         self.table = Table('default_test', db)
     def testinsert(self):
@@ -353,7 +352,7 @@ class DefaultTest(AssertMixin):
         h3 = Hoho(hoho=self.althohoval, counter=12)
         h4 = Hoho()
         h5 = Hoho(foober='im the new foober')
-        objectstore.flush()
+        ctx.current.flush()
         self.assert_(h1.hoho==self.althohoval)
         self.assert_(h3.hoho==self.althohoval)
         self.assert_(h2.hoho==h4.hoho==h5.hoho==self.hohoval)
@@ -361,7 +360,7 @@ class DefaultTest(AssertMixin):
         self.assert_(h1.counter ==  h4.counter==h5.counter==7)
         self.assert_(h2.foober == h3.foober == h4.foober == 'im foober')
         self.assert_(h5.foober=='im the new foober')
-        objectstore.clear()
+        ctx.current.clear()
         l = Hoho.mapper.select()
         (h1, h2, h3, h4, h5) = l
         self.assert_(h1.hoho==self.althohoval)
@@ -377,7 +376,7 @@ class DefaultTest(AssertMixin):
         class Hoho(object):pass
         assign_mapper(Hoho, self.table)
         h1 = Hoho(hoho="15", counter="15")
-        objectstore.flush()
+        ctx.current.flush()
         self.assert_(h1.hoho=="15")
         self.assert_(h1.counter=="15")
         self.assert_(h1.foober=="im foober")
@@ -386,16 +385,16 @@ class DefaultTest(AssertMixin):
         class Hoho(object):pass
         assign_mapper(Hoho, self.table)
         h1 = Hoho()
-        objectstore.flush()
+        ctx.current.flush()
         self.assert_(h1.foober == 'im foober')
         h1.counter = 19
-        objectstore.flush()
+        ctx.current.flush()
         self.assert_(h1.foober == 'im the update')
         
-class SaveTest(AssertMixin):
+class SaveTest(SessionTest):
 
     def setUpAll(self):
-        self.install_threadlocal()
+        SessionTest.setUpAll(self)
         db.echo = False
         tables.create()
         db.echo = testbase.echo
@@ -403,14 +402,10 @@ class SaveTest(AssertMixin):
         db.echo = False
         tables.drop()
         db.echo = testbase.echo
-        self.uninstall_threadlocal()
+        SessionTest.tearDownAll(self)
         
     def setUp(self):
         db.echo = False
-        # remove all history/identity maps etc.
-        objectstore.clear()
-        # remove all mapperes
-        clear_mappers()
         keywords.insert().execute(
             dict(name='blue'),
             dict(name='red'),
@@ -427,9 +422,10 @@ class SaveTest(AssertMixin):
         tables.delete()
         db.echo = testbase.echo
 
-        self.assert_(len(objectstore.get_session().new) == 0)
-        self.assert_(len(objectstore.get_session().dirty) == 0)
-        
+        self.assert_(len(ctx.current.new) == 0)
+        self.assert_(len(ctx.current.dirty) == 0)
+        SessionTest.tearDown(self)
+
     def testbasic(self):
         # save two users
         u = User()
@@ -438,10 +434,10 @@ class SaveTest(AssertMixin):
         u2 = User()
         u2.user_name = 'savetester2'
 
-        objectstore.get_session().save(u)
+        ctx.current.save(u)
         
-        objectstore.get_session().flush([u])
-        objectstore.get_session().flush()
+        ctx.current.flush([u])
+        ctx.current.flush()
 
         # assert the first one retreives the same from the identity map
         nu = m.get(u.user_id)
@@ -449,20 +445,20 @@ class SaveTest(AssertMixin):
         self.assert_(u is nu)
         
         # clear out the identity map, so next get forces a SELECT
-        objectstore.clear()
+        ctx.current.clear()
 
         # check it again, identity should be different but ids the same
         nu = m.get(u.user_id)
         self.assert_(u is not nu and u.user_id == nu.user_id and nu.user_name == 'savetester')
 
         # change first users name and save
-        objectstore.get_session().update(u)
+        ctx.current.update(u)
         u.user_name = 'modifiedname'
-        assert u in objectstore.get_session().dirty
-        objectstore.get_session().flush()
+        assert u in ctx.current.dirty
+        ctx.current.flush()
 
         # select both
-        #objectstore.clear()
+        #ctx.current.clear()
         userlist = m.select(users.c.user_id.in_(u.user_id, u2.user_id), order_by=[users.c.user_name])
         print repr(u.user_id), repr(userlist[0].user_id), repr(userlist[0].user_name)
         self.assert_(u.user_id == userlist[0].user_id and userlist[0].user_name == 'modifiedname')
@@ -480,12 +476,12 @@ class SaveTest(AssertMixin):
         u.addresses.append(Address())
         u.addresses.append(Address())
         u.addresses.append(Address())
-        objectstore.flush()
-        objectstore.clear()
+        ctx.current.flush()
+        ctx.current.clear()
         ulist = m1.select()
         u1 = ulist[0]
         u1.user_name = 'newname'
-        objectstore.flush()
+        ctx.current.flush()
         self.assert_(len(u1.addresses) == 4)
         
     def testinherits(self):
@@ -502,8 +498,8 @@ class SaveTest(AssertMixin):
                 )
         
         au = AddressUser()
-        objectstore.flush()
-        objectstore.clear()
+        ctx.current.flush()
+        ctx.current.clear()
         l = AddressUser.mapper.selectone()
         self.assert_(l.user_id == au.user_id and l.address_id == au.address_id)
     
@@ -524,7 +520,7 @@ class SaveTest(AssertMixin):
         u.user_name = 'multitester'
         u.email = 'multi@test.org'
 
-        objectstore.get_session().flush()
+        ctx.current.flush()
 
         usertable = users.select(users.c.user_id.in_(u.foo_id)).execute().fetchall()
         self.assertEqual(usertable[0].values(), [u.foo_id, 'multitester'])
@@ -533,7 +529,7 @@ class SaveTest(AssertMixin):
 
         u.email = 'lala@hey.com'
         u.user_name = 'imnew'
-        objectstore.get_session().flush()
+        ctx.current.flush()
 
         usertable = users.select(users.c.user_id.in_(u.foo_id)).execute().fetchall()
         self.assertEqual(usertable[0].values(), [u.foo_id, 'imnew'])
@@ -551,11 +547,11 @@ class SaveTest(AssertMixin):
         u.user_name = 'one2onetester'
         u.address = Address()
         u.address.email_address = 'myonlyaddress@foo.com'
-        objectstore.get_session().flush()
+        ctx.current.flush()
         u.user_name = 'imnew'
-        objectstore.get_session().flush()
+        ctx.current.flush()
         u.address.email_address = 'imnew@foo.com'
-        objectstore.get_session().flush()
+        ctx.current.flush()
 
     def testchildmove(self):
         """tests moving a child from one parent to the other, then deleting the first parent, properly
@@ -570,12 +566,12 @@ class SaveTest(AssertMixin):
         a = Address()
         a.email_address = 'address1'
         u1.addresses.append(a)
-        objectstore.flush()
+        ctx.current.flush()
         del u1.addresses[0]
         u2.addresses.append(a)
-        objectstore.delete(u1)
-        objectstore.flush()
-        objectstore.clear()
+        ctx.current.delete(u1)
+        ctx.current.flush()
+        ctx.current.clear()
         u2 = m.get(u2.user_id)
         assert len(u2.addresses) == 1
     
@@ -588,11 +584,11 @@ class SaveTest(AssertMixin):
         u.user_name = 'one2onetester'
         u.address = a
         u.address.email_address = 'myonlyaddress@foo.com'
-        objectstore.get_session().flush()
+        ctx.current.flush()
         self.echo("\n\n\n")
-        objectstore.get_session().delete(u)
-        objectstore.get_session().flush()
-        self.assert_(a.address_id is not None and a.user_id is None and not objectstore.get_session().identity_map.has_key(u._instance_key) and objectstore.get_session().identity_map.has_key(a._instance_key))
+        ctx.current.delete(u)
+        ctx.current.flush()
+        self.assert_(a.address_id is not None and a.user_id is None and not ctx.current.identity_map.has_key(u._instance_key) and ctx.current.identity_map.has_key(a._instance_key))
 
     def testcascadingdelete(self):
         m = mapper(User, users, properties = dict(
@@ -645,8 +641,8 @@ class SaveTest(AssertMixin):
                     i.item_name = item['item_name']
                     o.items.append(i)
                 
-        objectstore.get_session().flush()
-        objectstore.clear()
+        ctx.current.flush()
+        ctx.current.clear()
 
         l = m.select()
         for u in l:
@@ -654,10 +650,10 @@ class SaveTest(AssertMixin):
         self.assert_result(l, data[0], *data[1:])
         
         self.echo("\n\n\n")
-        objectstore.get_session().delete(l[0], l[2])
-        objectstore.flush()
+        ctx.current.delete(l[0], l[2])
+        ctx.current.flush()
         return
-        res = self.capture_exec(db, lambda: objectstore.get_session().flush())
+        res = self.capture_exec(db, lambda: ctx.current.flush())
         state = None
         
         for line in res.split('\n'):
@@ -695,11 +691,11 @@ class SaveTest(AssertMixin):
             a.user.user_name = elem['user_name']
             objects.append(a)
             
-        objectstore.get_session().flush()
+        ctx.current.flush()
         objects[2].email_address = 'imnew@foo.bar'
         objects[3].user = User()
         objects[3].user.user_name = 'imnewlyadded'
-        self.assert_sql(db, lambda: objectstore.get_session().flush(), [
+        self.assert_sql(db, lambda: ctx.current.flush(), [
                 (
                     "INSERT INTO users (user_name) VALUES (:user_name)",
                     {'user_name': 'imnewlyadded'}
@@ -750,7 +746,7 @@ class SaveTest(AssertMixin):
         u.addresses.append(a2)
         self.echo( repr(u.addresses))
         self.echo( repr(u.addresses.added_items()))
-        objectstore.get_session().flush()
+        ctx.current.flush()
 
         usertable = users.select(users.c.user_id.in_(u.user_id)).execute().fetchall()
         self.assertEqual(usertable[0].values(), [u.user_id, 'one2manytester'])
@@ -763,7 +759,7 @@ class SaveTest(AssertMixin):
         
         a2.email_address = 'somethingnew@foo.com'
 
-        objectstore.get_session().flush()
+        ctx.current.flush()
 
         
         addresstable = addresses.select(addresses.c.address_id == addressid).execute().fetchall()
@@ -792,7 +788,7 @@ class SaveTest(AssertMixin):
         u[0].addresses[0].email_address='hi'
         
         # insure that upon commit, the new mapper with the address relation is used
-        self.assert_sql(db, lambda: objectstore.flush(), 
+        self.assert_sql(db, lambda: ctx.current.flush(), 
                 [
                     (
                     "INSERT INTO email_addresses (user_id, email_address) VALUES (:user_id, :email_address)",
@@ -829,7 +825,7 @@ class SaveTest(AssertMixin):
         a3 = Address()
         a3.email_address = 'emailaddress3'
 
-        objectstore.flush()
+        ctx.current.flush()
         
         self.echo("\n\n\n")
         # modify user2 directly, append an address to user1.
@@ -838,7 +834,7 @@ class SaveTest(AssertMixin):
         u2.user_name = 'user2modified'
         u1.addresses.append(a3)
         del u1.addresses[0]
-        self.assert_sql(db, lambda: objectstore.flush(), 
+        self.assert_sql(db, lambda: ctx.current.flush(), 
                 [
                     (
                         "UPDATE users SET user_name=:user_name WHERE users.user_id = :users_user_id",
@@ -863,12 +859,12 @@ class SaveTest(AssertMixin):
         u1.user_name='user1'
         
         a1.user = u1
-        objectstore.flush()
+        ctx.current.flush()
 
         self.echo("\n\n\n")
-        objectstore.delete(u1)
+        ctx.current.delete(u1)
         a1.user = None
-        objectstore.flush()
+        ctx.current.flush()
 
     def _testalias(self):
         """tests that an alias of a table can be used in a mapper. 
@@ -947,7 +943,7 @@ class SaveTest(AssertMixin):
                     k.name = kname
                 item.keywords.append(k)
 
-        objectstore.get_session().flush()
+        ctx.current.flush()
         
         l = m.select(items.c.item_name.in_(*[e['item_name'] for e in data[1:]]), order_by=[items.c.item_name, keywords.c.name])
         self.assert_result(l, *data)
@@ -956,7 +952,7 @@ class SaveTest(AssertMixin):
         k = Keyword()
         k.name = 'yellow'
         objects[5].keywords.append(k)
-        self.assert_sql(db, lambda:objectstore.flush(), [
+        self.assert_sql(db, lambda:ctx.current.flush(), [
             {
                 "UPDATE items SET item_name=:item_name WHERE items.item_id = :items_item_id":
                 {'item_name': 'item4updated', 'items_item_id': objects[4].item_id}
@@ -985,7 +981,7 @@ class SaveTest(AssertMixin):
         objects[2].keywords.append(k)
         dkid = objects[5].keywords[1].keyword_id
         del objects[5].keywords[1]
-        self.assert_sql(db, lambda:objectstore.flush(), [
+        self.assert_sql(db, lambda:ctx.current.flush(), [
                 (
                     "DELETE FROM itemkeywords WHERE itemkeywords.item_id = :item_id AND itemkeywords.keyword_id = :keyword_id",
                     [{'item_id': objects[5].item_id, 'keyword_id': dkid}]
@@ -996,8 +992,8 @@ class SaveTest(AssertMixin):
                 )
         ])
         
-        objectstore.delete(objects[3])
-        objectstore.flush()
+        ctx.current.delete(objects[3])
+        ctx.current.flush()
         
     def testassociation(self):
         class IKAssociation(object):
@@ -1057,8 +1053,8 @@ class SaveTest(AssertMixin):
                 ik.keyword = k
                 item.keywords.append(ik)
 
-        objectstore.get_session().flush()
-        objectstore.clear()
+        ctx.current.flush()
+        ctx.current.clear()
         l = m.select(items.c.item_name.in_(*[e['item_name'] for e in data[1:]]), order_by=[items.c.item_name, keywords.c.name])
         self.assert_result(l, *data)
 
@@ -1076,7 +1072,7 @@ class SaveTest(AssertMixin):
         a = Address()
         a.email_address = 'testaddress'
         a.user = u
-        objectstore.flush()
+        ctx.current.flush()
         print repr(u.addresses)
         x = False
         try:
@@ -1088,8 +1084,8 @@ class SaveTest(AssertMixin):
         if x:
             self.assert_(False, "User addresses element should be scalar based")
         
-        objectstore.delete(u)
-        objectstore.flush()
+        ctx.current.delete(u)
+        ctx.current.flush()
 
     def testdoublerelation(self):
         m2 = mapper(Address, addresses)
@@ -1109,14 +1105,13 @@ class SaveTest(AssertMixin):
         
         u.boston_addresses.append(a)
         u.newyork_addresses.append(b)
-        objectstore.flush()
+        ctx.current.flush()
     
-class SaveTest2(AssertMixin):
+class SaveTest2(SessionTest):
 
     def setUp(self):
-        self.install_threadlocal()
         db.echo = False
-        objectstore.clear()
+        ctx.current.clear()
         clear_mappers()
         self.users = Table('users', db,
             Column('user_id', Integer, Sequence('user_id_seq', optional=True), primary_key = True),
@@ -1142,7 +1137,7 @@ class SaveTest2(AssertMixin):
         self.addresses.drop()
         self.users.drop()
         db.echo = testbase.echo
-        self.uninstall_threadlocal()
+        SessionTest.tearDown(self)
     
     def testbackwardsnonmatch(self):
         m = mapper(Address, self.addresses, properties = dict(
@@ -1159,7 +1154,7 @@ class SaveTest2(AssertMixin):
             a.user = User()
             a.user.user_name = elem['user_name']
             objects.append(a)
-        self.assert_sql(db, lambda: objectstore.flush(), [
+        self.assert_sql(db, lambda: ctx.current.flush(), [
                 (
                     "INSERT INTO users (user_name) VALUES (:user_name)",
                     {'user_name': 'thesub'}

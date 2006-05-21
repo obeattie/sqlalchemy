@@ -6,28 +6,25 @@ import datetime
 
 class LazyTest(AssertMixin):
     def setUpAll(self):
-        global info_table, data_table, rel_table
-        engine = testbase.db
-        info_table = Table('infos', engine,
+        global info_table, data_table, rel_table, metadata
+        metadata = BoundMetaData(testbase.db)
+        info_table = Table('infos', metadata,
         	Column('pk', Integer, primary_key=True),
         	Column('info', String))
 
-        data_table = Table('data', engine,
+        data_table = Table('data', metadata,
         	Column('data_pk', Integer, primary_key=True),
         	Column('info_pk', Integer, ForeignKey(info_table.c.pk)),
         	Column('timeval', Integer),
         	Column('data_val', String))
 
-        rel_table = Table('rels', engine,
+        rel_table = Table('rels', metadata,
         	Column('rel_pk', Integer, primary_key=True),
         	Column('info_pk', Integer, ForeignKey(info_table.c.pk)),
         	Column('start', Integer),
         	Column('finish', Integer))
 
-
-        info_table.create()
-        rel_table.create()
-        data_table.create()
+        metadata.create_all()
         info_table.insert().execute(
         	{'pk':1, 'info':'pk_1_info'},
         	{'pk':2, 'info':'pk_2_info'},
@@ -52,9 +49,7 @@ class LazyTest(AssertMixin):
 
 
     def tearDownAll(self):
-        data_table.drop()
-        rel_table.drop()
-        info_table.drop()
+        metadata.drop_all()
     
     def testone(self):
         """tests a lazy load which has multiple join conditions, including two that are against
@@ -70,18 +65,20 @@ class LazyTest(AssertMixin):
 
         session = create_session()
         
-        # Create the basic mappers, with no frills or modifications
-        Information.mapper = mapper(Information, info_table)
-        Data.mapper = mapper(Data, data_table)
-        Relation.mapper = mapper(Relation, rel_table)
-
-        Relation.mapper.add_property('datas', relation(Data.mapper,
-        	primaryjoin=and_(Relation.c.info_pk==Data.c.info_pk,
-        	Data.c.timeval >= Relation.c.start,
-        	Data.c.timeval <= Relation.c.finish),
-        	foreignkey=Data.c.info_pk))
-
-        Information.mapper.add_property('rels', relation(Relation.mapper))
+        mapper(Data, data_table)
+        mapper(Relation, rel_table, properties={
+        
+            'datas': relation(Data,
+            	primaryjoin=and_(rel_table.c.info_pk==Data.c.info_pk,
+            	Data.c.timeval >= rel_table.c.start,
+            	Data.c.timeval <= rel_table.c.finish),
+            	foreignkey=Data.c.info_pk)
+        	}
+        	
+    	)
+        mapper(Information, info_table, properties={
+            'rels': relation(Relation)
+        })
 
         info = session.query(Information).get(1)
         assert info
