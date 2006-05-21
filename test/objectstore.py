@@ -91,7 +91,7 @@ class VersioningTest(SessionTest):
         ctx.current.clear()
         global version_table
         version_table = Table('version_test', db,
-        Column('id', Integer, primary_key=True),
+        Column('id', Integer, Sequence('version_test_seq'), primary_key=True ),
         Column('version_id', Integer, nullable=False),
         Column('value', String(40), nullable=False)
         ).create()
