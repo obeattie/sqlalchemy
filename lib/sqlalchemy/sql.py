@@ -965,7 +965,8 @@ class FunctionGenerator(object):
         self.__names.append(name)
         return self
     def __call__(self, *c, **kwargs):
-        return Function(self.__names[-1], packagenames=self.__names[0:-1], engine=self.__engine, *c, **kwargs)     
+        kwargs.setdefault('engine', self.__engine)
+        return Function(self.__names[-1], packagenames=self.__names[0:-1], *c, **kwargs)     
                 
 class BinaryClause(ClauseElement):
     """represents two clauses with an operator in between"""

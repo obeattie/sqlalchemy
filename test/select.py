@@ -1,6 +1,6 @@
 
 from sqlalchemy import *
-from sqlalchemy.databases import sqlite, postgres, mysql
+from sqlalchemy.databases import sqlite, postgres, mysql, oracle
 from testbase import PersistTest
 import unittest, re
 
@@ -225,10 +225,9 @@ sq.myothertable_othername AS sq_myothertable_othername FROM (" + sqstring + ") A
         )
 
     def testoraclelimit(self):
-        raise "notyet"
-        e = create_engine('oracle')
-        users = Table('users', e, Column('name', String(10), key='username'))
-        self.runtest(select([users.c.username], limit=5), "SELECT name FROM (SELECT users.name AS name, ROW_NUMBER() OVER (ORDER BY users.rowid ASC) AS ora_rn FROM users) WHERE ora_rn<=5", engine=e)
+        metadata = MetaData()
+        users = Table('users', metadata, Column('name', String(10), key='username'))
+        self.runtest(select([users.c.username], limit=5), "SELECT name FROM (SELECT users.name AS name, ROW_NUMBER() OVER (ORDER BY users.rowid) AS ora_rn FROM users) WHERE ora_rn<=5", dialect=oracle.dialect())
 
     def testgroupby_and_orderby(self):
         self.runtest(

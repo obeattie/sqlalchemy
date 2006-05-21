@@ -6,7 +6,6 @@ import sqlalchemy.databases.sqlite as sqllite
 
 import tables
 db = testbase.db
-#db.echo='debug'
 from sqlalchemy import *
 from sqlalchemy.engine import ResultProxy, RowProxy
 
@@ -173,11 +172,9 @@ class QueryTest(PersistTest):
         self.assertEqual(r[1], 1)
         self.assertEqual(r.keys(), ['user_name', 'user_id'])
         self.assertEqual(r.values(), ['foo', 1])
-        
+       
+    @testbase.unsupported('oracle') 
     def test_column_accessor_shadow(self):
-        if db.engine.__module__.endswith('oracle'):
-            return
-
         shadowed = Table('test_shadowed', db,
                          Column('shadow_id', INT, primary_key = True),
                          Column('shadow_name', VARCHAR(20)),

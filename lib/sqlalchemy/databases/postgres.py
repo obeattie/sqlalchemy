@@ -201,8 +201,8 @@ class PGDialect(ansisql.ANSIDialect):
     def __init__(self, module=None, use_oids=False, **params):
         self.use_oids = use_oids
         if module is None:
-            if psycopg is None:
-                raise exceptions.ArgumentError("Couldnt locate psycopg1 or psycopg2: specify postgres module argument")
+            #if psycopg is None:
+            #    raise exceptions.ArgumentError("Couldnt locate psycopg1 or psycopg2: specify postgres module argument")
             self.module = psycopg
         else:
             self.module = module

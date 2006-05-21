@@ -110,14 +110,14 @@ class OracleExecutionContext(default.DefaultExecutionContext):
     pass
     
 class OracleDialect(ansisql.ANSIDialect):
-    def __init__(self, use_ansi=True, module=None, threaded=True, **params):
+    def __init__(self, use_ansi=True, module=None, threaded=True, **kwargs):
         self.use_ansi = use_ansi
         self.threaded = threaded
         if module is None:
             self.module = cx_Oracle
         else:
             self.module = module
-        ansisql.ANSISQLEngine.__init__(self, **params)
+        ansisql.ANSIDialect.__init__(self, **kwargs)
 
     def dbapi(self):
         return self.module
@@ -147,11 +147,11 @@ class OracleDialect(ansisql.ANSIDialect):
 
 
     def has_table(self, connection, table_name):
-        cursor = connection.execute("""select table_name from all_tables where table_name=:table_name""", {'name':table_name})
-        return bool( not not cursor.rowcount )
+        cursor = connection.execute("""select table_name from all_tables where table_name=:name""", {'name':table_name.upper()})
+        return bool( cursor.fetchone() is not None )
         
-    def reflecttable(self, table):
-        c = self.execute ("select COLUMN_NAME, DATA_TYPE, DATA_LENGTH, DATA_PRECISION, DATA_SCALE, NULLABLE, DATA_DEFAULT from ALL_TAB_COLUMNS where TABLE_NAME = :table_name", {'table_name':table.name.upper()})
+    def reflecttable(self, connection, table):
+        c = connection.execute ("select COLUMN_NAME, DATA_TYPE, DATA_LENGTH, DATA_PRECISION, DATA_SCALE, NULLABLE, DATA_DEFAULT from ALL_TAB_COLUMNS where TABLE_NAME = :table_name", {'table_name':table.name.upper()})
         
         while True:
             row = c.fetchone()
@@ -180,14 +180,14 @@ class OracleDialect(ansisql.ANSIDialect):
                
             colargs = []
             if default is not None:
-                colargs.append(PassiveDefault(sql.text(default)))
+                colargs.append(schema.PassiveDefault(sql.text(default)))
             
             name = name.lower()
             
             table.append_item (schema.Column(name, coltype, nullable=nullable, *colargs))
 
    
-        c = self.execute(constraintSQL, {'table_name' : table.name.upper()})
+        c = connection.execute(constraintSQL, {'table_name' : table.name.upper()})
         while True:
             row = c.fetchone()
             if row is None:
@@ -198,8 +198,8 @@ class OracleDialect(ansisql.ANSIDialect):
                 table.c[local_column]._set_primary_key()
             elif cons_type == 'R':
                 table.c[local_column].append_item(
-                    schema.ForeignKey(Table(remote_table,
-                                            self,
+                    schema.ForeignKey(schema.Table(remote_table,
+                                            table.metadata,
                                             autoload=True).c[remote_column]
                                       )
                     )
@@ -281,6 +281,8 @@ class OracleCompiler(ansisql.ANSICompiler):
             orderby = self.strings[select.order_by_clause]
             if not orderby:
                 orderby = select.oid_column
+                orderby.accept_visitor(self)
+                orderby = self.strings[orderby]
             select.append_column(sql.ColumnClause("ROW_NUMBER() OVER (ORDER BY %s)" % orderby).label("ora_rn"))
             limitselect = sql.select([c for c in select.c if c.key!='ora_rn'])
             if select.offset is not None:
@@ -330,3 +332,5 @@ class OracleDefaultRunner(ansisql.ANSIDefaultRunner):
     
     def visit_sequence(self, seq):
         return self.proxy("SELECT " + seq.name + ".nextval FROM DUAL").fetchone()[0]
+
+dialect = OracleDialect
