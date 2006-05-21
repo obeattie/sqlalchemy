@@ -260,7 +260,6 @@ class PGDialect(ansisql.ANSIDialect):
         else:
             return None
 
-
     def do_executemany(self, c, statement, parameters, context=None):
         """we need accurate rowcounts for updates, inserts and deletes.  psycopg2 is not nice enough
         to produce this correctly for an executemany, so we do our own executemany here."""
