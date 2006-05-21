@@ -56,6 +56,7 @@ def suite():
         
         # extensions
         'proxy_engine',
+        'activemapper'
         #'wsgi_test',
         
         )

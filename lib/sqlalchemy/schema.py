@@ -695,7 +695,7 @@ class DynamicMetaData(MetaData):
                 self.__engines[engine_or_url] = engine_or_url
             self.context._engine = engine_or_url
     def is_bound(self):
-        return s.context._engine is not None
+        return self.context._engine is not None
     def dispose(self):
         """disposes all Engines to which this DynamicMetaData has been connected."""
         for e in self.__engines.values():

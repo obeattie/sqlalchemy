@@ -60,7 +60,7 @@ class SessionTransaction(object):
         for t in self.connections.values():
             t[0].close()
         self.session.transaction = None
-        
+
 class Session(object):
     """encapsulates a set of objects being operated upon within an object-relational operation."""
     def __init__(self, bind_to=None, hash_key=None, import_session=None, echo_uow=False):
@@ -366,7 +366,7 @@ class Session(object):
         if getattr(obj, '_sa_session_id', None) != self.hash_key:
             old = getattr(obj, '_sa_session_id', None)
             if old is not None:
-                raise exceptions.InvalidRequestError("Object '%s' is already attached to session '%s'" % (repr(obj), old))
+                raise exceptions.InvalidRequestError("Object '%s' is already attached to session '%s' (this is '%s')" % (repr(obj), old, id(self)))
                 
                 # auto-removal from the old session is disabled.  but if we decide to 
                 # turn it back on, do it as below: gingerly since _sessions is a WeakValueDict

@@ -1,5 +1,6 @@
 from sqlalchemy import util, engine, mapper
 from sqlalchemy.ext.sessioncontext import SessionContext
+import sqlalchemy.ext.assignmapper as assignmapper
 from sqlalchemy.orm.mapper import global_extensions
 from sqlalchemy.orm.session import Session
 import sqlalchemy
@@ -25,34 +26,11 @@ class Objectstore(SessionContext):
     def get_session(self):
         return self.current
 
-def monkeypatch_query_method(class_, name):
-    def do(self, *args, **kwargs):
-        query = class_.mapper.query()
-        getattr(query, name)(*args, **kwargs)
-    setattr(class_, name, classmethod(do))
-
-def monkeypatch_objectstore_method(class_, name):
-    def do(self, *args, **kwargs):
-        session = sqlalchemy.objectstore.current
-        getattr(session, name)(self, *args, **kwargs)
-    setattr(class_, name, do)
-    
 def assign_mapper(class_, *args, **kwargs):
-    kwargs.setdefault("is_primary", True)
-    if not isinstance(getattr(class_, '__init__'), types.MethodType):
-        def __init__(self, **kwargs):
-             for key, value in kwargs.items():
-                 setattr(self, key, value)
-        class_.__init__ = __init__
-    m = mapper(class_, *args, **kwargs)
-    class_.mapper = m
-    for name in ['get', 'select', 'select_by', 'selectone', 'get_by']:
-        monkeypatch_query_method(class_, name)
-    for name in ['flush', 'delete', 'expire', 'refresh', 'expunge', 'merge', 'update', 'save_or_update']:
-        monkeypatch_objectstore_method(class_, name)
+    assignmapper.assign_mapper(objectstore, class_, *args, **kwargs)
 
 def _mapper_extension():
-    return SessionContext._get_mapper_extension(sqlalchemy.objectstore)
+    return SessionContext._get_mapper_extension(objectstore)
 
 objectstore = Objectstore(Session)
 def install_plugin():

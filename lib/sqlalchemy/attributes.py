@@ -208,24 +208,18 @@ class ListAttribute(util.HistoryArraySet, ManagedAttribute):
         self.set_data(value)
     def delattr(self, value, **kwargs):
         pass
-    def _setrecord(self, item):
-        res = util.HistoryArraySet._setrecord(self, item)
-        if res:
-            if self.trackparent:
-                self.sethasparent(item, True)
-            self.value_changed(self.obj, self.key, item, self, False)
-            if self.extension is not None:
-                self.extension.append(self.obj, item)
-        return res
-    def _delrecord(self, item):
-        res = util.HistoryArraySet._delrecord(self, item)
-        if res:
-            if self.trackparent:
-                self.sethasparent(item, False)
-            self.value_changed(self.obj, self.key, item, self, True)
-            if self.extension is not None:
-                self.extension.delete(self.obj, item)
-        return res
+    def do_value_appended(self, item):
+        if self.trackparent:
+            self.sethasparent(item, True)
+        self.value_changed(self.obj, self.key, item, self, False)
+        if self.extension is not None:
+            self.extension.append(self.obj, item)
+    def do_value_deleted(self, item):
+        if self.trackparent:
+            self.sethasparent(item, False)
+        self.value_changed(self.obj, self.key, item, self, True)
+        if self.extension is not None:
+            self.extension.delete(self.obj, item)
         
 class TriggeredAttribute(ManagedAttribute):
     """Used by AttributeManager to allow the attaching of a callable item, representing the future value

@@ -1,16 +1,29 @@
-from sqlalchemy             import objectstore, create_engine, assign_mapper, relation, mapper, join
+from sqlalchemy             import create_session, relation, mapper, join, DynamicMetaData, class_mapper
 from sqlalchemy             import and_, or_
 from sqlalchemy             import Table, Column, ForeignKey
-from sqlalchemy.ext.proxy   import ProxyEngine
+from sqlalchemy.ext.sessioncontext import SessionContext
+from sqlalchemy.ext.assignmapper import assign_mapper
+from sqlalchemy import backref as create_backref
 
 import inspect
 import sys
+import sets
 
 #
 # the "proxy" to the database engine... this can be swapped out at runtime
 #
-engine = ProxyEngine()
+metadata = DynamicMetaData("activemapper")
 
+#
+# thread local SessionContext
+#
+class Objectstore(SessionContext):
+    def __getattr__(self, key):
+        return getattr(self.current, key)
+    def get_session(self):
+        return self.current
+
+objectstore = Objectstore(create_session)
 
 
 #
@@ -49,7 +62,7 @@ class one_to_many(relationship):
 
 class one_to_one(relationship):
     def __init__(self, classname, colname=None, backref=None, private=False, lazy=True):
-        relationship.__init__(self, classname, colname, backref, private, lazy, uselist=False)
+        relationship.__init__(self, classname, colname, create_backref(backref, uselist=False), private, lazy, uselist=False)
 
 class many_to_many(relationship):
     def __init__(self, classname, secondary, backref=None, lazy=True):
@@ -82,8 +95,9 @@ def process_relationships(klass, was_deferred=False):
                                            private=reldesc.private, 
                                            lazy=reldesc.lazy, 
                                            uselist=reldesc.uselist)
-        assign_mapper(klass, klass.table, properties=relations,
-                      inherits=getattr(klass, "_base_mapper", None))
+        class_mapper(klass).add_properties(relations)
+        #assign_mapper(objectstore, klass, klass.table, properties=relations,
+        #              inherits=getattr(klass, "_base_mapper", None))
         if was_deferred: __deferred_classes__.remove(klass)
     
     if not was_deferred:
@@ -94,12 +108,12 @@ def process_relationships(klass, was_deferred=False):
 
 class ActiveMapperMeta(type):
     classes = {}
-    
+    metadatas = sets.Set()
     def __init__(cls, clsname, bases, dict):
         table_name = clsname.lower()
         columns    = []
         relations  = {}
-        _engine    = getattr( sys.modules[cls.__module__], "__engine__", engine )
+        _metadata    = getattr( sys.modules[cls.__module__], "__metadata__", metadata )
         
         if 'mapping' in dict:
             members = inspect.getmembers(dict.get('mapping'))
@@ -108,8 +122,8 @@ class ActiveMapperMeta(type):
                     table_name = value
                     continue
                 
-                if '__engine__' == name:
-                    _engine= value
+                if '__metadata__' == name:
+                    _metadata= value
                     continue
                     
                 if name.startswith('__'): continue
@@ -131,14 +145,15 @@ class ActiveMapperMeta(type):
                 
                 if isinstance(value, relationship):
                     relations[name] = value
-            assert _engine is not None, "No engine specified"
-            cls.table = Table(table_name, _engine, *columns)
+            assert _metadata is not None, "No MetaData specified"
+            ActiveMapperMeta.metadatas.add(_metadata)
+            cls.table = Table(table_name, _metadata, *columns)
             # check for inheritence
             if hasattr( bases[0], "mapping" ):
                 cls._base_mapper= bases[0].mapper
-                assign_mapper(cls, cls.table, inherits=cls._base_mapper)
+                assign_mapper(objectstore, cls, cls.table, inherits=cls._base_mapper)
             else:
-                assign_mapper(cls, cls.table)
+                assign_mapper(objectstore, cls, cls.table)
             cls.relations = relations
             ActiveMapperMeta.classes[clsname] = cls
             
@@ -160,6 +175,6 @@ class ActiveMapper(object):
 #
 
 def create_tables():
-    for klass in ActiveMapperMeta.classes.values():
-        klass.table.create()
+    for metadata in ActiveMapperMeta.metadatas:
+        metadata.create_all()
 

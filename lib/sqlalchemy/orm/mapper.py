@@ -53,20 +53,31 @@ class Mapper(object):
                 concrete=False,
                 select_table=None):
 
-        ext = MapperExtension()
-        
+        # uber-pendantic style of making mapper chain, as various testbase/
+        # threadlocal/assignmapper combinations keep putting dupes etc. in the list
+        # TODO: do something that isnt 21 lines....
+        extlist = util.HashSet()
         for ext_class in global_extensions:
             if isinstance(ext_class, MapperExtension):
-                ext = ext_class.chain(ext)
+                extlist.append(ext_class)
             else:
-                ext = ext_class().chain(ext)
+                extlist.append(ext_class())
 
         if extension is not None:
             for ext_obj in util.to_list(extension):
-                ext = ext_obj.chain(ext)
-            
-        self.extension = ext
+                extlist.append(ext_obj)
         
+        self.extension = None
+        previous = None
+        for ext in extlist:
+            if self.extension is None:
+                self.extension = ext
+            if previous is not None:
+                previous.chain(ext)
+            previous = ext    
+        if self.extension is None:
+            self.extension = MapperExtension()
+            
         self.class_ = class_
         self.entity_name = entity_name
         self.class_key = ClassKey(class_, entity_name)
@@ -954,8 +965,10 @@ class MapperExtension(object):
     def __init__(self):
         self.next = None
     def chain(self, ext):
+        if ext is self:
+            raise "nu uh " + repr(self) + " " + repr(ext)
         self.next = ext
-        return self    
+        return self
     def get_session(self):
         """called to retrieve a contextual Session instance with which to
         register a new object. Note: this is not called if a session is 

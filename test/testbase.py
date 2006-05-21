@@ -65,7 +65,7 @@ def parse_argv():
     if not options.nothreadlocal:
         __import__('sqlalchemy.mods.threadlocal')
         sqlalchemy.mods.threadlocal.uninstall_plugin()
-        
+
     if options.enginestrategy is not None:
         opts['strategy'] = options.enginestrategy    
     if options.mockpool:

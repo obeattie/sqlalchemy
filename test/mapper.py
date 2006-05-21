@@ -373,7 +373,7 @@ class InheritanceTest(MapperSuperTest):
 
         class AddressUser(_User):
             pass
-        assign_mapper(AddressUser, addresses, inherits = usermapper)
+        mapper(AddressUser, addresses, inherits = usermapper)
         
         sess = create_session()
         q = sess.query(AddressUser)    
