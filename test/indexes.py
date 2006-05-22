@@ -5,59 +5,51 @@ import testbase
 class IndexTest(testbase.AssertMixin):
     
     def setUp(self):
-        self.created = []
+	global metadata
+	metadata = BoundMetaData(testbase.db)
         self.echo = testbase.db.echo
         self.logger = testbase.db.logger
         
     def tearDown(self):
         testbase.db.echo = self.echo
         testbase.db.logger = testbase.db.engine.logger = self.logger
-        if self.created:
-            self.created.reverse()
-            for entity in self.created:
-                entity.drop()
+	metadata.drop_all()
     
     def test_index_create(self):
-        employees = Table('employees', testbase.metadata,
+        employees = Table('employees', metadata,
                           Column('id', Integer, primary_key=True),
                           Column('first_name', String(30)),
                           Column('last_name', String(30)),
                           Column('email_address', String(30)))
         employees.create()
-        self.created.append(employees)
         
         i = Index('employee_name_index',
                   employees.c.last_name, employees.c.first_name)
         i.create()
-        self.created.append(i)
         assert employees.indexes['employee_name_index'] is i
         
         i2 = Index('employee_email_index',
                    employees.c.email_address, unique=True)        
         i2.create()
-        self.created.append(i2)
         assert employees.indexes['employee_email_index'] is i2
 
     def test_index_create_camelcase(self):
         """test that mixed-case index identifiers are legal"""
-        employees = Table('companyEmployees', testbase.metadata,
+        employees = Table('companyEmployees', metadata,
                           Column('id', Integer, primary_key=True),
                           Column('firstName', String(30)),
                           Column('lastName', String(30)),
                           Column('emailAddress', String(30)))
 
         employees.create()
-        self.created.append(employees)
         
         i = Index('employeeNameIndex',
                   employees.c.lastName, employees.c.firstName)
         i.create()
-        self.created.append(i)
         
         i = Index('employeeEmailIndex',
                   employees.c.emailAddress, unique=True)        
         i.create()
-        self.created.append(i)
 
         # Check that the table is useable. This is mostly for pg,
         # which can be somewhat sticky with mixed-case identifiers
@@ -76,7 +68,7 @@ class IndexTest(testbase.AssertMixin):
         stream.write = capt.append
         testbase.db.logger = testbase.db.engine.logger = stream
         
-        events = Table('events', testbase.metadata,
+        events = Table('events', metadata,
                        Column('id', Integer, primary_key=True),
                        Column('name', String(30), unique=True),
                        Column('location', String(30), index=True),
@@ -94,7 +86,6 @@ class IndexTest(testbase.AssertMixin):
         assert len(index_names) == 4
 
         events.create()
-        self.created.append(events)
 
         # verify that the table is functional
         events.insert().execute(id=1, name='hockey finals', location='rink',

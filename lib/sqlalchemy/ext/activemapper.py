@@ -177,4 +177,7 @@ class ActiveMapper(object):
 def create_tables():
     for metadata in ActiveMapperMeta.metadatas:
         metadata.create_all()
+def drop_tables():
+    for metadata in ActiveMapperMeta.metadatas:
+        metadata.drop_all()
 

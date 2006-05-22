@@ -63,6 +63,7 @@ class testcase(testbase.PersistTest):
 
     def tearDownAll(self):
         clear_mappers()
+        activemapper.drop_tables()
         
     def tearDown(self):
         for t in activemapper.metadata.table_iterator(reverse=True):

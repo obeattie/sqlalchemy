@@ -274,7 +274,7 @@ class PGDialect(ansisql.ANSIDialect):
         return self.module
 
     def has_table(self, connection, table_name):
-        cursor = connection.execute("""select relname from pg_class where relname = %(name)s""", {'name':table_name})
+        cursor = connection.execute("""select relname from pg_class where lower(relname) = %(name)s""", {'name':table_name.lower()})
         return bool( not not cursor.rowcount )
 
     def reflecttable(self, connection, table):

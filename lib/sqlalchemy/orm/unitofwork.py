@@ -45,7 +45,7 @@ class UOWListElement(attributes.ListAttribute):
     def do_value_changed(self, obj, key, item, listval, isdelete):
         sess = object_session(obj)
         if sess is not None:
-            sess._register_dirty(obj)
+            sess._register_changed(obj)
             if self.cascade is not None:
                 if not isdelete:
                     if self.cascade.save_update:
@@ -64,7 +64,7 @@ class UOWScalarElement(attributes.ScalarAttribute):
         obj = self.obj
         sess = object_session(obj)
         if sess is not None:
-            sess._register_dirty(obj)
+            sess._register_changed(obj)
             if newvalue is not None and self.cascade is not None:
                 if self.cascade.save_update:
                     sess.save_or_update(newvalue)
@@ -279,7 +279,7 @@ class UOWTransaction(object):
         refreshed/updated to reflect a recent save/upcoming delete operation, but not a full
         save/delete operation on the object itself, unless an additional save/delete
         registration is entered for the object."""
-        #print "REGISTER", repr(obj), repr(getattr(obj, '_instance_key', None)), str(isdelete), str(listonly)
+        print "REGISTER", repr(obj), repr(getattr(obj, '_instance_key', None)), str(isdelete), str(listonly)
         # things can get really confusing if theres duplicate instances floating around,
         # so make sure everything is OK
         self.uow._validate_obj(obj)
@@ -542,9 +542,8 @@ class UOWTask(object):
         
         this is not the normal case; this logic only kicks in when something like 
         a hierarchical tree is being represented.
-        
-        TODO: dont understand this code ?  well neither do I !  it takes me 
-        an hour to re-understand this code completely, which is definitely an issue.
+
+        TODO: refactor heavily
         """
 
         allobjects = []
@@ -552,24 +551,15 @@ class UOWTask(object):
             allobjects += task.objects.keys()
         tuples = []
         
-        objecttotask = {}
-
         cycles = Set(cycles)
         
+        print "BEGIN CIRC SORT-------"
         # dependency processors that arent part of the cyclical thing
         # get put here
         extradeplist = []
 
-        # this creates a map of UOWTasks mapped to individual objects.
-        def get_object_task(parent, obj):
-            try:
-                return objecttotask[obj]
-            except KeyError:
-                t = UOWTask(None, parent.mapper)
-                t.parent = parent
-                objecttotask[obj] = t
-                return t
-
+        object_to_original_task = {}
+        
         # this creates a map of UOWTasks mapped to a particular object
         # and a particular dependency processor.
         dependencies = {}
@@ -588,8 +578,7 @@ class UOWTask(object):
 
         # work out a list of all the "dependency processors" that 
         # represent objects that have to be dependency sorted at the 
-        # per-object level.  all other dependency processors go in
-        # "extradep."
+        # per-object level.  
         deps_by_targettask = {}
         for task in cycles:
             for dep in task.dependencies:
@@ -601,11 +590,9 @@ class UOWTask(object):
         for task in cycles:
             for taskelement in task.objects.values():
                 obj = taskelement.obj
+                object_to_original_task[obj] = task
                 #print "OBJ", repr(obj), "TASK", repr(task)
                 
-                # create a placeholder UOWTask that may be built into the final
-                # task tree
-                get_object_task(task, obj)
                 for dep in deps_by_targettask.get(task, []):
                     (processor, targettask, isdelete) = (dep.processor, dep.targettask, dep.isdeletefrom)
                     if taskelement.isdelete is not dep.isdeletefrom:
@@ -635,9 +622,7 @@ class UOWTask(object):
                             if isdelete:
                                 childtask.append(o, processor.cascade.delete)
                             if cyclicaldep:
-                                # cyclical, so create a placeholder UOWTask that may be built into the
-                                # final task tree
-                                t = get_object_task(childtask, o)
+                                object_to_original_task[o] = task
                         if not cyclicaldep:
                             # not cyclical, so we are done with this
                             continue
@@ -648,9 +633,9 @@ class UOWTask(object):
                             # then locate a UOWDependencyProcessor to add the object onto, which
                             # will handle the modifications between saves/deletes
                             if whosdep[0] is obj:
-                                get_dependency_task(whosdep[0], dep).append(whosdep[0], isdelete=isdelete)
+                                get_dependency_task(obj, dep).append(whosdep[0], isdelete=isdelete)
                             else:
-                                get_dependency_task(whosdep[0], dep).append(whosdep[1], isdelete=isdelete)
+                                get_dependency_task(obj, dep).append(whosdep[1], isdelete=isdelete)
                         else:
                             get_dependency_task(obj, dep).append(obj, isdelete=isdelete)
                         
@@ -658,18 +643,30 @@ class UOWTask(object):
         if head is None:
             return None
 
-        #print str(head)
+        print str(head)
+
+        hierarchical_tasks = {}
+        def get_object_task(obj):
+            try:
+                return hierarchical_tasks[obj]
+            except KeyError:
+                originating_task = object_to_original_task[obj]
+                return hierarchical_tasks.setdefault(obj, UOWTask(None, originating_task.mapper))
 
         def make_task_tree(node, parenttask):
             """takes a dependency-sorted tree of objects and creates a tree of UOWTasks"""
-            t = objecttotask[node.item]
+            print "MAKETASKTREE", node.item
+            t = get_object_task(node.item)
             can_add_to_parent = t.mapper is parenttask.mapper
-            if t.parent.objects.has_key(node.item):
+            original_task = object_to_original_task[node.item]
+            if original_task.objects.has_key(node.item):
                 if can_add_to_parent:
-                    parenttask.append(node.item, t.parent.objects[node.item].listonly, isdelete=t.parent.objects[node.item].isdelete, childtask=t)
+                    parenttask.append(node.item, original_task.objects[node.item].listonly, isdelete=original_task.objects[node.item].isdelete, childtask=t)
                 else:
-                    t.append(node.item, t.parent.objects[node.item].listonly, isdelete=t.parent.objects[node.item].isdelete)
-                    parenttask.append(None, listonly=False, isdelete=t.parent.objects[node.item].isdelete, childtask=t)
+                    t.append(node.item, original_task.objects[node.item].listonly, isdelete=original_task.objects[node.item].isdelete)
+                    parenttask.append(None, listonly=False, isdelete=original_task.objects[node.item].isdelete, childtask=t)
+            else:
+                parenttask.append(None, childtask=t)
             if dependencies.has_key(node.item):
                 for depprocessor, deptask in dependencies[node.item].iteritems():
                     if can_add_to_parent:
@@ -688,6 +685,8 @@ class UOWTask(object):
         t.dependencies += [d for d in extradeplist]
         t.childtasks = self.childtasks
         make_task_tree(head, t)
+        print [o.obj for o in t.objects.values()]
+        print t.dump()
         return t
 
     def dump(self):

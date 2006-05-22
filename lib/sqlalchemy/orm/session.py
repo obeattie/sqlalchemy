@@ -347,7 +347,12 @@ class Session(object):
             self._register_dirty(object)
         else:
             self._register_clean(object)
-        
+    
+    def _register_changed(self, obj):
+        if hasattr(obj, '_instance_key'):
+            self._register_dirty(obj)
+        else:
+            self._register_new(obj)
     def _register_new(self, obj):
         self._attach(obj)
         self.uow.register_new(obj)
