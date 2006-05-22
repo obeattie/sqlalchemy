@@ -279,7 +279,7 @@ class UOWTransaction(object):
         refreshed/updated to reflect a recent save/upcoming delete operation, but not a full
         save/delete operation on the object itself, unless an additional save/delete
         registration is entered for the object."""
-        print "REGISTER", repr(obj), repr(getattr(obj, '_instance_key', None)), str(isdelete), str(listonly)
+        #print "REGISTER", repr(obj), repr(getattr(obj, '_instance_key', None)), str(isdelete), str(listonly)
         # things can get really confusing if theres duplicate instances floating around,
         # so make sure everything is OK
         self.uow._validate_obj(obj)
@@ -413,7 +413,6 @@ class UOWTaskElement(object):
         self.listonly = True
         self.childtasks = []
         self.isdelete = False
-        self.mapper = None
     def __repr__(self):
         return "UOWTaskElement/%d: %s/%d %s" % (id(self), self.obj.__class__.__name__, id(self.obj), (self.listonly and 'listonly' or (self.isdelete and 'delete' or 'save')) )
 
@@ -451,9 +450,7 @@ class UOWTask(object):
         self.dependencies = []
         self.cyclical_dependencies = []
         self.circular = None
-        self.postcircular = None
         self.childtasks = []
-#        print "NEW TASK", repr(self)
         
     def is_empty(self):
         return len(self.objects) == 0 and len(self.dependencies) == 0 and len(self.childtasks) == 0
@@ -543,7 +540,6 @@ class UOWTask(object):
         this is not the normal case; this logic only kicks in when something like 
         a hierarchical tree is being represented.
 
-        TODO: refactor heavily
         """
 
         allobjects = []
@@ -553,7 +549,7 @@ class UOWTask(object):
         
         cycles = Set(cycles)
         
-        print "BEGIN CIRC SORT-------"
+        #print "BEGIN CIRC SORT-------"
         # dependency processors that arent part of the cyclical thing
         # get put here
         extradeplist = []
@@ -630,8 +626,8 @@ class UOWTask(object):
                         whosdep = dep.whose_dependent_on_who(obj, o)
                         if whosdep is not None:
                             tuples.append(whosdep)
-                            # then locate a UOWDependencyProcessor to add the object onto, which
-                            # will handle the modifications between saves/deletes
+                            # create a UOWDependencyProcessor representing this pair of objects.
+                            # append it to a UOWTask
                             if whosdep[0] is obj:
                                 get_dependency_task(obj, dep).append(whosdep[0], isdelete=isdelete)
                             else:
@@ -643,7 +639,7 @@ class UOWTask(object):
         if head is None:
             return None
 
-        print str(head)
+        #print str(head)
 
         hierarchical_tasks = {}
         def get_object_task(obj):
@@ -655,8 +651,12 @@ class UOWTask(object):
 
         def make_task_tree(node, parenttask):
             """takes a dependency-sorted tree of objects and creates a tree of UOWTasks"""
-            print "MAKETASKTREE", node.item
+            #print "MAKETASKTREE", node.item
+
             t = get_object_task(node.item)
+            for n in node.children:
+                t2 = make_task_tree(n, t)
+                    
             can_add_to_parent = t.mapper is parenttask.mapper
             original_task = object_to_original_task[node.item]
             if original_task.objects.has_key(node.item):
@@ -666,15 +666,13 @@ class UOWTask(object):
                     t.append(node.item, original_task.objects[node.item].listonly, isdelete=original_task.objects[node.item].isdelete)
                     parenttask.append(None, listonly=False, isdelete=original_task.objects[node.item].isdelete, childtask=t)
             else:
-                parenttask.append(None, childtask=t)
+                parenttask.append(None, listonly=False, isdelete=original_task.objects[node.item].isdelete, childtask=t)
             if dependencies.has_key(node.item):
                 for depprocessor, deptask in dependencies[node.item].iteritems():
                     if can_add_to_parent:
                         parenttask.cyclical_dependencies.append(depprocessor.branch(deptask))
                     else:
                         t.cyclical_dependencies.append(depprocessor.branch(deptask))
-            for n in node.children:
-                t2 = make_task_tree(n, t)
             return t
 
         # this is the new "circular" UOWTask which will execute in place of "self"
@@ -685,8 +683,7 @@ class UOWTask(object):
         t.dependencies += [d for d in extradeplist]
         t.childtasks = self.childtasks
         make_task_tree(head, t)
-        print [o.obj for o in t.objects.values()]
-        print t.dump()
+        #print t.dump()
         return t
 
     def dump(self):
@@ -715,38 +712,39 @@ class UOWTask(object):
             else:
                 val = [t for t in proc.targettask.objects.values() if not t.isdelete]
 
-            buf.write(_indent() + "  |- UOWDependencyProcessor(%d) %s attribute on %s (%s)\n" % (
-                id(proc), 
+            buf.write(_indent() + "  |- %s attribute on %s (UOWDependencyProcessor(%d) processing %s)\n" % (
                 repr(proc.processor.key), 
                     (proc.isdeletefrom and 
                         "%s's to be deleted" % _repr_task_class(proc.targettask) 
                         or "saved %s's" % _repr_task_class(proc.targettask)), 
+                id(proc), 
                 _repr_task(proc.targettask))
             )
             
             if len(val) == 0:
                 buf.write(_indent() + "  |       |-" + "(no objects)\n")
             for v in val:
-                buf.write(_indent() + "  |       |-" + _repr_task_element(v) + "\n")
+                buf.write(_indent() + "  |       |-" + _repr_task_element(v, proc.processor.key) + "\n")
         
-        def _repr_task_element(te):
+        def _repr_task_element(te, attribute=None):
             if te.obj is None:
                 objid = "(placeholder)"
             else:
-                objid = "%s(%d)" % (te.obj.__class__.__name__, id(te.obj))
-            return "UOWTaskElement(%d): %s %s%s" % (id(te), objid, (te.listonly and '(listonly)' or (te.isdelete and '(delete' or '(save')),
-            (te.mapper is not None and " w/ " + str(te.mapper) + ")" or ")")
-            )
+                if attribute is not None:
+                    objid = "%s(%d).%s" % (te.obj.__class__.__name__, id(te.obj), attribute)
+                else:
+                    objid = "%s(%d)" % (te.obj.__class__.__name__, id(te.obj))
+            return "%s (UOWTaskElement(%d, %s))" % (objid, id(te), (te.listonly and 'listonly' or (te.isdelete and 'delete' or 'save')))
                 
         def _repr_task(task):
             if task.mapper is not None:
                 if task.mapper.__class__.__name__ == 'Mapper':
-                    name = task.mapper.class_.__name__ + "/" + str(task.mapper.local_table) + "/" + str(id(task.mapper))
+                    name = task.mapper.class_.__name__ + "/" + task.mapper.local_table.name + "/" + str(task.mapper.entity_name)
                 else:
                     name = repr(task.mapper)
             else:
                 name = '(none)'
-            return ("UOWTask(%d) '%s'" % (id(task), name))
+            return ("UOWTask(%d, %s)" % (id(task), name))
         def _repr_task_class(task):
             if task.mapper is not None and task.mapper.__class__.__name__ == 'Mapper':
                 return task.mapper.class_.__name__
@@ -774,7 +772,7 @@ class UOWTask(object):
             if rec.listonly:
                 continue
             header(buf, _indent() + "  |- Save elements\n")
-            buf.write(_indent() + "  |- Save: " + _repr_task_element(rec) + "\n")
+            buf.write(_indent() + "  |- " + _repr_task_element(rec) + "\n")
         for dep in self.cyclical_save_dependencies():
             header(buf, _indent() + "  |- Cyclical Save dependencies\n")
             _dump_processor(dep)
@@ -806,9 +804,13 @@ class UOWTask(object):
             if rec.listonly:
                 continue
             header(buf, _indent() + "  |- Delete elements\n")
-            buf.write(_indent() + "  |- Delete: " + _repr_task_element(rec) + "\n")
+            buf.write(_indent() + "  |- " + _repr_task_element(rec) + "\n")
 
-        buf.write(_indent() + "  |----\n")
+        if self.is_empty():   
+            buf.write(_indent() + "  |- (empty task)\n")
+        else:
+            buf.write(_indent() + "  |----\n")
+            
         buf.write(_indent() + "\n")           
         
     def __repr__(self):

@@ -513,10 +513,10 @@ class Mapper(object):
         """called by a UnitOfWork object to save objects, which involves either an INSERT or
         an UPDATE statement for each table used by this mapper, for each element of the
         list."""
-        print "SAVE_OBJ MAPPER", self.class_.__name__, objects
+        #print "SAVE_OBJ MAPPER", self.class_.__name__, objects
         connection = uow.transaction.connection(self)
         for table in self.tables:
-            print "SAVE_OBJ table ", self.class_.__name__, table.name
+            #print "SAVE_OBJ table ", self.class_.__name__, table.name
             # looping through our set of tables, which are all "real" tables, as opposed
             # to our main table which might be a select statement or something non-writeable
             
