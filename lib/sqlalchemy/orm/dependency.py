@@ -105,6 +105,8 @@ class DependencyProcessor(object):
             raise AssertionError(" no foreign key ?")
 
     def get_object_dependencies(self, obj, uowcommit, passive = True):
+        """returns the list of objects that are dependent on the given object, as according to the relationship
+        this dependency processor represents"""
         return uowcommit.uow.attributes.get_history(obj, self.key, passive = passive)
 
     def whose_dependent_on_who(self, obj1, obj2):
@@ -120,19 +122,21 @@ class DependencyProcessor(object):
             return (obj2, obj1)
 
     def process_dependencies(self, task, deplist, uowcommit, delete = False):
-        """this method is called during a commit operation to synchronize data between a parent and child object.  
-        it also can establish child or parent objects within the unit of work as "to be saved" or "deleted" 
-        in some cases."""
+        """this method is called during a flush operation to synchronize data between a parent and child object.
+        it is called within the context of the various mappers and sometimes individual objects sorted according to their
+        insert/update/delete order (topological sort)."""
         #print self.mapper.table.name + " " + self.key + " " + repr(len(deplist)) + " process_dep isdelete " + repr(delete) + " direction " + repr(self.direction)
 
         def getlist(obj, passive=True):
             return self.get_object_dependencies(obj, uowcommit, passive)
 
-        connection = uowcommit.transaction.connection(self.mapper)
-
         # plugin point
 
+        # TODO: process_dependencies has been refactored into two methods, process_dependencies and preprocess_dependencies.
+        # cleanup is still required to hone the method down to its minimal amount of code.
+        
         if self.direction == MANYTOMANY:
+            connection = uowcommit.transaction.connection(self.mapper)
             secondary_delete = []
             secondary_insert = []
             if delete:
@@ -164,11 +168,7 @@ class DependencyProcessor(object):
                 connection.execute(statement, secondary_insert)
         elif self.direction == MANYTOONE and delete:
             if self.cascade.delete_orphan:
-                for obj in deplist:
-                    childlist = getlist(obj, False)
-                    for child in childlist.deleted_items() + childlist.unchanged_items():
-                        if child is not None and childlist.hasparent(child) is False:
-                            uowcommit.register_object(child, isdelete=True)
+                pass
             elif self.post_update:
                 # post_update means we have to update our row to not reference the child object
                 # before we can DELETE the row
@@ -179,25 +179,20 @@ class DependencyProcessor(object):
             # head object is being deleted, and we manage its list of child objects
             # the child objects have to have their foreign key to the parent set to NULL
             if self.cascade.delete_orphan and not self.post_update:
-                for obj in deplist:
-                    childlist = getlist(obj, False)
-                    for child in childlist.deleted_items():
-                        if child is not None and childlist.hasparent(child) is False:
-                            uowcommit.register_object(child, isdelete=True)
-                    for child in childlist.unchanged_items():
-                        if child is not None:
-                            uowcommit.register_object(child, isdelete=True)
+                pass
             else:
                 for obj in deplist:
                     childlist = getlist(obj, False)
                     for child in childlist.deleted_items():
                         if child is not None and childlist.hasparent(child) is False:
                             self._synchronize(obj, child, None, True)
-                            uowcommit.register_object(child, postupdate=self.post_update)
+                            if self.post_update:
+                                uowcommit.register_object(child, postupdate=True)
                     for child in childlist.unchanged_items():
                         if child is not None:
                             self._synchronize(obj, child, None, True)
-                            uowcommit.register_object(child, postupdate=self.post_update)
+                            if self.post_update:
+                                uowcommit.register_object(child, postupdate=True)
         elif self.association is not None:
             # manage association objects.
             for obj in deplist:
@@ -240,21 +235,86 @@ class DependencyProcessor(object):
                 if childlist is not None:
                     for child in childlist.added_items():
                         self._synchronize(obj, child, None, False)
-                        if self.direction == ONETOMANY and child is not None:
-                            uowcommit.register_object(child, postupdate=self.post_update)
+                        if self.direction == ONETOMANY and child is not None and self.post_update:
+                            uowcommit.register_object(child, postupdate=True)
                 if self.direction == MANYTOONE:
-                    uowcommit.register_object(obj, postupdate=self.post_update)
+                    if self.post_update:
+                        uowcommit.register_object(obj, postupdate=True)
                 else:
                     for child in childlist.deleted_items():
                         if not self.cascade.delete_orphan:
                             self._synchronize(obj, child, None, True)
+
+    def preprocess_dependencies(self, task, deplist, uowcommit, delete = False):
+        """used before the flushes' topological sort to traverse through related objects and insure every 
+        instance which will require save/update/delete is properly added to the UOWTransaction."""
+        #print self.mapper.table.name + " " + self.key + " " + repr(len(deplist)) + " process_dep isdelete " + repr(delete) + " direction " + repr(self.direction)
+
+        # TODO: post_update instructions should be established in this step as well
+        # (and executed in the regular traversal)
+        if self.post_update:
+            return
+
+        # TODO: this method is the product of splitting process_dependencies into two methods.
+        # cleanup is still required to hone the method down to its minimal amount of code.
+            
+        def getlist(obj, passive=True):
+            return self.get_object_dependencies(obj, uowcommit, passive)
+
+        if self.direction == MANYTOMANY:
+            pass
+        elif self.direction == MANYTOONE and delete:
+            if self.cascade.delete_orphan:
+                for obj in deplist:
+                    childlist = getlist(obj, False)
+                    for child in childlist.deleted_items() + childlist.unchanged_items():
+                        if child is not None and childlist.hasparent(child) is False:
+                            uowcommit.register_object(child, isdelete=True)
+        elif self.direction == ONETOMANY and delete:
+            # head object is being deleted, and we manage its list of child objects
+            # the child objects have to have their foreign key to the parent set to NULL
+            if self.cascade.delete_orphan and not self.post_update:
+                for obj in deplist:
+                    childlist = getlist(obj, False)
+                    for child in childlist.deleted_items():
+                        if child is not None and childlist.hasparent(child) is False:
+                            uowcommit.register_object(child, isdelete=True)
+                    for child in childlist.unchanged_items():
+                        if child is not None:
+                            uowcommit.register_object(child, isdelete=True)
+            else:
+                for obj in deplist:
+                    childlist = getlist(obj, False)
+                    for child in childlist.deleted_items():
+                        if child is not None and childlist.hasparent(child) is False:
+                            uowcommit.register_object(child)
+                    for child in childlist.unchanged_items():
+                        if child is not None:
+                            uowcommit.register_object(child)
+        elif self.association is not None:
+            # TODO: clean up the association step in process_dependencies and move the
+            # appropriate sections of it to here
+            pass
+        else:
+            for obj in deplist:
+                childlist = getlist(obj, passive=True)
+                if childlist is not None:
+                    for child in childlist.added_items():
+                        if self.direction == ONETOMANY and child is not None:
+                            uowcommit.register_object(child)
+                if self.direction == MANYTOONE:
+                    uowcommit.register_object(obj)
+                else:
+                    for child in childlist.deleted_items():
+                        if not self.cascade.delete_orphan:
                             uowcommit.register_object(child, isdelete=False)
                         elif childlist.hasparent(child) is False:
                             uowcommit.register_object(child, isdelete=True)
 
+                            
     def _synchronize(self, obj, child, associationrow, clearkeys):
-        """called during a commit to execute the full list of syncrules on the 
-        given object/child/optional association row"""
+        """called during a flush to synchronize primary key identifier values between a parent/child object, as well as 
+        to an associationrow in the case of many-to-many."""
         if self.direction == ONETOMANY:
             source = obj
             dest = child

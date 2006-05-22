@@ -1,3 +1,6 @@
+[alpha_api]: javascript:alphaApi()
+[alpha_implementation]: javascript:alphaImplementation()
+
 Data Mapping {@name=datamapping}
 ============
 
@@ -423,6 +426,8 @@ All keyword arguments sent to `select_by` are used to create query criterion.  T
 Also, `select_by` will *not* create joins derived from `Column`-based expressions (i.e. `ClauseElement` objects); the reason is that a `Column`-based expression may include many columns, and `select_by` has no way to know which columns in the expression correspond to properties and which don't (it also prefers not to dig into column expressions which may be very complex).  The next section describes some ways to combine `Column` expressions with `select_by`'s auto-joining capabilities.
 
 #### More Granular Join Control Using join\_to, join\_via {@name=jointo}
+
+Feature Status: [Alpha API][alpha_api] 
 
 The `join_to` method of `Query` is a component of the `select_by` operation, and is given a keyname in order to return a "join path" from the Query's mapper to the mapper which is referenced by a `relation()` of the given name:
 
