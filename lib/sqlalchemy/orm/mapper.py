@@ -127,6 +127,8 @@ class Mapper(object):
             if self.class_.__mro__[1] != inherits.class_:
                 raise exceptions.ArgumentError("Class '%s' does not inherit from '%s'" % (self.class_.__name__, inherits.class_.__name__))
             # inherit_condition is optional.
+            if local_table is None:
+                self.local_table = local_table = inherits.local_table
             if not local_table is inherits.local_table:
                 if concrete:
                     self._synchronizer= None
@@ -147,6 +149,7 @@ class Mapper(object):
                     self._synchronizer.compile(self.mapped_table.onclause, util.HashSet([inherits.local_table]), sqlutil.TableFinder(self.local_table))
             else:
                 self._synchronizer = None
+                self.mapped_table = self.local_table
             self.inherits = inherits
             if polymorphic_identity is not None:
                 inherits.add_polymorphic_mapping(polymorphic_identity, self)

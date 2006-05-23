@@ -12,6 +12,7 @@ employees_table = Table('employees', metadata,
     Column('company_id', Integer, ForeignKey('companies.company_id')),
     Column('name', String(50)),
     Column('type', String(20)),
+    Column('status', String(20)),
     Column('engineer_name', String(50)),
     Column('primary_language', String(50)),
     Column('manager_name', String(50))
@@ -39,8 +40,8 @@ class Company(object):
         return "Company %s" % self.name
 
 person_mapper = mapper(Person, employees_table, polymorphic_on=employees_table.c.type, polymorphic_identity='person')
-manager_mapper = mapper(Manager, inherits=employee_mapper, polymorphic_identity='manager')
-engineer_mapper = mapper(Engineer, inherits=employee_mapper, polymorphic_identity='engineer')
+manager_mapper = mapper(Manager, inherits=person_mapper, polymorphic_identity='manager')
+engineer_mapper = mapper(Engineer, inherits=person_mapper, polymorphic_identity='engineer')
 
 
 
