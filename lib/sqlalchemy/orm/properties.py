@@ -228,7 +228,7 @@ class PropertyLoader(mapper.MapperProperty):
             self.uselist = True
 
         self._compile_synchronizers()
-        self._dependency_processor = dependency.DependencyProcessor(self.key, self.syncrules, self.cascade, secondary=self.secondary, association=self.association, is_backref=self.is_backref, post_update=self.post_update)
+        self._dependency_processor = dependency.create_dependency_processor(self.key, self.syncrules, self.cascade, secondary=self.secondary, association=self.association, is_backref=self.is_backref, post_update=self.post_update)
 
         # primary property handler, set up class attributes
         if self.is_primary():
