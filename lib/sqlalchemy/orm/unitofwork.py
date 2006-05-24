@@ -356,15 +356,11 @@ class UOWTransaction(object):
         self._mark_modified()
 
     def execute(self, echo=False):
-        # tell all related mappers to set up dependency processors
-        #for task in self.tasks.values():
-        #    task.mapper.register_dependencies(self)
-
         # pre-execute dependency processors.  this process may 
-        # result in new tasks and/or dependency processors being added,
+        # result in new tasks, objects and/or dependency processors being added,
         # particularly with 'delete-orphan' cascade rules.
-        # keep running through the full list of tasks until no more
-        # new objects get processed.
+        # keep running through the full list of tasks until all
+        # objects have been processed.
         while True:
             ret = False
             for task in self.tasks.values():
@@ -437,13 +433,41 @@ class UOWTaskElement(object):
     """an element within a UOWTask.  corresponds to a single object instance
     to be saved, deleted, or just part of the transaction as a placeholder for 
     further dependencies (i.e. 'listonly').
-    in the case of self-referential mappers, may also store a "childtask", which is a
-    UOWTask containing objects dependent on this element's object instance."""
+    in the case of self-referential mappers, may also store a list of childtasks,
+    further UOWTasks containing objects dependent on this element's object instance."""
     def __init__(self, obj):
         self.obj = obj
-        self.listonly = True
+        self.__listonly = True
         self.childtasks = []
-        self.isdelete = False
+        self.__isdelete = False
+        self.__preprocessed = {}
+    def _get_listonly(self):
+        return self.__listonly
+    def _set_listonly(self, value):
+        """set_listonly is a one-way setter, will only go from True to False."""
+        if not value and self.__listonly:
+            self.__listonly = False
+            self.clear_preprocessed()
+    def _get_isdelete(self):
+        return self.__isdelete
+    def _set_isdelete(self, value):
+        if self.__isdelete is not value:
+            self.__isdelete = value
+            self.clear_preprocessed()
+    listonly = property(_get_listonly, _set_listonly)
+    isdelete = property(_get_isdelete, _set_isdelete)
+    
+    def mark_preprocessed(self, processor):
+        """marks this element as "preprocessed" by a particular UOWDependencyProcessor.  preprocessing is the step
+        which sweeps through all the relationships on all the objects in the flush transaction and adds other objects
+        which are also affected,  In some cases it can switch an object from "tosave" to "todelete".  changes to the state 
+        of this UOWTaskElement will reset all "preprocessed" flags, causing it to be preprocessed again.  When all UOWTaskElements
+        have been fully preprocessed by all UOWDependencyProcessors, then the topological sort can be done."""
+        self.__preprocessed[processor] = True
+    def is_preprocessed(self, processor):
+        return self.__preprocessed.get(processor, False)
+    def clear_preprocessed(self):
+        self.__preprocessed.clear()
     def __repr__(self):
         return "UOWTaskElement/%d: %s/%d %s" % (id(self), self.obj.__class__.__name__, id(self.obj), (self.listonly and 'listonly' or (self.isdelete and 'delete' or 'save')) )
 
@@ -454,27 +478,25 @@ class UOWDependencyProcessor(object):
     def __init__(self, processor, targettask):
         self.processor = processor
         self.targettask = targettask
-        self.preprocessed = Set()
-    
+        
     def preexecute(self, trans):
+        """traverses all objects handled by this dependency processor and locates additional objects which should be 
+        part of the transaction, such as those affected deletes, orphans to be deleted, etc. Returns True if any
+        objects were preprocessed, or False if no objects were preprocessed."""
+        def getobj(elem):
+            elem.mark_preprocessed(self)
+            return elem.obj
+            
         ret = False
-        elements = [elem.obj for elem in self.targettask.tosave_elements if elem.obj is not None and elem.obj not in self.preprocessed]
+        elements = [getobj(elem) for elem in self.targettask.tosave_elements if elem.obj is not None and not elem.is_preprocessed(self)]
         if len(elements):
             ret = True
-            todo = []
-            for e in elements:
-                self.preprocessed.add(e)
-                todo.append(e)
-            self.processor.preprocess_dependencies(self.targettask, todo, trans, delete=False)
+            self.processor.preprocess_dependencies(self.targettask, elements, trans, delete=False)
 
-        elements = [elem.obj for elem in self.targettask.todelete_elements if elem.obj is not None and elem.obj not in self.preprocessed]
+        elements = [getobj(elem) for elem in self.targettask.todelete_elements if elem.obj is not None and not elem.is_preprocessed(self)]
         if len(elements):
             ret = True
-            todo = []
-            for e in elements:
-                self.preprocessed.add(e)
-                todo.append(e)
-            self.processor.preprocess_dependencies(self.targettask, todo, trans, delete=True)
+            self.processor.preprocess_dependencies(self.targettask, elements, trans, delete=True)
         return ret
         
     def execute(self, trans, delete):
@@ -527,6 +549,8 @@ class UOWTask(object):
             rec.childtasks.append(childtask)
         if isdelete:
             rec.isdelete = True
+        #if not childtask:
+        #    rec.preprocessed = False
         return retval
     
     def append_postupdate(self, obj):
