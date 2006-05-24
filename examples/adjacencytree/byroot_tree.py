@@ -163,10 +163,10 @@ print "----------------------------"
 
 print node.print_nodes()
 
-#node.append('node4')
-#node.children['node4'].append('subnode3')
-#node.children['node4'].append('subnode4')
-#node.children['node4'].children['subnode3'].append('subsubnode1')
+node.append('node4')
+node.children['node4'].append('subnode3')
+node.children['node4'].append('subnode4')
+node.children['node4'].children['subnode3'].append('subsubnode1')
 del node.children['node1']
 
 print "\n\n\n----------------------------"
@@ -181,7 +181,6 @@ print "\n\n\n----------------------------"
 print "Committing:"
 print "----------------------------"
 session.flush()
-sys.exit()
 
 print "\n\n\n----------------------------"
 print "Tree After Save:"
