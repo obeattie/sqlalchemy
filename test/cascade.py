@@ -7,13 +7,15 @@ from sqlalchemy import *
 class O2MCascadeTest(testbase.AssertMixin):
     def tearDown(self):
         ctx.current.clear()
+        tables.delete()
 
     def tearDownAll(self):
         clear_mappers()
-    
+        tables.drop()
+
     def setUpAll(self):
         global ctx, data
-        ctx = SessionContext(create_session)
+        ctx = SessionContext(lambda: create_session(echo_uow=True))
         tables.create()
         mapper(tables.User, tables.users, properties = dict(
             address = relation(mapper(tables.Address, tables.addresses), lazy = False, uselist = False, private = True),
@@ -71,11 +73,6 @@ class O2MCascadeTest(testbase.AssertMixin):
         ctx.current.flush()
         ctx.current.clear()
 
-    def tearDown(self):
-        tables.delete()
-    
-    def tearDownAll(self):
-        clear_mappers()
         
     def testdelete(self):
         l = ctx.current.query(tables.User).select()
@@ -118,7 +115,8 @@ class M2OCascadeTest(testbase.AssertMixin):
             
     def tearDownAll(self):
         clear_mappers()
-
+        metadata.drop_all()
+        
     def setUpAll(self):
         global ctx, data, metadata, User, Pref
         ctx = SessionContext(create_session)

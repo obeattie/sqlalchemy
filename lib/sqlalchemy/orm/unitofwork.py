@@ -325,7 +325,9 @@ class UOWTransaction(object):
         try:
             return self.tasks[mapper]
         except KeyError:
-            return UOWTask(self, mapper)
+            task = UOWTask(self, mapper)
+            task.mapper.register_dependencies(self)
+            return task
             
     def register_dependency(self, mapper, dependency):
         """called by mapper.PropertyLoader to register the objects handled by
@@ -355,8 +357,8 @@ class UOWTransaction(object):
 
     def execute(self, echo=False):
         # tell all related mappers to set up dependency processors
-        for task in self.tasks.values():
-            task.mapper.register_dependencies(self)
+        #for task in self.tasks.values():
+        #    task.mapper.register_dependencies(self)
 
         # pre-execute dependency processors.  this process may 
         # result in new tasks and/or dependency processors being added,

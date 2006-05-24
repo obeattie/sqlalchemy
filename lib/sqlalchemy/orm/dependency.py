@@ -359,6 +359,8 @@ class MapperStub(object):
     for the many-to-many update task."""
     def __init__(self, mapper):
         self.mapper = mapper
+    def register_dependencies(self, uowcommit):
+        pass
     def save_obj(self, *args, **kwargs):
         pass
     def delete_obj(self, *args, **kwargs):
