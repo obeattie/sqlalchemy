@@ -680,6 +680,7 @@ class Mapper(object):
             if not self._has_pks(table):
                 continue
             delete = []
+            deleted_objects = []
             for obj in objects:
                 params = {}
                 if not hasattr(obj, "_instance_key"):
@@ -691,6 +692,7 @@ class Mapper(object):
                 if self.version_id_col is not None:
                     params[self.version_id_col.key] = self._getattrbycolumn(obj, self.version_id_col)
                 self.extension.before_delete(self, connection, obj)
+                deleted_objects.append(obj)
             if len(delete):
                 clause = sql.and_()
                 for col in self.pks_by_table[table]:
@@ -701,6 +703,8 @@ class Mapper(object):
                 c = connection.execute(statement, delete)
                 if c.supports_sane_rowcount() and c.rowcount != len(delete):
                     raise exceptions.FlushError("ConcurrencyError - updated rowcount %d does not match number of objects updated %d" % (c.cursor.rowcount, len(delete)))
+                for obj in deleted_objects:
+                    self.extension.after_delete(self, connection, obj)
 
     def _has_pks(self, table):
         try:
@@ -1076,6 +1080,10 @@ class MapperExtension(object):
         """called before an object instance is DELETEed"""
         if self.next is not None:
             self.next.before_delete(mapper, connection, instance)
+    def after_delete(self, mapper, connection, instance):
+        """called after an object instance is DELETEed"""
+        if self.next is not None:
+            self.next.after_delete(mapper, connection, instance)
 
 class TranslatingDict(dict):
     """a dictionary that stores ColumnElement objects as keys.  incoming ColumnElement
