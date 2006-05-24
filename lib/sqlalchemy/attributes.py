@@ -131,8 +131,11 @@ class ScalarAttribute(ManagedAttribute):
         if self.orig is ScalarAttribute.NONE:
             self.orig = orig
         self.obj.__dict__[self.key] = value
-        if value is not None and self.trackparent:
-            self.sethasparent(value, True)
+        if self.trackparent:
+            if value is not None:
+                self.sethasparent(value, True)
+            if orig is not None:
+                self.sethasparent(orig, False)
         if self.extension is not None:
             self.extension.set(self.obj, value, orig)
         self.value_changed(orig, value)

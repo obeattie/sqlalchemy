@@ -367,6 +367,7 @@ class HistoryArraySet(UserList.UserList):
         self.__delrecord(self.data[i])
         del self.data[i]
     def __setslice__(self, i, j, other):
+        print "HAS SETSLICE"
         i = max(i, 0); j = max(j, 0)
         if isinstance(other, UserList.UserList):
             l = other.data
@@ -374,6 +375,7 @@ class HistoryArraySet(UserList.UserList):
             l = other
         else:
             l = list(other)
+        [self.__delrecord(x) for x in self.data[i:]]
         g = [a for a in l if self.__setrecord(a)]
         self.data[i:] = g
     def __delslice__(self, i, j):

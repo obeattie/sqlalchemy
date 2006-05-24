@@ -351,13 +351,31 @@ class UOWTransaction(object):
         targettask = self.get_task_by_mapper(mapperfrom)
         up = UOWDependencyProcessor(processor, targettask)
         task.dependencies.append(up)
-        up.preexecute(self)
         self._mark_modified()
 
     def execute(self, echo=False):
+        # tell all related mappers to set up dependency processors
         for task in self.tasks.values():
             task.mapper.register_dependencies(self)
 
+        # pre-execute dependency processors.  this process may 
+        # result in new tasks and/or dependency processors being added,
+        # particularly with 'delete-orphan' cascade rules.
+        # keep running through the full list of tasks until no more
+        # new objects get processed.
+        while True:
+            ret = False
+            for task in self.tasks.values():
+                for up in task.dependencies:
+                    if up.preexecute(self):
+                        ret = True
+            if not ret:
+                break
+        
+        # flip the execution flag on.  in some test cases
+        # we like to check this flag against any new objects being added, since everything
+        # should be registered by now.  there is a slight exception in the case of 
+        # post_update requests; this should be fixed.
         self.__is_executing = True
         
         head = self._sort_dependencies()
@@ -434,10 +452,28 @@ class UOWDependencyProcessor(object):
     def __init__(self, processor, targettask):
         self.processor = processor
         self.targettask = targettask
+        self.preprocessed = Set()
     
     def preexecute(self, trans):
-        self.processor.preprocess_dependencies(self.targettask, [elem.obj for elem in self.targettask.tosave_elements if elem.obj is not None], trans, delete=False)
-        self.processor.preprocess_dependencies(self.targettask, [elem.obj for elem in self.targettask.todelete_elements if elem.obj is not None], trans, delete=True)
+        ret = False
+        elements = [elem.obj for elem in self.targettask.tosave_elements if elem.obj is not None and elem.obj not in self.preprocessed]
+        if len(elements):
+            ret = True
+            todo = []
+            for e in elements:
+                self.preprocessed.add(e)
+                todo.append(e)
+            self.processor.preprocess_dependencies(self.targettask, todo, trans, delete=False)
+
+        elements = [elem.obj for elem in self.targettask.todelete_elements if elem.obj is not None and elem.obj not in self.preprocessed]
+        if len(elements):
+            ret = True
+            todo = []
+            for e in elements:
+                self.preprocessed.add(e)
+                todo.append(e)
+            self.processor.preprocess_dependencies(self.targettask, todo, trans, delete=True)
+        return ret
         
     def execute(self, trans, delete):
         if not delete:
@@ -468,7 +504,7 @@ class UOWTask(object):
         
     def is_empty(self):
         return len(self.objects) == 0 and len(self.dependencies) == 0 and len(self.childtasks) == 0
-            
+    
     def append(self, obj, listonly = False, childtask = None, isdelete = False):
         """appends an object to this task, to be either saved or deleted depending on the
         'isdelete' attribute of this UOWTask.  'listonly' indicates that the object should

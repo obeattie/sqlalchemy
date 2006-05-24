@@ -6,8 +6,6 @@ import string, sys
 
 metadata = BoundMetaData('sqlite:///', echo=True)
 
-"""create the treenodes table.  This is a basic adjacency list model table."""
-
 trees = Table('treenodes', metadata,
     Column('node_id', Integer, Sequence('treenode_id_seq',optional=False), primary_key=True),
     Column('parent_node_id', Integer, ForeignKey('treenodes.node_id'), nullable=True),
@@ -15,6 +13,7 @@ trees = Table('treenodes', metadata,
     )
 
 class NodeList(util.OrderedDict):
+    """subclasses OrderedDict to allow usage as a list-based property."""
     def append(self, node):
         self[node.name] = node
     def __iter__(self):
@@ -77,7 +76,7 @@ print "\n\n\n----------------------------"
 print "Flushing:"
 print "----------------------------"
 
-session = create_session(echo_uow=True)
+session = create_session()
 session.save(node)
 session.flush()
 

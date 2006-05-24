@@ -117,7 +117,6 @@ class OneToManyDP(DependencyProcessor):
                         if child is not None and self.post_update:
                             uowcommit.register_object(child, postupdate=True)
                 for child in childlist.deleted_items():
-                    print "HI KEY", self.key, "OBJECT", obj, "CHILD", child
                     if not self.cascade.delete_orphan:
                         self._synchronize(obj, child, None, True)
 
@@ -137,9 +136,13 @@ class OneToManyDP(DependencyProcessor):
                     for child in childlist.deleted_items():
                         if child is not None and childlist.hasparent(child) is False:
                             uowcommit.register_object(child, isdelete=True)
+                            for c in self.mapper.cascade_iterator('delete', child):
+                                uowcommit.register_object(c, isdelete=True)
                     for child in childlist.unchanged_items():
                         if child is not None:
                             uowcommit.register_object(child, isdelete=True)
+                            for c in self.mapper.cascade_iterator('delete', child):
+                                uowcommit.register_object(c, isdelete=True)
             else:
                 for obj in deplist:
                     childlist = self.get_object_dependencies(obj, uowcommit, passive=False)
@@ -158,10 +161,11 @@ class OneToManyDP(DependencyProcessor):
                             uowcommit.register_object(child)
                 for child in childlist.deleted_items():
                     if not self.cascade.delete_orphan:
-                        print "PREPROCESS KEY", self.key, "OBJECT", obj, "CHILD", child
                         uowcommit.register_object(child, isdelete=False)
                     elif childlist.hasparent(child) is False:
                         uowcommit.register_object(child, isdelete=True)
+                        for c in self.mapper.cascade_iterator('delete', child):
+                            uowcommit.register_object(c, isdelete=True)
             
     def _synchronize(self, obj, child, associationrow, clearkeys):
         source = obj
@@ -205,17 +209,25 @@ class ManyToOneDP(DependencyProcessor):
         if self.post_update:
             return
         if delete:
-            if self.cascade.delete_orphan:
+            if self.cascade.delete:
                 for obj in deplist:
                     childlist = self.get_object_dependencies(obj, uowcommit, passive=False)
                     for child in childlist.deleted_items() + childlist.unchanged_items():
                         if child is not None and childlist.hasparent(child) is False:
                             uowcommit.register_object(child, isdelete=True)
+                            for c in self.mapper.cascade_iterator('delete', child):
+                                uowcommit.register_object(c, isdelete=True)
         else:
             for obj in deplist:
-                childlist = self.get_object_dependencies(obj, uowcommit, passive=True)
                 uowcommit.register_object(obj)
-            
+                if self.cascade.delete_orphan:
+                    childlist = self.get_object_dependencies(obj, uowcommit, passive=False)
+                    for child in childlist.deleted_items():
+                        if childlist.hasparent(child) is False:
+                            uowcommit.register_object(child, isdelete=True)
+                            for c in self.mapper.cascade_iterator('delete', child):
+                                uowcommit.register_object(c, isdelete=True)
+                        
     def _synchronize(self, obj, child, associationrow, clearkeys):
         source = child
         dest = obj

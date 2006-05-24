@@ -42,6 +42,7 @@ def suite():
         # ORM persistence
         'sessioncontext', 
         'objectstore',
+        'cascade',
         'relationships',
         
         # cyclical ORM persistence

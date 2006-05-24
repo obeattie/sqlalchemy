@@ -2,10 +2,11 @@ from sqlalchemy import *
 import sqlalchemy.util as util
 import string, sys, time
 
-"""a more advanced example of basic_tree.py.  illustrates MapperExtension objects which
-add application-specific functionality to a Mapper object."""
+"""a more advanced example of basic_tree.py.  treenodes can now reference their "root" node, and
+introduces a new selection method which selects an entire tree of nodes at once, taking 
+advantage of a custom MapperExtension to assemble incoming nodes into their correct structure."""
 
-engine = create_engine('sqlite:///:memory:', echo = "debug")
+engine = create_engine('sqlite:///:memory:', echo=True)
 
 metadata = BoundMetaData(engine)
 
@@ -26,14 +27,10 @@ treedata = Table(
     Column('data_id', Integer, primary_key=True),
     Column('value', String(100), nullable=False)
 )
-    
 
 
 class NodeList(util.OrderedDict):
-    """extends an Ordered Dictionary, which is just a dictionary that iterates its keys and values
-    in the order they were inserted.  Adds an "append" method, which appends a node to the 
-    dictionary as though it were a list, and also within append automatically associates 
-    the parent of a TreeNode with itself."""
+    """subclasses OrderedDict to allow usage as a list-based property."""
     def append(self, node):
         self[node.name] = node
     def __iter__(self):
@@ -120,18 +117,18 @@ print "\n\n\n----------------------------"
 print "Creating Tree Table:"
 print "----------------------------"
 
-treedata.create()    
-trees.create()
+metadata.create_all()
 
-
+# the mapper is created with properties that specify "lazy=None" - this is because we are going 
+# to handle our own "eager load" of nodes based on root id
 mapper(TreeNode, trees, properties=dict(
     id=trees.c.node_id,
     name=trees.c.node_name,
     parent_id=trees.c.parent_node_id,
     root_id=trees.c.root_node_id,
     root=relation(TreeNode, primaryjoin=trees.c.root_node_id==trees.c.node_id, foreignkey=trees.c.node_id, lazy=None, uselist=False),
-    children=relation(TreeNode, primaryjoin=trees.c.parent_node_id==trees.c.node_id, lazy=None, uselist=True, cascade="delete,save-update"),
-    data=relation(mapper(TreeData, treedata, properties=dict(id=treedata.c.data_id)), cascade="delete,save-update", lazy=False)
+    children=relation(TreeNode, primaryjoin=trees.c.parent_node_id==trees.c.node_id, lazy=None, uselist=True, cascade="delete,delete-orphan,save-update"),
+    data=relation(mapper(TreeData, treedata, properties=dict(id=treedata.c.data_id)), cascade="delete,delete-orphan,save-update", lazy=False)
     
 ), extension = TreeLoader())
 
@@ -166,10 +163,10 @@ print "----------------------------"
 
 print node.print_nodes()
 
-node.append('node4')
-node.children['node4'].append('subnode3')
-node.children['node4'].append('subnode4')
-node.children['node4'].children['subnode3'].append('subsubnode1')
+#node.append('node4')
+#node.children['node4'].append('subnode3')
+#node.children['node4'].append('subnode4')
+#node.children['node4'].children['subnode3'].append('subsubnode1')
 del node.children['node1']
 
 print "\n\n\n----------------------------"
@@ -184,6 +181,7 @@ print "\n\n\n----------------------------"
 print "Committing:"
 print "----------------------------"
 session.flush()
+sys.exit()
 
 print "\n\n\n----------------------------"
 print "Tree After Save:"
@@ -199,6 +197,9 @@ print "tree new where root_id=%d:" % nodeid
 print "----------------------------"
 
 session.clear()
+
+# load some nodes.  we do this based on "root id" which will load an entire sub-tree in one pass.
+# the MapperExtension will assemble the incoming nodes into a tree structure.
 t = session.query(TreeNode).select(TreeNode.c.root_id==nodeid, order_by=[TreeNode.c.id])[0]
 
 print "\n\n\n----------------------------"
