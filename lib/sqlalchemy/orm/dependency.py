@@ -117,6 +117,7 @@ class OneToManyDP(DependencyProcessor):
                         if child is not None and self.post_update:
                             uowcommit.register_object(child, postupdate=True)
                 for child in childlist.deleted_items():
+                    print "HI KEY", self.key, "OBJECT", obj, "CHILD", child
                     if not self.cascade.delete_orphan:
                         self._synchronize(obj, child, None, True)
 
@@ -157,6 +158,7 @@ class OneToManyDP(DependencyProcessor):
                             uowcommit.register_object(child)
                 for child in childlist.deleted_items():
                     if not self.cascade.delete_orphan:
+                        print "PREPROCESS KEY", self.key, "OBJECT", obj, "CHILD", child
                         uowcommit.register_object(child, isdelete=False)
                     elif childlist.hasparent(child) is False:
                         uowcommit.register_object(child, isdelete=True)
@@ -179,7 +181,7 @@ class ManyToOneDP(DependencyProcessor):
             uowcommit.register_dependency(self.mapper, self.parent)
             uowcommit.register_processor(self.mapper, self, self.parent)
     def process_dependencies(self, task, deplist, uowcommit, delete = False):
-        #print self.mapper.table.name + " " + self.key + " " + repr(len(deplist)) + " process_dep isdelete " + repr(delete) + " direction " + repr(self.direction)
+        #print self.mapper.mapped_table.name + " " + self.key + " " + repr(len(deplist)) + " process_dep isdelete " + repr(delete) + " direction " + repr(self.direction)
         if delete:
             if self.post_update and not self.cascade.delete_orphan:
                 # post_update means we have to update our row to not reference the child object

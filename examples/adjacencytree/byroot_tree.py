@@ -5,7 +5,7 @@ import string, sys, time
 """a more advanced example of basic_tree.py.  illustrates MapperExtension objects which
 add application-specific functionality to a Mapper object."""
 
-engine = create_engine('sqlite:///:memory:', echo = True)
+engine = create_engine('sqlite:///:memory:', echo = "debug")
 
 metadata = BoundMetaData(engine)
 
@@ -34,12 +34,7 @@ class NodeList(util.OrderedDict):
     in the order they were inserted.  Adds an "append" method, which appends a node to the 
     dictionary as though it were a list, and also within append automatically associates 
     the parent of a TreeNode with itself."""
-    def __init__(self, parent):
-        util.OrderedDict.__init__(self)
-        self.parent = parent
     def append(self, node):
-        node.parent = self.parent
-        node._set_root(self.parent.root)
         self[node.name] = node
     def __iter__(self):
         return iter(self.values())
@@ -54,12 +49,13 @@ class TreeNode(object):
     identifiable root.  Any node can return its root node and therefore the "tree" that it 
     belongs to, and entire trees can be selected from the database in one query, by 
     identifying their common root ID."""
+    children = NodeList
     
     def __init__(self, name):
         """for data integrity, a TreeNode requires its name to be passed as a parameter
         to its constructor, so there is no chance of a TreeNode that doesnt have a name."""
         self.name = name
-        self.children = NodeList(self)
+        self.children = NodeList()
         self.root = self
         self.parent = None
         self.id = None
@@ -72,9 +68,10 @@ class TreeNode(object):
             c._set_root(root)
     def append(self, node):
         if isinstance(node, str):
-            self.children.append(TreeNode(node))
-        else:
-            self.children.append(node)
+            node = TreeNode(node)
+        node.parent = self
+        node._set_root(self.root)
+        self.children.append(node)
     def __repr__(self):
         return self._getstring(0, False)
     def __str__(self):
@@ -89,19 +86,15 @@ class TreeNode(object):
         
 class TreeLoader(MapperExtension):
     """an extension that will plug-in additional functionality to the Mapper."""
-    def create_instance(self, mapper, row, imap, class_):
-        """creates an instance of a TreeNode.  since the TreeNode constructor requires
-        the 'name' argument, this method pulls the data from the database row directly."""
-        return TreeNode(row[mapper.c.name], _mapper_nohistory=True)
     def after_insert(self, mapper, connection, instance):
         """runs after the insert of a new TreeNode row.  The primary key of the row is not determined
         until the insert is complete, since most DB's use autoincrementing columns.  If this node is
         the root node, we will take the new primary key and update it as the value of the node's 
         "root ID" as well, since its root node is itself."""
         if instance.root is instance:
-            connection.execute(mapper.primarytable.update(TreeNode.c.id==instance.id, values=dict(root_node_id=instance.id)))
+            connection.execute(mapper.mapped_table.update(TreeNode.c.id==instance.id, values=dict(root_node_id=instance.id)))
             instance.root_id = instance.id
-    def append_result(self, mapper, row, imap, result, instance, isnew, populate_existing=False):
+    def append_result(self, mapper, session, row, imap, result, instance, isnew, populate_existing=False):
         """runs as results from a SELECT statement are processed, and newly created or already-existing
         instances that correspond to each row are appended to result lists.  This method will only
         append root nodes to the result list, and will attach child nodes to their appropriate parent

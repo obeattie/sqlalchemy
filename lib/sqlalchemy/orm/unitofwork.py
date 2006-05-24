@@ -607,10 +607,12 @@ class UOWTask(object):
                     # the task corresponding to the processor's objects
                     childtask = trans.get_task_by_mapper(processor.mapper)
                     
-                    if isdelete:
-                        childlist = childlist.unchanged_items() + childlist.deleted_items()
-                    else:
-                        childlist = childlist.added_items()
+#                    if isdelete:
+#                        childlist = childlist.unchanged_items() + childlist.deleted_items()
+#                    else:
+#                        childlist = childlist.added_items() 
+                        
+                    childlist = childlist.added_items() + childlist.unchanged_items() + childlist.deleted_items()
                         
                     for o in childlist:
                         if o is None or o not in childtask.objects:
@@ -621,9 +623,9 @@ class UOWTask(object):
                             # create a UOWDependencyProcessor representing this pair of objects.
                             # append it to a UOWTask
                             if whosdep[0] is obj:
-                                get_dependency_task(obj, dep).append(whosdep[0], isdelete=isdelete)
+                                get_dependency_task(whosdep[0], dep).append(whosdep[0], isdelete=isdelete)
                             else:
-                                get_dependency_task(obj, dep).append(whosdep[1], isdelete=isdelete)
+                                get_dependency_task(whosdep[0], dep).append(whosdep[1], isdelete=isdelete)
                         else:
                             get_dependency_task(obj, dep).append(obj, isdelete=isdelete)
                         

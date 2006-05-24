@@ -227,10 +227,8 @@ class Mapper(object):
         # load properties from the main table object,
         # not overriding those set up in the 'properties' argument
         for column in self.mapped_table.columns:
-            
             if self.columntoproperty.has_key(column):
                 continue
-                
             if not self.columns.has_key(column.key):
                 self.columns[column.key] = column
 
