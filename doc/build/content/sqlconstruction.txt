@@ -333,7 +333,18 @@ Supported column operators so far are all the numerical comparison operators, i.
     # any custom operator
     select([users.c.user_name.op('||')('_category')])
 
+    # "null" comparison via == (converts to IS)
+    {sql}users.select(users.c.user_name==None).execute()
+    SELECT users.user_id, users.user_name, users.password 
+    FROM users 
+    WHERE users.user_name IS NULL
 
+    # or via explicit null() construct
+    {sql}users.select(users.c.user_name==null()).execute()
+    SELECT users.user_id, users.user_name, users.password 
+    FROM users 
+    WHERE users.user_name IS NULL
+    
 #### Functions {@name=functions}
 
 Functions can be specified using the `func` keyword:
