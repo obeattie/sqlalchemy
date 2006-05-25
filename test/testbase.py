@@ -12,6 +12,7 @@ import optparse
 db = None
 metadata = None
 db_uri = None
+echo = True
 
 # redefine sys.stdout so all those print statements go to the echo func
 local_stdout = sys.stdout
