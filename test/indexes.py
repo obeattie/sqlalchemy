@@ -67,7 +67,6 @@ class IndexTest(testbase.AssertMixin):
         stream = dummy()
         stream.write = capt.append
         testbase.db.logger = testbase.db.engine.logger = stream
-        
         events = Table('events', metadata,
                        Column('id', Integer, primary_key=True),
                        Column('name', String(30), unique=True),

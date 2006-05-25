@@ -9,12 +9,20 @@ import sqlalchemy
 import optparse
 
 
-echo = True
-#echo = False
-#echo = 'debug'
 db = None
 metadata = None
 db_uri = None
+
+# redefine sys.stdout so all those print statements go to the echo func
+local_stdout = sys.stdout
+class Logger(object):
+    def write(self, msg):
+        if echo:
+            local_stdout.write(msg)
+sys.stdout = Logger()    
+
+def echo_text(text):
+    print text
 
 def parse_argv():
     # we are using the unittest main runner, so we are just popping out the 
@@ -29,6 +37,8 @@ def parse_argv():
     parser.add_option("--dburi", action="store", dest="dburi", help="database uri (overrides --db)")
     parser.add_option("--db", action="store", dest="db", default="sqlite", help="prefab database uri (sqlite, sqlite_file, postgres, mysql, oracle, oracle8, mssql)")
     parser.add_option("--mockpool", action="store_true", dest="mockpool", help="use mock pool")
+    parser.add_option("--verbose", action="store_true", dest="verbose", help="full debug echoing")
+    parser.add_option("--quiet", action="store_true", dest="quiet", help="be totally quiet")
     parser.add_option("--nothreadlocal", action="store_true", dest="nothreadlocal", help="dont use thread-local mod")
     parser.add_option("--enginestrategy", action="store", default=None, dest="enginestrategy", help="engine strategy (plain or threadlocal, defaults to SA default)")
 
@@ -66,12 +76,18 @@ def parse_argv():
         __import__('sqlalchemy.mods.threadlocal')
         sqlalchemy.mods.threadlocal.uninstall_plugin()
 
+    global echo
+    echo = options.verbose and not options.quiet
+    
+    global quiet
+    quiet = options.quiet
+    
     if options.enginestrategy is not None:
         opts['strategy'] = options.enginestrategy    
     if options.mockpool:
-        db = engine.create_engine(db_uri, echo=echo, default_ordering=True, poolclass=MockPool, **opts)
+        db = engine.create_engine(db_uri, echo=True, default_ordering=True, poolclass=MockPool, **opts)
     else:
-        db = engine.create_engine(db_uri, echo=echo, default_ordering=True, **opts)
+        db = engine.create_engine(db_uri, echo=True, default_ordering=True, **opts)
     db = EngineAssert(db)
     metadata = sqlalchemy.BoundMetaData(db)
     
@@ -103,16 +119,13 @@ def supported(*dbs):
             return lala
     return decorate
 
-def echo_text(text):
-    print text
         
 class PersistTest(unittest.TestCase):
     """persist base class, provides default setUpAll, tearDownAll and echo functionality"""
     def __init__(self, *args, **params):
         unittest.TestCase.__init__(self, *args, **params)
     def echo(self, text):
-        if echo:
-            echo_text(text)
+        echo_text(text)
     def install_threadlocal(self):
         sqlalchemy.mods.threadlocal.install_plugin()
     def uninstall_threadlocal(self):
@@ -121,7 +134,9 @@ class PersistTest(unittest.TestCase):
         pass
     def tearDownAll(self):
         pass
-
+    def shortDescription(self):
+        """overridden to not return docstrings"""
+        return None
 
 class MockPool(pool.Pool):
     """this pool is hardcore about only one connection being used at a time."""
@@ -329,10 +344,11 @@ parse_argv()
 
                     
 def runTests(suite):
-    runner = unittest.TextTestRunner(verbosity = 2, descriptions =1)
+    runner = unittest.TextTestRunner(verbosity = quiet and 1 or 2)
     runner.run(suite)
     
 def main():
-    unittest.main()
+    suite = unittest.TestLoader().loadTestsFromModule(__import__('__main__'))
+    runTests(suite)
 
 

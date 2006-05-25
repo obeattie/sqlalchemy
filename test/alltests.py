@@ -1,17 +1,13 @@
 import testbase
 import unittest
 
-testbase.echo = False
-
-#test
-
 def suite():
     modules_to_test = (
         # core utilities
-        'historyarray', 
+        'historyarray',
         'attributes', 
         'dependency',
-        
+
         # connectivity, execution
         'pool', 
         'transaction',
@@ -66,8 +62,6 @@ def suite():
         alltests.addTest(unittest.findTestCases(module, suiteClass=None))
     return alltests
 
-import sys
-sys.stdout = sys.stderr
 
 if __name__ == '__main__':
     testbase.runTests(suite())

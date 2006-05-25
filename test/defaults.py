@@ -7,7 +7,7 @@ from sqlalchemy import *
 import sqlalchemy
 
 db = testbase.db
-testbase.echo=False
+
 class DefaultTest(PersistTest):
 
     def setUpAll(self):
