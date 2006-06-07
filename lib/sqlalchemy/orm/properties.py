@@ -67,8 +67,10 @@ class DeferredColumnProperty(ColumnProperty):
             return mapper.object_mapper(instance).props[self.key].setup_loader(instance)
         def lazyload():
             session = sessionlib.object_session(instance)
-            connection = session.connection(self.parent)
+            if session is None:
+                return None
             clause = sql.and_()
+            connection = session.connection(self.parent)
             try:
                 pk = self.parent.pks_by_table[self.columns[0].table]
             except KeyError:
@@ -139,9 +141,12 @@ class PropertyLoader(mapper.MapperProperty):
         else:
             self.backref = backref
         self.is_backref = is_backref
-
+        
     private = property(lambda s:s.cascade.delete_orphan)
-    
+
+    def attach(self, mapper):
+        mapper._add_compile_trigger(self.argument)
+        
     def cascade_iterator(self, type, object, recursive):
         if not type in self.cascade:
             return
@@ -180,10 +185,10 @@ class PropertyLoader(mapper.MapperProperty):
         if isinstance(self.argument, type):
             self.mapper = mapper.class_mapper(self.argument)
         else:
-            self.mapper = self.argument
+            self.mapper = self.argument.compile()
 
         self.mapper = self.mapper.get_select_mapper()
-        
+            
         if self.association is not None:
             if isinstance(self.association, type):
                 self.association = mapper.class_mapper(self.association)
@@ -428,7 +433,6 @@ class EagerLoader(LazyLoader):
         parent._has_eager = True
 
         self.eagertarget = self.target.alias()
-#        print "ALIAS", str(self.eagertarget.select()) #selectable.__class__.__name__
         if self.secondary:
             self.eagersecondary = self.secondary.alias()
             self.aliasizer = Aliasizer(self.target, self.secondary, aliases={
@@ -451,11 +455,13 @@ class EagerLoader(LazyLoader):
         else:
             self.eager_order_by = None
 
+    def _create_eager_chain(self, recursion_stack=None):
+        try:
+            if self.__eager_chain_init == id(self):
+                return
+        except AttributeError:
+            pass
 
-    def _create_eager_chain(self, in_chain=False, recursion_stack=None):
-        if not in_chain and getattr(self, '_eager_chained', False):
-            return
-            
         if recursion_stack is None:
             recursion_stack = {}
 
@@ -467,6 +473,7 @@ class EagerLoader(LazyLoader):
         for key, prop in self.mapper.props.iteritems():
             if isinstance(prop, EagerLoader):
                 eagerprops.append(prop)
+
         if len(eagerprops):
             recursion_stack[self.localparent.mapped_table] = True
             self.mapper = self.mapper.copy()
@@ -481,7 +488,7 @@ class EagerLoader(LazyLoader):
 #                    print "we are:", id(self), self.target.name, (self.secondary and self.secondary.name or "None"), self.parent.mapped_table.name
 #                    print "prop is",id(prop), prop.target.name, (prop.secondary and prop.secondary.name or "None"), prop.parent.mapped_table.name
                     p.do_init_subclass(prop.key, prop.parent, recursion_stack)
-                    p._create_eager_chain(in_chain=True, recursion_stack=recursion_stack)
+                    p._create_eager_chain(recursion_stack=recursion_stack)
                     p.eagerprimary = p.eagerprimary.copy_container()
 #                    aliasizer = Aliasizer(p.parent.mapped_table, aliases={p.parent.mapped_table:self.eagertarget})
                     p.eagerprimary.accept_visitor(self.aliasizer)
@@ -490,8 +497,9 @@ class EagerLoader(LazyLoader):
                 del recursion_stack[self.localparent.mapped_table]
 
         self._row_decorator = self._create_decorator_row()
+        self.__eager_chain_init = id(self)
         
-        self._eager_chained = True
+#        print "ROW DECORATOR", self._row_decorator
                 
     def _aliasize_orderby(self, orderby, copy=True):
         if copy:
@@ -508,9 +516,10 @@ class EagerLoader(LazyLoader):
     def setup(self, key, statement, eagertable=None, **options):
         """add a left outer join to the statement thats being constructed"""
 
-        # initialize the eager chains late in the game
+        # initialize the "eager" chain of EagerLoader objects
+        # this can't quite be done in the do_init_mapper() step
         self._create_eager_chain()
-
+        
         if hasattr(statement, '_outerjoin'):
             towrap = statement._outerjoin
         else:
@@ -600,6 +609,7 @@ class EagerLoader(LazyLoader):
         try:
             return self._row_decorator(row)
         except AttributeError:
+            # insure the "eager chain" step occurred
             self._create_eager_chain()
             return self._row_decorator(row)
 
@@ -661,8 +671,10 @@ class BackRef(object):
             # the backref property is set on the primary mapper
             parent = prop.parent.primary_mapper()
             relation = cls(parent, prop.secondary, pj, sj, backref=prop.key, is_backref=True, **self.kwargs)
-            mapper.add_property(self.key, relation);
+            print "BACKREF", self.key, "SETTING UP"
+            mapper._compile_property(self.key, relation);
         else:
+            print "BACKREF", self.key, "NOT SETTING UP"
             # else set one of us as the "backreference"
             if not mapper.props[self.key].is_backref:
                 prop.is_backref=True

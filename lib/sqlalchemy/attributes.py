@@ -190,12 +190,14 @@ class ListAttribute(util.HistoryArraySet, ManagedAttribute):
         # list that might be set on the object already
         try:
             list_ = obj.__dict__[key]
+            print "LA GOT THE LIST", list_
             if list_ is data:
                 raise InvalidArgumentError("Creating a list element passing the object's list as an argument")
             if data is not None:
                 for d in data:
                     list_.append(d)
         except KeyError:
+            print "LA DIDNT GET THE LIST, DATA", data
             if data is not None:
                 list_ = data
             elif typecallable is not None:
@@ -277,17 +279,21 @@ class TriggeredAttribute(ManagedAttribute):
                 else:
                     try:
                         value = self.callable_()
+                        print "TC VALUE", value
                     except AttributeError, e:
                         # this catch/raise is because this call is frequently within an 
                         # AttributeError-sensitive callstack
                         raise AssertionError("AttributeError caught in callable prop:" + str(e.args))
             else:
                 value = None
+                print "TC NOTHING VALUE", value
             p = self.manager.create_list(self.obj, self.key, value, **self.kwargs)
         if not passive:
+            print "WE'RE HERE"
             # set the new history list as the new attribute, discards ourself
             self.manager.attribute_history(self.obj)[self.key] = p
             self.manager = None
+        print "BECOMES", p
         return p
 
     def commit(self):

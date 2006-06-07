@@ -124,13 +124,14 @@ mapper(
 )
 
 mapper(Entity, entities, properties = {
-    '_entities' : relation(EntityValue, lazy=False, cascade='save-update')
+    '_entities' : relation(EntityValue, lazy=True, cascade='save-update')
 })
 
 # create two entities.  the objects can be used about as regularly as
 # any object can.
 session = create_session()
 entity = Entity()
+print "CONSTRUCTED"
 entity.title = 'this is the first entity'
 entity.name =  'this is the name'
 entity.price = 43
