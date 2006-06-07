@@ -744,8 +744,6 @@ class Aliasizer(sql.ClauseVisitor):
             if isinstance(clist.clauses[i], schema.Column) and self.tables.has_key(clist.clauses[i].table):
                 orig = clist.clauses[i]
                 clist.clauses[i] = self.get_alias(clist.clauses[i].table).corresponding_column(clist.clauses[i])
-                if clist.clauses[i] is None:
-                    raise "cant get orig for " + str(orig) + " against table " + orig.table.name + " " + self.get_alias(orig.table).name
     def visit_binary(self, binary):
         if isinstance(binary.left, schema.Column) and self.tables.has_key(binary.left.table):
             binary.left = self.get_alias(binary.left.table).corresponding_column(binary.left)
