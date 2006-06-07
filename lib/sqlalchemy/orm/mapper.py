@@ -133,7 +133,7 @@ class Mapper(object):
     def compile(self):
         if self.__is_compiled:
             return self
-        print "COMPILING!", self.class_key
+        #print "COMPILING!", self.class_key
         self.__is_compiled = True
         self._compile_extensions()
         self._compile_inheritance()
@@ -337,13 +337,7 @@ class Mapper(object):
                 prop = ColumnProperty(column)
                 self.__props[column.key] = prop
             elif isinstance(prop, ColumnProperty):
-                # the order which columns are appended to a ColumnProperty is significant, as the 
-                # column at index 0 determines which result column is used to populate the object
-                # attribute, in the case of mapping against a join with column names repeated
-                # (and particularly in an inheritance relationship)
-                # TODO: clarify this comment
-                prop.columns.insert(0, column)
-                #prop.columns.append(column)
+                prop.columns.append(column)
             else:
                 if not self.allow_column_override:
                     raise exceptions.ArgumentError("WARNING: column '%s' not being added due to property '%s'.  Specify 'allow_column_override=True' to mapper() to ignore this condition." % (column.key, repr(prop)))
@@ -388,14 +382,14 @@ class Mapper(object):
         oldinit = self.class_.__init__
         def init(self, *args, **kwargs):
 
-            # this gets the AttributeManager to do some pre-initialization,
-            # in order to save on KeyErrors later on
-            sessionlib.global_attributes.init_attr(self)
-
             entity_name = kwargs.pop('_sa_entity_name', None)
             mapper = mapper_registry.get(ClassKey(self.__class__, entity_name))
             if mapper is not None:
                 mapper = mapper.compile()
+
+                # this gets the AttributeManager to do some pre-initialization,
+                # in order to save on KeyErrors later on
+                sessionlib.global_attributes.init_attr(self)
 
             if kwargs.has_key('_sa_session'):
                 session = kwargs.pop('_sa_session')
@@ -408,10 +402,10 @@ class Mapper(object):
                 else:
                     session = None
             # if a session was found, either via _sa_session or via mapper extension,
-            # save() this instance to the session, and give it an associated entity_name.
+            # and we have found a mapper, save() this instance to the session, and give it an associated entity_name.
             # otherwise, this instance will not have a session or mapper association until it is
             # save()d to some session.
-            if session is not None:
+            if session is not None and mapper is not None:
                 self._entity_name = entity_name
                 session._register_new(self)
 
@@ -475,7 +469,7 @@ class Mapper(object):
             return ColumnProperty(*column)
         else:
             return None
-            
+
     def _compile_property(self, key, prop, init=True, skipmissing=False):
         """adds an additional property to this mapper.  this is the same as if it were 
         specified within the 'properties' argument to the constructor.  if the named
@@ -543,9 +537,6 @@ class Mapper(object):
         """returns True if one of the properties attached to this Mapper is eager loading"""
         return getattr(self, '_has_eager', False)
         
-    def set_property(self, key, prop):
-        self.__props[key] = prop
-        prop.init(key, self)
     
     def instances(self, cursor, session, *mappers, **kwargs):
         """given a cursor (ResultProxy) from an SQLEngine, returns a list of object instances
@@ -597,6 +588,9 @@ class Mapper(object):
         mapper.__dict__.update(self.__dict__)
         mapper.__dict__.update(kwargs)
         mapper.__props = self.__props.copy()
+        mapper._inheriting_mappers = []
+        for m in self._inheriting_mappers:
+            mapper._inheriting_mappers.append(m.copy())
         return mapper
 
     def options(self, *options, **kwargs):
@@ -1252,15 +1246,17 @@ class TranslatingDict(dict):
             
 class ClassKey(object):
     """keys a class and an entity name to a mapper, via the mapper_registry"""
+    __metaclass__ = util.ArgSingleton
     def __init__(self, class_, entity_name):
         self.class_ = class_
         self.entity_name = entity_name
     def __hash__(self):
         return hash((self.class_, self.entity_name))
     def __eq__(self, other):
-        return self.class_ is other.class_ and self.entity_name == other.entity_name
+        return self is other
     def __repr__(self):
-        return "ClassKey(%s, %s)" % (repr(self.class_), repr(self.entity_name))        
+        return "ClassKey(%s, %s)" % (repr(self.class_), repr(self.entity_name))
+
 def hash_key(obj):
     if obj is None:
         return 'None'
@@ -1287,6 +1283,7 @@ def object_mapper(object, raiseerror=True):
 
 def class_mapper(class_, entity_name=None):
     """given a ClassKey, returns the primary Mapper associated with the key."""
+    return mapper_registry[ClassKey(class_, entity_name)].compile()
     try:
         return mapper_registry[ClassKey(class_, entity_name)].compile()
     except (KeyError, AttributeError):

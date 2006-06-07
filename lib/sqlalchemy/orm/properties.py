@@ -354,24 +354,25 @@ class LazyLoader(PropertyLoader):
                         break
             else:
                 allparams = False
-            if allparams:
-                # if we have a simple straight-primary key load, use mapper.get()
-                # to possibly save a DB round trip
-                if self.use_get:
-                    ident = []
-                    for primary_key in self.mapper.pks_by_table[self.mapper.mapped_table]:
-                        bind = self.lazyreverse[primary_key]
-                        ident.append(params[bind.key])
-                    return self.mapper.using(session).get(ident)
-                elif self.order_by is not False:
-                    order_by = self.order_by
-                elif self.secondary is not None and self.secondary.default_order_by() is not None:
-                    order_by = self.secondary.default_order_by()
-                else:
-                    order_by = False
-                result = self.mapper.using(session).select_whereclause(self.lazywhere, order_by=order_by, params=params)
+            if not allparams:
+                return None
+                
+            # if we have a simple straight-primary key load, use mapper.get()
+            # to possibly save a DB round trip
+            if self.use_get:
+                ident = []
+                for primary_key in self.mapper.pks_by_table[self.mapper.mapped_table]:
+                    bind = self.lazyreverse[primary_key]
+                    ident.append(params[bind.key])
+                return self.mapper.using(session).get(ident)
+            elif self.order_by is not False:
+                order_by = self.order_by
+            elif self.secondary is not None and self.secondary.default_order_by() is not None:
+                order_by = self.secondary.default_order_by()
             else:
-                result = []
+                order_by = False
+            result = self.mapper.using(session).select_whereclause(self.lazywhere, order_by=order_by, params=params)
+                
             if self.uselist:
                 return result
             else:
@@ -627,14 +628,14 @@ class GenericOption(mapper.MapperOption):
             oldprop = mapper.props[tokens[0]]
             newprop = oldprop.copy()
             newprop.argument = self.process_by_key(oldprop.mapper.copy(), tokens[1])
-            mapper.set_property(tokens[0], newprop)
+            mapper._compile_property(tokens[0], newprop)
         else:
             self.create_prop(mapper, tokens[0])
         return mapper
         
     def create_prop(self, mapper, key):
         kwargs = util.constructor_args(oldprop)
-        mapper.set_property(key, class_(**kwargs ))
+        mapper._compile_property(key, class_(**kwargs ))
 
 class BackRef(object):
     """stores the name of a backreference property as well as options to 
@@ -671,10 +672,8 @@ class BackRef(object):
             # the backref property is set on the primary mapper
             parent = prop.parent.primary_mapper()
             relation = cls(parent, prop.secondary, pj, sj, backref=prop.key, is_backref=True, **self.kwargs)
-            print "BACKREF", self.key, "SETTING UP"
             mapper._compile_property(self.key, relation);
         else:
-            print "BACKREF", self.key, "NOT SETTING UP"
             # else set one of us as the "backreference"
             if not mapper.props[self.key].is_backref:
                 prop.is_backref=True
@@ -705,7 +704,7 @@ class EagerLazyOption(GenericOption):
         newprop = class_.__new__(class_)
         newprop.__dict__.update(oldprop.__dict__)
         newprop.do_init_subclass(key, mapper)
-        mapper.set_property(key, newprop)
+        mapper._compile_property(key, newprop)
 
 class DeferredOption(GenericOption):
     def __init__(self, key, defer=False, **kwargs):
@@ -720,7 +719,7 @@ class DeferredOption(GenericOption):
             prop = DeferredColumnProperty(*oldprop.columns, **self.kwargs)
         else:
             prop = ColumnProperty(*oldprop.columns, **self.kwargs)
-        mapper.set_property(key, prop)
+        mapper._compile_property(key, prop)
         
 class Aliasizer(sql.ClauseVisitor):
     """converts a table instance within an expression to be an alias of that table."""

@@ -41,6 +41,17 @@ def reversed(seq):
             raise StopIteration()
         return rev()
 
+class ArgSingleton(type):
+    instances = {}
+    def __call__(self, *args):
+        hashkey = (self, args)
+        try:
+            return ArgSingleton.instances[hashkey]
+        except KeyError:
+            instance = type.__call__(self, *args)
+            ArgSingleton.instances[hashkey] = instance
+            return instance
+        
 class SimpleProperty(object):
     """a "default" property accessor."""
     def __init__(self, key):
