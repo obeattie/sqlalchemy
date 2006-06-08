@@ -10,7 +10,7 @@ import util as mapperutil
 import sync
 import query as querylib
 import session as sessionlib
-import sys, weakref, sets
+import weakref
 
 __all__ = ['Mapper', 'MapperExtension', 'class_mapper', 'object_mapper', 'EXT_PASS']
 
@@ -28,14 +28,10 @@ NO_ATTRIBUTE = object()
 # returned by a MapperExtension method to indicate a "do nothing" response
 EXT_PASS = object()
 
-def requires_compilation(func):
-    def do(self, *args, **kwargs):
-        self.compile()
-        return func(*args, **kwargs)
-    do.__name__ = func.__name__
-    do.__doc__ = func.__doc__
-    return do
- 
+# as mappers are constructed, they place records in this dictionary
+# to set up "compile triggers" between mappers related by backref setups, so that when one 
+# mapper compiles it can trigger the compilation of a second mapper which needs to place
+# a backref on the first.
 _compile_triggers = {}
 
 class Mapper(object):
@@ -92,30 +88,56 @@ class Mapper(object):
         self.extension = extension
         self.properties = properties or {}
         self.allow_column_override = allow_column_override
+        
+        # a Column which is used during a select operation to retrieve the 
+        # "polymorphic identity" of the row, which indicates which Mapper should be used
+        # to construct a new object instance from that row.
         self.polymorphic_on = polymorphic_on
+        
+        # our 'polymorphic identity', a string name that when located in a result set row
+        # indicates this Mapper should be used to construct the object instance for that row.
         self.polymorphic_identity = polymorphic_identity
+        
+        # a dictionary of 'polymorphic identity' names, associating those names with
+        # Mappers that will be used to construct object instances upon a select operation.
         if polymorphic_map is None:
             self.polymorphic_map = {}
         else:
             self.polymorphic_map = polymorphic_map
 
         class LOrderedProp(util.OrderedProperties):
-            """this overrides OrderedProperties to trigger a compile() before the
-            property is accessed."""
-            def __getattribute__(s, key):
-                # TODO: this is a little stupid.  
-                if key != '__dict__' and key != '_list':
-                    self.compile()
-                return util.OrderedProperties.__getattribute__(s, key)
+            """this extends OrderedProperties to trigger a compile() before the
+            members of the object are accessed."""
+            def __getattr__(s, key):
+                self.compile()
+                return util.OrderedProperties.__getattr__(s, key)
+                
         self.columns = LOrderedProp()
         self.c = self.columns
                 
+        # each time the options() method is called, the resulting Mapper is
+        # stored in this dictionary based on the given options for fast re-access
         self._options = {}
+        
+        # a set of all mappers which inherit from this one.
         self._inheriting_mappers = util.Set()
+        
+        # a second mapper that is used for selecting, if the "select_table" argument
+        # was sent to this mapper.
         self.__surrogate_mapper = None
+        
+        # whether or not our compile() method has been called already.
         self.__is_compiled = False
 
+        # if this mapper is to be a primary mapper (i.e. the non_primary flag is not set),
+        # associate this Mapper with the given class_ and entity name.  subsequent
+        # calls to class_mapper() for the class_/entity name combination will return this 
+        # mapper.
         self._compile_class()
+        
+        # for all MapperProperties sent in the properties dictionary (typically this means
+        # (relation() instances), call the "attach()" method which may be used to set up
+        # compile triggers for this Mapper.
         for prop in self.properties.values():
             if isinstance(prop, MapperProperty):
                 prop.attach(self)
@@ -128,9 +150,15 @@ class Mapper(object):
     def _get_props(self):
         self.compile()
         return self.__props
-    props = property(_get_props)
+    props = property(_get_props, doc="compiles this mapper if needed, and returns the \
+    dictionary of MapperProperty objects associated with this mapper.")
         
     def compile(self):
+        """compile.  this step assembles the Mapper's constructor arguments into their final internal
+        format, which includes establishing its relationships with other Mappers either via inheritance
+        relationships or via attached properties.  This step is deferred to when the Mapper is first used
+        (i.e. queried, used in a flush(), or its columns or properties are accessed) so that Mappers can be 
+        constructed in an arbitrary order, completing their relationships when they have all been established."""
         if self.__is_compiled:
             return self
         #print "COMPILING!", self.class_key
@@ -167,7 +195,7 @@ class Mapper(object):
         try:
             rec = _compile_triggers[self]
         except KeyError:
-            # (mapper to be compiled, Set of classkeys of mappers to be compiled first)
+            # a tuple of: (mapper to be compiled, Set of classkeys of mappers to be compiled first)
             rec = (self, util.Set())
             _compile_triggers[self] = rec
         if classkey in rec[1]:
@@ -184,6 +212,8 @@ class Mapper(object):
         _compile_triggers[classkey] = triggers
         
     def _compile_extensions(self):
+        """goes through the global_extensions list as well as the list of MapperExtensions
+        specified for this Mapper and creates a linked list of those extensions."""
         # uber-pendantic style of making mapper chain, as various testbase/
         # threadlocal/assignmapper combinations keep putting dupes etc. in the list
         # TODO: do something that isnt 21 lines....
@@ -211,6 +241,10 @@ class Mapper(object):
             self.extension = MapperExtension()
 
     def _compile_inheritance(self):
+        """determines if this Mapper inherits from another mapper, and if so calculates the mapped_table
+        for this Mapper taking the inherited mapper into account.  for joined table inheritance, creates
+        a SyncRule that will synchronize column values between the joined tables. also initializes polymorphic variables
+        used in polymorphic loads."""
         if self.inherits is not None:
             if isinstance(self.inherits, type):
                 self.inherits = class_mapper(self.inherits)
@@ -241,7 +275,7 @@ class Mapper(object):
                 self._synchronizer = None
                 self.mapped_table = self.local_table
             if self.polymorphic_identity is not None:
-                self.inherits.add_polymorphic_mapping(self.polymorphic_identity, self)
+                self.inherits._add_polymorphic_mapping(self.polymorphic_identity, self)
             if self.polymorphic_on is None and self.inherits.polymorphic_on is not None:
                 self.polymorphic_on = self.mapped_table.corresponding_column(self.inherits.polymorphic_on, keys_ok=True, raiseerr=False)
             if self.order_by is False:
@@ -251,15 +285,24 @@ class Mapper(object):
             self._synchronizer = None
             self.mapped_table = self.local_table
             if self.polymorphic_identity is not None:
-                self.add_polymorphic_mapping(self.polymorphic_identity, self)
-
+                self._add_polymorphic_mapping(self.polymorphic_identity, self)
+                
+        # convert polymorphic class associations to mappers
         for key in self.polymorphic_map.keys():
             if isinstance(self.polymorphic_map[key], type):
                 self.polymorphic_map[key] = class_mapper(self.polymorphic_map[key])
 
+    def _add_polymorphic_mapping(self, key, class_or_mapper, entity_name=None):
+        """adds a Mapper to our 'polymorphic map' """
+        if isinstance(class_or_mapper, type):
+            class_or_mapper = class_mapper(class_or_mapper, entity_name=entity_name)
+        self.polymorphic_map[key] = class_or_mapper
+
     def _compile_tables(self):
-        # set up various Selectable units:
-        
+        """after the inheritance relationships have been reconciled, sets up some more table-based instance
+        variables and determines the "primary key" columns for all tables represented by this Mapper."""
+
+        # summary of the various Selectable units:
         # mapped_table - the Selectable that represents a join of the underlying Tables to be saved (or just the Table)
         # local_table - the Selectable that was passed to this Mapper's constructor, if any
         # select_table - the Selectable that will be used during queries.  if this is specified
@@ -268,6 +311,7 @@ class Mapper(object):
         # this is either select_table if it was given explicitly, or in the case of a mapper that inherits
         # its local_table
         # tables - a collection of underlying Table objects pulled from mapped_table
+
         if self.select_table is None:
             self.select_table = self.mapped_table
         self.unjoined_table = self.local_table
@@ -279,13 +323,19 @@ class Mapper(object):
         # determine primary key columns, either passed in, or get them from our set of tables
         self.pks_by_table = {}
         if self.primary_key is not None:
+            # determine primary keys using user-given list of primary key columns as a guide
+            #
+            # TODO: this might not work very well for joined-table and/or polymorphic 
+            # inheritance mappers since local_table isnt taken into account nor is select_table
+            # need to test custom primary key columns used with inheriting mappers
             for k in self.primary_key:
                 self.pks_by_table.setdefault(k.table, util.OrderedSet()).add(k)
                 if k.table != self.mapped_table:
                     # associate pk cols from subtables to the "main" table
                     self.pks_by_table.setdefault(self.mapped_table, util.OrderedSet()).add(k)
-                # TODO: need local_table properly accounted for when custom primary key is sent
         else:
+            # no user-defined primary key columns - go through all of our represented tables
+            # and assemble primary key columns
             for t in self.tables + [self.mapped_table]:
                 try:
                     l = self.pks_by_table[t]
@@ -299,6 +349,9 @@ class Mapper(object):
 
 
     def _compile_properties(self):
+        """inspects the properties dictionary sent to the Mapper's constructor as well as the mapped_table, and creates
+        MapperProperty objects corresponding to each mapped column and relation.  also grabs MapperProperties from the 
+        inherited mapper, if any, and creates copies of them to attach to this Mapper."""
         # object attribute names mapped to MapperProperty objects
         self.__props = {}
 
@@ -350,15 +403,18 @@ class Mapper(object):
             proplist.append(prop)
 
     def _initialize_properties(self):
+        """calls the init() method on all MapperProperties attached to this mapper.  this will incur the
+        compilation of related mappers."""
         l = [(key, prop) for key, prop in self.__props.iteritems()]
         for key, prop in l:
             if getattr(prop, 'key', None) is None:
                 prop.init(key, self)
 
     def _compile_selectable(self):
-        # select_table specified...set up a surrogate mapper that will be used for selects
-        # select_table has to encompass all the columns of the mapped_table either directly
-        # or through proxying relationships
+        """if the 'select_table' keyword argument was specified, 
+        set up a second "surrogate mapper" that will be used for select operations.
+        the columns of select_table should encompass all the columns of the mapped_table either directly
+        or through proxying relationships."""
         if self.select_table is not self.mapped_table:
             props = {}
             if self.properties is not None:
@@ -370,18 +426,20 @@ class Mapper(object):
             self.__surrogate_mapper = Mapper(self.class_, self.select_table, non_primary=True, properties=props, polymorphic_map=self.polymorphic_map, polymorphic_on=self.select_table.corresponding_column(self.polymorphic_on)).compile()
 
     def _compile_class(self):
-        if not self.non_primary and (not mapper_registry.has_key(self.class_key) or self.is_primary or (inherits is not None and inherits._is_primary_mapper())):
-            sessionlib.global_attributes.reset_class_managed(self.class_)
-            self._init_class()
-        elif not self.non_primary:
-            raise exceptions.ArgumentError("Class '%s' already has a primary mapper defined.  Use is_primary=True to assign a new primary mapper to the class, or use non_primary=True to create a non primary Mapper" % self.class_)
+        """if this mapper is to be a primary mapper (i.e. the non_primary flag is not set),
+        associate this Mapper with the given class_ and entity name.  subsequent
+        calls to class_mapper() for the class_/entity name combination will return this 
+        mapper.  also decorates the __init__ method on the mapped class to include auto-session attachment logic."""
+        if self.non_primary:
+            return
+        
+        if not self.non_primary and (mapper_registry.has_key(self.class_key) and not self.is_primary):
+             raise exceptions.ArgumentError("Class '%s' already has a primary mapper defined.  Use is_primary=True to assign a new primary mapper to the class, or use non_primary=True to create a non primary Mapper" % self.class_)
+
+        sessionlib.global_attributes.reset_class_managed(self.class_)
     
-    def _init_class(self):
-        """decorates the __init__ method on the mapped class to include auto-session attachment logic,
-        and assocites this Mapper with its class via the mapper_registry."""
         oldinit = self.class_.__init__
         def init(self, *args, **kwargs):
-
             entity_name = kwargs.pop('_sa_entity_name', None)
             mapper = mapper_registry.get(ClassKey(self.__class__, entity_name))
             if mapper is not None:
@@ -421,8 +479,6 @@ class Mapper(object):
         if self.entity_name is None:
             self.class_.c = self.c
             
-            
-    
     def base_mapper(self):
         """returns the ultimate base mapper in an inheritance chain"""
         if self.inherits is not None:
@@ -430,21 +486,15 @@ class Mapper(object):
         else:
             return self
     
-    def _inherits(self, mapper):
-        """returns True if the given mapper and this mapper are in the same inheritance hierarchy"""
-        return self.base_mapper() is mapper.base_mapper()
-        
-    def add_polymorphic_mapping(self, key, class_or_mapper, entity_name=None):
-        if isinstance(class_or_mapper, type):
-            class_or_mapper = class_mapper(class_or_mapper, entity_name=entity_name)
-        self.polymorphic_map[key] = class_or_mapper
-    
     def add_properties(self, dict_of_properties):
         """adds the given dictionary of properties to this mapper, using add_property."""
         for key, value in dict_of_properties.iteritems():
             self.add_property(key, value)
 
     def add_property(self, key, prop):
+        """adds an indiviual MapperProperty to this mapper.  If the mapper has not been compiled yet,
+        just adds the property to the initial properties dictionary sent to the constructor.  if this Mapper
+        has already been compiled, then the given MapperProperty is compiled immediately."""
         self.properties[key] = prop
         if self.__is_compiled:
             self._compile_property(key, prop, init=True)
@@ -1045,11 +1095,6 @@ class MapperProperty(object):
         this is called by a mappers select_by method to formulate a set of key/value pairs into 
         a WHERE criterion that spans multiple tables if needed."""
         return None
-    def hash_key(self):
-        """describes this property and its instantiated arguments in such a way
-        as to uniquely identify the concept this MapperProperty represents,within 
-        a process."""
-        raise NotImplementedError()
     def setup(self, key, statement, **options):
         """called when a statement is being constructed.  """
         return self
@@ -1062,7 +1107,7 @@ class MapperProperty(object):
     def adapt(self, newparent):
         """adapts this MapperProperty to a new parent, assuming the new parent is an inheriting
         descendant of the old parent.  Should return True if the adaptation was successful, or
-        False if this MapperProperty cannot be adapted to the new parent (the case for this is,
+        False if this MapperProperty cannot be adapted to the new parent (the case for "False" is,
         the parent mapper has a polymorphic select, and this property represents a column that is not
         represented in the new mapper's mapped table)"""
         #self.parent = newparent
@@ -1075,6 +1120,9 @@ class MapperProperty(object):
         """called when the instance is being deleted"""
         pass
     def register_dependencies(self, *args, **kwargs):
+        """called by the Mapper in response to the UnitOfWork calling the Mapper's
+        register_dependencies operation.  Should register with the UnitOfWork all 
+        inter-mapper dependencies as well as dependency processors (see UOW docs for more details)"""
         pass
     def is_primary(self):
         """a return value of True indicates we are the primary MapperProperty for this loader's
@@ -1099,11 +1147,12 @@ class ExtensionOption(MapperOption):
         mapper.extension = self.ext
 
 class MapperExtension(object):
+    """base implementation for an object that provides overriding behavior to various
+    Mapper functions.  For each method in MapperExtension, a result of EXT_PASS indicates
+    the functionality is not overridden."""
     def __init__(self):
         self.next = None
     def chain(self, ext):
-        if ext is self:
-            raise "nu uh " + repr(self) + " " + repr(ext)
         self.next = ext
         return self
     def get_session(self):
@@ -1245,7 +1294,7 @@ class TranslatingDict(dict):
         return super(TranslatingDict, self).setdefault(self.__translate_col(col), value)
             
 class ClassKey(object):
-    """keys a class and an entity name to a mapper, via the mapper_registry"""
+    """keys a class and an entity name to a mapper, via the mapper_registry."""
     __metaclass__ = util.ArgSingleton
     def __init__(self, class_, entity_name):
         self.class_ = class_
@@ -1274,17 +1323,20 @@ def has_mapper(object):
 def object_mapper(object, raiseerror=True):
     """given an object, returns the primary Mapper associated with the object instance"""
     try:
-        return mapper_registry[ClassKey(object.__class__, getattr(object, '_entity_name'))].compile()
+        mapper = mapper_registry[ClassKey(object.__class__, getattr(object, '_entity_name'))]
     except (KeyError, AttributeError):
         if raiseerror:
             raise exceptions.InvalidRequestError("Class '%s' entity name '%s' has no mapper associated with it" % (object.__class__.__name__, getattr(object, '_entity_name', None)))
         else:
             return None
-
+    return mapper.compile()
+    
 def class_mapper(class_, entity_name=None):
     """given a ClassKey, returns the primary Mapper associated with the key."""
-    return mapper_registry[ClassKey(class_, entity_name)].compile()
     try:
-        return mapper_registry[ClassKey(class_, entity_name)].compile()
+        mapper = mapper_registry[ClassKey(class_, entity_name)]
     except (KeyError, AttributeError):
         raise exceptions.InvalidRequestError("Class '%s' entity name '%s' has no mapper associated with it" % (class_.__name__, entity_name))
+    return mapper.compile()
+    
+    
