@@ -4,305 +4,263 @@
 # This module is part of SQLAlchemy and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
-"""provides a class called AttributeManager that can attach history-aware attributes to object
-instances.  AttributeManager-enabled object attributes can be scalar or lists.  In both cases, the "change
-history" of each attribute is available via the AttributeManager in a unit called a "history
-container".  Via the history container, which can be a scalar or list based container, 
-the attribute can be "committed", meaning whatever changes it has are registered as the current value, 
-or "rolled back", which means the original "committed" value is restored; in both cases
-the accumulated history is removed.
-
-The change history is represented as three lists, the "added items", the "deleted items", 
-and the "unchanged items".  In the case of a scalar attribute, these lists would be zero or 
-one element in length.  for a list based attribute, these lists are of arbitrary length.  
-"unchanged items" represents the assigned value or appended values on the attribute either 
-with "history tracking" disabled, or have been "committed".  "added items" represent new
-values that have been assigned or appended to the attribute.  "deleted items" represents the 
-the value that was previously "unchanged", but has been de-assigned or removed from the attribute.
-
-AttributeManager can also assign a "callable" history container to an object's attribute, 
-which is invoked when first accessed, to provide the object's "committed" value.  
-
-The package includes functions for managing "bi-directional" object relationships as well
-via the GenericBackrefExtension object.
-"""
-
 import util
-import weakref
 from exceptions import *
+import weakref
+from UserList import UserList
 
 class SmartProperty(object):
-    """Provides a property object that will communicate set/get/delete operations
-    to an AttributeManager.  SmartProperty objects are constructed by the 
-    create_prop method on AttributeManger, which can be overridden to provide
-    subclasses of SmartProperty.
-    """
-    def __init__(self, manager, key, uselist, callable_, typecallable, **kwargs):
+    def __init__(self, manager, key, uselist, callable_, typecallable, trackparent=False, extension=None, **kwargs):
         self.manager = manager
         self.key = key
         self.uselist = uselist
         self.callable_ = callable_
         self.typecallable= typecallable
+        self.trackparent = trackparent
+        self.extension = extension
         self.kwargs = kwargs
-    def init(self, obj, attrhist=None):
-        """creates an appropriate ManagedAttribute for the given object and establishes
-        it with the object's list of managed attributes."""
-        if self.callable_ is not None:
-            func = self.callable_(obj)
-        else:
-            func = None
-        return self.manager.create_managed_attribute(obj, self.key, self.uselist, callable_=func, attrdict=attrhist, typecallable=self.typecallable, **self.kwargs)
+
     def __set__(self, obj, value):
-        self.manager.set_attribute(obj, self.key, value)
+        self.set(None, obj, value)
+
     def __delete__(self, obj):
-        self.manager.delete_attribute(obj, self.key)
+        self.delete(None, obj)
+
     def __get__(self, obj, owner):
         if obj is None:
             return self
-        if self.uselist:
-            return self.manager.get_list_attribute(obj, self.key)
-        else:
-            return self.manager.get_attribute(obj, self.key)
-    def setattr_clean(self, obj, value):
-        """sets an attribute on an object without triggering a history event"""
-        h = self.manager.get_history(obj, self.key)
-        h.setattr_clean(value)
-    def append_clean(self, obj, value):
-        """appends a value to a list-based attribute without triggering a history event."""
-        h = self.manager.get_history(obj, self.key)
-        h.append_nohistory(value)
+        return self.get(obj)
 
-class ManagedAttribute(object):
-    """base class for a "managed attribute", which is attached to individual instances
-    of a class mapped to the keyname of the property, inside of a dictionary which is
-    attached to the object via the propertyname "_managed_attributes".  Attribute access
-    which occurs through the SmartProperty property object ultimately calls upon 
-    ManagedAttribute objects associated with the instance via this dictionary."""
-    def __init__(self, obj, key):
+    def hasparent(self, item):
+        return item._state.get(('hasparent', self))
+        
+    def sethasparent(self, item, value):
+        if item is not None:
+            item._state[('hasparent', self)] = value
+
+    def get_history(self, obj, passive=False):
+        return History(self, obj, passive=passive)
+
+    def set_callable(self, obj, callable_):
+        obj._state[('callable', self)] = callable_(obj)
+    
+    def get_callable(self, obj):
+        if obj._state.has_key(('callable', self)):
+            return obj._state(('callable'), self)
+        elif self.callable_ is not None:
+            return self.callable_(obj)
+        
+    def get(self, obj, passive=False):
+        """retrieves a value from the given object.  if a callable is assembled
+        on this object's attribute, and passive is False, the callable will be executed
+        and the resulting value will be set as the new value for this attribute."""
+        try:
+            return obj.__dict__[self.key]
+        except KeyError:
+            if self.uselist:
+                callable_ = self.get_callable(obj)
+                if callable_ is not None:
+                    if passive:
+                        return None
+                    l = ListInstrument(self, obj, callable_())
+                else:
+                    l = ListInstrument(self, obj, [])
+                obj.__dict__[self.key] = l
+                return l
+            else:
+                callable_ = self.get_callable(obj)
+                if callable_ is not None:
+                    if passive:
+                        return None
+                    obj.__dict__[self.key] = callable_()
+                    return obj.__dict__[self.key]
+                else:
+                    raise AttributeError(self.key)
+        
+    def set(self, event, obj, value):
+        """sets a value on the given object."""
+        if event is not self:
+            if self.uselist:
+                value = ListInstrument(self, obj, value)
+            old = obj.__dict__.get(self.key, None)
+            obj.__dict__[self.key] = value
+            obj._state['modified'] = True
+            if not self.uselist:
+                if self.trackparent:
+                    if value is not None:
+                        self.sethasparent(value, True)
+                    if old is not None:
+                        self.sethasparent(old, False)
+                if self.extension is not None:
+                    self.extension.set(event or self, obj, value, old)
+            
+    def delete(self, event, obj):
+        """deletes a value from the given object."""
+        if event is not self:
+            try:
+                old = obj.__dict__[self.key]
+                del obj.__dict__[self.key]
+            except KeyError:
+                raise AttributeError(self.key)
+            obj._state['modified'] = True
+            if self.trackparent:
+                if old is not None:
+                    self.sethasparent(old, False)
+            if self.extension is not None:
+                self.extension.delete(event or self, obj, old)
+
+    def append(self, event, obj, value):
+        """appends an element to a list based element or sets a scalar based element to the given value.
+        Used by GenericBackrefExtension to "append" an item independent of list/scalar semantics."""
+        if self.uselist:
+            if event is not self:
+                self.get(obj).append_with_event(value, event)
+        else:
+            self.set(event, obj, value)
+
+    def remove(self, event, obj, value):
+        """removes an element from a list based element or sets a scalar based element to None.
+        Used by GenericBackrefExtension to "remove" an item independent of list/scalar semantics."""
+        if self.uselist:
+            if event is not self:
+                self.get(obj).remove_with_event(value, event)
+        else:
+            self.set(event, obj, None)
+
+    def append_event(self, event, obj, value):
+        """called by ListInstrument when an item is appended"""
+        obj._state['modified'] = True
+        if self.trackparent:
+            self.sethasparent(value, True)
+        if self.extension is not None:
+            self.extension.append(event or self, obj, value)
+    
+    def remove_event(self, event, obj, value):
+        """called by ListInstrument when an item is removed"""
+        obj._state['modified'] = True
+        if self.trackparent:
+            self.sethasparent(value, False)
+        if self.extension is not None:
+            self.extension.delete(event or self, obj, value)
+                
+        
+class ListInstrument(object):
+    def __init__(self, attr, obj, data):
+        self.attr = attr
         self.__obj = weakref.ref(obj)
-        self.key = key
+        self.key = attr.key
+        self.data = data
+        for x in data:
+            self.__setrecord(x)
     def __getstate__(self):
-        return {'key':self.key, 'obj':self.obj}
+        return {'key':self.key, 'obj':self.obj, 'data':self.data, 'attr':self.attr}
     def __setstate__(self, d):
         self.key = d['key']
         self.__obj = weakref.ref(d['obj'])
+        self.data = d['data']
+        self.attr = d['attr']
+        
     obj = property(lambda s:s.__obj())
-    def value_changed(self, *args, **kwargs):
-        self.obj._managed_value_changed = True
-        self.do_value_changed(*args, **kwargs)
-    def history(self, **kwargs):
-        return self
-    def plain_init(self, *args, **kwargs):
-        pass
-    def hasparent(self, item):
-        return item.__class__._attribute_manager.attribute_history(item).get('_hasparent_' + self.key)
-    def sethasparent(self, item, value):
-        if item is not None:
-            item.__class__._attribute_manager.attribute_history(item)['_hasparent_' + self.key] = value
-
-class ScalarAttribute(ManagedAttribute):
-    """Used by AttributeManager to track the history of a scalar attribute
-    on an object instance.  This is the "scalar history container" object.
-    Has an interface similar to util.HistoryList
-    so that the two objects can be called upon largely interchangeably."""
-    # make our own NONE to distinguish from "None"
-    NONE = object()
-    def __init__(self, obj, key, extension=None, trackparent=False, **kwargs):
-        ManagedAttribute.__init__(self, obj, key)
-        self.orig = ScalarAttribute.NONE
-        self.extension = extension
-        self.trackparent = trackparent
-    def clear(self):
-        del self.obj.__dict__[self.key]
-    def history_contains(self, obj):
-        return self.orig is obj or self.obj.__dict__[self.key] is obj
-    def setattr_clean(self, value):
-        self.obj.__dict__[self.key] = value
-    def delattr_clean(self):
-        del self.obj.__dict__[self.key]
-    def getattr(self, **kwargs):
-        return self.obj.__dict__[self.key]
-    def setattr(self, value, **kwargs):
-        #if isinstance(value, list):
-        #    raise InvalidRequestError("assigning a list to scalar property '%s' on '%s' instance %d" % (self.key, self.obj.__class__.__name__, id(self.obj)))
-        orig = self.obj.__dict__.get(self.key, None)
-        if orig is value:
-            return
-        if self.orig is ScalarAttribute.NONE:
-            self.orig = orig
-        self.obj.__dict__[self.key] = value
-        if self.trackparent:
-            if value is not None:
-                self.sethasparent(value, True)
-            if orig is not None:
-                self.sethasparent(orig, False)
-        if self.extension is not None:
-            self.extension.set(self.obj, value, orig)
-        self.value_changed(orig, value)
-    def delattr(self, **kwargs):
-        orig = self.obj.__dict__.get(self.key, None)
-        if self.orig is ScalarAttribute.NONE:
-            self.orig = orig
-        self.obj.__dict__[self.key] = None
-        if self.trackparent:
-            self.sethasparent(orig, False)
-        if self.extension is not None:
-            self.extension.set(self.obj, None, orig)
-        self.value_changed(orig, None)
-    def append(self, obj):
-        self.setattr(obj)
-    def remove(self, obj):
-        self.delattr()
-    def rollback(self):
-        if self.orig is not ScalarAttribute.NONE:
-            self.obj.__dict__[self.key] = self.orig
-            self.orig = ScalarAttribute.NONE
-    def commit(self):
-        self.orig = ScalarAttribute.NONE
-    def do_value_changed(self, oldvalue, newvalue):
-        pass
-    def added_items(self):
-        if self.orig is not ScalarAttribute.NONE:
-            return [self.obj.__dict__.get(self.key)]
-        else:
-            return []
-    def deleted_items(self):
-        if self.orig is not ScalarAttribute.NONE and self.orig is not None:
-            return [self.orig]
-        else:
-            return []
     def unchanged_items(self):
-        if self.orig is ScalarAttribute.NONE:
-            return [self.obj.__dict__.get(self.key)]
-        else:
-            return []
+        return self.attr.get_history(self.obj).unchanged_items
+    def __iter__(self):
+        return iter(self.data)
+    def __repr__(self):
+        return repr(self.data)    
+    def __getattr__(self, attr):
+        """proxies unknown HistoryArraySet methods and attributes to the underlying
+        data array.  this allows custom list classes to be used."""
+        return getattr(self.data, attr)
 
-class ListAttribute(util.HistoryArraySet, ManagedAttribute):
-    """Used by AttributeManager to track the history of a list-based object attribute.
-    This is the "list history container" object.
-    Subclasses util.HistoryArraySet to provide "onchange" event handling as well
-    as a plugin point for BackrefExtension objects."""
-    def __init__(self, obj, key, data=None, extension=None, trackparent=False, typecallable=None, **kwargs):
-        ManagedAttribute.__init__(self, obj, key)
-        self.extension = extension
-        self.trackparent = trackparent
-        # if we are given a list, try to behave nicely with an existing
-        # list that might be set on the object already
-        try:
-            list_ = obj.__dict__[key]
-            if list_ is data:
-                raise InvalidArgumentError("Creating a list element passing the object's list as an argument")
-            if data is not None:
-                for d in data:
-                    list_.append(d)
-        except KeyError:
-            if data is not None:
-                list_ = data
-            elif typecallable is not None:
-                list_ = typecallable()
-            else:
-                list_ = []
-            obj.__dict__[key] = list_
-        util.HistoryArraySet.__init__(self, list_, readonly=kwargs.get('readonly', False))
-    def do_value_changed(self, obj, key, item, listval, isdelete):
-        pass    
-    def setattr(self, value, **kwargs):
-        self.obj.__dict__[self.key] = value
-        self.set_data(value)
-    def delattr(self, value, **kwargs):
-        pass
-    def do_value_appended(self, item):
-        if self.trackparent:
-            self.sethasparent(item, True)
-        self.value_changed(self.obj, self.key, item, self, False)
-        if self.extension is not None:
-            self.extension.append(self.obj, item)
-    def do_value_deleted(self, item):
-        if self.trackparent:
-            self.sethasparent(item, False)
-        self.value_changed(self.obj, self.key, item, self, True)
-        if self.extension is not None:
-            self.extension.delete(self.obj, item)
+    def __setrecord(self, item, event=None):
+        self.attr.append_event(event, self.obj, item)
+
+    def __delrecord(self, item, event=None):
+        print "delrecord", item, event, self.attr
+        self.attr.remove_event(event, self.obj, item)
+            
+    def append_with_event(self, item, event):
+        self.data.append(item)
+        self.__setrecord(item, event)
         
-class TriggeredAttribute(ManagedAttribute):
-    """Used by AttributeManager to allow the attaching of a callable item, representing the future value
-    of a particular attribute on a particular object instance, as the current attribute on an object. 
-    When accessed normally, its history() method is invoked to run the underlying callable, which
-    is then used to create a new ScalarAttribute or ListAttribute.  This new attribute object 
-    is then registered with the attribute manager to replace this TriggeredAttribute as the 
-    current ManagedAttribute."""
-    def __init__(self, manager, callable_, obj, key, uselist = False, live = False, **kwargs):
-        ManagedAttribute.__init__(self, obj, key)
-        self.manager = manager
-        self.callable_ = callable_
-        self.uselist = uselist
-        self.kwargs = kwargs
-
+    def remove_with_event(self, item, event):
+        self.data.remove(item)
+        self.__delrecord(item, event)
+            
+    def append(self, item): 
+        self.data.append(item)
+        self.__setrecord(item)
+        
     def clear(self):
-        self.plain_init(self.manager.attribute_history(self.obj))
-        
-    def plain_init(self, attrhist):
-        if not self.uselist:
-            p = self.manager.create_scalar(self.obj, self.key, **self.kwargs)
-            self.obj.__dict__[self.key] = None
+        if isinstance(self.data, dict):
+            self.data.clear()
         else:
-            p = self.manager.create_list(self.obj, self.key, None, **self.kwargs)
-        attrhist[self.key] = p
-    
-    def __getattr__(self, key):
-        def callit(*args, **kwargs):
-            passive = kwargs.pop('passive', False)
-            return getattr(self.history(passive=passive), key)(*args, **kwargs)
-        return callit
-    
-    def history(self, passive=False):
-        if not self.uselist:
-            if self.obj.__dict__.get(self.key, None) is None:
-                if passive:
-                    value = None
-                else:
-                    try:
-                        value = self.callable_()
-                    except AttributeError, e:
-                        # this catch/raise is because this call is frequently within an 
-                        # AttributeError-sensitive callstack
-                        raise AssertionError("AttributeError caught in callable prop:" + str(e.args))
-                self.obj.__dict__[self.key] = value
-
-            p = self.manager.create_scalar(self.obj, self.key, **self.kwargs)
+            self.data[:] = []
+    def __getitem__(self, i):
+        return self.data[i]
+    def __setitem__(self, i, item): 
+        self.__setrecord(item)
+        self.data[i] = item
+    def __delitem__(self, i):
+        del self.data[i]
+        self.__delrecord(self.data[i])
+    def __lt__(self, other): return self.data <  self.__cast(other)
+    def __le__(self, other): return self.data <= self.__cast(other)
+    def __eq__(self, other): return self.data == self.__cast(other)
+    def __ne__(self, other): return self.data != self.__cast(other)
+    def __gt__(self, other): return self.data >  self.__cast(other)
+    def __ge__(self, other): return self.data >= self.__cast(other)
+    def __cast(self, other):
+       if isinstance(other, ListInstrument): return other.data
+       else: return other
+    def __cmp__(self, other):
+       return cmp(self.data, self.__cast(other))
+    def __contains__(self, item): return item in self.data
+    def __len__(self): return len(self.data)
+    def __setslice__(self, i, j, other):
+        i = max(i, 0); j = max(j, 0)
+        if isinstance(other, UserList.UserList):
+            l = other.data
+        elif isinstance(other, type(self.data)):
+            l = other
         else:
-            if not self.obj.__dict__.has_key(self.key) or len(self.obj.__dict__[self.key]) == 0:
-                if passive:
-                    value =  None
-                else:
-                    try:
-                        value = self.callable_()
-                    except AttributeError, e:
-                        # this catch/raise is because this call is frequently within an 
-                        # AttributeError-sensitive callstack
-                        raise AssertionError("AttributeError caught in callable prop:" + str(e.args))
-            else:
-                value = None
-            p = self.manager.create_list(self.obj, self.key, value, **self.kwargs)
-        if not passive:
-            # set the new history list as the new attribute, discards ourself
-            self.manager.attribute_history(self.obj)[self.key] = p
-            self.manager = None
-        return p
-
-    def commit(self):
-        pass
-    def rollback(self):
-        pass
+            l = list(other)
+        [self.__delrecord(x) for x in self.data[i:]]
+        [self.__setrecord(a) for a in l]
+        self.data[i:] = l
+    def __delslice__(self, i, j):
+        i = max(i, 0); j = max(j, 0)
+        for a in self.data[i:j]:
+            self.__delrecord(a)
+        del self.data[i:j]
+    def insert(self, i, item): 
+        self.__setrecord(item)
+        self.data.insert(i, item)
+    def pop(self, i=-1):
+        item = self.data.pop(i)
+        self.__delrecord(item)
+        return item
+    def remove(self, item): 
+        self.data.remove(item)
+        self.__delrecord(item)
+    def extend(self, item_list):
+        for item in item_list:
+            self.append(item)            
+    def __add__(self, other):
+        raise NotImplementedError()
+    def __radd__(self, other):
+        raise NotImplementedError()
+    def __iadd__(self, other):
+        raise NotImplementedError()
 
 class AttributeExtension(object):
     """an abstract class which specifies an "onadd" or "ondelete" operation
     to be attached to an object property."""
-    def append(self, obj, child):
+    def append(self, event, obj, child):
         pass
-    def delete(self, obj, child):
+    def delete(self, event, obj, child):
         pass
-    def set(self, obj, child, oldchild):
+    def set(self, event, obj, child, oldchild):
         pass
         
 class GenericBackrefExtension(AttributeExtension):
@@ -313,97 +271,117 @@ class GenericBackrefExtension(AttributeExtension):
     scalar references to each other."""
     def __init__(self, key):
         self.key = key
-    def set(self, obj, child, oldchild):
+    def set(self, event, obj, child, oldchild):
         if oldchild is not None:
-            prop = oldchild.__class__._attribute_manager.get_history(oldchild, self.key)
-            prop.remove(obj)
+            oldchild.__class__.__dict__[self.key].remove(event, oldchild, obj)
         if child is not None:
-            prop = child.__class__._attribute_manager.get_history(child, self.key)
-            prop.append(obj)
-    def append(self, obj, child):
-        prop = child.__class__._attribute_manager.get_history(child, self.key)
-        prop.append(obj)
-    def delete(self, obj, child):
-        prop = child.__class__._attribute_manager.get_history(child, self.key)
-        prop.remove(obj)
+            child.__class__.__dict__[self.key].append(event, child, obj)
+    def append(self, event, obj, child):
+        child.__class__.__dict__[self.key].append(event, child, obj)
+    def delete(self, event, obj, child):
+        child.__class__.__dict__[self.key].remove(event, child, obj)
 
-            
+class Original(object):
+    """stores the original state of an object when the commit() method on the attribute manager
+    is called."""
+    def __init__(self, manager, obj):
+        self.data = {}
+        for attr in manager.managed_attributes(obj.__class__):
+            if obj.__dict__.has_key(attr.key):
+                if attr.uselist:
+                    self.data[attr.key] = obj.__dict__[attr.key][:]
+                else:
+                    self.data[attr.key] = obj.__dict__[attr.key]
+                    
+    def rollback(self, manager, obj):
+        for attr in manager.managed_attributes(obj.__class__):
+            if self.data.has_key(attr.key):
+                if attr.uselist:
+                    obj.__dict__[attr.key][:] = self.data[attr.key]
+                else:
+                    obj.__dict__[attr.key] = self.data[attr.key]
+            else:
+                del obj.__dict__[attr.key]
+                
+    def __repr__(self):
+        return "Original: %s" % repr(self.data)
+
+class History(object):
+    """calculates the "history" of a particular attribute on a particular instance."""
+    def __init__(self, attr, obj, passive=False):
+        self.attr = attr
+        orig = obj._state.get('original', None)
+        if orig is not None:
+            original = orig.data[attr.key]
+        else:
+            original = None
+        
+        current = attr.get(obj, passive=passive)
+        
+        if attr.uselist:
+            s = util.Set(original)
+            self.added_items = []
+            self.unchanged_items = []
+            self.deleted_items = []
+            for a in current:
+                if a in s:
+                    self.unchanged_items.append(a)
+                else:
+                    self.added_items.append(a)
+            for a in s:
+                if a not in self.unchanged_items:
+                    self.deleted_items.append(a)    
+        else:
+            if current is original:
+                self.unchanged_items = [current]
+                self.added_items = []
+                self.deleted_items = []
+            else:
+                self.added_items = [current]
+                if original is not None:
+                    self.deleted_items = [original]
+                else:
+                    self.deleted_items = []
+                self.unchanged_items = []
+    def hasparent(self, obj):
+        return self.attr.hasparent(obj)
+        
 class AttributeManager(object):
     """maintains a set of per-attribute history container objects for a set of objects."""
-    def __init__(self):
+
+    def do_list_value_changed(self, obj, key, item, listval, isdelete):
+        pass
+    def do_value_changed(self, obj, key, oldvalue, newvalue):
         pass
 
-    def do_value_changed(self, obj, key, value):
-        """subclasses override this method to provide functionality that is triggered 
-        upon an attribute change of value."""
-        pass
-        
-    def create_prop(self, class_, key, uselist, callable_, typecallable, **kwargs):
-        """creates a scalar property object, defaulting to SmartProperty, which 
-        will communicate change events back to this AttributeManager."""
-        return SmartProperty(self, key, uselist, callable_, typecallable, **kwargs)
-    def create_scalar(self, obj, key, **kwargs):
-        return ScalarAttribute(obj, key, **kwargs)
-    def create_list(self, obj, key, list_, typecallable=None, **kwargs):
-        """creates a history-aware list property, defaulting to a ListAttribute which
-        is a subclass of HistoryArrayList."""
-        return ListAttribute(obj, key, list_, typecallable=typecallable, **kwargs)
-    def create_callable(self, obj, key, func, uselist, **kwargs):
-        """creates a callable container that will invoke a function the first
-        time an object property is accessed.  The return value of the function
-        will become the object property's new value."""
-        return TriggeredAttribute(self, func, obj, key, uselist, **kwargs)
-        
-    def get_attribute(self, obj, key, **kwargs):
-        """returns the value of an object's scalar attribute, or None if
-        its not defined on the object (since we are a property accessor, this
-        is considered more appropriate than raising AttributeError)."""
-        h = self.get_unexec_history(obj, key)
-        try:
-            return h.getattr(**kwargs)
-        except KeyError:
-            return None
-
-    def get_list_attribute(self, obj, key, **kwargs):
-        """returns the value of an object's list-based attribute."""
-        return self.get_history(obj, key, **kwargs)
-        
-    def set_attribute(self, obj, key, value, **kwargs):
-        """sets the value of an object's attribute."""
-        self.get_unexec_history(obj, key).setattr(value, **kwargs)
-    
-    def delete_attribute(self, obj, key, **kwargs):
-        """deletes the value from an object's attribute."""
-        self.get_unexec_history(obj, key).delattr(**kwargs)
-        
     def rollback(self, *obj):
-        """rolls back all attribute changes on the given list of objects, 
-        and removes all history."""
         for o in obj:
-            try:
-                attributes = self.attribute_history(o)
-                for hist in attributes.values():
-                    if isinstance(hist, ManagedAttribute):
-                        hist.rollback()
-            except KeyError:
-                pass
-            o._managed_value_changed = False
-
-    def commit(self, *obj):
-        """commits all attribute changes on the given list of objects, 
-        and removes all history."""
-        for o in obj:
-            try:
-                attributes = self.attribute_history(o)
-                for hist in attributes.values():
-                    if isinstance(hist, ManagedAttribute):
-                        hist.commit()
-            except KeyError:
-                pass
-            o._managed_value_changed = False
+            orig = o._state.get('original')
+            if orig is not None:
+                orig.rollback(self, o)
+            else:
+                self.__clear(o)
     
+    def __clear(self, obj):
+        for attr in self.managed_attributes(obj.__class__):
+            try:
+                del obj.__dict__[attr.key]
+            except KeyError:
+                pass
+                
+    def commit(self, *obj):
+        for o in obj:
+            o._state['original'] = Original(self, o)
+    
+    def managed_attributes(self, class_):
+        if not isinstance(class_, type):
+            raise repr(class_) + " is not a type"
+        for value in class_.__dict__.values():
+            if isinstance(value, SmartProperty):
+                yield value
+                
     def is_modified(self, object):
-        return getattr(object, '_managed_value_changed', False)
+        return object._state.get('modified', False)
         
     def remove(self, obj):
         """called when an object is totally being removed from memory"""
@@ -417,44 +395,10 @@ class AttributeManager(object):
         of this method being called, however calling this first will result in an elimination of 
         AttributeError/KeyErrors that are thrown when get_unexec_history is called for the first
         time for a particular key."""
-        d = {}
-        obj._managed_attributes = d
-        for value in obj.__class__.__dict__.values():
-            if not isinstance(value, SmartProperty):
-                continue
-            value.init(obj, attrhist=d).plain_init(d)
-
-    def get_unexec_history(self, obj, key):
-        """returns the "history" container for the given attribute on the given object.
-        If the container does not exist, it will be created based on the class-level
-        history container definition."""
-        try:
-            return obj._managed_attributes[key]
-        except AttributeError, ae:
-            return getattr(obj.__class__, key).init(obj)
-        except KeyError, e:
-            return getattr(obj.__class__, key).init(obj)
+        obj._attr_state = {}
 
     def get_history(self, obj, key, **kwargs):
-        """accesses the appropriate ManagedAttribute container and calls its history() method.
-        For a TriggeredAttribute this will execute the underlying callable and return the
-        resulting ScalarAttribute or ListAttribute object.  For an existing ScalarAttribute
-        or ListAttribute, just returns the container."""
-        return self.get_unexec_history(obj, key).history(**kwargs)
-
-    def attribute_history(self, obj):
-        """returns a dictionary of ManagedAttribute containers corresponding to the given object.
-        this dictionary is attached to the object via the attribute '_managed_attributes'.
-        If the dictionary does not exist, it will be created.  If a 'trigger' has been placed on 
-        this object via the trigger_history() method, it will first be executed."""
-        try:
-            return obj._managed_attributes
-        except AttributeError:
-            obj._managed_attributes = {}
-            trigger = obj.__dict__.pop('_managed_trigger', None)
-            if trigger:
-                trigger()
-            return obj._managed_attributes
+        return obj.__class__.__dict__[key].get_history(obj, **kwargs)
 
     def trigger_history(self, obj, callable):
         """removes all ManagedAttribute instances from the given object and places the given callable
@@ -495,35 +439,27 @@ class AttributeManager(object):
     def is_class_managed(self, class_, key):
         return hasattr(class_, key) and isinstance(getattr(class_, key), SmartProperty)
 
-    def create_managed_attribute(self, obj, key, uselist, callable_=None, attrdict=None, typecallable=None, **kwargs):
-        """creates a new ManagedAttribute corresponding to the given attribute key on the 
-        given object instance, and installs it in the attribute dictionary attached to the object."""
-        if callable_ is not None:
-            prop = self.create_callable(obj, key, callable_, uselist=uselist, typecallable=typecallable, **kwargs)
-        elif not uselist:
-            prop = self.create_scalar(obj, key, **kwargs)
-        else:
-            prop = self.create_list(obj, key, None, typecallable=typecallable, **kwargs)
-        if attrdict is None:
-            attrdict = self.attribute_history(obj)
-        attrdict[key] = prop
-        return prop
-    
-    # deprecated
-    create_history=create_managed_attribute
+    def create_history(self, instance, key, uselist, callable_, **kwargs):
+        instance.__class__.__dict__[key].set_callable(instance, callable)
+
+    def create_prop(self, class_, key, uselist, callable_, typecallable, **kwargs):
+        """creates a scalar property object, defaulting to SmartProperty, which 
+        will communicate change events back to this AttributeManager."""
+        return SmartProperty(self, key, uselist, callable_, typecallable, **kwargs)
     
     def register_attribute(self, class_, key, uselist, callable_=None, **kwargs):
-        """registers an attribute's behavior at the class level.  This attribute
-        can be scalar or list based, and also may have a callable unit that will be
-        used to create the initial value (i.e. a lazy loader).  The definition for this attribute is 
-        wrapped up into a callable which is then stored in the corresponding
-        SmartProperty object attached to the class.  When instances of the class 
-        are created and the attribute first referenced, the callable is invoked with
-        the new object instance as an argument to create the new ManagedAttribute.  
-        Extra keyword arguments can be sent which
-        will be passed along to newly created ManagedAttribute."""
         if not hasattr(class_, '_attribute_manager'):
             class_._attribute_manager = self
+            
+        if not hasattr(class_, '_state'):
+            def _get_state(self):
+                try:
+                    return self._attr_state
+                except AttributeError:
+                    self._attr_state = {}
+                    return self._attr_state
+            class_._state = property(_get_state)
+            
         typecallable = getattr(class_, key, None)
         # TODO: look at existing properties on the class, and adapt them to the SmartProperty
         if isinstance(typecallable, SmartProperty):

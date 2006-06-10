@@ -36,7 +36,7 @@ class UOWProperty(attributes.SmartProperty):
     property = property(lambda s:class_mapper(s.class_).props[s.key], doc="returns the MapperProperty object associated with this property")
 
                 
-class UOWListElement(attributes.ListAttribute):
+class UOWListElement(object):
     """overrides ListElement to provide unit-of-work "dirty" hooks when list attributes are modified,
     plus specialzed append() method."""
     def __init__(self, obj, key, data=None, cascade=None, **kwargs):
@@ -62,7 +62,7 @@ class UOWListElement(attributes.ListAttribute):
         else:
             attributes.ListAttribute.append(self, item)
 
-class UOWScalarElement(attributes.ScalarAttribute):
+class UOWScalarElement(object):
     def __init__(self, obj, key, cascade=None, **kwargs):
         attributes.ScalarAttribute.__init__(self, obj, key, **kwargs)
         self.cascade=cascade
