@@ -208,7 +208,14 @@ class OrderedSet(sets.Set):
         self._data = OrderedDict()
         if iterable is not None: 
           self._update(iterable)
+
+class UniqueList(OrderedSet):
+    def append_unique(self, item):
+        self.add(item)
+    def __eq__(self, other):
+        return list(self) == other
         
+                
 class HistoryArraySet(UserList.UserList):
     """extends a UserList to provide unique-set functionality as well as history-aware 
     functionality, including information about what list elements were modified 

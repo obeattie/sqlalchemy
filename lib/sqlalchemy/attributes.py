@@ -31,6 +31,11 @@ class SmartProperty(object):
             return self
         return self.get(obj)
 
+    def do_list_value_changed(self, obj, item, isdelete):
+        pass
+    def do_value_changed(self, obj, oldvalue, newvalue):
+        pass
+
     def hasparent(self, item):
         return item._state.get(('hasparent', self))
         
@@ -42,14 +47,44 @@ class SmartProperty(object):
         return History(self, obj, passive=passive)
 
     def set_callable(self, obj, callable_):
-        obj._state[('callable', self)] = callable_(obj)
+        if callable_ is None:
+            self.initialize(obj)
+        else:
+            obj._state[('callable', self)] = callable_(obj)
+
+    def reset(self, obj):
+        try:
+            del obj._state[('callable', self)]
+        except KeyError:
+            pass
+        self.clear(obj)
     
+    def clear(self, obj):
+        try:
+            del obj.__dict__[self.key]
+        except KeyError:
+            pass
+            
     def get_callable(self, obj):
         if obj._state.has_key(('callable', self)):
-            return obj._state(('callable'), self)
+            return obj._state[('callable', self)]
         elif self.callable_ is not None:
             return self.callable_(obj)
+        else:
+            return None
+            
+    def blank_list(self):
+        return []
         
+    def initialize(self, obj):
+        if self.uselist:
+            l = ListInstrument(self, obj, self.blank_list())
+            obj.__dict__[self.key] = l
+            return l
+        else:
+            obj.__dict__[self.key] = None
+            return None
+            
     def get(self, obj, passive=False):
         """retrieves a value from the given object.  if a callable is assembled
         on this object's attribute, and passive is False, the callable will be executed
@@ -64,7 +99,7 @@ class SmartProperty(object):
                         return None
                     l = ListInstrument(self, obj, callable_())
                 else:
-                    l = ListInstrument(self, obj, [])
+                    l = ListInstrument(self, obj, self.blank_list())
                 obj.__dict__[self.key] = l
                 return l
             else:
@@ -91,6 +126,7 @@ class SmartProperty(object):
                         self.sethasparent(value, True)
                     if old is not None:
                         self.sethasparent(old, False)
+                self.do_value_changed(obj, old, value)
                 if self.extension is not None:
                     self.extension.set(event or self, obj, value, old)
             
@@ -106,6 +142,7 @@ class SmartProperty(object):
             if self.trackparent:
                 if old is not None:
                     self.sethasparent(old, False)
+            self.do_value_changed(obj, old, None)
             if self.extension is not None:
                 self.extension.delete(event or self, obj, old)
 
@@ -132,6 +169,7 @@ class SmartProperty(object):
         obj._state['modified'] = True
         if self.trackparent:
             self.sethasparent(value, True)
+        self.do_list_value_changed(obj, value, False)
         if self.extension is not None:
             self.extension.append(event or self, obj, value)
     
@@ -140,10 +178,10 @@ class SmartProperty(object):
         obj._state['modified'] = True
         if self.trackparent:
             self.sethasparent(value, False)
+        self.do_list_value_changed(obj, value, True)
         if self.extension is not None:
             self.extension.delete(event or self, obj, value)
                 
-        
 class ListInstrument(object):
     def __init__(self, attr, obj, data):
         self.attr = attr
@@ -176,7 +214,6 @@ class ListInstrument(object):
         self.attr.append_event(event, self.obj, item)
 
     def __delrecord(self, item, event=None):
-        print "delrecord", item, event, self.attr
         self.attr.remove_event(event, self.obj, item)
             
     def append_with_event(self, item, event):
@@ -191,11 +228,17 @@ class ListInstrument(object):
         self.data.append(item)
         self.__setrecord(item)
         
+    def append_unique(self, item):
+        if getattr(self, '_lastitem', None) is item:
+            return
+        self._lastitem = item
+        self.append(item)
+        
     def clear(self):
         if isinstance(self.data, dict):
             self.data.clear()
         else:
-            self.data[:] = []
+            self.data[:] = self.attr.blank_list()
     def __getitem__(self, i):
         return self.data[i]
     def __setitem__(self, i, item): 
@@ -349,10 +392,6 @@ class History(object):
 class AttributeManager(object):
     """maintains a set of per-attribute history container objects for a set of objects."""
 
-    def do_list_value_changed(self, obj, key, item, listval, isdelete):
-        pass
-    def do_value_changed(self, obj, key, oldvalue, newvalue):
-        pass
 
     def rollback(self, *obj):
         for o in obj:
@@ -398,59 +437,45 @@ class AttributeManager(object):
         obj._attr_state = {}
 
     def get_history(self, obj, key, **kwargs):
-        return obj.__class__.__dict__[key].get_history(obj, **kwargs)
+        return getattr(obj.__class__, key).get_history(obj, **kwargs)
 
     def trigger_history(self, obj, callable):
         """removes all ManagedAttribute instances from the given object and places the given callable
         as an attribute-wide "trigger", which will execute upon the next attribute access, after
         which the trigger is removed and the object re-initialized to receive new ManagedAttributes. """
+        self.reset_class_managed(obj.__class__)
         try:
-            del obj._managed_attributes
+            del obj._state['original']
         except KeyError:
             pass
-        obj._managed_trigger = callable
+        obj._state['trigger'] = callable
 
     def untrigger_history(self, obj):
-        del obj._managed_trigger
+        del obj._state['trigger']
         
     def has_trigger(self, obj):
-        return hasattr(obj, '_managed_trigger')
+        return obj._state.has_key('trigger')
             
     def reset_history(self, obj, key):
-        """removes the history object for the given attribute on the given object.
-        When the attribute is next accessed, a new container will be created via the
-        class-level history container definition."""
-        try:
-            x = self.attribute_history(obj)[key]
-            x.clear()
-            del self.attribute_history(obj)[key]
-        except KeyError:
-            try:
-                del obj.__dict__[key]
-            except KeyError:
-                pass
+        attr = getattr(obj.__class__, key)
+        attr.reset(obj)
         
     def reset_class_managed(self, class_):
-        for value in class_.__dict__.values():
-            if not isinstance(value, SmartProperty):
-                continue
-            delattr(class_, value.key)
+        for attr in self.managed_attributes(class_):
+            delattr(class_, attr.key)
 
     def is_class_managed(self, class_, key):
         return hasattr(class_, key) and isinstance(getattr(class_, key), SmartProperty)
 
-    def create_history(self, instance, key, uselist, callable_, **kwargs):
-        instance.__class__.__dict__[key].set_callable(instance, callable)
-
+    def create_history(self, obj, key, uselist, callable_, **kwargs):
+        getattr(obj.__class__, key).set_callable(obj, callable_)
+        
     def create_prop(self, class_, key, uselist, callable_, typecallable, **kwargs):
         """creates a scalar property object, defaulting to SmartProperty, which 
         will communicate change events back to this AttributeManager."""
         return SmartProperty(self, key, uselist, callable_, typecallable, **kwargs)
     
     def register_attribute(self, class_, key, uselist, callable_=None, **kwargs):
-        if not hasattr(class_, '_attribute_manager'):
-            class_._attribute_manager = self
-            
         if not hasattr(class_, '_state'):
             def _get_state(self):
                 try:

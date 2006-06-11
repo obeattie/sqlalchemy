@@ -250,6 +250,7 @@ class PropertyLoader(mapper.MapperProperty):
         sessionlib.global_attributes.register_attribute(class_, self.key, uselist = self.uselist, extension=self.attributeext, cascade=self.cascade,  trackparent=True, callable_=callable_)
 
     def _create_history(self, instance, callable_=None):
+        print "CH", callable_
         return sessionlib.global_attributes.create_history(instance, self.key, self.uselist, cascade=self.cascade,  trackparent=True, callable_=callable_)
         
     def _set_class_attribute(self, class_, key):
@@ -559,23 +560,19 @@ class EagerLoader(LazyLoader):
             LazyLoader.execute(self, session, instance, row, identitykey, imap, isnew)
             return
                 
-        if isnew:
-            # new row loaded from the database.  initialize a blank container on the instance.
-            # this will override any per-class lazyloading type of stuff.
-            h = self._create_history(instance)
             
         if not self.uselist:
             if isnew:
-                h.setattr_clean(self.mapper._instance(session, decorated_row, imap, None))
+                instance.__dict__[self.key] = self.mapper._instance(session, decorated_row, imap, None)
             else:
                 # call _instance on the row, even though the object has been created,
                 # so that we further descend into properties
                 self.mapper._instance(session, decorated_row, imap, None)
                 
             return
-        elif isnew:
-            result_list = h
         else:
+            if isnew:
+                setattr(instance, self.key, [])
             result_list = getattr(instance, self.key)
         self.mapper._instance(session, decorated_row, imap, result_list)
 

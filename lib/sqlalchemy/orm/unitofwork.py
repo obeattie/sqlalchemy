@@ -30,19 +30,13 @@ LOG = False
 
 class UOWProperty(attributes.SmartProperty):
     """overrides SmartProperty to provide ORM-specific accessors"""
-    def __init__(self, class_, *args, **kwargs):
-        super(UOWProperty, self).__init__(*args, **kwargs)
+    def __init__(self, manager, class_, key, uselist, callable_, typecallable, cascade=None, **kwargs):
+        super(UOWProperty, self).__init__(manager, key, uselist, callable_, typecallable, **kwargs)
         self.class_ = class_
-    property = property(lambda s:class_mapper(s.class_).props[s.key], doc="returns the MapperProperty object associated with this property")
-
-                
-class UOWListElement(object):
-    """overrides ListElement to provide unit-of-work "dirty" hooks when list attributes are modified,
-    plus specialzed append() method."""
-    def __init__(self, obj, key, data=None, cascade=None, **kwargs):
-        attributes.ListAttribute.__init__(self, obj, key, data=data, **kwargs)
         self.cascade = cascade
-    def do_value_changed(self, obj, key, item, listval, isdelete):
+    property = property(lambda s:class_mapper(s.class_).props[s.key], doc="returns the MapperProperty object associated with this property")
+                
+    def do_value_changed(self, obj, item, isdelete):
         sess = object_session(obj)
         if sess is not None:
             sess._register_changed(obj)
@@ -56,16 +50,7 @@ class UOWListElement(object):
                         prop = mapper.props[self.key]
                         ename = prop.mapper.entity_name
                         sess.save_or_update(item, entity_name=ename)
-    def append(self, item, _mapper_nohistory = False):
-        if _mapper_nohistory:
-            self.append_nohistory(item)
-        else:
-            attributes.ListAttribute.append(self, item)
 
-class UOWScalarElement(object):
-    def __init__(self, obj, key, cascade=None, **kwargs):
-        attributes.ScalarAttribute.__init__(self, obj, key, **kwargs)
-        self.cascade=cascade
     def do_value_changed(self, oldvalue, newvalue):
         obj = self.obj
         sess = object_session(obj)
@@ -86,15 +71,12 @@ class UOWAttributeManager(attributes.AttributeManager):
     def __init__(self):
         attributes.AttributeManager.__init__(self)
 
-    def create_prop(self, class_, key, uselist, callable_, **kwargs):
-        return UOWProperty(class_, self, key, uselist, callable_, **kwargs)
+    def create_prop(self, class_, key, uselist, callable_, typecallable, **kwargs):
+        """creates a scalar property object, defaulting to SmartProperty, which 
+        will communicate change events back to this AttributeManager."""
+        return UOWProperty(self, class_, key, uselist, callable_, typecallable, **kwargs)
 
-    def create_scalar(self, obj, key, **kwargs):
-        return UOWScalarElement(obj, key, **kwargs)
-        
-    def create_list(self, obj, key, list_, **kwargs):
-        return UOWListElement(obj, key, list_, **kwargs)
-        
+
 class UnitOfWork(object):
     """main UOW object which stores lists of dirty/new/deleted objects.  provides top-level "flush" functionality as well as the transaction boundaries with the SQLEngine(s) involved in a write operation."""
     def __init__(self, identity_map=None):

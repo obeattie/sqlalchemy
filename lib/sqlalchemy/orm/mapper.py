@@ -595,11 +595,11 @@ class Mapper(object):
         offset = kwargs.get('offset', None)
         populate_existing = kwargs.get('populate_existing', False)
         
-        result = util.HistoryArraySet()
+        result = util.UniqueList()
         if mappers:
             otherresults = []
             for m in mappers:
-                otherresults.append(util.HistoryArraySet())
+                otherresults.append(util.UniqueList())
                 
         imap = {}
         while True:
@@ -952,7 +952,7 @@ class Mapper(object):
                     prop.execute(session, instance, row, identitykey, imap, True)
             if self.extension.append_result(self, session, row, imap, result, instance, isnew, populate_existing=populate_existing) is EXT_PASS:
                 if result is not None:
-                    result.append_nohistory(instance)
+                    result.append_unique(instance)
             return instance
                     
         # look in result-local identitymap for it.
@@ -981,7 +981,7 @@ class Mapper(object):
             self.populate_instance(session, instance, row, identitykey, imap, isnew)
         if self.extension.append_result(self, session, row, imap, result, instance, isnew, populate_existing=populate_existing) is EXT_PASS:
             if result is not None:
-                result.append_nohistory(instance)
+                result.append_unique(instance)
         return instance
 
     def _create_instance(self, session):
@@ -1207,7 +1207,7 @@ class MapperExtension(object):
         current result set
         
         result - an instance of util.HistoryArraySet(), which may be an attribute on an
-        object if this is a related object load (lazy or eager).  use result.append_nohistory(value)
+        object if this is a related object load (lazy or eager).  use result.append_unique(value)
         to append objects to this list.
         
         instance - the object instance to be appended to the result
