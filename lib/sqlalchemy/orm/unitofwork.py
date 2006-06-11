@@ -36,7 +36,7 @@ class UOWProperty(attributes.SmartProperty):
         self.cascade = cascade
     property = property(lambda s:class_mapper(s.class_).props[s.key], doc="returns the MapperProperty object associated with this property")
                 
-    def do_value_changed(self, obj, item, isdelete):
+    def do_list_value_changed(self, obj, item, isdelete):
         sess = object_session(obj)
         if sess is not None:
             sess._register_changed(obj)
@@ -51,8 +51,7 @@ class UOWProperty(attributes.SmartProperty):
                         ename = prop.mapper.entity_name
                         sess.save_or_update(item, entity_name=ename)
 
-    def do_value_changed(self, oldvalue, newvalue):
-        obj = self.obj
+    def do_value_changed(self, obj, oldvalue, newvalue):
         sess = object_session(obj)
         if sess is not None:
             sess._register_changed(obj)

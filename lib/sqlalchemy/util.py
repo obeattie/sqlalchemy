@@ -209,11 +209,14 @@ class OrderedSet(sets.Set):
         if iterable is not None: 
           self._update(iterable)
 
-class UniqueList(OrderedSet):
-    def append_unique(self, item):
-        self.add(item)
-    def __eq__(self, other):
-        return list(self) == other
+class UniqueAppender(UserList.UserList):
+    def __init__(self, data):
+        self.data = data
+        self.set = Set()
+    def append(self, item):
+        if item not in self.set:
+            self.set.add(item)
+            self.data.append(item)
         
                 
 class HistoryArraySet(UserList.UserList):

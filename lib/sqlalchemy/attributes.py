@@ -85,7 +85,7 @@ class SmartProperty(object):
             obj.__dict__[self.key] = None
             return None
             
-    def get(self, obj, passive=False):
+    def get(self, obj, passive=False, raiseerr=True):
         """retrieves a value from the given object.  if a callable is assembled
         on this object's attribute, and passive is False, the callable will be executed
         and the resulting value will be set as the new value for this attribute."""
@@ -98,6 +98,9 @@ class SmartProperty(object):
                     if passive:
                         return None
                     l = ListInstrument(self, obj, callable_())
+                    orig = obj._state.get('original', None)
+                    if orig is not None:
+                        orig.commit_attribute(self, obj, l)
                 else:
                     l = ListInstrument(self, obj, self.blank_list())
                 obj.__dict__[self.key] = l
@@ -108,9 +111,15 @@ class SmartProperty(object):
                     if passive:
                         return None
                     obj.__dict__[self.key] = callable_()
+                    orig = obj._state.get('original', None)
+                    if orig is not None:
+                        orig.commit_attribute(self, obj)
                     return obj.__dict__[self.key]
                 else:
-                    raise AttributeError(self.key)
+                    if raiseerr:
+                        raise AttributeError(self.key)
+                    else:
+                        return None
         
     def set(self, event, obj, value):
         """sets a value on the given object."""
@@ -187,8 +196,8 @@ class ListInstrument(object):
         self.attr = attr
         self.__obj = weakref.ref(obj)
         self.key = attr.key
-        self.data = data
-        for x in data:
+        self.data = data or []
+        for x in self.data:
             self.__setrecord(x)
     def __getstate__(self):
         return {'key':self.key, 'obj':self.obj, 'data':self.data, 'attr':self.attr}
@@ -198,6 +207,13 @@ class ListInstrument(object):
         self.data = d['data']
         self.attr = d['attr']
         
+    def unique_appender(self):
+        try:
+            return self.__unique_appender
+        except AttributeError:
+            self.__unique_appender = util.UniqueAppender(self.data)
+            return self.__unique_appender
+                
     obj = property(lambda s:s.__obj())
     def unchanged_items(self):
         return self.attr.get_history(self.obj).unchanged_items
@@ -228,12 +244,6 @@ class ListInstrument(object):
         self.data.append(item)
         self.__setrecord(item)
         
-    def append_unique(self, item):
-        if getattr(self, '_lastitem', None) is item:
-            return
-        self._lastitem = item
-        self.append(item)
-        
     def clear(self):
         if isinstance(self.data, dict):
             self.data.clear()
@@ -245,8 +255,8 @@ class ListInstrument(object):
         self.__setrecord(item)
         self.data[i] = item
     def __delitem__(self, i):
-        del self.data[i]
         self.__delrecord(self.data[i])
+        del self.data[i]
     def __lt__(self, other): return self.data <  self.__cast(other)
     def __le__(self, other): return self.data <= self.__cast(other)
     def __eq__(self, other): return self.data == self.__cast(other)
@@ -330,12 +340,17 @@ class Original(object):
     def __init__(self, manager, obj):
         self.data = {}
         for attr in manager.managed_attributes(obj.__class__):
-            if obj.__dict__.has_key(attr.key):
-                if attr.uselist:
-                    self.data[attr.key] = obj.__dict__[attr.key][:]
-                else:
-                    self.data[attr.key] = obj.__dict__[attr.key]
-                    
+            self.commit_attribute(attr, obj)
+
+    def commit_attribute(self, attr, obj, value=None):
+        if value:
+          self.data[attr.key] = value  
+        elif obj.__dict__.has_key(attr.key):
+            if attr.uselist:
+                self.data[attr.key] = obj.__dict__[attr.key][:]
+            else:
+                self.data[attr.key] = obj.__dict__[attr.key]
+                        
     def rollback(self, manager, obj):
         for attr in manager.managed_attributes(obj.__class__):
             if self.data.has_key(attr.key):
@@ -355,37 +370,44 @@ class History(object):
         self.attr = attr
         orig = obj._state.get('original', None)
         if orig is not None:
-            original = orig.data[attr.key]
+            original = orig.data.get(attr.key)
         else:
             original = None
-        
-        current = attr.get(obj, passive=passive)
+
+        current = attr.get(obj, passive=passive, raiseerr=False)
         
         if attr.uselist:
-            s = util.Set(original)
-            self.added_items = []
-            self.unchanged_items = []
-            self.deleted_items = []
-            for a in current:
-                if a in s:
-                    self.unchanged_items.append(a)
-                else:
-                    self.added_items.append(a)
+            s = util.Set(original or [])
+            self._added_items = []
+            self._unchanged_items = []
+            self._deleted_items = []
+            if current:
+                for a in current:
+                    if a in s:
+                        self._unchanged_items.append(a)
+                    else:
+                        self._added_items.append(a)
             for a in s:
-                if a not in self.unchanged_items:
-                    self.deleted_items.append(a)    
+                if a not in self._unchanged_items:
+                    self._deleted_items.append(a)    
         else:
             if current is original:
-                self.unchanged_items = [current]
-                self.added_items = []
-                self.deleted_items = []
+                self._unchanged_items = [current]
+                self._added_items = []
+                self._deleted_items = []
             else:
-                self.added_items = [current]
+                self._added_items = [current]
                 if original is not None:
-                    self.deleted_items = [original]
+                    self._deleted_items = [original]
                 else:
-                    self.deleted_items = []
-                self.unchanged_items = []
+                    self._deleted_items = []
+                self._unchanged_items = []
+    def added_items(self):
+        return self._added_items
+    def unchanged_items(self):
+        return self._unchanged_items
+    def deleted_items(self):
+        return self._deleted_items
     def hasparent(self, obj):
         return self.attr.hasparent(obj)
         
@@ -411,7 +433,8 @@ class AttributeManager(object):
     def commit(self, *obj):
         for o in obj:
             o._state['original'] = Original(self, o)
-    
+            o._state['modified'] = False
+            
     def managed_attributes(self, class_):
         if not isinstance(class_, type):
             raise repr(class_) + " is not a type"
@@ -439,6 +462,16 @@ class AttributeManager(object):
     def get_history(self, obj, key, **kwargs):
         return getattr(obj.__class__, key).get_history(obj, **kwargs)
 
+    def get_as_list(self, obj, key, passive=False):
+        attr = getattr(obj.__class__, key)
+        x = attr.get(obj, passive=passive)
+        if x is None:
+            return []
+        elif attr.uselist:
+            return x
+        else:
+            return [x]
+            
     def trigger_history(self, obj, callable):
         """removes all ManagedAttribute instances from the given object and places the given callable
         as an attribute-wide "trigger", which will execute upon the next attribute access, after

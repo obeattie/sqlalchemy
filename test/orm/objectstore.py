@@ -821,6 +821,7 @@ class SaveTest(SessionTest):
         u[0].addresses[0].email_address='hi'
         
         # insure that upon commit, the new mapper with the address relation is used
+        ctx.current.echo_uow=True
         self.assert_sql(db, lambda: ctx.current.flush(), 
                 [
                     (

@@ -595,11 +595,11 @@ class Mapper(object):
         offset = kwargs.get('offset', None)
         populate_existing = kwargs.get('populate_existing', False)
         
-        result = util.UniqueList()
+        result = util.UniqueAppender([])
         if mappers:
             otherresults = []
             for m in mappers:
-                otherresults.append(util.UniqueList())
+                otherresults.append(util.UniqueAppender([]))
                 
         imap = {}
         while True:
@@ -615,10 +615,11 @@ class Mapper(object):
         # store new stuff in the identity map
         for value in imap.values():
             session._register_clean(value)
-
+            
         if mappers:
-            result = [result] + otherresults
-        return result
+            return [result.data] + [o.data for o in otherresults]
+        else:
+            return result.data
         
     def identity_key(self, primary_key):
         """returns the instance key for the given identity value.  this is a global tracking object used by the Session, and is usually available off a mapped object as instance._instance_key."""
@@ -952,7 +953,7 @@ class Mapper(object):
                     prop.execute(session, instance, row, identitykey, imap, True)
             if self.extension.append_result(self, session, row, imap, result, instance, isnew, populate_existing=populate_existing) is EXT_PASS:
                 if result is not None:
-                    result.append_unique(instance)
+                    result.append(instance)
             return instance
                     
         # look in result-local identitymap for it.
@@ -981,7 +982,7 @@ class Mapper(object):
             self.populate_instance(session, instance, row, identitykey, imap, isnew)
         if self.extension.append_result(self, session, row, imap, result, instance, isnew, populate_existing=populate_existing) is EXT_PASS:
             if result is not None:
-                result.append_unique(instance)
+                result.append(instance)
         return instance
 
     def _create_instance(self, session):
@@ -1207,8 +1208,7 @@ class MapperExtension(object):
         current result set
         
         result - an instance of util.HistoryArraySet(), which may be an attribute on an
-        object if this is a related object load (lazy or eager).  use result.append_unique(value)
-        to append objects to this list.
+        object if this is a related object load (lazy or eager).  
         
         instance - the object instance to be appended to the result
         

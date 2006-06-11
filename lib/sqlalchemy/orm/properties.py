@@ -163,9 +163,9 @@ class PropertyLoader(mapper.MapperProperty):
     def cascade_callable(self, type, object, callable_, recursive):
         if not type in self.cascade:
             return
-        childlist = sessionlib.global_attributes.get_history(object, self.key, passive=True)
+        
         mapper = self.mapper.primary_mapper()
-        for c in childlist.added_items() + childlist.deleted_items() + childlist.unchanged_items():
+        for c in sessionlib.global_attributes.get_as_list(object, self.key, passive=True):
             if c is not None and c not in recursive:
                 recursive.add(c)
                 callable_(c, mapper.entity_name)
@@ -572,8 +572,8 @@ class EagerLoader(LazyLoader):
             return
         else:
             if isnew:
-                setattr(instance, self.key, [])
-            result_list = getattr(instance, self.key)
+                l = getattr(instance.__class__, self.key).initialize(instance)
+            result_list = instance.__dict__[self.key].unique_appender()
         self.mapper._instance(session, decorated_row, imap, result_list)
 
     def _create_decorator_row(self):
