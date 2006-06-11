@@ -88,7 +88,7 @@ class AttributesTest(PersistTest):
         print repr(u.__dict__)
         print repr(u.addresses[0].__dict__)
         self.assert_(u.user_id == 7 and u.user_name == 'john' and u.addresses[0].email_address == 'lala@123.com')
-        self.assert_(len(u.addresses.unchanged_items()) == 1)
+        self.assert_(len(manager.get_history(u, 'addresses').unchanged_items()) == 1)
 
     def testbackref(self):
         class Student(object):pass
@@ -178,6 +178,34 @@ class AttributesTest(PersistTest):
         assert y.element == 'this is the bar attr'
         assert x.element2 == 'this is the shared attr'
         assert y.element2 == 'this is the shared attr'
+
+    def testlazyhistory(self):
+        """tests that history functions work with lazy-loading attributes"""
+        class Foo(object):pass
+        class Bar(object):
+            def __init__(self, id):
+                self.id = id
+            def __repr__(self):
+                return "Bar: id %d" % self.id
+                
+        manager = attributes.AttributeManager()
+
+        def func1():
+            return "this is func 1"
+        def func2():
+            return [Bar(1), Bar(2), Bar(3)]
+
+        manager.register_attribute(Foo, 'col1', uselist=False, callable_=lambda o:func1)
+        manager.register_attribute(Foo, 'col2', uselist=True, callable_=lambda o:func2)
+        manager.register_attribute(Bar, 'id', uselist=False)
+
+        x = Foo()
+        manager.commit(x)
+        x.col2.append(Bar(4))
+        h = manager.get_history(x, 'col2')
+        print h.added_items()
+        print h.unchanged_items()
+
         
     def testparenttrack(self):    
         class Foo(object):pass

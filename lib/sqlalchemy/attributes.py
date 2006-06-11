@@ -343,13 +343,16 @@ class Original(object):
             self.commit_attribute(attr, obj)
 
     def commit_attribute(self, attr, obj, value=None):
-        if value:
-          self.data[attr.key] = value  
-        elif obj.__dict__.has_key(attr.key):
             if attr.uselist:
-                self.data[attr.key] = obj.__dict__[attr.key][:]
+                if value:
+                    self.data[attr.key] = value[:]
+                elif obj.__dict__.has_key(attr.key):
+                    self.data[attr.key] = obj.__dict__[attr.key][:]
             else:
-                self.data[attr.key] = obj.__dict__[attr.key]
+                if value:
+                    self.data[attr.key] = value
+                elif obj.__dict__.has_key(attr.key):
+                    self.data[attr.key] = obj.__dict__[attr.key]
                         
     def rollback(self, manager, obj):
         for attr in manager.managed_attributes(obj.__class__):
