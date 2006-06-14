@@ -573,7 +573,9 @@ class EagerLoader(LazyLoader):
         else:
             if isnew:
                 l = getattr(instance.__class__, self.key).initialize(instance)
-            result_list = instance.__dict__[self.key].unique_appender()
+                appender = util.UniqueAppender(l.data)
+                imap['_scratch'][(instance, self.key)] = appender
+            result_list = imap['_scratch'][(instance, self.key)]
         self.mapper._instance(session, decorated_row, imap, result_list)
 
     def _create_decorator_row(self):

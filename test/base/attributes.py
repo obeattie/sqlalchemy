@@ -138,6 +138,10 @@ class AttributesTest(PersistTest):
         p4.blog = b
         self.assert_(b.posts == [p1, p2, p4])
         
+        p4.blog = b
+        p4.blog = b
+        self.assert_(b.posts == [p1, p2, p4])
+
 
         class Port(object):pass
         class Jack(object):pass

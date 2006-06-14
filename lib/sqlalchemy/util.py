@@ -217,8 +217,10 @@ class UniqueAppender(UserList.UserList):
         if item not in self.set:
             self.set.add(item)
             self.data.append(item)
-        
-                
+            return True
+        else:
+            return False
+            
 class HistoryArraySet(UserList.UserList):
     """extends a UserList to provide unique-set functionality as well as history-aware 
     functionality, including information about what list elements were modified 

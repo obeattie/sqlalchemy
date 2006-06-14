@@ -97,12 +97,12 @@ class SmartProperty(object):
                 if callable_ is not None:
                     if passive:
                         return None
-                    l = ListInstrument(self, obj, callable_())
+                    l = ListInstrument(self, obj, callable_(), init=False)
                     orig = obj._state.get('original', None)
                     if orig is not None:
                         orig.commit_attribute(self, obj, l)
                 else:
-                    l = ListInstrument(self, obj, self.blank_list())
+                    l = ListInstrument(self, obj, self.blank_list(), init=False)
                 obj.__dict__[self.key] = l
                 return l
             else:
@@ -155,6 +155,13 @@ class SmartProperty(object):
             if self.extension is not None:
                 self.extension.delete(event or self, obj, old)
 
+    def append_unique(self, event, obj, value):
+        if self.uselist:
+            if event is not self:
+                self.get(obj).append_with_event(value, event)
+        else:
+            self.set(event, obj, value)
+            
     def append(self, event, obj, value):
         """appends an element to a list based element or sets a scalar based element to the given value.
         Used by GenericBackrefExtension to "append" an item independent of list/scalar semantics."""
@@ -192,13 +199,14 @@ class SmartProperty(object):
             self.extension.delete(event or self, obj, value)
                 
 class ListInstrument(object):
-    def __init__(self, attr, obj, data):
+    def __init__(self, attr, obj, data, init=True):
         self.attr = attr
         self.__obj = weakref.ref(obj)
         self.key = attr.key
-        self.data = data or []
-        for x in self.data:
-            self.__setrecord(x)
+        self.data = data or [] 
+        if init:
+            for x in self.data:
+                self.__setrecord(x)
     def __getstate__(self):
         return {'key':self.key, 'obj':self.obj, 'data':self.data, 'attr':self.attr}
     def __setstate__(self, d):
@@ -207,20 +215,23 @@ class ListInstrument(object):
         self.data = d['data']
         self.attr = d['attr']
         
-    def unique_appender(self):
-        try:
-            return self.__unique_appender
-        except AttributeError:
-            self.__unique_appender = util.UniqueAppender(self.data)
-            return self.__unique_appender
-                
     obj = property(lambda s:s.__obj())
+
     def unchanged_items(self):
+        """deprecated"""
         return self.attr.get_history(self.obj).unchanged_items
+    def added_items(self):
+        """deprecated"""
+        return self.attr.get_history(self.obj).added_items
+    def deleted_items(self):
+        """deprecated"""
+        return self.attr.get_history(self.obj).deleted_items
+
     def __iter__(self):
         return iter(self.data)
     def __repr__(self):
-        return repr(self.data)    
+        return repr(self.data)
+        
     def __getattr__(self, attr):
         """proxies unknown HistoryArraySet methods and attributes to the underlying
         data array.  this allows custom list classes to be used."""
@@ -228,35 +239,39 @@ class ListInstrument(object):
 
     def __setrecord(self, item, event=None):
         self.attr.append_event(event, self.obj, item)
+        return True
 
     def __delrecord(self, item, event=None):
         self.attr.remove_event(event, self.obj, item)
-            
-    def append_with_event(self, item, event):
-        self.data.append(item)
-        self.__setrecord(item, event)
+        return True
         
-    def remove_with_event(self, item, event):
-        self.data.remove(item)
-        self.__delrecord(item, event)
-            
-    def append(self, item): 
+    def append_with_event(self, item, event):
+        self.__setrecord(item, event)
         self.data.append(item)
+
+    def remove_with_event(self, item, event):
+        self.__delrecord(item, event)
+        self.data.remove(item)
+            
+    def append(self, item):
         self.__setrecord(item)
+        self.data.append(item)
         
     def clear(self):
         if isinstance(self.data, dict):
             self.data.clear()
         else:
             self.data[:] = self.attr.blank_list()
+            
     def __getitem__(self, i):
         return self.data[i]
     def __setitem__(self, i, item): 
         self.__setrecord(item)
         self.data[i] = item
     def __delitem__(self, i):
-        self.__delrecord(self.data[i])
         del self.data[i]
+        self.__delrecord(self.data[i], None)
+
     def __lt__(self, other): return self.data <  self.__cast(other)
     def __le__(self, other): return self.data <= self.__cast(other)
     def __eq__(self, other): return self.data == self.__cast(other)
@@ -279,23 +294,23 @@ class ListInstrument(object):
         else:
             l = list(other)
         [self.__delrecord(x) for x in self.data[i:]]
-        [self.__setrecord(a) for a in l]
-        self.data[i:] = l
+        g = [a for a in l if self.__setrecord(a)]
+        self.data[i:] = g
     def __delslice__(self, i, j):
         i = max(i, 0); j = max(j, 0)
         for a in self.data[i:j]:
             self.__delrecord(a)
         del self.data[i:j]
     def insert(self, i, item): 
-        self.__setrecord(item)
-        self.data.insert(i, item)
+        if self.__setrecord(item):
+            self.data.insert(i, item)
     def pop(self, i=-1):
-        item = self.data.pop(i)
+        item = self.data[i]
         self.__delrecord(item)
-        return item
+        return self.data.pop(i)
     def remove(self, item): 
-        self.data.remove(item)
         self.__delrecord(item)
+        self.data.remove(item)
     def extend(self, item_list):
         for item in item_list:
             self.append(item)            
@@ -325,6 +340,8 @@ class GenericBackrefExtension(AttributeExtension):
     def __init__(self, key):
         self.key = key
     def set(self, event, obj, child, oldchild):
+        if oldchild is child:
+            return
         if oldchild is not None:
             oldchild.__class__.__dict__[self.key].remove(event, oldchild, obj)
         if child is not None:
@@ -342,14 +359,14 @@ class Original(object):
         for attr in manager.managed_attributes(obj.__class__):
             self.commit_attribute(attr, obj)
 
-    def commit_attribute(self, attr, obj, value=None):
+    def commit_attribute(self, attr, obj, value=False):
             if attr.uselist:
-                if value:
+                if value is not False:
                     self.data[attr.key] = value[:]
                 elif obj.__dict__.has_key(attr.key):
                     self.data[attr.key] = obj.__dict__[attr.key][:]
             else:
-                if value:
+                if value is not False:
                     self.data[attr.key] = value
                 elif obj.__dict__.has_key(attr.key):
                     self.data[attr.key] = obj.__dict__[attr.key]

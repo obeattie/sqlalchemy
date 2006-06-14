@@ -602,6 +602,8 @@ class Mapper(object):
                 otherresults.append(util.UniqueAppender([]))
                 
         imap = {}
+        scratch = {}
+        imap['_scratch'] = scratch
         while True:
             row = cursor.fetchone()
             if row is None:
@@ -614,6 +616,8 @@ class Mapper(object):
                 
         # store new stuff in the identity map
         for value in imap.values():
+            if value is scratch:
+                continue
             session._register_clean(value)
             
         if mappers:

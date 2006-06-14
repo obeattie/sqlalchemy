@@ -257,13 +257,13 @@ class M2MTest2(testbase.AssertMixin):
         Course.mapper = mapper(Course, courseTbl, properties = {
             'students': relation(Student.mapper, enrolTbl, lazy=True, backref='courses')
         })
+        objectstore.current.echo_uow=True
         s1 = Student('Student1')
         c1 = Course('Course1')
         c2 = Course('Course2')
         c3 = Course('Course3')
         s1.courses.append(c1)
         s1.courses.append(c2)
-        c1.students.append(s1)
         c3.students.append(s1)
         self.assert_(len(s1.courses) == 3)
         self.assert_(len(c1.students) == 1)
