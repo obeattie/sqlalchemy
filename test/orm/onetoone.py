@@ -78,7 +78,9 @@ class O2OTest(testbase.AssertMixin):
         j=ctx.current.query(Jack).get(jid)
         p=ctx.current.query(Port).get(pid)
 
+        print "READY......"
         j.port=None
+        print "JACK:", p.jack
         self.assert_(p.jack is None)
         ctx.current.flush()
 

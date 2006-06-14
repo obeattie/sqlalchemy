@@ -10,7 +10,8 @@ import weakref
 from UserList import UserList
 
 class SmartProperty(object):
-    """a property object that instruments attribute access on object instances."""
+    """a property object that instruments attribute access on object instances.  All methods correspond to 
+    a single attribute on a particular class."""
     def __init__(self, manager, key, uselist, callable_, typecallable, trackparent=False, extension=None, **kwargs):
         self.manager = manager
         self.key = key
@@ -38,6 +39,8 @@ class SmartProperty(object):
         pass
 
     def hasparent(self, item):
+        """returns True if the given item is attached to a parent object 
+        via the attribute represented by this SmartProperty."""
         return item._state.get(('hasparent', self))
         
     def sethasparent(self, item, value):
@@ -45,6 +48,8 @@ class SmartProperty(object):
             item._state[('hasparent', self)] = value
 
     def get_history(self, obj, passive=False):
+        """returns a new History object for the given object for this 
+        SmartProperty's attribute."""
         return History(self, obj, passive=passive)
 
     def set_callable(self, obj, callable_):
@@ -112,9 +117,7 @@ class SmartProperty(object):
             if obj._state.has_key('trigger'):
                 trig = obj._state['trigger']
                 del obj._state['trigger']
-                print "RUN TRIGGER"
                 trig()
-                print "DICT:", obj.__dict__
                 try:
                     return obj.__dict__[self.key]
                 except KeyError:
@@ -159,7 +162,7 @@ class SmartProperty(object):
                 trig()
             if self.uselist:
                 value = ListInstrument(self, obj, value)
-            old = obj.__dict__.get(self.key, None)
+            old = self.get(obj, raiseerr=False)
             obj.__dict__[self.key] = value
             state['modified'] = True
             if not self.uselist:
@@ -301,12 +304,18 @@ class ListInstrument(object):
             
     def __getitem__(self, i):
         return self.data[i]
-    def __setitem__(self, i, item): 
-        self.__setrecord(item)
-        self.data[i] = item
+    def __setitem__(self, i, item):
+        if isinstance(i, slice):
+            self.__setslice__(i.start, i.stop, item)
+        else:
+            self.__setrecord(item)
+            self.data[i] = item
     def __delitem__(self, i):
-        self.__delrecord(self.data[i], None)
-        del self.data[i]
+        if isinstance(i, slice):
+            self.__delslice__(i.start, i.stop)
+        else:
+            self.__delrecord(self.data[i], None)
+            del self.data[i]
 
     def __lt__(self, other): return self.data <  self.__cast(other)
     def __le__(self, other): return self.data <= self.__cast(other)
@@ -323,14 +332,8 @@ class ListInstrument(object):
     def __len__(self): return len(self.data)
     def __setslice__(self, i, j, other):
         i = max(i, 0); j = max(j, 0)
-        if isinstance(other, UserList.UserList):
-            l = other.data
-        elif isinstance(other, type(self.data)):
-            l = other
-        else:
-            l = list(other)
         [self.__delrecord(x) for x in self.data[i:]]
-        g = [a for a in l if self.__setrecord(a)]
+        g = [a for a in list(other) if self.__setrecord(a)]
         self.data[i:] = g
     def __delslice__(self, i, j):
         i = max(i, 0); j = max(j, 0)
@@ -409,7 +412,6 @@ class Original(object):
                         
     def rollback(self, manager, obj):
         for attr in manager.managed_attributes(obj.__class__):
-            print "RLLATTR", attr.key
             if self.data.has_key(attr.key):
                 if attr.uselist:
                     obj.__dict__[attr.key][:] = self.data[attr.key]
@@ -432,7 +434,11 @@ class History(object):
             original = None
 
         current = attr.get(obj, passive=passive, raiseerr=False)
-        
+        if attr.uselist:
+            self._current = current
+        else:
+            self._current = [current]
+
         if attr.uselist:
             s = util.Set(original or [])
             self._added_items = []
@@ -459,6 +465,8 @@ class History(object):
                 else:
                     self._deleted_items = []
                 self._unchanged_items = []
+    def __iter__(self):
+        return iter(self._current)
     def added_items(self):
         return self._added_items
     def unchanged_items(self):
@@ -466,6 +474,7 @@ class History(object):
     def deleted_items(self):
         return self._deleted_items
     def hasparent(self, obj):
+        """deprecated.  this should be called directly from the appropriate SmartProperty object."""
         return self.attr.hasparent(obj)
         
 class AttributeManager(object):
@@ -473,6 +482,8 @@ class AttributeManager(object):
 
 
     def rollback(self, *obj):
+        """retrieves the committed history for each object in the given list, and rolls back the attributes
+        each instance to their original value."""
         for o in obj:
             orig = o._state.get('original')
             if orig is not None:
@@ -493,6 +504,7 @@ class AttributeManager(object):
             o._state['modified'] = False
             
     def managed_attributes(self, class_):
+        """returns an iterator of all SmartProperty objects associated with the given class."""
         if not isinstance(class_, type):
             raise repr(class_) + " is not a type"
         for value in class_.__dict__.values():

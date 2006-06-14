@@ -321,6 +321,7 @@ class AssociationDP(OneToManyDP):
             if not delete:
                 tosave = util.OrderedDict()
                 for child in childlist:
+                    print child.__class__
                     self._synchronize(obj, child, None, False)
                     key = self.mapper.instance_key(child)
                     tosave[key] = child
