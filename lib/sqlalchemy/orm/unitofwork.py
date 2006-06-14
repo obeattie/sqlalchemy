@@ -102,11 +102,9 @@ class UnitOfWork(object):
         self.identity_map[key] = obj
 
     def refresh(self, sess, obj):
-        self.rollback_object(obj)
         sess.query(obj.__class__)._get(obj._instance_key, reload=True)
 
     def expire(self, sess, obj):
-        self.rollback_object(obj)
         def exp():
             sess.query(obj.__class__)._get(obj._instance_key, reload=True)
         global_attributes.trigger_history(obj, exp)

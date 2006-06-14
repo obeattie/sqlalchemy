@@ -10,6 +10,7 @@ import weakref
 from UserList import UserList
 
 class SmartProperty(object):
+    """a property object that instruments attribute access on object instances."""
     def __init__(self, manager, key, uselist, callable_, typecallable, trackparent=False, extension=None, **kwargs):
         self.manager = manager
         self.key = key
@@ -50,9 +51,12 @@ class SmartProperty(object):
         if callable_ is None:
             self.initialize(obj)
         else:
-            obj._state[('callable', self)] = callable_(obj)
+            obj._state[('callable', self)] = callable_
 
     def reset(self, obj):
+        """removes any per-instance callable functions corresponding to this SmartProperty's attribute
+        from the given object, and removes this SmartProperty's
+        attribute from the given object's dictionary."""
         try:
             del obj._state[('callable', self)]
         except KeyError:
@@ -60,6 +64,7 @@ class SmartProperty(object):
         self.clear(obj)
     
     def clear(self, obj):
+        """removes this SmartProperty's attribute from the given object's dictionary."""
         try:
             del obj.__dict__[self.key]
         except KeyError:
@@ -74,8 +79,20 @@ class SmartProperty(object):
             return None
             
     def blank_list(self):
-        return []
-        
+        if self.typecallable is not None:
+            return self.typecallable()
+        else:
+            return []
+
+    def _adapt_list(self, data):
+        if self.typecallable is not None:
+            t = self.typecallable()
+            if data is not None:
+                [t.append(x) for x in data]
+            return t
+        else:
+            return data
+            
     def initialize(self, obj):
         if self.uselist:
             l = ListInstrument(self, obj, self.blank_list())
@@ -92,12 +109,23 @@ class SmartProperty(object):
         try:
             return obj.__dict__[self.key]
         except KeyError:
+            if obj._state.has_key('trigger'):
+                trig = obj._state['trigger']
+                del obj._state['trigger']
+                print "RUN TRIGGER"
+                trig()
+                print "DICT:", obj.__dict__
+                try:
+                    return obj.__dict__[self.key]
+                except KeyError:
+                    pass
+                    
             if self.uselist:
                 callable_ = self.get_callable(obj)
                 if callable_ is not None:
                     if passive:
                         return None
-                    l = ListInstrument(self, obj, callable_(), init=False)
+                    l = ListInstrument(self, obj, self._adapt_list(callable_()), init=False)
                     orig = obj._state.get('original', None)
                     if orig is not None:
                         orig.commit_attribute(self, obj, l)
@@ -110,7 +138,7 @@ class SmartProperty(object):
                 if callable_ is not None:
                     if passive:
                         return None
-                    obj.__dict__[self.key] = callable_()
+                    obj.__dict__[self.key] = self._adapt_list(callable_())
                     orig = obj._state.get('original', None)
                     if orig is not None:
                         orig.commit_attribute(self, obj)
@@ -124,11 +152,16 @@ class SmartProperty(object):
     def set(self, event, obj, value):
         """sets a value on the given object."""
         if event is not self:
+            state = obj._state
+            if state.has_key('trigger'):
+                trig = state['trigger']
+                del state['trigger']
+                trig()
             if self.uselist:
                 value = ListInstrument(self, obj, value)
             old = obj.__dict__.get(self.key, None)
             obj.__dict__[self.key] = value
-            obj._state['modified'] = True
+            state['modified'] = True
             if not self.uselist:
                 if self.trackparent:
                     if value is not None:
@@ -155,13 +188,6 @@ class SmartProperty(object):
             if self.extension is not None:
                 self.extension.delete(event or self, obj, old)
 
-    def append_unique(self, event, obj, value):
-        if self.uselist:
-            if event is not self:
-                self.get(obj).append_with_event(value, event)
-        else:
-            self.set(event, obj, value)
-            
     def append(self, event, obj, value):
         """appends an element to a list based element or sets a scalar based element to the given value.
         Used by GenericBackrefExtension to "append" an item independent of list/scalar semantics."""
@@ -199,11 +225,13 @@ class SmartProperty(object):
             self.extension.delete(event or self, obj, value)
                 
 class ListInstrument(object):
+    """instruments a list-based attribute.  append and remove operations will fire off events to the 
+    SmartProperty that manages the object's attribute."""
     def __init__(self, attr, obj, data, init=True):
         self.attr = attr
         self.__obj = weakref.ref(obj)
         self.key = attr.key
-        self.data = data or [] 
+        self.data = data or attr.blank_list()
         if init:
             for x in self.data:
                 self.__setrecord(x)
@@ -248,14 +276,22 @@ class ListInstrument(object):
     def append_with_event(self, item, event):
         self.__setrecord(item, event)
         self.data.append(item)
-
+        
+    def append_without_event(self, item):
+        self.data.append(item)
+        
     def remove_with_event(self, item, event):
         self.__delrecord(item, event)
         self.data.remove(item)
             
-    def append(self, item):
-        self.__setrecord(item)
-        self.data.append(item)
+    def append(self, item, _mapper_nohistory=False):
+        """fires off dependent events, and appends the given item to the underlying list.
+        _mapper_nohistory is a backwards compatibility hack; call append_without_event instead."""
+        if _mapper_nohistory:
+            self.append_without_event(item)
+        else:
+            self.__setrecord(item)
+            self.data.append(item)
         
     def clear(self):
         if isinstance(self.data, dict):
@@ -269,8 +305,8 @@ class ListInstrument(object):
         self.__setrecord(item)
         self.data[i] = item
     def __delitem__(self, i):
-        del self.data[i]
         self.__delrecord(self.data[i], None)
+        del self.data[i]
 
     def __lt__(self, other): return self.data <  self.__cast(other)
     def __le__(self, other): return self.data <= self.__cast(other)
@@ -343,13 +379,13 @@ class GenericBackrefExtension(AttributeExtension):
         if oldchild is child:
             return
         if oldchild is not None:
-            oldchild.__class__.__dict__[self.key].remove(event, oldchild, obj)
+            getattr(oldchild.__class__, self.key).remove(event, oldchild, obj)
         if child is not None:
-            child.__class__.__dict__[self.key].append(event, child, obj)
+            getattr(child.__class__, self.key).append(event, child, obj)
     def append(self, event, obj, child):
-        child.__class__.__dict__[self.key].append(event, child, obj)
+        getattr(child.__class__, self.key).append(event, child, obj)
     def delete(self, event, obj, child):
-        child.__class__.__dict__[self.key].remove(event, child, obj)
+        getattr(child.__class__, self.key).remove(event, child, obj)
 
 class Original(object):
     """stores the original state of an object when the commit() method on the attribute manager
@@ -362,9 +398,9 @@ class Original(object):
     def commit_attribute(self, attr, obj, value=False):
             if attr.uselist:
                 if value is not False:
-                    self.data[attr.key] = value[:]
+                    self.data[attr.key] = [x for x in value]
                 elif obj.__dict__.has_key(attr.key):
-                    self.data[attr.key] = obj.__dict__[attr.key][:]
+                    self.data[attr.key] = [x for x in obj.__dict__[attr.key]]
             else:
                 if value is not False:
                     self.data[attr.key] = value
@@ -373,6 +409,7 @@ class Original(object):
                         
     def rollback(self, manager, obj):
         for attr in manager.managed_attributes(obj.__class__):
+            print "RLLATTR", attr.key
             if self.data.has_key(attr.key):
                 if attr.uselist:
                     obj.__dict__[attr.key][:] = self.data[attr.key]
@@ -470,7 +507,6 @@ class AttributeManager(object):
         # currently a no-op since the state of the object is attached to the object itself
         pass
 
-
     def init_attr(self, obj):
         """sets up the _managed_attributes dictionary on an object.  this happens anyway 
         when a particular attribute is first accessed on the object regardless
@@ -483,6 +519,11 @@ class AttributeManager(object):
         return getattr(obj.__class__, key).get_history(obj, **kwargs)
 
     def get_as_list(self, obj, key, passive=False):
+        """returns an attribute of the given name from the given object.  if the attribute
+        is a scalar, returns it as a single-item list, otherwise returns the list based attribute.
+        if the 'passive' keyword argument is True,
+        and the attribute's value is to be produced by an unexecuted callable, the callable is not
+        executed and a blank list is returned. """
         attr = getattr(obj.__class__, key)
         x = attr.get(obj, passive=passive)
         if x is None:
@@ -493,10 +534,10 @@ class AttributeManager(object):
             return [x]
             
     def trigger_history(self, obj, callable):
-        """removes all ManagedAttribute instances from the given object and places the given callable
+        """clears all managed object attributes and places the given callable
         as an attribute-wide "trigger", which will execute upon the next attribute access, after
-        which the trigger is removed and the object re-initialized to receive new ManagedAttributes. """
-        self.reset_class_managed(obj.__class__)
+        which the trigger is removed."""
+        self.__clear(obj)
         try:
             del obj._state['original']
         except KeyError:
@@ -504,23 +545,29 @@ class AttributeManager(object):
         obj._state['trigger'] = callable
 
     def untrigger_history(self, obj):
+        """removes a trigger function set by trigger_history.  does not restore the previous state of the object."""
         del obj._state['trigger']
         
     def has_trigger(self, obj):
+        """returns True if the given object has a trigger function set by trigger_history()."""
         return obj._state.has_key('trigger')
             
     def reset_history(self, obj, key):
+        """removes any per-instance callable functions corresponding to given attribute key
+        from the given object, and removes this attribute from the given object's dictionary."""
         attr = getattr(obj.__class__, key)
         attr.reset(obj)
         
     def reset_class_managed(self, class_):
+        """removes all SmartProperty property objects from the given class."""
         for attr in self.managed_attributes(class_):
             delattr(class_, attr.key)
 
     def is_class_managed(self, class_, key):
+        """returns True if the given key correponds to an instrumented property on the given class."""
         return hasattr(class_, key) and isinstance(getattr(class_, key), SmartProperty)
 
-    def create_history(self, obj, key, uselist, callable_, **kwargs):
+    def create_history(self, obj, key, uselist, callable_=None, **kwargs):
         getattr(obj.__class__, key).set_callable(obj, callable_)
         
     def create_prop(self, class_, key, uselist, callable_, typecallable, **kwargs):

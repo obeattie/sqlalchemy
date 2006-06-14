@@ -58,12 +58,8 @@ class HistoryTest(SessionTest):
 
         self.echo(repr(u.addresses))
         ctx.current.uow.rollback_object(u)
-        data = [User,
-            {'user_name' : None,
-             'addresses' : (Address, [])
-            },
-        ]
-        self.assert_result([u], data[0], *data[1:])
+        assert not hasattr(u, 'user_name')
+        assert u.addresses == []
 
     def testbackref(self):
         s = create_session()

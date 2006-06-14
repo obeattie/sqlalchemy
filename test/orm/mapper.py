@@ -165,7 +165,7 @@ class MapperTest(MapperSuperTest):
         users.update(users.c.user_id==7, values=dict(user_name='jack')).execute()
         s.expire(u)
         # object isnt refreshed yet, using dict to bypass trigger
-        self.assert_(u.__dict__['user_name'] != 'jack')
+        self.assert_(u.__dict__.get('user_name') != 'jack')
         # do a select
         s.query(User).select()
         # test that it refreshed
