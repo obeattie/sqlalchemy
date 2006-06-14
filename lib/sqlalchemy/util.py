@@ -209,17 +209,18 @@ class OrderedSet(sets.Set):
         if iterable is not None: 
           self._update(iterable)
 
-class UniqueAppender(UserList.UserList):
+class UniqueAppender(object):
     def __init__(self, data):
         self.data = data
+        if hasattr(data, 'append'):
+            self._data_appender = data.append
+        elif hasattr(data, 'add'):
+            self._data_appender = data.add
         self.set = Set()
     def append(self, item):
         if item not in self.set:
             self.set.add(item)
-            self.data.append(item)
-            return True
-        else:
-            return False
+            self._data_appender(item)
         
 class ScopedRegistry(object):
     """a Registry that can store one or multiple instances of a single class 

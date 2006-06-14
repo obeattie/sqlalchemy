@@ -142,7 +142,12 @@ class InstrumentedAttribute(object):
                     return obj.__dict__[self.key]
                 else:
                     if raiseerr:
-                        raise AttributeError(self.key)
+                        # this is returning None for backwards compatibility.  I am considering
+                        # changing it to raise AttributeError, which would make object instances
+                        # act more like regular python objects, i.e. you dont set the attribute, you get
+                        # AttributeError when you call it.
+                        return None
+                        #raise AttributeError(self.key)
                     else:
                         return None
         
@@ -240,6 +245,13 @@ class InstrumentedList(object):
         self.__obj = weakref.ref(obj)
         self.key = attr.key
         self.data = data or attr._blank_list()
+        
+        # adapt to lists or sets automatically
+        if hasattr(self.data, 'append'):
+            self._data_appender = self.data.append
+        elif hasattr(self.data, 'add'):
+            self._data_appender = self.data.add
+            
         if init:
             for x in self.data:
                 self.__setrecord(x)
@@ -286,10 +298,10 @@ class InstrumentedList(object):
         
     def append_with_event(self, item, event):
         self.__setrecord(item, event)
-        self.data.append(item)
+        self._data_appender(item)
         
     def append_without_event(self, item):
-        self.data.append(item)
+        self._data_appender(item)
         
     def remove_with_event(self, item, event):
         self.__delrecord(item, event)
@@ -302,7 +314,7 @@ class InstrumentedList(object):
             self.append_without_event(item)
         else:
             self.__setrecord(item)
-            self.data.append(item)
+            self._data_appender(item)
         
     def clear(self):
         if isinstance(self.data, dict):
@@ -435,13 +447,19 @@ class AttributeHistory(object):
     associated with the instance, if any."""
     def __init__(self, attr, obj, passive=False):
         self.attr = attr
+        # get the current state.  this may trigger a lazy load if
+        # passive is False.  
+        current = attr.get(obj, passive=passive, raiseerr=False)
+
+        # get the "original" value.  if a lazy load was fired when we got
+        # the 'current' value, this "original" was also populated just 
+        # now as well (therefore we have to get it second)
         orig = obj._state.get('original', None)
         if orig is not None:
             original = orig.data.get(attr.key)
         else:
             original = None
 
-        current = attr.get(obj, passive=passive, raiseerr=False)
         if attr.uselist:
             self._current = current
         else:
@@ -473,6 +491,7 @@ class AttributeHistory(object):
                 else:
                     self._deleted_items = []
                 self._unchanged_items = []
+
     def __iter__(self):
         return iter(self._current)
     def added_items(self):
