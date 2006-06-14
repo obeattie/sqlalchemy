@@ -436,7 +436,7 @@ class Mapper(object):
         if not self.non_primary and (mapper_registry.has_key(self.class_key) and not self.is_primary):
              raise exceptions.ArgumentError("Class '%s' already has a primary mapper defined.  Use is_primary=True to assign a new primary mapper to the class, or use non_primary=True to create a non primary Mapper" % self.class_)
 
-        sessionlib.global_attributes.reset_class_managed(self.class_)
+        sessionlib.attribute_manager.reset_class_managed(self.class_)
     
         oldinit = self.class_.__init__
         def init(self, *args, **kwargs):
@@ -447,7 +447,7 @@ class Mapper(object):
 
                 # this gets the AttributeManager to do some pre-initialization,
                 # in order to save on KeyErrors later on
-                sessionlib.global_attributes.init_attr(self)
+                sessionlib.attribute_manager.init_attr(self)
 
             if kwargs.has_key('_sa_session'):
                 session = kwargs.pop('_sa_session')
@@ -995,7 +995,7 @@ class Mapper(object):
         
         # this gets the AttributeManager to do some pre-initialization,
         # in order to save on KeyErrors later on
-        sessionlib.global_attributes.init_attr(obj)
+        sessionlib.attribute_manager.init_attr(obj)
 
         return obj
 
