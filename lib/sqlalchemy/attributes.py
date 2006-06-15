@@ -18,7 +18,6 @@ class InstrumentedAttribute(object):
         self.typecallable= typecallable
         self.trackparent = trackparent
         self.extensions = util.to_list(extension or [])
-        self.kwargs = kwargs
 
     def __set__(self, obj, value):
         self.set(None, obj, value)
@@ -111,9 +110,10 @@ class InstrumentedAttribute(object):
         try:
             return obj.__dict__[self.key]
         except KeyError:
-            if obj._state.has_key('trigger'):
-                trig = obj._state['trigger']
-                del obj._state['trigger']
+            state = obj._state
+            if state.has_key('trigger'):
+                trig = state['trigger']
+                del state['trigger']
                 trig()
                 return self.get(obj, passive=passive, raiseerr=raiseerr)
                     
@@ -123,7 +123,7 @@ class InstrumentedAttribute(object):
                     if passive:
                         return None
                     l = InstrumentedList(self, obj, self._adapt_list(callable_()), init=False)
-                    orig = obj._state.get('original', None)
+                    orig = state.get('original', None)
                     if orig is not None:
                         orig.commit_attribute(self, obj, l)
                 else:
@@ -136,7 +136,7 @@ class InstrumentedAttribute(object):
                     if passive:
                         return None
                     obj.__dict__[self.key] = self._adapt_list(callable_())
-                    orig = obj._state.get('original', None)
+                    orig = state.get('original', None)
                     if orig is not None:
                         orig.commit_attribute(self, obj)
                     return obj.__dict__[self.key]
@@ -163,7 +163,8 @@ class InstrumentedAttribute(object):
                 trig()
             if self.uselist:
                 value = InstrumentedList(self, obj, value)
-            old = self.get(obj, raiseerr=False)
+            elif self.trackparent or len(self.extensions):
+                old = self.get(obj, raiseerr=False)
             obj.__dict__[self.key] = value
             state['modified'] = True
             if not self.uselist:
