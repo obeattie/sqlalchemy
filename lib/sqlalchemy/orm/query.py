@@ -8,15 +8,16 @@ import session as sessionlib
 from sqlalchemy import sql, util, exceptions, sql_util
 
 import mapper
-
+from interfaces import OperationContext
 
 class Query(object):
     """encapsulates the object-fetching operations provided by Mappers."""
-    def __init__(self, class_or_mapper, session=None, entity_name=None, lockmode=None, **kwargs):
+    def __init__(self, class_or_mapper, session=None, entity_name=None, lockmode=None, with_options=None, **kwargs):
         if isinstance(class_or_mapper, type):
             self.mapper = mapper.class_mapper(class_or_mapper, entity_name=entity_name)
         else:
             self.mapper = class_or_mapper.compile()
+        self.with_options = with_options or []
         self.mapper = self.mapper.get_select_mapper().compile()
         self.always_refresh = kwargs.pop('always_refresh', self.mapper.always_refresh)
         self.order_by = kwargs.pop('order_by', self.mapper.order_by)
@@ -245,7 +246,7 @@ class Query(object):
 
     def options(self, *args, **kwargs):
         """returns a new Query object using the given MapperOptions."""
-        return self.mapper.options(*args, **kwargs).using(session=self._session)
+        return Query(self.mapper, self._session, with_options=args)
     
     def with_lockmode(self, mode):
         """return a new Query object with the specified locking mode."""
@@ -268,7 +269,7 @@ class Query(object):
     def instances(self, clauseelement, params=None, *args, **kwargs):
         result = self.session.execute(self.mapper, clauseelement, params=params)
         try:
-            return self.mapper.instances(result, self.session, **kwargs)
+            return self.mapper.instances(result, self.session, with_options=self.with_options, **kwargs)
         finally:
             result.close()
         
@@ -307,18 +308,18 @@ class Query(object):
             params = {}
         return self.instances(statement, params=params, **kwargs)
 
-    def _should_nest(self, **kwargs):
+    def _should_nest(self, querycontext):
         """return True if the given statement options indicate that we should "nest" the
         generated query as a subquery inside of a larger eager-loading query.  this is used
         with keywords like distinct, limit and offset and the mapper defines eager loads."""
         return (
             self.mapper.has_eager()
-            and self._nestable(**kwargs)
+            and self._nestable(**querycontext.select_args())
         )
 
     def _nestable(self, **kwargs):
         """return true if the given statement options imply it should be nested."""
-        return (kwargs.has_key('limit') or kwargs.has_key('offset') or kwargs.get('distinct', False))
+        return (kwargs.get('limit') is not None or kwargs.get('offset') is not None or kwargs.get('distinct', False))
         
     def compile(self, whereclause = None, **kwargs):
         context = kwargs.pop('query_context', None)
@@ -328,6 +329,8 @@ class Query(object):
         from_obj = context.from_obj
         lockmode = context.lockmode
         distinct = context.distinct
+        limit = context.limit
+        offset = context.offset
         if order_by is False:
             order_by = self.order_by
         if order_by is False:
@@ -349,7 +352,7 @@ class Query(object):
         if self.table not in alltables:
             from_obj.append(self.table)
             
-        if self._should_nest(**kwargs):
+        if self._should_nest(context):
             # if theres an order by, add those columns to the column list
             # of the "rowcount" query we're going to make
             if order_by:
@@ -359,7 +362,7 @@ class Query(object):
             else:
                 cf = []
                 
-            s2 = sql.select(self.table.primary_key + list(cf), whereclause, use_labels=True, from_obj=from_obj, **kwargs)
+            s2 = sql.select(self.table.primary_key + list(cf), whereclause, use_labels=True, from_obj=from_obj, **context.select_args())
             if not distinct and order_by:
                 s2.order_by(*util.to_list(order_by))
             s3 = s2.alias('tbl_row_count')
@@ -378,7 +381,7 @@ class Query(object):
                 [o.accept_visitor(aliasizer) for  o in order_by]
                 statement.order_by(*util.to_list(order_by))
         else:
-            statement = sql.select([], whereclause, from_obj=from_obj, use_labels=True, for_update=for_update, **kwargs)
+            statement = sql.select([], whereclause, from_obj=from_obj, use_labels=True, for_update=for_update, **context.select_args())
             if order_by:
                 statement.order_by(*util.to_list(order_by))
             # for a DISTINCT query, you need the columns explicitly specified in order
@@ -394,7 +397,7 @@ class Query(object):
         
         return statement
 
-class QueryContext(object):
+class QueryContext(OperationContext):
     """created within the Query.compile() method to store and share
     state among all the Mappers and MapperProperty objects used in a query construction."""
     def __init__(self, query, kwargs):
@@ -404,5 +407,10 @@ class QueryContext(object):
         self.from_obj = kwargs.pop('from_obj', [])
         self.lockmode = kwargs.pop('lockmode', query.lockmode)
         self.distinct = kwargs.pop('distinct', False)
+        self.limit = kwargs.pop('limit', None)
+        self.offset = kwargs.pop('offset', None)
         self.statement = None
-        self.attributes = {}
+        super(QueryContext, self).__init__(query.with_options, **kwargs)
+    def select_args(self):
+        return {'limit':self.limit, 'offset':self.offset, 'distinct':self.distinct}
+        

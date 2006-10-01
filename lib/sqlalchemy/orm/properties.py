@@ -11,19 +11,24 @@ properties."""
 from sqlalchemy import sql, schema, util, attributes, exceptions, sql_util, logging
 import mapper
 import sync
+import strategies
 import session as sessionlib
 import dependency
 import util as mapperutil
 import sets, random
+from interfaces import *
 
-class ColumnProperty(mapper.MapperProperty):
+    
+class ColumnProperty(StrategizedProperty):
     """describes an object attribute that corresponds to a table column."""
     def __init__(self, *columns, **kwargs):
         """the list of columns describes a single object property. if there
         are multiple tables joined together for the mapper, this list represents
         the equivalent column as it appears across each table."""
-        self.deepcheck = kwargs.get('deepcheck', False)
         self.columns = list(columns)
+        self.strategy = self.create_strategy()
+    def create_strategy(self):
+        return strategies.ColumnLoader(self)
     def getattr(self, object):
         return getattr(object, self.key, None)
     def setattr(self, object, value):
@@ -32,30 +37,11 @@ class ColumnProperty(mapper.MapperProperty):
         return sessionlib.attribute_manager.get_history(obj, self.key, passive=passive)
     def copy(self):
         return ColumnProperty(*self.columns)
-    def setup(self, context, eagertable=None, **kwargs):
-        for c in self.columns:
-            if eagertable is not None:
-                context.statement.append_column(eagertable.corresponding_column(c))
-            else:
-                context.statement.append_column(c)
-    def do_init(self):
-        # establish a SmartProperty property manager on the object for this key
-        if self.is_primary():
-            self.logger.info("register managed attribute %s on class %s" % (self.key, self.parent.class_.__name__))
-            sessionlib.attribute_manager.register_attribute(self.parent.class_, self.key, uselist=False, copy_function=lambda x: self.columns[0].type.copy_value(x), compare_function=lambda x,y:self.columns[0].type.compare_values(x,y), mutable_scalars=self.columns[0].type.is_mutable())
-    def execute(self, selectcontext, instance, row, identitykey, isnew):
-        if isnew:
-            self.logger.debug("populating %s with %s/%s" % (mapperutil.attribute_str(instance, self.key), row.__class__.__name__, self.columns[0].key))
-            # set a scalar object instance directly on the object, 
-            # bypassing SmartProperty event handlers.
-            instance.__dict__[self.key] = row[self.columns[0]]
     def adapt_to_inherited(self, key, newparent):
         if newparent.concrete:
             return
         else:
             super(ColumnProperty, self).adapt_to_inherited(key, newparent)
-    def __repr__(self):
-        return "ColumnProperty(%s)" % repr([str(c) for c in self.columns])
         
 ColumnProperty.logger = logging.class_logger(ColumnProperty)
         
@@ -65,61 +51,10 @@ class DeferredColumnProperty(ColumnProperty):
     def __init__(self, *columns, **kwargs):
         self.group = kwargs.pop('group', None)
         ColumnProperty.__init__(self, *columns, **kwargs)
+    def create_strategy(self):
+        return strategies.DeferredColumnLoader(self)
     def copy(self):
         return DeferredColumnProperty(*self.columns)
-    def do_init(self):
-        # establish a SmartProperty property manager on the object for this key, 
-        # containing a callable to load in the attribute
-        if self.is_primary():
-            self.logger.info("register managed attribute %s on class %s" % (self.key, self.parent.class_.__name__))
-            sessionlib.attribute_manager.register_attribute(self.parent.class_, self.key, uselist=False, callable_=lambda i:self.setup_loader(i), copy_function=lambda x: self.columns[0].type.copy_value(x), compare_function=lambda x,y:self.columns[0].type.compare_values(x,y), mutable_scalars=self.columns[0].type.is_mutable())
-    def setup_loader(self, instance):
-        if not self.localparent.is_assigned(instance):
-            return mapper.object_mapper(instance).props[self.key].setup_loader(instance)
-        def lazyload():
-            self.logger.debug("deferred load %s group %s" % (mapperutil.attribute_str(instance, self.key), str(self.group)))
-            try:
-                pk = self.parent.pks_by_table[self.columns[0].table]
-            except KeyError:
-                pk = self.columns[0].table.primary_key
-
-            clause = sql.and_()
-            for primary_key in pk:
-                attr = self.parent._getattrbycolumn(instance, primary_key)
-                if not attr:
-                    return None
-                clause.clauses.append(primary_key == attr)
-            session = sessionlib.object_session(instance)
-            if session is None:
-                raise exceptions.InvalidRequestError("Parent instance %s is not bound to a Session; deferred load operation of attribute '%s' cannot proceed" % (instance.__class__, self.key))
-
-            if self.group is not None:
-                groupcols = [p for p in self.localparent.props.values() if isinstance(p, DeferredColumnProperty) and p.group==self.group]
-                result = session.execute(self.localparent, sql.select([g.columns[0] for g in groupcols], clause, use_labels=True), None)
-                try:
-                    row = result.fetchone()
-                    for prop in groupcols:
-                        if prop is self:
-                            continue
-                        # set a scalar object instance directly on the object, 
-                        # bypassing SmartProperty event handlers.
-                        sessionlib.attribute_manager.init_instance_attribute(instance, prop.key, uselist=False)
-                        instance.__dict__[prop.key] = row[prop.columns[0]]
-                    return row[self.columns[0]]    
-                finally:
-                    result.close()
-            else:
-                return session.scalar(self.localparent, sql.select([self.columns[0]], clause, use_labels=True),None)
-
-        return lazyload
-    def setup(self, context, **kwargs):
-        pass
-    def execute(self, selectcontext, instance, row, identitykey, isnew):
-        if isnew:
-            if not self.is_primary():
-                sessionlib.attribute_manager.init_instance_attribute(instance, self.key, False, callable_=self.setup_loader(instance))
-            else:
-                sessionlib.attribute_manager.reset_instance_attribute(instance, self.key)
                 
 DeferredColumnProperty.logger = logging.class_logger(DeferredColumnProperty)
 
@@ -699,29 +634,6 @@ class EagerLoader(LazyLoader):
 
 EagerLoader.logger = logging.class_logger(EagerLoader)
 
-class GenericOption(mapper.MapperOption):
-    """a mapper option that can handle dotted property names,
-    descending down through the relations of a mapper until it
-    reaches the target."""
-    def __init__(self, key):
-        self.key = key
-    def process(self, mapper):
-        self.process_by_key(mapper, self.key)
-    def process_by_key(self, mapper, key):
-        tokens = key.split('.', 1)
-        if len(tokens) > 1:
-            oldprop = mapper.props[tokens[0]]
-            newprop = oldprop.copy()
-            newprop.argument = self.process_by_key(oldprop.mapper.copy(), tokens[1])
-            mapper._compile_property(tokens[0], newprop)
-        else:
-            self.create_prop(mapper, tokens[0])
-        return mapper
-        
-    def create_prop(self, mapper, key):
-        kwargs = util.constructor_args(oldprop)
-        mapper._compile_property(key, class_(**kwargs ))
-
 
 class BackRef(object):
     """stores the name of a backreference property as well as options to 
@@ -773,6 +685,32 @@ class BackRef(object):
     def get_extension(self):
         """returns an attribute extension to use with this backreference."""
         return attributes.GenericBackrefExtension(self.key)
+
+class GenericOption(mapper.MapperOption):
+    """a mapper option that can handle dotted property names,
+    descending down through the relations of a mapper until it
+    reaches the target."""
+    def __init__(self, key):
+        self.key = key
+    def strategy_class(self, strategized_property):
+        return None
+    def process(self, mapper):
+        self.process_by_key(mapper, self.key)
+    def process_by_key(self, mapper, key):
+        tokens = key.split('.', 1)
+        if len(tokens) > 1:
+            oldprop = mapper.props[tokens[0]]
+            newprop = oldprop.copy()
+            newprop.argument = self.process_by_key(oldprop.mapper.copy(), tokens[1])
+            mapper._compile_property(tokens[0], newprop)
+        else:
+            self.create_prop(mapper, tokens[0])
+        return mapper
+
+    def create_prop(self, mapper, key):
+        kwargs = util.constructor_args(oldprop)
+        mapper._compile_property(key, class_(**kwargs ))
+
         
 class EagerLazyOption(GenericOption):
     """an option that switches a PropertyLoader to be an EagerLoader or LazyLoader"""
@@ -802,29 +740,6 @@ class EagerLazyOption(GenericOption):
         real_parent_mapper = p.parent
         real_parent_mapper._compile_property(key, newprop, localparent=mapper)
 
-class DeferredOption(GenericOption):
-    def __init__(self, key, defer=False, **kwargs):
-        self.key = key
-        self.defer = defer
-        self.kwargs = kwargs
-    def hash_key(self):
-        return "DeferredOption(%s,%s)" % (self.key, self.defer)
-    def create_prop(self, mapper, key):
-        oldprop = mapper.props[key]
-        if self.defer:
-            prop = DeferredColumnProperty(*oldprop.columns, **self.kwargs)
-        else:
-            prop = ColumnProperty(*oldprop.columns, **self.kwargs)
-        mapper._compile_property(key, prop)
-        
-class DeferGroupOption(mapper.MapperOption):
-    def __init__(self, group, defer=False, **kwargs):
-        self.group = group
-        self.defer = defer
-        self.kwargs = kwargs
-    def process(self, mapper):
-        self.process_by_key(mapper, self.key)
-    
 
 class BinaryVisitor(sql.ClauseVisitor):
     def __init__(self, func):

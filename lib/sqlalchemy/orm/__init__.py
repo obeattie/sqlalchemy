@@ -13,7 +13,7 @@ from mapper import *
 from mapper import mapper_registry
 from query import Query
 from util import polymorphic_union
-import properties
+import properties, strategies
 from session import Session as create_session
 
 __all__ = ['relation', 'backref', 'eagerload', 'lazyload', 'noload', 'deferred', 'defer', 'undefer',
@@ -67,6 +67,7 @@ def extension(ext):
     """returns a MapperOption that will add the given MapperExtension to the 
     mapper returned by mapper.options()."""
     return ExtensionOption(ext)
+    
 def eagerload(name, **kwargs):
     """returns a MapperOption that will convert the property of the given name
     into an eager load.  Used with mapper.options()"""
@@ -82,14 +83,14 @@ def noload(name, **kwargs):
     into a non-load.  Used with mapper.options()"""
     return properties.EagerLazyOption(name, toeager=None, **kwargs)
 
-def defer(name, **kwargs):
+def defer(name):
     """returns a MapperOption that will convert the column property of the given 
     name into a deferred load.  Used with mapper.options()"""
-    return properties.DeferredOption(name, defer=True)
-def undefer(name, **kwargs):
+    return strategies.DeferredOption(name, defer=True)
+def undefer(name):
     """returns a MapperOption that will convert the column property of the given
     name into a non-deferred (regular column) load.  Used with mapper.options."""
-    return properties.DeferredOption(name, defer=False)
+    return strategies.DeferredOption(name, defer=False)
     
 
 
