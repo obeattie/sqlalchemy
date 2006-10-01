@@ -321,9 +321,13 @@ class Query(object):
         return (kwargs.has_key('limit') or kwargs.has_key('offset') or kwargs.get('distinct', False))
         
     def compile(self, whereclause = None, **kwargs):
-        order_by = kwargs.pop('order_by', False)
-        from_obj = kwargs.pop('from_obj', [])
-        lockmode = kwargs.pop('lockmode', self.lockmode)
+        context = kwargs.pop('query_context', None)
+        if context is None:
+            context = QueryContext(self, kwargs)
+        order_by = context.order_by
+        from_obj = context.from_obj
+        lockmode = context.lockmode
+        distinct = context.distinct
         if order_by is False:
             order_by = self.order_by
         if order_by is False:
@@ -356,16 +360,13 @@ class Query(object):
                 cf = []
                 
             s2 = sql.select(self.table.primary_key + list(cf), whereclause, use_labels=True, from_obj=from_obj, **kwargs)
-#            raise "ok first thing", str(s2)
-            if not kwargs.get('distinct', False) and order_by:
+            if not distinct and order_by:
                 s2.order_by(*util.to_list(order_by))
             s3 = s2.alias('tbl_row_count')
             crit = []
             for i in range(0, len(self.table.primary_key)):
                 crit.append(s3.primary_key[i] == self.table.primary_key[i])
             statement = sql.select([], sql.and_(*crit), from_obj=[self.table], use_labels=True, for_update=for_update)
- #           raise "OK statement", str(statement)
- 
             # now for the order by, convert the columns to their corresponding columns
             # in the "rowcount" query, and tack that new order by onto the "rowcount" query
             if order_by:
@@ -385,11 +386,23 @@ class Query(object):
             # TODO: this should be done at the SQL level not the mapper level
             if kwargs.get('distinct', False) and order_by:
                 [statement.append_column(c) for c in util.to_list(order_by)]
-        # plugin point
 
+        context.statement = statement
         # give all the attached properties a chance to modify the query
         for value in self.mapper.props.values():
-            value.setup(statement, **kwargs) 
+            value.setup(context) 
         
         return statement
 
+class QueryContext(object):
+    """created within the Query.compile() method to store and share
+    state among all the Mappers and MapperProperty objects used in a query construction."""
+    def __init__(self, query, kwargs):
+        self.query = query
+        self.mapper = query.mapper
+        self.order_by = kwargs.pop('order_by', False)
+        self.from_obj = kwargs.pop('from_obj', [])
+        self.lockmode = kwargs.pop('lockmode', query.lockmode)
+        self.distinct = kwargs.pop('distinct', False)
+        self.statement = None
+        self.attributes = {}

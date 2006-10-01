@@ -32,12 +32,12 @@ class ColumnProperty(mapper.MapperProperty):
         return sessionlib.attribute_manager.get_history(obj, self.key, passive=passive)
     def copy(self):
         return ColumnProperty(*self.columns)
-    def setup(self, statement, eagertable=None, **options):
+    def setup(self, context, eagertable=None, **kwargs):
         for c in self.columns:
             if eagertable is not None:
-                statement.append_column(eagertable.corresponding_column(c))
+                context.statement.append_column(eagertable.corresponding_column(c))
             else:
-                statement.append_column(c)
+                context.statement.append_column(c)
     def do_init(self):
         # establish a SmartProperty property manager on the object for this key
         if self.is_primary():
@@ -112,7 +112,7 @@ class DeferredColumnProperty(ColumnProperty):
                 return session.scalar(self.localparent, sql.select([self.columns[0]], clause, use_labels=True),None)
 
         return lazyload
-    def setup(self, statement, **options):
+    def setup(self, context, **kwargs):
         pass
     def execute(self, selectcontext, instance, row, identitykey, isnew):
         if isnew:
@@ -577,19 +577,20 @@ class EagerLoader(LazyLoader):
                 orderby[i].accept_visitor(self.aliasizer)
         return orderby
         
-    def setup(self, statement, eagertable=None, **options):
+    def setup(self, context, eagertable=None, **kwargs):
         """add a left outer join to the statement thats being constructed"""
 
         # initialize the "eager" chain of EagerLoader objects
         # this can't quite be done in the do_init_mapper() step
         self._create_eager_chain()
         
-        if hasattr(statement, '_outerjoin'):
-            towrap = statement._outerjoin
+        
+        if hasattr(context.statement, '_outerjoin'):
+            towrap = context.statement._outerjoin
         elif isinstance(self.localparent.mapped_table, schema.Table):
             # if the mapper is against a plain Table, look in the from_obj of the select statement
             # to join against whats already there.
-            for (fromclause, finder) in [(x, sql_util.TableFinder(x)) for x in statement.froms]:
+            for (fromclause, finder) in [(x, sql_util.TableFinder(x)) for x in context.statement.froms]:
                 # dont join against an Alias'ed Select.  we are really looking either for the 
                 # table itself or a Join that contains the table.  this logic still might need
                 # adjustments for scenarios not thought of yet.
@@ -597,29 +598,29 @@ class EagerLoader(LazyLoader):
                     towrap = fromclause
                     break
             else:
-                raise exceptions.InvalidRequestError("EagerLoader cannot locate a clause with which to outer join to, in query '%s' %s" % (str(statement), self.localparent.mapped_table))
+                raise exceptions.InvalidRequestError("EagerLoader cannot locate a clause with which to outer join to, in query '%s' %s" % (str(context.statement), self.localparent.mapped_table))
         else:
             # if the mapper is against a select statement or something, we cant handle that at the
             # same time as a custom FROM clause right now.
             towrap = self.localparent.mapped_table
             
         if self.secondaryjoin is not None:
-            statement._outerjoin = sql.outerjoin(towrap, self.eagersecondary, self.eagerprimary).outerjoin(self.eagertarget, self.eagersecondaryjoin)
+            context.statement._outerjoin = sql.outerjoin(towrap, self.eagersecondary, self.eagerprimary).outerjoin(self.eagertarget, self.eagersecondaryjoin)
             if self.order_by is False and self.secondary.default_order_by() is not None:
-                statement.order_by(*self.eagersecondary.default_order_by())
+                context.statement.order_by(*self.eagersecondary.default_order_by())
         else:
-            statement._outerjoin = towrap.outerjoin(self.eagertarget, self.eagerprimary)
+            context.statement._outerjoin = towrap.outerjoin(self.eagertarget, self.eagerprimary)
             if self.order_by is False and self.eagertarget.default_order_by() is not None:
-                statement.order_by(*self.eagertarget.default_order_by())
+                context.statement.order_by(*self.eagertarget.default_order_by())
 
         if self.eager_order_by:
-            statement.order_by(*util.to_list(self.eager_order_by))
-        elif getattr(statement, 'order_by_clause', None):
-            self._aliasize_orderby(statement.order_by_clause, False)
+            context.statement.order_by(*util.to_list(self.eager_order_by))
+        elif getattr(context.statement, 'order_by_clause', None):
+            self._aliasize_orderby(context.statement.order_by_clause, False)
                 
-        statement.append_from(statement._outerjoin)
+        context.statement.append_from(context.statement._outerjoin)
         for value in self.eagermapper.props.values():
-            value.setup(statement, eagertable=self.eagertarget)
+            value.setup(context, eagertable=self.eagertarget)
             
     def execute(self, selectcontext, instance, row, identitykey, isnew):
         """receive a row.  tell our mapper to look for a new object instance in the row, and attach

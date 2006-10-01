@@ -1214,9 +1214,9 @@ class SelectionContext(object):
 class MapperProperty(object):
     """an element attached to a Mapper that describes and assists in the loading and saving 
     of an attribute on an object instance."""
-    def setup(self, statement, **options):
+    def setup(self, querycontext, **kwargs):
         """called when a statement is being constructed.  """
-        return self
+        pass
     def execute(self, selectcontext, instance, row, identitykey, isnew):
         """called when the mapper receives a row.  instance is the parent instance
         corresponding to the row. """
