@@ -30,12 +30,7 @@ def relation(*args, **kwargs):
     return _relation_loader(*args, **kwargs)
 
 def _relation_loader(mapper, secondary=None, primaryjoin=None, secondaryjoin=None, lazy=True, **kwargs):
-    if lazy:
-        return properties.LazyLoader(mapper, secondary, primaryjoin, secondaryjoin, **kwargs)
-    elif lazy is None:
-        return properties.PropertyLoader(mapper, secondary, primaryjoin, secondaryjoin, **kwargs)
-    else:
-        return properties.EagerLoader(mapper, secondary, primaryjoin, secondaryjoin, **kwargs)
+    return properties.PropertyLoader(mapper, secondary, primaryjoin, secondaryjoin, lazy=lazy, **kwargs)
 
 def backref(name, **kwargs):
     return properties.BackRef(name, **kwargs)
@@ -43,7 +38,7 @@ def backref(name, **kwargs):
 def deferred(*columns, **kwargs):
     """returns a DeferredColumnProperty, which indicates this object attributes should only be loaded 
     from its corresponding table column when first accessed."""
-    return properties.DeferredColumnProperty(*columns, **kwargs)
+    return properties.ColumnProperty(deferred=True, *columns, **kwargs)
     
 def mapper(class_, table=None, *args, **params):
     """returns a newMapper object."""

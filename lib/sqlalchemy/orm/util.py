@@ -82,6 +82,12 @@ class TranslatingDict(dict):
     def setdefault(self, col, value):
         return super(TranslatingDict, self).setdefault(self.__translate_col(col), value)
 
+class BinaryVisitor(sql.ClauseVisitor):
+    def __init__(self, func):
+        self.func = func
+    def visit_binary(self, binary):
+        self.func(binary)
+
 def instance_str(instance):
     """return a string describing an instance"""
     return instance.__class__.__name__ + "@" + hex(id(instance))

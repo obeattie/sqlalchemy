@@ -54,16 +54,37 @@ class MapperProperty(object):
         inter-mapper dependencies as well as dependency processors (see UOW docs for more details)"""
         pass
     def is_primary(self):
-        """a return value of True indicates we are the primary MapperProperty for this loader's
-        attribute on our mapper's class.  It means we can set the object's attribute behavior
-        at the class level.  otherwise we have to set attribute behavior on a per-instance level."""
+        """return True if this MapperProperty's mapper is the primary mapper for its class.
+        
+        This flag is used to indicate that the MapperProperty can define attribute instrumentation
+        for the class at the class level (as opposed to the individual instance level.)"""
         return self.inherits is None and self.parent._is_primary_mapper()
-        
-class MapperOption(object):
-    """describes a modification to an OperationContext."""
-    def process_context(self, context):
-        pass
-        
+
+class StrategizedProperty(MapperProperty):
+    """a MapperProperty which uses selectable strategies to affect loading behavior.
+    There is a single default strategy selected, and alternate strategies can be selected
+    at selection time through the usage of StrategizedOption objects."""
+    def _get_strategy(self, context):
+        cls = context.attributes.get((LoaderStrategy, self), self.strategy.__class__)
+        try:
+            return self._optional_strategies[cls]
+        except KeyError:
+            strategy = cls(self)
+            strategy.init()
+            strategy.is_default = False
+            self._optional_strategies[cls] = strategy
+            return strategy
+    def setup(self, querycontext, **kwargs):
+        self._get_strategy(querycontext).setup_query(querycontext, **kwargs)
+    def execute(self, selectcontext, instance, row, identitykey, isnew):
+        self._get_strategy(selectcontext).process_row(selectcontext, instance, row, identitykey, isnew)
+    def do_init(self):
+        self._optional_strategies = {}
+        self.strategy = self.create_strategy()
+        self.strategy.init()
+        if self.is_primary():
+            self.strategy.init_class_attribute()
+
 class OperationContext(object):
     """serves as a context during a query construction or instance loading operation.
     accepts MapperOption objects which may modify its state before proceeding."""
@@ -73,6 +94,11 @@ class OperationContext(object):
         self.attributes = {}
         for opt in options:
             opt.process_context(self)
+        
+class MapperOption(object):
+    """describes a modification to an OperationContext."""
+    def process_context(self, context):
+        pass
             
 class StrategizedOption(MapperOption):
     """a MapperOption that affects which LoaderStrategy will be used for an operation
@@ -93,25 +119,6 @@ class StrategizedOption(MapperOption):
             key = self.__key
         context.attributes[key] = self.get_strategy_class()
                     
-class StrategizedProperty(MapperProperty):
-    def _get_strategy(self, context):
-        cls = context.attributes.get((LoaderStrategy, self), self.strategy.__class__)
-        try:
-            return self._optional_strategies[cls]
-        except KeyError:
-            strategy = cls(self)
-            strategy.init()
-            strategy.is_default = False
-            self._optional_strategies[cls] = strategy
-            return strategy
-    def setup(self, querycontext, **kwargs):
-        self._get_strategy(querycontext).setup_query(querycontext, **kwargs)
-    def execute(self, selectcontext, instance, row, identitykey, isnew):
-        self._get_strategy(selectcontext).process_row(selectcontext, instance, row, identitykey, isnew)
-    def do_init(self):
-        self._optional_strategies = {}
-        self.strategy.init()
-        self.strategy.init_class_attribute()
 
 class LoaderStrategy(object):
     """describes the loading behavior of a StrategizedProperty object.  The LoaderStrategy
