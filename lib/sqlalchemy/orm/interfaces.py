@@ -30,18 +30,13 @@ class MapperProperty(object):
         """called after all mappers are compiled to assemble relationships between 
         mappers, establish instrumented class attributes"""
         self.key = key
-        self.localparent = parent
         if not hasattr(self, 'inherits'):
             self.inherits = None
         self.do_init()
     def adapt_to_inherited(self, key, newparent):
         """adapt this MapperProperty to a new parent, assuming the new parent is an inheriting
         descendant of the old parent.  """
-        p = self.copy()
-        newparent._compile_property(key, p, init=False)
-        p.localparent = newparent
-        p.parent = self.parent
-        p.inherits = getattr(self, 'inherits', self)
+        newparent._compile_property(key, self, init=False, setparent=False)
     def do_init(self):
         """template method for subclasses"""
         pass

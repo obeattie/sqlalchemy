@@ -34,6 +34,7 @@ class ColumnProperty(StrategizedProperty):
         else:
             return strategies.ColumnLoader(self)
     def getattr(self, object):
+        print "CP ", self.key, "GETATTR"
         return getattr(object, self.key, None)
     def setattr(self, object, value):
         setattr(object, self.key, value)
@@ -41,11 +42,6 @@ class ColumnProperty(StrategizedProperty):
         return sessionlib.attribute_manager.get_history(obj, self.key, passive=passive)
     def copy(self):
         return ColumnProperty(*self.columns)
-    def adapt_to_inherited(self, key, newparent):
-        if newparent.concrete:
-            return
-        else:
-            super(ColumnProperty, self).adapt_to_inherited(key, newparent)
         
 ColumnProperty.logger = logging.class_logger(ColumnProperty)
         
@@ -177,7 +173,7 @@ class PropertyLoader(StrategizedProperty):
                 if self.primaryjoin is None:
                     self.primaryjoin = sql.join(self.parent.unjoined_table, self.target).onclause
         except exceptions.ArgumentError, e:
-            raise exceptions.ArgumentError("Error determining primary and/or secondary join for relationship '%s' between mappers '%s' and '%s'.  If the underlying error cannot be corrected, you should specify the 'primaryjoin' (and 'secondaryjoin', if there is an association table present) keyword arguments to the relation() function (or for backrefs, by specifying the backref using the backref() function with keyword arguments) to explicitly specify the join conditions.  Nested error is \"%s\"" % (self.key, self.localparent, self.mapper, str(e)))
+            raise exceptions.ArgumentError("Error determining primary and/or secondary join for relationship '%s' between mappers '%s' and '%s'.  If the underlying error cannot be corrected, you should specify the 'primaryjoin' (and 'secondaryjoin', if there is an association table present) keyword arguments to the relation() function (or for backrefs, by specifying the backref using the backref() function with keyword arguments) to explicitly specify the join conditions.  Nested error is \"%s\"" % (self.key, self.parent, self.mapper, str(e)))
         # if the foreign key wasnt specified and theres no assocaition table, try to figure
         # out who is dependent on who. we dont need all the foreign keys represented in the join,
         # just one of them.
@@ -282,14 +278,9 @@ class BackRef(object):
         if not mapper.props.has_key(self.key):
             pj = self.kwargs.pop('primaryjoin', None)
             sj = self.kwargs.pop('secondaryjoin', None)
-            lazy = self.kwargs.pop('lazy', True)
-            if lazy:
-                cls = LazyLoader
-            else:
-                cls = EagerLoader
             # the backref property is set on the primary mapper
             parent = prop.parent.primary_mapper()
-            relation = cls(parent, prop.secondary, pj, sj, backref=prop.key, is_backref=True, **self.kwargs)
+            relation = PropertyLoader(parent, prop.secondary, pj, sj, backref=prop.key, is_backref=True, **self.kwargs)
             mapper._compile_property(self.key, relation);
         elif not isinstance(mapper.props[self.key], PropertyLoader):
             raise exceptions.ArgumentError("Cant create backref '%s' on mapper '%s'; an incompatible property of that name already exists" % (self.key, str(mapper)))

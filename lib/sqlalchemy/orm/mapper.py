@@ -557,7 +557,7 @@ class Mapper(object):
         else:
             return None
 
-    def _compile_property(self, key, prop, init=True, skipmissing=False, localparent=None):
+    def _compile_property(self, key, prop, init=True, skipmissing=False, setparent=True):
         """add a MapperProperty to this or another Mapper, including configuration of the property.
         
         The properties' parent attribute will be set, and the property will also be 
@@ -572,9 +572,9 @@ class Mapper(object):
             if prop is None:
                 raise exceptions.ArgumentError("'%s' is not an instance of MapperProperty or Column" % repr(prop))
 
-        effectiveparent = localparent or self
-        effectiveparent.__props[key] = prop
-        prop.set_parent(self)
+        self.__props[key] = prop
+        if setparent:
+            prop.set_parent(self)
             
         if isinstance(prop, ColumnProperty):
             col = self.select_table.corresponding_column(prop.columns[0], keys_ok=True, raiseerr=False)
@@ -586,9 +586,9 @@ class Mapper(object):
                 proplist.append(prop)
 
         if init:
-            prop.init(key, effectiveparent)
+            prop.init(key, self)
 
-        for mapper in effectiveparent._inheriting_mappers:
+        for mapper in self._inheriting_mappers:
             prop.adapt_to_inherited(key, mapper)
 
     def __str__(self):
@@ -721,7 +721,7 @@ class Mapper(object):
         prop = self._getpropbycolumn(column, raiseerror)
         if prop is None:
             return NO_ATTRIBUTE
-        #self.__log_debug("get column attribute '%s' from instance %s" % (column.key, mapperutil.instance_str(obj)))
+        self.__log_debug("get column attribute '%s' from instance %s" % (column.key, mapperutil.instance_str(obj)))
         return prop.getattr(obj)
 
     def _setattrbycolumn(self, obj, column, value):
