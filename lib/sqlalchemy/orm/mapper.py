@@ -1207,13 +1207,13 @@ class SelectionContext(OperationContext):
     
     """
     def __init__(self, mapper, session, **kwargs):
-        self.mapper = mapper
         self.populate_existing = kwargs.pop('populate_existing', False)
         self.version_check = kwargs.pop('version_check', False)
         self.session = session
         self.identity_map = {}
-        super(SelectionContext, self).__init__(kwargs.pop('with_options', None), **kwargs)
+        super(SelectionContext, self).__init__(mapper, kwargs.pop('with_options', None), **kwargs)
 
+                
 class ExtensionOption(MapperOption):
     """adds a new MapperExtension to a mapper's chain of extensions"""
     def __init__(self, ext):

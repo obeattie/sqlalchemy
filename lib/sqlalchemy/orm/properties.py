@@ -308,7 +308,7 @@ class LazyLoader(PropertyLoader):
         #print "SETCLASSATTR LAZY", repr(class_), key
         self._register_attribute(class_, callable_=lambda i: self.setup_loader(i))
 
-    def setup_loader(self, instance):
+    def setup_loader(self, instance, options=None):
         #print self, "setup_loader", "parent", self.parent.mapped_table, "child", self.mapper.mapped_table, "join", self.lazywhere
         # make sure our parent mapper is the one thats assigned to this instance, else call that one
         if not self.localparent.is_assigned(instance):
@@ -361,7 +361,7 @@ class LazyLoader(PropertyLoader):
                 order_by = self.secondary.default_order_by()
             else:
                 order_by = False
-            result = self.mapper.using(session).select_whereclause(self.lazywhere, order_by=order_by, params=params)
+            result = session.query(self.mapper, with_options=options).select_whereclause(self.lazywhere, order_by=order_by, params=params)
                 
             if self.uselist:
                 return result
@@ -375,11 +375,11 @@ class LazyLoader(PropertyLoader):
     def execute(self, selectcontext, instance, row, identitykey, isnew):
         if isnew:
             # new object instance being loaded from a result row
-            if not self.is_primary():
+            if not self.is_primary() or len(selectcontext.options):
                 self.logger.debug("set instance-level lazy loader on %s" % mapperutil.attribute_str(instance, self.key))
                 # we are not the primary manager for this attribute on this class - set up a per-instance lazyloader,
                 # which will override the clareset_instance_attributess-level behavior
-                self._init_instance_attribute(instance, callable_=self.setup_loader(instance))
+                self._init_instance_attribute(instance, callable_=self.setup_loader(instance, selectcontext.options))
             else:
                 self.logger.debug("set class-level lazy loader on %s" % mapperutil.attribute_str(instance, self.key))
                 # we are the primary manager for this attribute on this class - reset its per-instance attribute state, 

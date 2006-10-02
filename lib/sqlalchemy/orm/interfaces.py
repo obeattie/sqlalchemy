@@ -63,16 +63,17 @@ class MapperOption(object):
     """describes a modification to an OperationContext."""
     def process_context(self, context):
         pass
-
+        
 class OperationContext(object):
     """serves as a context during a query construction or instance loading operation.
     accepts MapperOption objects which may modify its state before proceeding."""
-    def __init__(self, options):
+    def __init__(self, mapper, options):
+        self.mapper = mapper
         self.options = options
         self.attributes = {}
         for opt in options:
             opt.process_context(self)
-
+            
 class StrategizedOption(MapperOption):
     """a MapperOption that affects which LoaderStrategy will be used for an operation
     by a StrategizedProperty."""
@@ -81,16 +82,26 @@ class StrategizedOption(MapperOption):
     def get_strategy_class(self):
         raise NotImplementedError()
     def process_context(self, context):
-        context.attributes[(LoaderStrategy, self.key)] = self.get_strategy_class()
-                
+        try:
+            key = self.__key
+        except AttributeError:
+            mapper = context.mapper
+            for token in self.key.split('.'):
+                prop = mapper.props[token]
+                mapper = getattr(prop, 'mapper', None)
+            self.__key = (LoaderStrategy, prop)
+            key = self.__key
+        context.attributes[key] = self.get_strategy_class()
+                    
 class StrategizedProperty(MapperProperty):
     def _get_strategy(self, context):
-        cls = context.attributes.get((LoaderStrategy, self.key), self.strategy.__class__)
+        cls = context.attributes.get((LoaderStrategy, self), self.strategy.__class__)
         try:
             return self._optional_strategies[cls]
         except KeyError:
             strategy = cls(self)
             strategy.init()
+            strategy.is_default = False
             self._optional_strategies[cls] = strategy
             return strategy
     def setup(self, querycontext, **kwargs):
@@ -117,6 +128,7 @@ class LoaderStrategy(object):
     """
     def __init__(self, parent):
         self.parent_property = parent
+        self.is_default = True
     def init(self):
         self.parent = self.parent_property.parent
         self.key = self.parent_property.key

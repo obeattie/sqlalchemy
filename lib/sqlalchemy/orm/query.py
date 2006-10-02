@@ -402,7 +402,6 @@ class QueryContext(OperationContext):
     state among all the Mappers and MapperProperty objects used in a query construction."""
     def __init__(self, query, kwargs):
         self.query = query
-        self.mapper = query.mapper
         self.order_by = kwargs.pop('order_by', False)
         self.from_obj = kwargs.pop('from_obj', [])
         self.lockmode = kwargs.pop('lockmode', query.lockmode)
@@ -410,7 +409,7 @@ class QueryContext(OperationContext):
         self.limit = kwargs.pop('limit', None)
         self.offset = kwargs.pop('offset', None)
         self.statement = None
-        super(QueryContext, self).__init__(query.with_options, **kwargs)
+        super(QueryContext, self).__init__(query.mapper, query.with_options, **kwargs)
     def select_args(self):
         return {'limit':self.limit, 'offset':self.offset, 'distinct':self.distinct}
         
