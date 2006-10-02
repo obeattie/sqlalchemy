@@ -1028,7 +1028,8 @@ class Mapper(object):
                 if result is not None:
                     result.append(instance)
             return instance
-                    
+        else:
+            self.__log_debug("_instance(): identity key %s not in session" % str(identitykey) + repr([mapperutil.instance_str(x) for x in context.session]))
         # look in result-local identitymap for it.
         exists = context.identity_map.has_key(identitykey)      
         if not exists:
@@ -1184,7 +1185,7 @@ class SelectionContext(OperationContext):
         self.version_check = kwargs.pop('version_check', False)
         self.session = session
         self.identity_map = {}
-        super(SelectionContext, self).__init__(mapper, kwargs.pop('with_options', None), **kwargs)
+        super(SelectionContext, self).__init__(mapper, kwargs.pop('with_options', []), **kwargs)
 
                 
 class ExtensionOption(MapperOption):

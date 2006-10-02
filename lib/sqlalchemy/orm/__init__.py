@@ -63,20 +63,20 @@ def extension(ext):
     mapper returned by mapper.options()."""
     return ExtensionOption(ext)
     
-def eagerload(name, **kwargs):
+def eagerload(name):
     """returns a MapperOption that will convert the property of the given name
-    into an eager load.  Used with mapper.options()"""
-    return properties.EagerLazyOption(name, toeager=True, **kwargs)
+    into an eager load."""
+    return strategies.EagerLazyOption(name, lazy=False)
 
-def lazyload(name, **kwargs):
+def lazyload(name):
     """returns a MapperOption that will convert the property of the given name
-    into a lazy load.  Used with mapper.options()"""
-    return properties.EagerLazyOption(name, toeager=False, **kwargs)
+    into a lazy load"""
+    return strategies.EagerLazyOption(name, lazy=True)
 
-def noload(name, **kwargs):
-    """returns a MapperOption that will convert the property of the given name
-    into a non-load.  Used with mapper.options()"""
-    return properties.EagerLazyOption(name, toeager=None, **kwargs)
+def noload(name):
+    """return a MapperOption that will convert the property of the given name
+    into a non-load."""
+    return strategies.EagerLazyOption(name, lazy=None)
 
 def defer(name):
     """returns a MapperOption that will convert the column property of the given 
