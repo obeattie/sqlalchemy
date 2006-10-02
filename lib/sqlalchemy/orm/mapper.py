@@ -675,33 +675,6 @@ class Mapper(object):
         return [self._getattrbycolumn(instance, column) for column in self.pks_by_table[self.mapped_table]]
         
 
-    def copy(self, **kwargs):
-        mapper = Mapper.__new__(Mapper)
-        mapper.__dict__.update(self.__dict__)
-        mapper.__dict__.update(kwargs)
-        mapper.__props = self.__props.copy()
-        mapper._inheriting_mappers = []
-        for m in self._inheriting_mappers:
-            mapper._inheriting_mappers.append(m.copy())
-        return mapper
-
-    def options(self, *options, **kwargs):
-        """uses this mapper as a prototype for a new mapper with different behavior.
-        *options is a list of options directives, which include eagerload(), lazyload(), and noload()"""
-        # TODO: this whole options() scheme is going to change, and not rely upon 
-        # making huge chains of copies anymore. stay tuned !
-        self.compile()
-        optkey = repr([hash_key(o) for o in options])
-        try:
-            return self._options[optkey]
-        except KeyError:
-            mapper = self.copy(**kwargs)
-            for option in options:
-                option.process(mapper)
-            self._options[optkey] = mapper
-            return mapper
-
-            
     def _getpropbycolumn(self, column, raiseerror=True):
         try:
             prop = self.columntoproperty[column]

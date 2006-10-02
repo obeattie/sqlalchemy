@@ -34,24 +34,17 @@ class ColumnProperty(StrategizedProperty):
         else:
             return strategies.ColumnLoader(self)
     def getattr(self, object):
-        print "CP ", self.key, "GETATTR"
         return getattr(object, self.key, None)
     def setattr(self, object, value):
         setattr(object, self.key, value)
     def get_history(self, obj, passive=False):
         return sessionlib.attribute_manager.get_history(obj, self.key, passive=passive)
-    def copy(self):
-        return ColumnProperty(*self.columns)
         
 ColumnProperty.logger = logging.class_logger(ColumnProperty)
         
 mapper.ColumnProperty = ColumnProperty
 
 class PropertyLoader(StrategizedProperty):
-    ONETOMANY = 0
-    MANYTOONE = 1
-    MANYTOMANY = 2
-
     """describes an object property that holds a single item or list of items that correspond
     to a related database table."""
     def __init__(self, argument, secondary, primaryjoin, secondaryjoin, foreignkey=None, uselist=None, private=False, association=None, order_by=False, attributeext=None, backref=None, is_backref=False, post_update=False, cascade=None, viewonly=False, lazy=True):
@@ -92,10 +85,10 @@ class PropertyLoader(StrategizedProperty):
     private = property(lambda s:s.cascade.delete_orphan)
 
     def create_strategy(self):
-        if True or self.lazy:
+        if self.lazy:
             return strategies.LazyLoader(self)
         elif self.lazy is False:
-            return None
+            return strategies.EagerLoader(self)
         elif self.lazy is None:
             return strategies.NoLoader(self)
             
@@ -127,11 +120,6 @@ class PropertyLoader(StrategizedProperty):
                 callable_(c, mapper.entity_name)
                 mapper.cascade_callable(type, c, callable_, recursive)
 
-    def copy(self):
-        x = self.__class__.__new__(self.__class__)
-        x.__dict__.update(self.__dict__)
-        return x
-        
     def _get_target_class(self):
         """return the target class of the relation, even if the property has not been initialized yet."""
         if isinstance(self.argument, type):
@@ -193,15 +181,7 @@ class PropertyLoader(StrategizedProperty):
         if self.uselist is None:
             self.uselist = True
         
-        if self.inherits is not None:
-            if hasattr(self.inherits, '_dependency_processor'):
-                self._dependency_processor = self.inherits._dependency_processor
-
-        if not hasattr(self, '_dependency_processor'):
-            self._dependency_processor = dependency.create_dependency_processor(self)
-
-        if self.inherits is not None and not hasattr(self.inherits, '_dependency_processor'):
-            self.inherits._dependency_processor = self._dependency_processor
+        self._dependency_processor = dependency.create_dependency_processor(self)
             
         # primary property handler, set up class attributes
         if self.is_primary():
@@ -212,7 +192,7 @@ class PropertyLoader(StrategizedProperty):
         
             if self.backref is not None:
                 self.backref.compile(self)
-        elif self.inherits is None and not sessionlib.attribute_manager.is_class_managed(self.parent.class_, self.key):
+        elif not sessionlib.attribute_manager.is_class_managed(self.parent.class_, self.key):
             raise exceptions.ArgumentError("Attempting to assign a new relation '%s' to a non-primary mapper on class '%s'.  New relations can only be added to the primary mapper, i.e. the very first mapper created for class '%s' " % (self.key, self.parent.class_.__name__, self.parent.class_.__name__))
 
         super(PropertyLoader, self).do_init()
