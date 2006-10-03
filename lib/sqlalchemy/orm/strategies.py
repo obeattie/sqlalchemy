@@ -364,7 +364,6 @@ class EagerLoader(AbstractRelationLoader):
                 map[parent] = c
                 map[parent._label] = c
                 map[parent.name] = c
-            map[self.parent] = True
             return EagerRowAdapter
 
         def _decorate_row(self, row):
@@ -475,7 +474,8 @@ class EagerLoader(AbstractRelationLoader):
                 selectcontext.attributes[(instance, self.key)] = appender
             result_list = selectcontext.attributes[(instance, self.key)]
             self.logger.debug("eagerload list instance on %s" % mapperutil.attribute_str(instance, self.key))
-            # TODO: speed hit here...?
+            # TODO: recursion check a speed hit...?  try to get a "termination point" into the AliasedClauses
+            # or EagerRowAdapter ?
             selectcontext.recursion_stack.add(self)
             try:
                 self.mapper._instance(selectcontext, decorated_row, result_list)
