@@ -277,8 +277,34 @@ class EagerLoader(AbstractRelationLoader):
         self.clauses_by_lead_mapper = {}
         
     class AliasedClauses(object):
-        """defines a set of join conditions and aliasing rules, corresponding to the connection
-        of a possible parent AliasedClauses object and a parent EagerLoader's target mapper."""
+        """defines a set of join conditions and table aliases which are aliased on a randomly-generated
+        alias name, corresponding to the connection of an optional parent AliasedClauses object and a 
+        target mapper.
+        
+        EagerLoader has a distinct AliasedClauses object per parent AliasedClauses object,
+        so that all paths from one mapper to another across a chain of eagerloaders generates a distinct
+        chain of joins.  The AliasedClauses objects are generated and cached on an as-needed basis.
+        
+        e.g.:
+        
+            mapper A -->
+                (EagerLoader 'items') --> 
+                    mapper B --> 
+                        (EagerLoader 'keywords') --> 
+                            mapper C
+            
+            will generate:
+            
+            EagerLoader 'items' --> {
+                None : AliasedClauses(items, None, alias_suffix='AB34')        # mappera JOIN mapperb_AB34
+            }
+            
+            EagerLoader 'keywords' --> [
+                None : AliasedClauses(keywords, None, alias_suffix='43EF')     # mapperb JOIN mapperc_43EF
+                AliasedClauses(items, None, alias_suffix='AB34') : 
+                        AliasedClauses(keywords, items, alias_suffix='8F44')   # mapperb_AB34 JOIN mapperc_8F44
+            ]
+        """
         def __init__(self, eagerloader, parentclauses=None):
             self.target = eagerloader.target
             self.eagertarget = eagerloader.target.alias()
@@ -340,24 +366,20 @@ class EagerLoader(AbstractRelationLoader):
             return EagerRowAdapter
 
         def _decorate_row(self, row):
-            # since the EagerLoader makes an Alias of its mapper's table,
-            # we translate the actual result columns back to what they 
-            # would normally be into a "virtual row" which is passed to the child mapper.
-            # that way the mapper doesnt have to know about the modified column name
-            # (neither do any MapperExtensions).  The row is keyed off the Column object
-            # (which is what mappers use) as well as its "label" (which might be what
-            # user-defined code is using)
+            # adapts a row at row iteration time to transparently
+            # convert plain columns into the aliased columns that were actually
+            # added to the column clause of the SELECT.
             return self._row_decorator(row)
 
     def init_class_attribute(self):
         self.parent_property._get_strategy(LazyLoader).init_class_attribute()
         
-    def setup_query(self, context, eagertable=None, parentclauses=None, **kwargs):
+    def setup_query(self, context, eagertable=None, parentclauses=None, parentmapper=None, **kwargs):
         """add a left outer join to the statement thats being constructed"""
-        if context.mapper.isa(self.parent):
+        if parentmapper is None:
             localparent = context.mapper
         else:
-            localparent = self.parent
+            localparent = parentmapper
 
         statement = context.statement
         
@@ -403,7 +425,7 @@ class EagerLoader(AbstractRelationLoader):
                 
         statement.append_from(statement._outerjoin)
         for value in self.mapper.props.values():
-            value.setup(context, eagertable=clauses.eagertarget, parentclauses=clauses)
+            value.setup(context, eagertable=clauses.eagertarget, parentclauses=clauses, parentmapper=self.mapper)
 
     def process_row(self, selectcontext, instance, row, identitykey, isnew):
         """receive a row.  tell our mapper to look for a new object instance in the row, and attach
