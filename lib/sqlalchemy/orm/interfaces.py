@@ -1,3 +1,4 @@
+from sqlalchemy import util
 
 class MapperProperty(object):
     """manages the relationship of a Mapper to a single class attribute, as well
@@ -58,8 +59,7 @@ class StrategizedProperty(MapperProperty):
     There is a single default strategy selected, and alternate strategies can be selected
     at selection time through the usage of StrategizedOption objects."""
     def _get_context_strategy(self, context):
-        cls = context.attributes.get((LoaderStrategy, self), self.strategy.__class__)
-        return self._get_strategy(cls)
+        return self._get_strategy(context.attributes.get((LoaderStrategy, self), self.strategy.__class__))
     def _get_strategy(self, cls):
         try:
             return self._all_strategies[cls]
@@ -88,9 +88,10 @@ class OperationContext(object):
         self.mapper = mapper
         self.options = options
         self.attributes = {}
+        self.recursion_stack = util.Set()
         for opt in options:
             opt.process_context(self)
-        
+
 class MapperOption(object):
     """describes a modification to an OperationContext."""
     def process_context(self, context):

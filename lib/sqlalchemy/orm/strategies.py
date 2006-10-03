@@ -306,6 +306,7 @@ class EagerLoader(AbstractRelationLoader):
             ]
         """
         def __init__(self, eagerloader, parentclauses=None):
+            self.parent = eagerloader
             self.target = eagerloader.target
             self.eagertarget = eagerloader.target.alias()
             if eagerloader.secondary:
@@ -363,6 +364,7 @@ class EagerLoader(AbstractRelationLoader):
                 map[parent] = c
                 map[parent._label] = c
                 map[parent.name] = c
+            map[self.parent] = True
             return EagerRowAdapter
 
         def _decorate_row(self, row):
@@ -380,7 +382,12 @@ class EagerLoader(AbstractRelationLoader):
             localparent = context.mapper
         else:
             localparent = parentmapper
-
+        
+        if self in context.recursion_stack:
+            return
+        else:
+            context.recursion_stack.add(self)
+            
         statement = context.statement
         
         if hasattr(statement, '_outerjoin'):
@@ -430,6 +437,9 @@ class EagerLoader(AbstractRelationLoader):
     def process_row(self, selectcontext, instance, row, identitykey, isnew):
         """receive a row.  tell our mapper to look for a new object instance in the row, and attach
         it to a list on the parent instance."""
+
+        if self in selectcontext.recursion_stack:
+            return
         
         try:
             clauses = self.clauses_by_lead_mapper[selectcontext.mapper]
@@ -441,7 +451,6 @@ class EagerLoader(AbstractRelationLoader):
             self.logger.debug("degrade to lazy loader on %s" % mapperutil.attribute_str(instance, self.key))
             self.parent_property._get_strategy(LazyLoader).process_row(selectcontext, instance, row, identitykey, isnew)
             return
-                
             
         if not self.uselist:
             self.logger.debug("eagerload scalar instance on %s" % mapperutil.attribute_str(instance, self.key))
@@ -466,7 +475,12 @@ class EagerLoader(AbstractRelationLoader):
                 selectcontext.attributes[(instance, self.key)] = appender
             result_list = selectcontext.attributes[(instance, self.key)]
             self.logger.debug("eagerload list instance on %s" % mapperutil.attribute_str(instance, self.key))
-            self.mapper._instance(selectcontext, decorated_row, result_list)
+            # TODO: speed hit here...?
+            selectcontext.recursion_stack.add(self)
+            try:
+                self.mapper._instance(selectcontext, decorated_row, result_list)
+            finally:
+                selectcontext.recursion_stack.remove(self)
 
 EagerLoader.logger = logging.class_logger(EagerLoader)
 

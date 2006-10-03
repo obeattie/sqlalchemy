@@ -958,7 +958,17 @@ class EagerTest(MapperSuperTest):
             {'user_id' : 8, 'addresses' : (Address, [{'address_id' : 2, 'email_address':'ed@wood.com'}, {'address_id':3, 'email_address':'ed@bettyboop.com'}, {'address_id':4, 'email_address':'ed@lala.com'}])},
         )
         
-
+    def testcircular(self):
+        """test that a circular eager relationship breaks the cycle with a lazy loader"""
+        m = mapper(User, users, properties = dict(
+            addresses = relation(mapper(Address, addresses), lazy=False, backref=backref('user', lazy=False))
+        ))
+        assert class_mapper(User).props['addresses'].lazy is False
+        assert class_mapper(Address).props['user'].lazy is False
+        session = create_session()
+        l = session.query(User).select()
+        self.assert_result(l, User, *user_address_result)
+        
     def testcompile(self):
         """tests deferred operation of a pre-compiled mapper statement"""
         session = create_session()

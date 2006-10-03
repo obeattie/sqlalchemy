@@ -695,7 +695,7 @@ class Mapper(object):
         prop = self._getpropbycolumn(column, raiseerror)
         if prop is None:
             return NO_ATTRIBUTE
-        self.__log_debug("get column attribute '%s' from instance %s" % (column.key, mapperutil.instance_str(obj)))
+        #self.__log_debug("get column attribute '%s' from instance %s" % (column.key, mapperutil.instance_str(obj)))
         return prop.getattr(obj)
 
     def _setattrbycolumn(self, obj, column, value):
