@@ -283,6 +283,7 @@ class Mapper(object):
                 self.order_by = self.inherits.order_by
             self.polymorphic_map = self.inherits.polymorphic_map
             self.batch = self.inherits.batch
+            self.inherits._inheriting_mappers.add(self)
         else:
             self._synchronizer = None
             self.mapped_table = self.local_table
@@ -372,11 +373,6 @@ class Mapper(object):
                 self._compile_property(key, prop, False)
 
         if self.inherits is not None:
-            # transfer properties from the inherited mapper to here.
-            # this includes column properties as well as relations.
-            # the column properties will attempt to be translated from the selectable unit
-            # of the parent mapper to this mapper's selectable unit.
-            self.inherits._inheriting_mappers.add(self)
             for key, prop in self.inherits.__props.iteritems():
                 if not self.__props.has_key(key):
                     prop.adapt_to_inherited(key, self)
@@ -396,6 +392,10 @@ class Mapper(object):
                 prop.set_parent(self)
                 self.__log("adding ColumnProperty %s" % (column.key))
             elif isinstance(prop, ColumnProperty):
+                if prop.parent is not self:
+                    prop = ColumnProperty(deferred=prop.deferred, group=prop.group, *prop.columns)
+                    prop.set_parent(self)
+                    self.__props[column.key] = prop
                 prop.columns.append(column)
                 self.__log("appending to existing ColumnProperty %s" % (column.key))
             else:
@@ -408,6 +408,7 @@ class Mapper(object):
             # back to the property
             proplist = self.columntoproperty.setdefault(column, [])
             proplist.append(prop)
+
 
     def _initialize_properties(self):
         """calls the init() method on all MapperProperties attached to this mapper.  this will incur the
