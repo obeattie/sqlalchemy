@@ -227,7 +227,7 @@
        <tr>
        <td>
            <div class="darkcell">
-           <A name="<% m.comp('doclib.myt:current').path %>_<% link %>"></a>
+           <A name=""></a>
            <b><% name %></b>
            <div class="docstring"><% m.content() %></div>
            </div>
@@ -247,7 +247,7 @@
     <tr>
     <td>
         <div class="darkcell">
-        <A name="<% m.comp('doclib.myt:current').path %>_<% link %>"></a>
+        <A name=""></a>
         <b><% name %>(<% string.join(map(lambda k: "<i>%s</i>" % k, arglist), ", ")%>)</b>
         <div class="docstring"><% m.content() %></div>
         </div>

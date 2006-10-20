@@ -4,7 +4,7 @@ import sys, string, re
 
 # datastructure that will store the whole contents of the documentation
 class TOCElement:
-    def __init__(self, filename, name, description, parent = None, ext = None, header = None, last_updated = 0, htmldescription=None, altlink=None):
+    def __init__(self, filename, name, description, parent=None, ext = None, header = None, last_updated = 0, htmldescription=None, altlink=None):
         self.filename = filename
         self.name = name
         self.parent = parent

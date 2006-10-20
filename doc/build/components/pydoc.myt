@@ -1,5 +1,5 @@
 <%global>
-    import docstring, string, sys
+import docstring
 </%global>
 
 <%method obj_doc>
@@ -7,34 +7,15 @@
         obj
     </%args>
 
-<%python>
-if obj.isclass:
-    s = []
-    links = []
-    for elem in obj.inherits:
-        if isinstance(elem, docstring.ObjectDoc):
-            links.append("<a href=\"#%s\">%s</a>" % (str(elem.id), elem.name))
-            s.append(elem.name)
-        else:
-            links.append(str(elem))
-            s.append(str(elem))
-    description = "class " + obj.classname + "(%s)" % (','.join(s))
-    htmldescription = "class " + obj.classname + "(%s)" % (','.join(links))
-else:
-    description = obj.description
-    htmldescription = obj.description
-    
-</%python>
-<&|doclib.myt:item, name=obj.name, description=description, htmldescription=htmldescription, altlink=str(obj.id) &>
+<div>
 <&|formatting.myt:formatplain&><% obj.doc %></&>
 
 % if not obj.isclass and obj.functions:
-<&|doclib.myt:item, name="modfunc", description="Module Functions" &>
+    <div>
 <&|formatting.myt:paramtable&>
 %   for func in obj.functions:
     <& SELF:function_doc, func=func &>
 %
-</&>
 </&>
 % else:
 % if obj.functions:
@@ -46,6 +27,7 @@ else:
     <& SELF:property_doc, prop=func &>
 %
 %
+</div>
 </&>
 %
 %
@@ -57,7 +39,7 @@ else:
 %   
 </&>
 %    
-</&>
+</div>
 
 </%method>
 
