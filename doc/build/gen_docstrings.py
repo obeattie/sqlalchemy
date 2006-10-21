@@ -36,6 +36,7 @@ def make_all_docs():
     return objects
     
 def create_docstring_toc(data, root):
+    root = TOCElement("docstrings", name="docstrings", description="Generated Documentation", parent=root)
     def create_obj_toc(obj, toc):
         if obj.isclass:
             s = []

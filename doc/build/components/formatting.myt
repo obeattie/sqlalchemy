@@ -13,11 +13,12 @@
     full = False
     children = True
     extension
+    anchor_toplevel=False
 </%args>
 
 <ul class="toc_list">
 % for i in root.children:
-    <& printtocelement, item=i, bold = (i == current), full = full, children=children, extension=extension &>
+    <& printtocelement, item=i, bold = (i == current), full = full, children=children, extension=extension, anchor_toplevel=anchor_toplevel &>
 %
 </ul>
 </%method>
@@ -30,9 +31,10 @@
         full = False
         children = True
         extension
+        anchor_toplevel
     </%args>
     
-        <li><A style="<% bold and "font-weight:bold;" or "" %>" href="<% item.get_link(extension=extension) %>"><% item.description %></a></li>
+        <li><A style="<% bold and "font-weight:bold;" or "" %>" href="<% item.get_link(extension=extension, anchor=anchor_toplevel) %>"><% item.description %></a></li>
     
 % if children:  
     <ul class="small_toc_list">
@@ -191,11 +193,12 @@
 <%method itemlink trim="both">
     <%args>
     item
+    anchor=True
     </%args>
     <%args scope="request">
         extension='myt'
     </%args>
-    <a href="<% item.get_link(extension=extension) %>"><% item.description %></a>
+    <a href="<% item.get_link(extension=extension, anchor=anchor) %>"><% item.description %></a>
 </%method>
 
 <%method toclink trim="both">

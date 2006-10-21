@@ -1,9 +1,13 @@
 #!/usr/bin/env python
 import sys,re,os
 
+"""starts an HTTP server which will serve generated .myt files from the ./components and 
+./output directories."""
+
+
 component_root = [
     {'components': './components'},
-    {'content' : './content'}
+    {'content' : './output'}
 ]
 doccomp = ['document_base.myt']
 output = os.path.dirname(os.getcwd())

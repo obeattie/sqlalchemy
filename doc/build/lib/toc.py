@@ -1,3 +1,6 @@
+"""
+defines a pickleable, recursive "table of contents" datastructure.
+"""
 import datetime
 
 toc_by_file = {}

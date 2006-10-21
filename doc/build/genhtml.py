@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import sys,re,os
+import sys,re,os,shutil
 import myghty.interp
 import myghty.exception as exception
 import cPickle as pickle
@@ -9,6 +9,7 @@ sys.path = ['../../lib', './lib/'] + sys.path
 import gen_docstrings, read_markdown, toc
 
 files = [
+    'index',
     'tutorial',
     'dbengine',
     'metadata',
@@ -19,7 +20,7 @@ files = [
     'types',
     'pooling',
     'plugins',
-    'docstrings',
+    'docstrings'
     ]
 
 title='SQLAlchemy 0.3 Documentation'
@@ -27,16 +28,19 @@ version = '0.3.0'
 
 root = toc.TOCElement('', 'root', '', version=version, doctitle=title)
 
-docstrings = gen_docstrings.make_all_docs()
-pickle.dump(docstrings, file(os.path.join(os.getcwd(), 'content', "compiled_docstrings.pickle"), 'w'))
-gen_docstrings.create_docstring_toc(docstrings, root)
+
+
+shutil.copy('./content/index.myt', './output/index.myt')
+shutil.copy('./content/docstrings.myt', './output/docstrings.myt')
 
 read_markdown.parse_markdown_files(root, files)
-pickle.dump(root, file(os.path.join(os.getcwd(), 'content', "table_of_contents.pickle"), 'w'))
+docstrings = gen_docstrings.make_all_docs()
+pickle.dump(docstrings, file('./output/compiled_docstrings.pickle', 'w'))
+gen_docstrings.create_docstring_toc(docstrings, root)
+pickle.dump(root, file('./output/table_of_contents.pickle', 'w'))
 
 component_root = [
     {'components': './components'},
-    {'content' : './content'},
     {'output' :'./output'}
 ]
 output = os.path.dirname(os.getcwd())

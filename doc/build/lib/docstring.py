@@ -1,6 +1,8 @@
-import re, types, string, inspect
+"""
+defines a pickleable, recursive "generated python documentation" datastructure.
+"""
 
-"""sucks a module and its contents into a simple documentation object, suitable for pickling"""
+import re, types, string, inspect
 
 allobjects = {}
 

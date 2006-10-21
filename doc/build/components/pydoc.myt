@@ -49,7 +49,7 @@ import docstring
     <td>
         <div class="darkcell">
         <A name=""></a>
-        <b><% func.name %>(<% string.join(map(lambda k: "<i>%s</i>" % k, func.arglist), ", ")%>)</b>
+        <b><% func.name %>(<% ", ".join(map(lambda k: "<i>%s</i>" % k, func.arglist))%>)</b>
         <div class="docstring">
         <&|formatting.myt:formatplain&><% func.doc %></&>
         </div>
@@ -67,7 +67,7 @@ import docstring
          <td>
          <div class="darkcell">
          <A name=""></a>
-         <b><% name %></b>
+         <b><% prop.name %></b>
          <div class="docstring">
          <&|formatting.myt:formatplain&><% prop.doc %></&>
          </div> 
