@@ -113,9 +113,9 @@ def process_rel_href(tree):
             (bold, path) = m.group(1,2)
             text = a.text
             if text == path:
-                tag = et.Element("MYGHTY:formatting.myt:toclink", path=literal(path), toc="toc", extension="extension")
+                tag = et.Element("MYGHTY:nav.myt:toclink", path=literal(path), toc="toc", extension="extension")
             else:
-                tag = et.Element("MYGHTY:formatting.myt:toclink", path=literal(path), description=literal(text), toc="toc", extension="extension")
+                tag = et.Element("MYGHTY:nav.myt:toclink", path=literal(path), description=literal(text), toc="toc", extension="extension")
             a_parent = parent[a]
             if bold:
                 bold = et.Element('strong')
@@ -189,19 +189,21 @@ def reverse_parent(parent, item):
 def get_parent_map(tree):
     return dict([(c, p) for p in tree.getiterator() for c in p])
 
-def header(title, filename):
-    return """
-<%%flags>inherit='content_layout.myt'</%%flags>
+def header(toc, title, filename):
+    return """#encoding: utf-8
+<%%flags>
+    inherit='content_layout.myt'
+</%%flags>
 <%%args>
     toc
     extension
 </%%args>
 <%%attr>
-    title='%s'
+    title='%s - %s'
     filename = '%s'
 </%%attr>
 <%%doc>This file is generated.  Edit the .txt files instead of this one.</%%doc>
-""" % (title, filename)
+""" % (toc.root.description, title, filename)
   
 class utf8stream(object):
     def __init__(self, stream):
@@ -222,7 +224,7 @@ def parse_markdown_files(toc, files):
         outname = 'output/%s.myt' % inname
         print infile, '->', outname
         outfile = utf8stream(file(outname, 'w'))
-        outfile.write(header(title, inname))
+        outfile.write(header(toc, title, inname))
         dump_tree(tree, outfile)
     
     

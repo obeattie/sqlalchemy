@@ -1,3 +1,4 @@
+<%doc>defines the default layout for normal documentation pages (not including the index)</%doc>
 <%args>
     extension="myt"
     toc

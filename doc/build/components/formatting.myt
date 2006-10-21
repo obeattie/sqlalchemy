@@ -1,71 +1,12 @@
-<%doc>formatting.myt - library of HTML formatting functions to operate on a TOCElement tree</%doc>
+<%doc>formatting.myt - Provides section formatting elements, syntax-highlighted code blocks, and other special filters.</%doc>
 
 <%global>
     import string, re
     import highlight
 </%global>
 
-
-<%method printtoc>
-<%args> 
-    root
-    current = None
-    full = False
-    children = True
-    extension
-    anchor_toplevel=False
-</%args>
-
-<ul class="toc_list">
-% for i in root.children:
-    <& printtocelement, item=i, bold = (i == current), full = full, children=children, extension=extension, anchor_toplevel=anchor_toplevel &>
-%
-</ul>
-</%method>
-
-<%def printtocelement>
-<%doc>prints a TOCElement as a table of contents item and prints its immediate child items</%doc>
-    <%args>
-        item
-        bold = False
-        full = False
-        children = True
-        extension
-        anchor_toplevel
-    </%args>
-    
-        <li><A style="<% bold and "font-weight:bold;" or "" %>" href="<% item.get_link(extension=extension, anchor=anchor_toplevel) %>"><% item.description %></a></li>
-    
-% if children:  
-    <ul class="small_toc_list">
-%   for i in item.children:
-        <& printsmtocelem, item=i, children=full, extension=extension &>
-%
-    </ul>
-%
-</%def>
-
-<%def printsmtocelem>
-    <%args>
-        item
-        children = False
-        extension
-    </%args>    
-    <li><A href="<% item.get_link(extension=extension) %>"><% item.description %></a></li>
-
-% if children:
-    <ul class="small_toc_list">
-%   for i in item.children:
-        <& printsmtocelem, item = i, extension=extension &>
-%
-    </ul>
-%
-
-</%def>
-
-
-
 <%method section>
+<%doc>Main section formatting element.</%doc>
 <%args>
     toc
     path
@@ -120,30 +61,6 @@
 
 
 
-<%method paramtable>
-    <table cellspacing="0" cellpadding="0" width="100%">
-    <% m.content() %>
-    </table>
-</%method>
-
-<%method member_doc>
-       <%args>
-               name = ""
-               link = ""
-               type = None
-       </%args>
-       <tr>
-       <td>
-           <div class="darkcell">
-           <A name=""></a>
-           <b><% name %></b>
-           <div class="docstring"><% m.content() %></div>
-           </div>
-       </td>
-       </tr>
-</%method>
-
-
 
 <%method codeline trim="both">
 <span class="codeline"><% m.content() %></span>
@@ -192,48 +109,6 @@
 
 
 
-<%method itemlink trim="both">
-    <%args>
-    item
-    anchor=True
-    </%args>
-    <%args scope="request">
-        extension='myt'
-    </%args>
-    <a href="<% item.get_link(extension=extension, anchor=anchor) %>"><% item.description %></a>
-</%method>
-
-<%method toclink trim="both">
-    <%args>
-        toc 
-        path
-        description=None
-        extension
-    </%args>
-    <%init>
-        item = toc.get_by_path(path)
-        if description is None:
-            if item:
-                description = item.description
-            else:
-                description = path
-    </%init>
-% if item:
-    <a href="<% item.get_link(extension=extension) %>"><% description %></a>
-% else:
-    <b><% description %></b>
-%
-</%method>
-
-
-<%method link trim="both">
-    <%args>
-        href
-        text
-        class_
-    </%args>
-    <a href="<% href %>" <% class_ and (('class=\"%s\"' % class_) or '')%>><% text %></a>
-</%method>
 
 <%method popboxlink trim="both"> 
     <%args>
@@ -270,7 +145,7 @@ javascript:togglePopbox('<% name %>', '<% show %>', '<% hide %>')
     <%init>
         href = m.scomp('SELF:popboxlink')
     </%init>
-    '''PYESC<& SELF:link, href=href, text=link, class_="codepoplink" &>PYESC'''
+    '''PYESC<& nav.myt:link, href=href, text=link, class_="codepoplink" &>PYESC'''
 </%method>
 
 <%method codepopper trim="both">

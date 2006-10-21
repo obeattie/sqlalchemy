@@ -28,8 +28,6 @@ version = '0.3.0'
 
 root = toc.TOCElement('', 'root', '', version=version, doctitle=title)
 
-
-
 shutil.copy('./content/index.myt', './output/index.myt')
 shutil.copy('./content/docstrings.myt', './output/docstrings.myt')
 
@@ -37,7 +35,6 @@ read_markdown.parse_markdown_files(root, files)
 docstrings = gen_docstrings.make_all_docs()
 gen_docstrings.create_docstring_toc(docstrings, root)
 
-print "NOW DUMPING THE STUFF"
 pickle.dump(docstrings, file('./output/compiled_docstrings.pickle', 'w'))
 pickle.dump(root, file('./output/table_of_contents.pickle', 'w'))
 

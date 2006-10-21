@@ -1,3 +1,49 @@
+<%doc>nav.myt - Provides page navigation elements that are derived from toc.TOCElement structures, including
+individual hyperlinks as well as navigational toolbars and table-of-content listings.</%doc>
+
+<%method itemlink trim="both">
+    <%args>
+    item
+    anchor=True
+    </%args>
+    <%args scope="request">
+        extension='myt'
+    </%args>
+    <a href="<% item.get_link(extension=extension, anchor=anchor) %>"><% item.description %></a>
+</%method>
+
+<%method toclink trim="both">
+    <%args>
+        toc 
+        path
+        description=None
+        extension
+    </%args>
+    <%init>
+        item = toc.get_by_path(path)
+        if description is None:
+            if item:
+                description = item.description
+            else:
+                description = path
+    </%init>
+% if item:
+    <a href="<% item.get_link(extension=extension) %>"><% description %></a>
+% else:
+    <b><% description %></b>
+%
+</%method>
+
+
+<%method link trim="both">
+    <%args>
+        href
+        text
+        class_
+    </%args>
+    <a href="<% href %>" <% class_ and (('class=\"%s\"' % class_) or '')%>><% text %></a>
+</%method>
+
 <%method topnav>
 	<%args>
 		item
@@ -11,7 +57,7 @@
 
 <div class="prevnext">
 % if item.previous is not None:
-Previous: <& formatting.myt:itemlink, item=item.previous, anchor=False &>
+Previous: <& itemlink, item=item.previous, anchor=False &>
 %
 
 % if item.previous is not None and item.next is not None:
@@ -20,7 +66,7 @@ Previous: <& formatting.myt:itemlink, item=item.previous, anchor=False &>
 
 % if item.next is not None:
 
-Next: <& formatting.myt:itemlink, item=item.next, anchor=False &>
+Next: <& itemlink, item=item.next, anchor=False &>
 %
 
 </div>
@@ -29,7 +75,7 @@ Next: <& formatting.myt:itemlink, item=item.next, anchor=False &>
 <div class="topnavmain">
 	<div class="topnavheader"><% item.description %></div>
 	<div class="topnavitems">
-	<& formatting.myt:printtoc, root=item, current=None, full=True, extension=extension, anchor_toplevel=True &>
+	<& toc.myt:printtoc, root=item, current=None, full=True, extension=extension, anchor_toplevel=True &>
 	</div>
 </div>
 
@@ -44,7 +90,7 @@ Next: <& formatting.myt:itemlink, item=item.next, anchor=False &>
 <div class="sectionnav">
 
 %       if item.previous is not None:
-        Previous: <& formatting.myt:itemlink, item=item.previous &>
+        Previous: <& itemlink, item=item.previous &>
 %       # end if
 
 %       if item.next is not None:
@@ -52,7 +98,7 @@ Next: <& formatting.myt:itemlink, item=item.next, anchor=False &>
                 |
 %               # end if
 
-        Next: <& formatting.myt:itemlink, item=item.next &>
+        Next: <& itemlink, item=item.next &>
 %       # end if
 
 </div>

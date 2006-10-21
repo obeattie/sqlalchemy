@@ -1,7 +1,10 @@
 """
 defines a pickleable, recursive "table of contents" datastructure.
+
+TOCElements define a name, a description, and also a uniquely-identifying "path" which is
+used to generate hyperlinks between document sections.
 """
-import datetime
+import time
 
 toc_by_file = {}
 toc_by_path = {}
@@ -15,7 +18,7 @@ class TOCElement(object):
         self.content = None
         self.toc_by_path = toc_by_path
         self.toc_by_file = toc_by_file
-        self.last_updated = last_updated
+        self.last_updated = time.time()
         self.version = version
         self.doctitle = doctitle
         (self.path, self.depth) = self._create_path()

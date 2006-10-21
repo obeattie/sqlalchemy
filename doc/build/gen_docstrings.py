@@ -14,9 +14,11 @@ import sqlalchemy.mods.threadlocal as threadlocal
 import sqlalchemy.ext.selectresults as selectresults
 
 def make_doc(obj, classes=None, functions=None):
+    """generate a docstring.ObjectDoc structure for an individual module, list of classes, and list of functions."""
     return docstring.ObjectDoc(obj, classes=classes, functions=functions)
 
 def make_all_docs():
+    """generate a docstring.AbstractDoc structure."""
     objects = [
         make_doc(obj=sql),
         make_doc(obj=schema),
@@ -36,6 +38,8 @@ def make_all_docs():
     return objects
     
 def create_docstring_toc(data, root):
+    """given a docstring.AbstractDoc structure, create new TOCElement nodes corresponding
+    to the elements and cross-reference them back to the doc structure."""
     root = TOCElement("docstrings", name="docstrings", description="Generated Documentation", parent=root)
     def create_obj_toc(obj, toc):
         if obj.isclass:
@@ -56,7 +60,7 @@ def create_docstring_toc(data, root):
 
         toc = TOCElement("docstrings", obj.name, description, parent=toc)
         obj.toc_path = toc.path
-        print "NEW TOC", toc.path, "DEPTH", toc.depth
+
         if not obj.isclass and obj.functions:
             TOCElement("docstrings", name="modfunc", description="Module Functions", parent=toc)
 

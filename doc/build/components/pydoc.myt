@@ -1,3 +1,5 @@
+<%doc>pydoc.myt - provides formatting functions for printing docstring.AbstractDoc generated python documentation objects.</%doc>
+
 <%global>
 import docstring
 </%global>
@@ -13,7 +15,7 @@ if obj.isclass:
     links = []
     for elem in obj.inherits:
         if isinstance(elem, docstring.ObjectDoc):
-            links.append(m.scomp("formatting.myt:toclink", toc=toc, path=elem.toc_path, extension=extension, description=elem.name))
+            links.append(m.scomp("nav.myt:toclink", toc=toc, path=elem.toc_path, extension=extension, description=elem.name))
         else:
             links.append(str(elem))
     htmldescription = "class " + obj.classname + "(%s)" % (','.join(links))
@@ -46,11 +48,9 @@ else:
 %
 
 % if obj.classes:
-<&|formatting.myt:paramtable&>
 %   for class_ in obj.classes:
       <& SELF:obj_doc, obj=class_, toc=toc, extension=extension &>
 %   
-</&>
 %    
 </&>
 </%method>

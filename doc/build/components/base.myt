@@ -1,23 +1,24 @@
+<%doc>base.myt - common to all documentation pages. intentionally separate from autohandler, which can be swapped
+out for a different one</%doc>
 <%args>
     extension="myt"
 </%args>
-<%global>
+<%python scope="init">
+    if m.cache_self(key=m.request_component.file):
+        return
+    # bootstrap TOC structure from request args, or pickled file if not present.
     import cPickle as pickle
     import os, time
-    toc = request.instance().request_args.get('toc')
+    m.log("base.myt generating from table of contents for file %s" % m.request_component.file)
+    toc = m.request_args.get('toc')
     if toc is None:
-        filename = os.path.join(os.path.dirname(request.instance().request_component.file), 'table_of_contents.pickle')
+        filename = os.path.join(os.path.dirname(m.request_component.file), 'table_of_contents.pickle')
         toc = pickle.load(file(filename))
     version = toc.version
     last_updated = toc.last_updated
-</%global>
-
+</%python>
 <%method title>
-    <% toc.root.doctitle %> 
-% t = m.request_component.attributes.get('title')
-% if t:
-    - <% t %>
-%
+    <% m.request_component.attributes.get('title') %>
 </%method>
 
 <div style="position:absolute;left:0px;top:0px;"><a name="top"></a>&nbsp;</div>
