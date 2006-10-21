@@ -203,7 +203,7 @@ def header(toc, title, filename):
     filename = '%s'
 </%%attr>
 <%%doc>This file is generated.  Edit the .txt files instead of this one.</%%doc>
-""" % (toc.root.description, title, filename)
+""" % (toc.root.doctitle, title, filename)
   
 class utf8stream(object):
     def __init__(self, stream):
