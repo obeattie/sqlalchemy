@@ -1,22 +1,18 @@
-import sys, re
+import sys, re, os
 from toc import TOCElement
-import gen_docstrings
 
 try:
     import elementtree.ElementTree as et
 except:
     raise "This module requires ElementTree to run (http://effbot.org/zone/element-index.htm)"
 
-sys.path.insert(0, './lib')
 import markdown
-
-root = TOCElement('', 'root', '')
 
 def dump_tree(elem, stream):
     if elem.tag.startswith('MYGHTY:'):
         dump_myghty_tag(elem, stream)
     else:
-        stream.write("<%s>" % elem.tag)
+        stream.write("<%s %s>" % (elem.tag, " ".join("%s=%s" % (key, repr(val)) for key, val in elem.attrib.iteritems())))
         if elem.text:
             stream.write(elem.text)
         for child in elem:
@@ -27,7 +23,7 @@ def dump_tree(elem, stream):
 
 def dump_myghty_tag(elem, stream):
     tag = elem.tag[7:]
-    params = ', '.join(['%s="%s"' % i for i in elem.items()])
+    params = ', '.join(['%s=%s' % i for i in elem.items()])
     pipe = ''
     if elem.text or len(elem):
         pipe = '|'
@@ -44,9 +40,9 @@ def dump_myghty_tag(elem, stream):
                 stream.write(n.tail)
         stream.write("</&>")
 
-def create_toc(filename, tree):
+def create_toc(filename, tree, tocroot):
     title = [None]
-    current = [root]
+    current = [tocroot]
     level = [0]
     def process(tree):
         while True:
@@ -74,7 +70,7 @@ def create_toc(filename, tree):
 
             level[0] = taglevel
 
-            tag = et.Element("MYGHTY:doclib.myt:section", name=name, description=description)
+            tag = et.Element("MYGHTY:formatting.myt:section", path=literal(current[0].path), toc="toc")
             tag.text = (node.tail or "") + '\n'
             tag.tail = '\n'
             tag[:] = content
@@ -83,8 +79,11 @@ def create_toc(filename, tree):
             process(tag)
 
     process(tree)
-    return title[0]
+    return (title[0], tocroot.get_by_file(filename))
 
+def literal(s):
+    return '"%s"' % s
+    
 def index(parent, item):
     for n, i in enumerate(parent):
         if i is item:
@@ -105,6 +104,27 @@ def end_of_header(tree, level, start):
         if is_header(node) and int(node.tag[1]) <= level:
             return start + i
     return len(tree)
+
+def process_rel_href(tree):
+    parent = get_parent_map(tree)
+    for a in tree.findall('.//a'):
+        m = re.match(r'(bold)?rel\:(.+)', a.get('href'))
+        if m:
+            (bold, path) = m.group(1,2)
+            text = a.text
+            if text == path:
+                tag = et.Element("MYGHTY:formatting.myt:toclink", path=literal(path), toc="toc", extension="extension")
+            else:
+                tag = et.Element("MYGHTY:formatting.myt:toclink", path=literal(path), description=literal(text), toc="toc", extension="extension")
+            a_parent = parent[a]
+            if bold:
+                bold = et.Element('strong')
+                bold.tail = a.tail
+                bold.append(tag)
+                a_parent[index(a_parent, a)] = bold
+            else:
+                tag.tail = a.tail
+                a_parent[index(a_parent, a)] = tag
 
 def replace_pre_with_myt(tree):
     def splice_code_tag(pre, text, type=None, title=None):
@@ -131,17 +151,17 @@ def replace_pre_with_myt(tree):
 
         opts = {}
         if type == 'python':
-            opts['syntaxtype'] = 'python'
+            opts['syntaxtype'] = literal('python')
         else:
             opts['syntaxtype'] = None
 
         if title is not None:
-            opts['title'] = title
+            opts['title'] = literal(title)
     
         if use_sliders:
             opts['use_sliders'] = True
     
-        tag = et.Element("MYGHTY:formatting.myt:poplink", **opts)
+        tag = et.Element("MYGHTY:formatting.myt:code", **opts)
         tag.text = text
 
         pre_parent = parents[pre]
@@ -169,21 +189,40 @@ def reverse_parent(parent, item):
 def get_parent_map(tree):
     return dict([(c, p) for p in tree.getiterator() for c in p])
 
-
-    
-if __name__ == '__main__':
-    import glob
-
-    docstring_data = gen_docstrings.create_docstring_toc('content/compiled_docstrings.pickle', root)
-    gen_docstrings.gen(docstring_data, root)
-    if False:
-        filenames = sys.argv[1:]
-        if len(filenames) == 0:
-            filenames = glob.glob('content/*.txt')
-        for inname in filenames:
-            html = markdown.markdown(file(inname).read())
-            tree = et.fromstring("<html>" + html + "</html>")
-            create_toc(inname, tree)
-            replace_pre_with_myt(tree)
-            dump_tree(tree, sys.stdout)
+def header(title, filename):
+    return """
+<%%flags>inherit='base.myt'</%%flags>
+<%%args>
+    toc
+    extension
+</%%args>
+<%%attr>
+    title='%s'
+    filename = '%s'
+</%%attr>
+<%%doc>This file is generated.  Edit the .txt files instead of this one.</%%doc>
+""" % (title, filename)
+  
+class utf8stream(object):
+    def __init__(self, stream):
+        self.stream = stream
+    def write(self, str):
+        self.stream.write(str.encode('utf8'))
         
+def parse_markdown_files(toc, files):
+    for inname in files:
+        infile = 'content/%s.txt' % inname
+        if not os.access(infile, os.F_OK):
+            continue
+        html = markdown.markdown(file(infile).read())
+        tree = et.fromstring("<html>" + html + "</html>")
+        (title, toc_element) = create_toc(inname, tree, toc)
+        replace_pre_with_myt(tree)
+        process_rel_href(tree)
+        outname = 'output/%s.myt' % inname
+        print infile, '->', outname
+        outfile = utf8stream(file(outname, 'w'))
+        outfile.write(header(title, inname))
+        dump_tree(tree, outfile)
+    
+    

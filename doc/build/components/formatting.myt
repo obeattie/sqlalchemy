@@ -9,27 +9,16 @@
 <%method printtoc>
 <%args> 
     root
-    includefile
     current = None
     full = False
     children = True
+    extension
 </%args>
 
-% header = False
 <ul class="toc_list">
 % for i in root.children:
-
-%   if i.header:
-%       if header:
-    </ul>
+    <& printtocelement, item=i, bold = (i == current), full = full, children=children, extension=extension &>
 %
-%   header = True
-    <h3><% i.header %></h3>
-    <ul class="toc_list">
-%
-    <& printtocelement, item=i, includefile = includefile, bold = (i == current and includefile), full = full, children=children &>
-%
-
 </ul>
 </%method>
 
@@ -37,18 +26,18 @@
 <%doc>prints a TOCElement as a table of contents item and prints its immediate child items</%doc>
     <%args>
         item
-        includefile
         bold = False
         full = False
         children = True
+        extension
     </%args>
-
-        <li><A style="<% bold and "font-weight:bold;" or "" %>" href="<% item.get_link(includefile, anchor = (not includefile)) %>"><% item.description %></a></li>
+    
+        <li><A style="<% bold and "font-weight:bold;" or "" %>" href="<% item.get_link(extension=extension) %>"><% item.description %></a></li>
     
 % if children:  
     <ul class="small_toc_list">
 %   for i in item.children:
-        <& printsmtocelem, item=i, includefile = includefile, children=full &>
+        <& printsmtocelem, item=i, children=full, extension=extension &>
 %
     </ul>
 %
@@ -57,15 +46,15 @@
 <%def printsmtocelem>
     <%args>
         item
-        includefile
         children = False
+        extension
     </%args>    
-    <li><A href="<% item.get_link(includefile) %>"><% item.description %></a></li>
+    <li><A href="<% item.get_link(extension=extension) %>"><% item.description %></a></li>
 
 % if children:
     <ul class="small_toc_list">
 %   for i in item.children:
-        <& printsmtocelem, item = i, includefile = includefile &>
+        <& printsmtocelem, item = i, extension=extension &>
 %
     </ul>
 %
@@ -74,123 +63,46 @@
 
 
 
-<%method printitem>
-<%doc>prints the description and contents of a TOC element and recursively prints its child items</%doc>
-
+<%method section>
 <%args>
-    item
-    indentlevel = 0
-    includefile
-    omitheader = False
-    root = None
+    toc
+    path
 </%args>
+<%init>
+    item = toc.get_by_path(path)
+</%init>
 
-% if root is None: root = item
-
-% if not omitheader:
 <A name="<% item.path %>"></a>
-% if item.altlink:
-<A name="<% item.altlink %>"></a>
-%
-%
 
-<div class="subsection" style="margin-left:<% repr(10 + indentlevel * 10) %>px;">
-
+<div class="subsection" style="margin-left:<% repr(item.depth * 10) %>px;">
 
 <%python>
-    regexp = re.compile(r"__FORMAT:LINK{(?:\@path=(.+?))?(?:\@xtra=(.+?))?(?:\@text=(.+?))?(?:\@href=(.+?))?(?:\@class=(.+?))?}")
-    def link(matchobj):
-        path = matchobj.group(1)
-        xtra = matchobj.group(2)
-        text = matchobj.group(3)
-        href = matchobj.group(4)
-        class_ = matchobj.group(5)
-        
-        if class_ is not None:
-            class_ = 'class="%s"' % class_
-        else:
-            class_ = ''	
-            
-        if href:
-            return '<a href="%s" %s>%s</a>' % (href, class_, text or href)
-        else:
-            try:
-                element = item.lookup(path)
-                if xtra is not None:
-                    return '<a href="%s_%s" %s>%s</a>' % (element.get_link(includefile), xtra, class_, text or xtra)
-                else:
-                    return '<a href="%s" %s>%s</a>' % (element.get_link(includefile), class_, text or element.description)
-            except KeyError:
-                if xtra is not None:
-                    return '<b>%s</b>' % (text or xtra)
-                else:
-                    return '<b>%s</b>' % text or path
-
+    content = m.content()
     re2 = re.compile(r"'''PYESC(.+?)PYESC'''", re.S)
-    content = regexp.sub(link, item.content)
     content = re2.sub(lambda m: m.group(1), content)
-    description = regexp.sub(link, item.htmldescription or item.description)
 </%python>
 
-% if not omitheader:
-    <h3><% description %></h3>
+% if item.depth > 1:
+<h3><% item.description %></h3>
 %
+
     <div class="sectiontext">
+    <% content %>
+</div>
 
-<%python>
-    #m.write(item.content)
-    m.write(content)
-</%python>
-
-    </div>
-
-%   for i in item.children:
-        <& printitem, item=i, indentlevel=indentlevel + 1, includefile = includefile, root=root &>
+% if item.depth > 1:
+%   if (item.next and item.next.depth >= item.depth):
+    <a href="#<% item.get_page_root().path %>" class="toclink">back to section top</a>
 %
-
-% if root is not None and len(item.children) == 0:
-    <a href="#<% root.path %>" class="toclink">back to section top</a>
-%
-
-% if indentlevel == 0:
-%   if includefile:
-    <& SELF:pagenav, item=item, includefile=includefile &>
-%   else:
-    <hr width="400px" align="left" />
-% #
+% else:
+    <a href="#<% item.get_page_root().path %>" class="toclink">back to section top</a>
+    <& nav.myt:pagenav, item=item &>
 % 
 
 </div>
 
 </%method>
 
-<%method pagenav>
-<%args>
-    item
-    includefile
-</%args>
-<div class="sectionnavblock">
-<div class="sectionnav">
-
-% if not includefile:
-    <a href="#top">Top</a> |
-%
-
-%       if item.previous is not None:
-        Previous: <& SELF:itemlink, item=item.previous, includefile = includefile &>
-%       # end if
-
-%       if item.next is not None:
-%               if item.previous is not None:
-                |
-%               # end if
-
-        Next: <& SELF:itemlink, item=item.next, includefile = includefile &>
-%       # end if
-
-</div>
-</div>
-</%method>
 
 <%method formatplain>
     <%filter>
@@ -200,14 +112,6 @@
         return f
     </%filter>
 <% m.content() | h%>
-</%method>
-
-<%method itemlink trim="both">
-    <%args>
-    item
-    includefile
-    </%args>
-    <a href="<% item.get_link(includefile, anchor = (not includefile)) %>"><% item.description %></a>
 </%method>
 
 
@@ -236,24 +140,6 @@
 </%method>
 
 
-<%method function_doc>
-    <%args>
-        name = ""
-        link = ""
-        alt = None
-        arglist = []
-        rettype = None
-    </%args>
-    <tr>
-    <td>
-        <div class="darkcell">
-        <A name=""></a>
-        <b><% name %>(<% string.join(map(lambda k: "<i>%s</i>" % k, arglist), ", ")%>)</b>
-        <div class="docstring"><% m.content() %></div>
-        </div>
-    </td>
-    </tr>
-</%method>
 
 <%method codeline trim="both">
 <span class="codeline"><% m.content() %></span>
@@ -300,23 +186,48 @@
 <% content %></div>
 </%method>
 
-<%method link trim="both">
+
+
+<%method itemlink trim="both">
     <%args>
-        path = None
-        param = None
-        method = None
-        member = None
-        text = None
-        href = None
-        class_ = None
+    item
+    </%args>
+    <%args scope="request">
+        extension='myt'
+    </%args>
+    <a href="<% item.get_link(extension=extension) %>"><% item.description %></a>
+</%method>
+
+<%method toclink trim="both">
+    <%args>
+        toc 
+        path
+        description=None
+        extension
     </%args>
     <%init>
-        if href is None and path is None:
-            path = m.comp('doclib.myt:current').path
-            
-        extra = (param or method or member)
+        item = toc.get_by_path(path)
+        if description is None:
+            if item:
+                description = item.description
+            else:
+                description = path
     </%init>
-__FORMAT:LINK{<% path and "@path=" + path or "" %><% extra and "@xtra=" + extra or "" %><% text and "@text=" + text or "" %><% href and "@href=" + href or "" %><% class_ and "@class=" + class_ or "" %>}
+% if item:
+    <a href="<% item.get_link(extension=extension) %>"><% description %></a>
+% else:
+    <b><% description %></b>
+%
+</%method>
+
+
+<%method link trim="both">
+    <%args>
+        href
+        text
+        class_
+    </%args>
+    <a href="<% href %>" <% class_ and (('class=\"%s\"' % class_) or '')%>><% text %></a>
 </%method>
 
 <%method popboxlink trim="both"> 

@@ -1,6 +1,9 @@
-<%flags>inherit='document_base.myt'</%flags>
-<%attr>title='Modules and Classes'</%attr>
-<&|doclib.myt:item, name="docstrings", description="Modules and Classes" &>
+<%flags>inherit='base.myt'</%flags>
+<%attr>
+    title='Modules and Classes'
+    filename='docstrings'
+</%attr>
+
 <%init>
     import cPickle as pickle
     import os
@@ -12,4 +15,3 @@
 <& pydoc.myt:obj_doc, obj=obj &>
 %
 
-</&>

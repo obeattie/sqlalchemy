@@ -1,16 +1,41 @@
-import myghty.interp
-import myghty.exception as exception
 from toc import TOCElement
-import cPickle as pickle
-import docstring, sys
+import docstring
 
-component_root = [
-    {'components': './components'},
-]
+import sqlalchemy.schema as schema
+import sqlalchemy.engine as engine
+import sqlalchemy.engine.strategies as strategies
+import sqlalchemy.sql as sql
+import sqlalchemy.pool as pool
+import sqlalchemy.orm as orm
+import sqlalchemy.exceptions as exceptions
+import sqlalchemy.ext.proxy as proxy
+import sqlalchemy.ext.sessioncontext as sessioncontext
+import sqlalchemy.mods.threadlocal as threadlocal
+import sqlalchemy.ext.selectresults as selectresults
 
-def create_docstring_toc(filename, root):
-    data = pickle.load(file(filename))
+def make_doc(obj, classes=None, functions=None):
+    return docstring.ObjectDoc(obj, classes=classes, functions=functions)
 
+def make_all_docs():
+    objects = [
+        make_doc(obj=sql),
+        make_doc(obj=schema),
+        make_doc(obj=engine),
+        make_doc(obj=engine.url),
+        make_doc(obj=orm, classes=[orm.MapperExtension]),
+        make_doc(obj=orm.mapperlib, classes=[orm.mapperlib.Mapper]),
+        make_doc(obj=orm.query, classes=[orm.query.Query, orm.query.QueryContext, orm.query.SelectionContext]),
+        make_doc(obj=orm.session, classes=[orm.session.Session, orm.session.SessionTransaction]),
+        make_doc(obj=pool, classes=[pool.DBProxy, pool.Pool, pool.QueuePool, pool.SingletonThreadPool]),
+        make_doc(obj=sessioncontext),
+        make_doc(obj=threadlocal),
+        make_doc(obj=selectresults),
+        make_doc(obj=exceptions),
+        make_doc(obj=proxy),
+    ]
+    return objects
+    
+def create_docstring_toc(data, root):
     def create_obj_toc(obj, toc):
         if obj.isclass:
             s = []
@@ -28,10 +53,11 @@ def create_docstring_toc(filename, root):
             description = obj.description
             htmldescription = obj.description
 
-        toc = TOCElement(filename, obj.name, description, toc)
-
+        toc = TOCElement("docstrings", obj.name, description, toc)
+        obj.toc_path = toc.path
+        
         if not obj.isclass and obj.functions:
-            TOCElement(filename, name="modfunc", description="Module Functions", parent=toc)
+            TOCElement("docstrings", name="modfunc", description="Module Functions", parent=toc)
 
         if obj.classes:
             for class_ in obj.classes:
@@ -41,17 +67,3 @@ def create_docstring_toc(filename, root):
         create_obj_toc(obj, root)
     return data
 
-def gen(data, toc):
-    interp = myghty.interp.Interpreter( component_root = component_root)
-    comp = interp.make_component("""
-<%args>
-    data
-</%args>
-% for obj in data:
-<& py_doc.myt:obj_doc, obj=obj &>
-%
-""")
-    try:
-        interp.execute(comp, out_buffer = sys.stdout, request_args = {'data':data}, raise_error = True)
-    except exception.Error, e:
-        sys.stderr.write(e.textformat())

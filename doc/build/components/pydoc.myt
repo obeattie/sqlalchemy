@@ -45,9 +45,17 @@ import docstring
 
 <%method function_doc>
     <%args>func</%args>
-    <&|formatting.myt:function_doc, name=func.name, link=func.link, arglist=func.arglist &>
-    <&|formatting.myt:formatplain&><% func.doc %></&>
-    </&>
+    <tr>
+    <td>
+        <div class="darkcell">
+        <A name=""></a>
+        <b><% func.name %>(<% string.join(map(lambda k: "<i>%s</i>" % k, func.arglist), ", ")%>)</b>
+        <div class="docstring">
+        <&|formatting.myt:formatplain&><% func.doc %></&>
+        </div>
+        </div>
+    </td>
+    </tr>
 </%method>
 
 
@@ -55,7 +63,17 @@ import docstring
     <%args>
         prop
     </%args>
-    <&|formatting.myt:member_doc, name=prop.name, link=prop.link &>
-    <&|formatting.myt:formatplain&><% prop.doc %></&>
-    </&>    
+    <tr>
+         <td>
+         <div class="darkcell">
+         <A name=""></a>
+         <b><% name %></b>
+         <div class="docstring">
+         <&|formatting.myt:formatplain&><% prop.doc %></&>
+         </div> 
+         </div>
+     </td>
+     </tr>
 </%method>
+
+

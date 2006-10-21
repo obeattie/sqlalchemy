@@ -9,6 +9,7 @@ class AbstractDoc(object):
         allobjects[id(obj)] = self
         self.id = id(obj)
         self.allobjects = allobjects
+        self.toc_path = None
         
 class ObjectDoc(AbstractDoc):
     def __init__(self, obj, functions=None, classes=None):
