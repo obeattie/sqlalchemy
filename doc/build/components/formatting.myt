@@ -69,9 +69,12 @@
 <%args>
     toc
     path
+    description=None
 </%args>
 <%init>
     item = toc.get_by_path(path)
+    if item is None:
+        raise "path: " + path
 </%init>
 
 <A name="<% item.path %>"></a>
@@ -85,12 +88,12 @@
 </%python>
 
 % if item.depth > 1:
-<h3><% item.description %></h3>
+<h3><% description or item.description %></h3>
 %
 
     <div class="sectiontext">
     <% content %>
-</div>
+    </div>
 
 % if item.depth > 1:
 %   if (item.next and item.next.depth >= item.depth):
@@ -100,7 +103,6 @@
     <a href="#<% item.get_page_root().path %>" class="toclink">back to section top</a>
     <& nav.myt:pagenav, item=item &>
 % 
-
 </div>
 
 </%method>

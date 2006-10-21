@@ -54,9 +54,9 @@ def create_docstring_toc(data, root):
             description = obj.description
             htmldescription = obj.description
 
-        toc = TOCElement("docstrings", obj.name, description, toc)
+        toc = TOCElement("docstrings", obj.name, description, parent=toc)
         obj.toc_path = toc.path
-        
+        print "NEW TOC", toc.path, "DEPTH", toc.depth
         if not obj.isclass and obj.functions:
             TOCElement("docstrings", name="modfunc", description="Module Functions", parent=toc)
 

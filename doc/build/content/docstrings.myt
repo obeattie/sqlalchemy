@@ -1,9 +1,12 @@
-<%flags>inherit='base.myt'</%flags>
+<%flags>inherit='content_layout.myt'</%flags>
 <%attr>
     title='Modules and Classes'
     filename='docstrings'
 </%attr>
-
+<%args>
+    toc
+    extension
+</%args>
 <%init>
     import cPickle as pickle
     import os
@@ -12,6 +15,5 @@
 </%init>
 
 % for obj in data:
-<& pydoc.myt:obj_doc, obj=obj &>
+<& pydoc.myt:obj_doc, obj=obj, toc=toc, extension=extension &>
 %
-

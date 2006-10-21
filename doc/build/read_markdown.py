@@ -191,7 +191,7 @@ def get_parent_map(tree):
 
 def header(title, filename):
     return """
-<%%flags>inherit='layout.myt'</%%flags>
+<%%flags>inherit='content_layout.myt'</%%flags>
 <%%args>
     toc
     extension

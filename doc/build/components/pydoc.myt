@@ -5,21 +5,36 @@ import docstring
 <%method obj_doc>
     <%args>
         obj
+        toc
+        extension
     </%args>
+<%init>
+if obj.isclass:
+    links = []
+    for elem in obj.inherits:
+        if isinstance(elem, docstring.ObjectDoc):
+            links.append(m.scomp("formatting.myt:toclink", toc=toc, path=elem.toc_path, extension=extension, description=elem.name))
+        else:
+            links.append(str(elem))
+    htmldescription = "class " + obj.classname + "(%s)" % (','.join(links))
+else:
+    htmldescription = obj.description
 
-<div>
+</%init>
+
+<&|formatting.myt:section, toc=toc, path=obj.toc_path, description=htmldescription &>
+
 <&|formatting.myt:formatplain&><% obj.doc %></&>
 
 % if not obj.isclass and obj.functions:
-    <div>
-<&|formatting.myt:paramtable&>
+
 %   for func in obj.functions:
     <& SELF:function_doc, func=func &>
 %
-</&>
+
 % else:
+
 % if obj.functions:
-<&|formatting.myt:paramtable&>
 %   for func in obj.functions:
 %   if isinstance(func, docstring.FunctionDoc):
     <& SELF:function_doc, func=func &>
@@ -27,26 +42,21 @@ import docstring
     <& SELF:property_doc, prop=func &>
 %
 %
-</div>
-</&>
 %
 %
 
 % if obj.classes:
 <&|formatting.myt:paramtable&>
 %   for class_ in obj.classes:
-      <& SELF:obj_doc, obj=class_ &>
+      <& SELF:obj_doc, obj=class_, toc=toc, extension=extension &>
 %   
 </&>
 %    
-</div>
-
+</&>
 </%method>
 
 <%method function_doc>
     <%args>func</%args>
-    <tr>
-    <td>
         <div class="darkcell">
         <A name=""></a>
         <b><% func.name %>(<% ", ".join(map(lambda k: "<i>%s</i>" % k, func.arglist))%>)</b>
@@ -54,8 +64,6 @@ import docstring
         <&|formatting.myt:formatplain&><% func.doc %></&>
         </div>
         </div>
-    </td>
-    </tr>
 </%method>
 
 
@@ -63,8 +71,6 @@ import docstring
     <%args>
         prop
     </%args>
-    <tr>
-         <td>
          <div class="darkcell">
          <A name=""></a>
          <b><% prop.name %></b>
@@ -72,8 +78,6 @@ import docstring
          <&|formatting.myt:formatplain&><% prop.doc %></&>
          </div> 
          </div>
-     </td>
-     </tr>
 </%method>
 
 
