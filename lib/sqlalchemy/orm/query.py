@@ -5,7 +5,7 @@
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
 from sqlalchemy import sql, util, exceptions, sql_util, logging
-from sqlalchemy.orm import mapper
+from sqlalchemy.orm import mapper, class_mapper
 from sqlalchemy.orm.interfaces import OperationContext
 
 __all__ = ['Query', 'QueryContext', 'SelectionContext']
@@ -18,6 +18,7 @@ class Query(object):
         else:
             self.mapper = class_or_mapper.compile()
         self.with_options = with_options or []
+        self.orig_mapper = self.mapper
         self.mapper = self.mapper.get_select_mapper().compile()
         self.always_refresh = kwargs.pop('always_refresh', self.mapper.always_refresh)
         self.order_by = kwargs.pop('order_by', self.mapper.order_by)
@@ -134,6 +135,10 @@ class Query(object):
         return clause
 
     def _locate_prop(self, key, start=None):
+        if start is not None and start.non_primary:
+            start = class_mapper(start.class_)
+#            raise "HI"
+        print "LOCATE PROP START IS ", start
         import properties
         keys = []
         seen = util.Set()
@@ -158,7 +163,7 @@ class Query(object):
                         return x
                 else:
                     return None
-        p = search_for_prop(start or self.mapper)
+        p = search_for_prop(start or self.orig_mapper)
         if p is None:
             raise exceptions.InvalidRequestError("Cant locate property named '%s'" % key)
         return [keys, p]

@@ -125,20 +125,8 @@ class DeferredOption(StrategizedOption):
 class AbstractRelationLoader(LoaderStrategy):
     def init(self):
         super(AbstractRelationLoader, self).init()
-        self.primaryjoin = self.parent_property.primaryjoin
-        self.secondaryjoin = self.parent_property.secondaryjoin
-        self.secondary = self.parent_property.secondary
-        self.foreignkey = self.parent_property.foreignkey
-        self.mapper = self.parent_property.mapper
-        self.select_mapper = self.mapper.get_select_mapper()
-        self.target = self.parent_property.target
-        self.select_table = self.parent_property.mapper.select_table
-        self.loads_polymorphic = self.target is not self.select_table
-        self.uselist = self.parent_property.uselist
-        self.cascade = self.parent_property.cascade
-        self.attributeext = self.parent_property.attributeext
-        self.order_by = self.parent_property.order_by
-        self.remote_side = self.parent_property.remote_side
+        for attr in ['primaryjoin', 'secondaryjoin', 'secondary', 'foreignkey', 'mapper', 'select_mapper', 'target', 'select_table', 'loads_polymorphic', 'uselist', 'cascade', 'attributeext', 'order_by', 'remote_side', 'polymorphic_primaryjoin', 'polymorphic_secondaryjoin', 'direction']:
+            setattr(self, attr, getattr(self.parent_property, attr))
         self._should_log_debug = logging.is_debug_enabled(self.logger)
         
     def _init_instance_attribute(self, instance, callable_=None):
@@ -163,7 +151,10 @@ NoLoader.logger = logging.class_logger(NoLoader)
 class LazyLoader(AbstractRelationLoader):
     def init(self):
         super(LazyLoader, self).init()
-        (self.lazywhere, self.lazybinds, self.lazyreverse) = self._create_lazy_clause(self.parent.unjoined_table, self.primaryjoin, self.secondaryjoin, self.foreignkey, self.remote_side, self.mapper.select_table)
+        if self.loads_polymorphic:
+            (self.lazywhere, self.lazybinds, self.lazyreverse) = self._create_lazy_clause(self.parent.unjoined_table, self.polymorphic_primaryjoin, self.polymorphic_secondaryjoin, self.foreignkey, self.remote_side, self.mapper.select_table)
+        else:
+            (self.lazywhere, self.lazybinds, self.lazyreverse) = self._create_lazy_clause(self.parent.unjoined_table, self.primaryjoin, self.secondaryjoin, self.foreignkey, self.remote_side, self.mapper.select_table)
         # determine if our "lazywhere" clause is the same as the mapper's
         # get() clause.  then we can just use mapper.get()
         self.use_get = not self.uselist and query.Query(self.mapper)._get_clause.compare(self.lazywhere)
@@ -210,7 +201,7 @@ class LazyLoader(AbstractRelationLoader):
             # to possibly save a DB round trip
             if self.use_get:
                 ident = []
-                for primary_key in self.mapper.pks_by_table[self.mapper.mapped_table]:
+                for primary_key in self.select_mapper.pks_by_table[self.select_mapper.mapped_table]:
                     bind = self.lazyreverse[primary_key]
                     ident.append(params[bind.key])
                 return session.query(self.mapper).get(ident)
@@ -251,7 +242,8 @@ class LazyLoader(AbstractRelationLoader):
         binds = {}
         reverse = {}
         def column_in_table(table, column):
-            return table.corresponding_column(column, raiseerr=False, keys_ok=False) is not None
+            return table.c.get(column.key) is column
+            #return table.corresponding_column(column, raiseerr=False, keys_ok=False) is not None
 
         if remote_side is None or len(remote_side) == 0:
             remote_side = foreignkey
@@ -299,13 +291,14 @@ class LazyLoader(AbstractRelationLoader):
         
         if secondaryjoin is not None:
             secondaryjoin = secondaryjoin.copy_container()
-            if self.loads_polymorphic:
-                secondaryjoin.accept_visitor(sql_util.ClauseAdapter(select_table))
+#            if self.loads_polymorphic:
+#                secondaryjoin.accept_visitor(sql_util.ClauseAdapter(select_table))
             lazywhere = sql.and_(lazywhere, secondaryjoin)
-        else:
-            if self.loads_polymorphic:
-                lazywhere.accept_visitor(sql_util.ClauseAdapter(select_table))
-        
+#        else:
+#            if self.loads_polymorphic:
+#                lazywhere.accept_visitor(sql_util.ClauseAdapter(select_table))
+ 
+        print "LAZYCLAUSEE", str(lazywhere)
         LazyLoader.logger.info("create_lazy_clause " + str(lazywhere))
         return (lazywhere, binds, reverse)
 
@@ -317,6 +310,7 @@ class EagerLoader(AbstractRelationLoader):
     """loads related objects inline with a parent query."""
     def init(self):
         super(EagerLoader, self).init()
+        print "PARENT", self.parent, "MAPPER", self.mapper, "SEL MAPPER", self.select_mapper, self.parent.isa(self.mapper)
         if self.parent.isa(self.select_mapper):
             raise exceptions.ArgumentError("Error creating eager relationship '%s' on parent class '%s' to child class '%s': Cant use eager loading on a self referential relationship." % (self.key, repr(self.parent.class_), repr(self.mapper.class_)))
         self.parent._eager_loaders.add(self.parent_property)

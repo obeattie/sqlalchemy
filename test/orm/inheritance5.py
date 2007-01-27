@@ -1,5 +1,6 @@
 from sqlalchemy import *
 import testbase
+from sqlalchemy.ext.selectresults import SelectResults
 
 class AttrSettable(object):
     def __init__(self, **kwargs):
@@ -171,7 +172,8 @@ class RelationTest3(testbase.AssertMixin):
         mapper(Person, people, select_table=poly_union, polymorphic_identity='person', polymorphic_on=people.c.type,
               properties={
                 'colleagues':relation(Person, primaryjoin=people.c.colleague_id==people.c.person_id, 
-                    remote_side=people.c.person_id, uselist=True)
+                    remote_side=people.c.colleague_id, 
+                    uselist=True)
                 }        
         )
         mapper(Manager, managers, inherits=Person, inherit_condition=people.c.person_id==managers.c.person_id, polymorphic_identity='manager')
@@ -301,6 +303,11 @@ class RelationTest4(testbase.AssertMixin):
         car1 = session.query(Car).options(eagerload('employee')).get(car1.car_id)
         assert str(car1.employee) == "Engineer E4, status X"
 
+        session.clear()
+        s = SelectResults(session.query(Car))
+        c = s.join_to("employee").select(employee_join.c.name=="E4")[0]
+        assert c.car_id==car1.car_id
+
 class RelationTest5(testbase.AssertMixin):
     def setUpAll(self):
         global metadata, people, engineers, managers, cars
@@ -368,7 +375,124 @@ class RelationTest5(testbase.AssertMixin):
         carlist = sess.query(Car).select()
         assert carlist[0].manager is None
         assert carlist[1].manager.person_id == car2.manager.person_id
-        
+
+class RelationTest6(testbase.AssertMixin):
+    def setUpAll(self):
+        #  cars---owned by---  people (abstract) --- has a --- status
+        #   |                  ^    ^                            |
+        #   |                  |    |                            |
+        #   |          engineers    managers                     |
+        #   |                                                    |
+        #   +--------------------------------------- has a ------+
+
+        global metadata, status, people, engineers, managers, cars
+        metadata = BoundMetaData(testbase.db)
+        # table definitions
+        status = Table('status', metadata, 
+           Column('status_id', Integer, primary_key=True),
+           Column('name', String(20)))
+
+        people = Table('people', metadata, 
+           Column('person_id', Integer, primary_key=True),
+           Column('status_id', Integer, ForeignKey('status.status_id'), nullable=False),
+           Column('name', String(50)))
+
+        engineers = Table('engineers', metadata, 
+           Column('person_id', Integer, ForeignKey('people.person_id'), primary_key=True),
+           Column('field', String(30)))
+
+        managers = Table('managers', metadata, 
+           Column('person_id', Integer, ForeignKey('people.person_id'), primary_key=True),
+           Column('category', String(70)))
+
+        cars = Table('cars', metadata, 
+           Column('car_id', Integer, primary_key=True),
+           Column('status_id', Integer, ForeignKey('status.status_id'), nullable=False),
+           Column('owner', Integer, ForeignKey('people.person_id'), nullable=False))
+
+        metadata.create_all()
+
+    def tearDownAll(self):
+        metadata.drop_all()
+    def tearDown(self):
+        clear_mappers()
+        for t in metadata.table_iterator(reverse=True):
+            t.delete().execute()
+    
+    def testjointo(self):
+        # class definitions
+        class PersistentObject(object):
+            def __init__(self, **kwargs):
+                for key, value in kwargs.iteritems():
+                    setattr(self, key, value)
+        class Status(PersistentObject):
+            def __repr__(self):
+                return "Status %s" % self.name
+        class Person(PersistentObject):
+            def __repr__(self):
+                return "Ordinary person %s" % self.name
+        class Engineer(Person):
+            def __repr__(self):
+                return "Engineer %s, field %s, status %s" % (self.name, self.field, self.status)
+        class Manager(Person):
+            def __repr__(self):
+                return "Manager %s, category %s, status %s" % (self.name, self.category, self.status)
+        class Car(PersistentObject):
+            def __repr__(self):
+                return "Car number %d" % self.car_id
+
+        # create a union that represents both types of joins.  
+        employee_join = polymorphic_union(
+            {
+                'engineer':people.join(engineers),
+                'manager':people.join(managers),
+            }, "type", 'employee_join')
+
+        status_mapper   = mapper(Status, status)
+        person_mapper   = mapper(Person, people, 
+            select_table=employee_join,polymorphic_on=employee_join.c.type, 
+            polymorphic_identity='person', properties={'status':relation(status_mapper)})
+        engineer_mapper = mapper(Engineer, engineers, inherits=person_mapper, polymorphic_identity='engineer')
+        manager_mapper  = mapper(Manager, managers, inherits=person_mapper, polymorphic_identity='manager')
+        car_mapper      = mapper(Car, cars, properties= {'employee':relation(person_mapper), 'status':relation(status_mapper)})
+
+        session = create_session(echo_uow=False)
+
+        active = Status(name="active")
+        dead = Status(name="dead")
+
+        session.save(active)
+        session.save(dead)
+        session.flush()
+
+        # creating 5 managers named from M1 to M5 and 5 engineers named from E1 to E5
+        # M4, M5, E4 and E5 are dead
+        for i in range(1,5):
+            if i<4:
+                st=active
+            else:
+                st=dead
+            session.save(Manager(name="M%d" % i,category="YYYYYYYYY",status=st))
+            session.save(Engineer(name="E%d" % i,field="X",status=st))
+
+        session.flush()
+
+        # get E4
+        engineer4 = session.query(engineer_mapper).get_by(name="E4")
+
+        # create 2 cars for E4, one active and one dead
+        car1 = Car(employee=engineer4,status=active)
+        car2 = Car(employee=engineer4,status=dead)
+        session.save(car1)
+        session.save(car2)
+        session.flush()
+
+#        for activeCars in SelectResults(session.query(Car)).join_to('status').select(status.c.name=="active"):
+#            print activeCars
+        for activePerson in  SelectResults(session.query(Person)).join_to('status').select(status.c.name=="active"):
+            print activePerson
+
+    
 if __name__ == "__main__":    
     testbase.main()
         

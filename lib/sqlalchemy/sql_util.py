@@ -135,14 +135,24 @@ class ClauseAdapter(sql.ClauseVisitor):
         s.c.col1 == table2.c.col1
     
     """
-    def __init__(self, selectable):
+    def __init__(self, selectable, include=None, exclude=None):
         self.selectable = selectable
+        self.include = include
+        self.exclude = exclude
+    def include_col(self, col):
+        if self.include is not None:
+            if col not in self.include:
+                return False
+        if self.exclude is not None:
+            if col in self.exclude:
+                return False
+        return True
     def visit_binary(self, binary):
-        if isinstance(binary.left, sql.ColumnElement):
+        if isinstance(binary.left, sql.ColumnElement) and self.include_col(binary.left):
             col = self.selectable.corresponding_column(binary.left, raiseerr=False, keys_ok=True)
             if col is not None:
                 binary.left = col
-        if isinstance(binary.right, sql.ColumnElement):
+        if isinstance(binary.right, sql.ColumnElement) and self.include_col(binary.right):
             col = self.selectable.corresponding_column(binary.right, raiseerr=False, keys_ok=True)
             if col is not None:
                 binary.right = col
