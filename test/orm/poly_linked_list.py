@@ -58,7 +58,6 @@ class PolymorphicCircularTest(testbase.ORMTest):
             def __repr__(self):
                 return "%s(%d, %s)" % (self.__class__.__name__, self.id, repr(str(self.data)))
                 
-        lazy = False
         try:
             # this is how the mapping used to work.  insure that this raises an error now
             table1_mapper = mapper(Table1, table1,
@@ -68,7 +67,7 @@ class PolymorphicCircularTest(testbase.ORMTest):
                                    properties={
                                     'next': relation(Table1, 
                                         backref=backref('prev', primaryjoin=join.c.id==join.c.related_id, foreignkey=join.c.id, uselist=False), 
-                                        uselist=False, lazy=lazy, primaryjoin=join.c.id==join.c.related_id),
+                                        uselist=False, primaryjoin=join.c.id==join.c.related_id),
                                     'data':relation(mapper(Data, data), lazy=lazy)
                                     }
                             )
@@ -78,8 +77,11 @@ class PolymorphicCircularTest(testbase.ORMTest):
             assert True
             clear_mappers()
             
-        # currently, all of these "eager" relationships degrade to lazy relationships
+        # currently, the "eager" relationships degrade to lazy relationships
         # due to the polymorphic load.
+        # the "next" relation used to have a "lazy=False" on it, but the EagerLoader raises the "self-referential" 
+        # exception now.  since eager loading would never work for that relation anyway, its better that the user
+        # gets an exception instead of it silently not eager loading.
         table1_mapper = mapper(Table1, table1,
                                select_table=join,
                                polymorphic_on=join.c.type,
@@ -87,8 +89,8 @@ class PolymorphicCircularTest(testbase.ORMTest):
                                properties={
                                'next': relation(Table1, 
                                    backref=backref('prev', primaryjoin=table1.c.id==table1.c.related_id, remote_side=table1.c.id, uselist=False), 
-                                   uselist=False, lazy=lazy, primaryjoin=table1.c.id==table1.c.related_id),
-                               'data':relation(mapper(Data, data), lazy=lazy)
+                                   uselist=False, primaryjoin=table1.c.id==table1.c.related_id),
+                               'data':relation(mapper(Data, data), lazy=False)
                                 }
                         )
 
