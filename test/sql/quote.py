@@ -91,9 +91,16 @@ class QuoteTest(PersistTest):
         x = table1.select(distinct=True).alias("LaLa").select().scalar()
 
     def testlabels2(self):
-        x = select([
-            table1.join(table2, table2.c.d123==table1.c.lowercase).select(table2.c.MixedCase==5).alias('SomeAlias')
-        ]).execute()
+        metadata = BoundMetaData(testbase.db)
+        table = Table("ImATable", metadata, 
+            Column("col1", Integer))
+        table.create(checkfirst=True)
+        try:
+            x = select([table.c.col1.label("ImATable_col1")]).alias("SomeAlias")
+            x = select([x.c.ImATable_col1]).execute()
+            x.close()
+        finally:
+            table.drop()
         
     def testlabelsnocase(self):
         metadata = MetaData()

@@ -471,17 +471,17 @@ class MultiLevelTest(testbase.ORMTest):
         class Engineer( Employee): pass
         class Manager( Engineer): pass
 
-#        pu_Employee = polymorphic_union( {
-#                    'Manager':  table_Employee.join( table_Engineer).join( table_Manager),
-#                    'Engineer': select([table_Employee, table_Engineer.c.machine], table_Employee.c.atype == 'Engineer', from_obj=[table_Employee.join(table_Engineer)]),
-#                    'Employee': table_Employee.select( table_Employee.c.atype == 'Employee'),
-#                }, None, 'pu_employee', )
-
         pu_Employee = polymorphic_union( {
                     'Manager':  table_Employee.join( table_Engineer).join( table_Manager),
-                    'Engineer': table_Employee.join(table_Engineer).select(table_Employee.c.atype == 'Engineer', use_labels=True),
+                    'Engineer': select([table_Employee, table_Engineer.c.machine], table_Employee.c.atype == 'Engineer', from_obj=[table_Employee.join(table_Engineer)]),
                     'Employee': table_Employee.select( table_Employee.c.atype == 'Employee'),
                 }, None, 'pu_employee', )
+
+#        pu_Employee = polymorphic_union( {
+#                    'Manager':  table_Employee.join( table_Engineer).join( table_Manager),
+#                    'Engineer': table_Employee.join(table_Engineer).select(table_Employee.c.atype == 'Engineer'),
+#                    'Employee': table_Employee.select( table_Employee.c.atype == 'Employee'),
+#                }, None, 'pu_employee', )
         
         mapper_Employee = mapper( Employee, table_Employee,
                     polymorphic_identity= 'Employee',
