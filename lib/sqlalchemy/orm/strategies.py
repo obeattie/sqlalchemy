@@ -246,8 +246,7 @@ class LazyLoader(AbstractRelationLoader):
         binds = {}
         reverse = {}
 
-        print "PARENTTABLE", parenttable, "TARGETTABLE", targettable
-        
+        #print "PARENTTABLE", parenttable, "TARGETTABLE", targettable
 
         def should_bind(targetcol, othercol):
             # determine if the given target column is part of the parent table
@@ -270,7 +269,6 @@ class LazyLoader(AbstractRelationLoader):
             elif inparent and intarget:
                 # its in both.  hmm.
                 if parenttable is not targettable:
-                    print "IN BOTH:", targetcol
                     # the column is in both tables, but the two tables are different.  
                     # this corresponds to a table relating to a Join which also contains that table.
                     # such as tableA.c.col1 == tableB.c.col2, tables are tableA and tableA.join(tableB)
@@ -282,7 +280,8 @@ class LazyLoader(AbstractRelationLoader):
                     # and/or foreignkey collection.
                     # technically we can use this for the non-circular refs as well except that "remote_side" is usually
                     # only calculated for self-referential relationships at the moment.
-                    # TODO: have PropertyLoader calculate remote_side completely ?
+                    # TODO: have PropertyLoader calculate remote_side completely ?  this would involve moving most of the
+                    # "should_bind()" logic to PropertyLoader.  remote_side could also then be accurately used by sync.py.
                     if col_in_collection(othercol, remote_side):
                         return True
             return False
@@ -336,7 +335,7 @@ class LazyLoader(AbstractRelationLoader):
             secondaryjoin = secondaryjoin.copy_container()
             lazywhere = sql.and_(lazywhere, secondaryjoin)
  
-        print "LAZYCLAUSE", str(lazywhere)
+        #print "LAZYCLAUSE", str(lazywhere)
         LazyLoader.logger.info("create_lazy_clause " + str(lazywhere))
         return (lazywhere, binds, reverse)
 

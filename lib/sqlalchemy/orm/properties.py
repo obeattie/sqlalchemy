@@ -293,9 +293,9 @@ class PropertyLoader(StrategizedProperty):
             elif self.secondaryjoin:
                 self.polymorphic_primaryjoin.accept_visitor(sql_util.ClauseAdapter(self.parent.select_table, exclude=self.foreignkey, equivalents=parent_equivalents))
 
-        print "KEY", self.key, "PARENT", str(self.parent)
-        print "KEY", self.key, "REG PRIMARY JOIN", str(self.primaryjoin)
-        print "KEY", self.key, "POLY PRIMARY JOIN", str(self.polymorphic_primaryjoin)
+        #print "KEY", self.key, "PARENT", str(self.parent)
+        #print "KEY", self.key, "REG PRIMARY JOIN", str(self.primaryjoin)
+        #print "KEY", self.key, "POLY PRIMARY JOIN", str(self.polymorphic_primaryjoin)
                 
         if self.uselist is None and self.direction == sync.MANYTOONE:
             self.uselist = False
