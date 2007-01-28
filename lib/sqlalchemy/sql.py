@@ -694,7 +694,12 @@ class ColumnCollection(util.OrderedProperties):
                 if c.shares_lineage(local):
                     l.append(c==local)
         return and_(*l)
-             
+    def contains_column(self, col):
+        # have to use a Set here, because it will compare the identity 
+        # of the column, not just using "==" for comparison which will always return a
+        # "True" value (i.e. a BinaryClause...)
+        return col in util.Set(self)
+        
 class FromClause(Selectable):
     """represents an element that can be used within the FROM clause of a SELECT statement."""
     def __init__(self, name=None):

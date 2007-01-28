@@ -458,6 +458,7 @@ class Mapper(object):
         # load custom properties 
         if self.properties is not None:
             for key, prop in self.properties.iteritems():
+                print "COMPILING PROPERTY", key, type(prop), "WE ARE", str(self)
                 self._compile_property(key, prop, False)
 
         if self.inherits is not None:

@@ -63,6 +63,21 @@ class SelectableTest(testbase.AssertMixin):
         assert u.corresponding_column(s2.c.table2_coly) is u.c.coly
         assert s2.corresponding_column(u.c.coly) is s2.c.table2_coly
 
+    def testfoo(self):
+        j1 = table.join(table2)
+        j2 = join(table, table2)
+        u1 = union(
+            table.select(table.c.col3==7),
+            select([j1])
+        )
+        u2 = union(
+            table.select(table.c.col3==7),
+            select([j2])
+        )
+        
+        assert table2.corresponding_column(u1.c.col1, raiseerr=False) is None
+        assert table2.corresponding_column(u2.c.col1, raiseerr=False) is None
+        
     def testselectunion(self):
         # like testaliasunion, but off a Select off the union.
         u = select([table.c.col1, table.c.col2, table.c.col3, table.c.colx, null().label('coly')]).union(

@@ -254,9 +254,19 @@ class PropertyLoader(StrategizedProperty):
         #print "DIRECTION IS ", self.direction, sync.ONETOMANY, sync.MANYTOONE
         #print "FKEY IS", self.foreignkey
 
+        # get ready to create "polymorphic" primary/secondary join clauses.
+        # these clauses represent the same join between parent/child tables that the primary
+        # and secondary join clauses represent, except they reference ColumnElements that are specifically
+        # in the "polymorphic" selectables.  these are used to construct joins for both Query as well as
+        # eager loading, and also are used to calculate "lazy loading" clauses.
+        
+        # as we will be using the polymorphic selectables (i.e. select_table argument to Mapper) to figure this out, 
+        # first create maps of all the "equivalent" columns, since polymorphic selectables will often munge
+        # several "equivalent" columns (such as parent/child fk cols) into just one column.
         parent_equivalents = self.parent._get_inherited_column_equivalents()
         target_equivalents = self.mapper._get_inherited_column_equivalents()
-        print "EQUIVALENTS:", parent_equivalents, target_equivalents
+        
+        # if the target mapper loads polymorphically, adapt the clauses to the target's selectable
         if self.loads_polymorphic:
             if self.secondaryjoin:
                 self.polymorphic_secondaryjoin = self.secondaryjoin.copy_container()
@@ -274,6 +284,7 @@ class PropertyLoader(StrategizedProperty):
             self.polymorphic_primaryjoin = self.primaryjoin.copy_container()
             self.polymorphic_secondaryjoin = self.secondaryjoin and self.secondaryjoin.copy_container() or None
 
+        # if the parent mapper loads polymorphically, adapt the clauses to the parent's selectable
         if self.parent.select_table is not self.parent.mapped_table:
             if self.direction is sync.ONETOMANY:
                 self.polymorphic_primaryjoin.accept_visitor(sql_util.ClauseAdapter(self.parent.select_table, exclude=self.foreignkey, equivalents=parent_equivalents))
@@ -282,6 +293,7 @@ class PropertyLoader(StrategizedProperty):
             elif self.secondaryjoin:
                 self.polymorphic_primaryjoin.accept_visitor(sql_util.ClauseAdapter(self.parent.select_table, exclude=self.foreignkey, equivalents=parent_equivalents))
 
+        print "KEY", self.key, "PARENT", str(self.parent)
         print "KEY", self.key, "REG PRIMARY JOIN", str(self.primaryjoin)
         print "KEY", self.key, "POLY PRIMARY JOIN", str(self.polymorphic_primaryjoin)
                 

@@ -26,7 +26,11 @@ class RelationTest1(testbase.ORMTest):
            Column('manager_name', String(50))
            )
 
-    def testbasic(self):
+    def tearDown(self):
+        people.update(values={people.c.manager_id:None}).execute()
+        super(RelationTest1, self).tearDown()
+        
+    def testparentrefsdescendant(self):
         class Person(AttrSettable):
             pass
         class Manager(Person):
@@ -60,11 +64,35 @@ class RelationTest1(testbase.ORMTest):
         m = session.query(Manager).get(m.person_id)
         print p, m, p.manager
         assert p.manager is m
+
+    def testdescendantrefsparent(self):
+        class Person(AttrSettable):
+            pass
+        class Manager(Person):
+            pass
+
+        mapper(Person, people)
+        mapper(Manager, managers, inherits=Person, inherit_condition=people.c.person_id==managers.c.person_id, properties={
+            'employee':relation(Person, primaryjoin=people.c.manager_id==managers.c.person_id, foreignkey=people.c.manager_id, uselist=False, post_update=True)
+        })
+
+        session = create_session()
+        p = Person(name='some person')
+        m = Manager(name='some manager')
+        m.employee = p
+        session.save(m)
+        session.flush()
+        session.clear()
+
+        p = session.query(Person).get(p.person_id)
+        m = session.query(Manager).get(m.person_id)
+        print p, m, m.employee
+        assert m.employee is p
             
 class RelationTest2(testbase.ORMTest):
     """test self-referential relationships on polymorphic mappers"""
     def define_tables(self, metadata):
-        global people, managers
+        global people, managers, data
         people = Table('people', metadata, 
            Column('person_id', Integer, Sequence('person_id_seq', optional=True), primary_key=True),
            Column('name', String(50)),
@@ -75,28 +103,66 @@ class RelationTest2(testbase.ORMTest):
            Column('manager_id', Integer, ForeignKey('people.person_id')),
            Column('status', String(30)),
            )
-
-    def testrelationonsubclass(self):
+        
+        data = Table('data', metadata,
+            Column('person_id', Integer, ForeignKey('managers.person_id'), primary_key=True),
+            Column('data', String(30))
+            )
+            
+    def testrelationonsubclass_j1_nodata(self):
+        self.do_test("join1", False)
+    def testrelationonsubclass_j2_nodata(self):
+        self.do_test("join2", False)
+    def testrelationonsubclass_j1_data(self):
+        self.do_test("join1", True)
+    def testrelationonsubclass_j2_data(self):
+        self.do_test("join2", True)
+                
+    def do_test(self, jointype="join1", usedata=False):
         class Person(AttrSettable):
             pass
         class Manager(Person):
             pass
 
-        poly_union = polymorphic_union({
-            'person':people.select(people.c.type=='person'),
-            'manager':managers.join(people, people.c.person_id==managers.c.person_id)
-        }, None)
+        if jointype == "join1":
+            poly_union = polymorphic_union({
+                'person':people.select(people.c.type=='person'),
+                'manager':join(people, managers, people.c.person_id==managers.c.person_id)
+            }, None)
+        elif jointype == "join2":
+            poly_union = polymorphic_union({
+                'person':people.select(people.c.type=='person'),
+                'manager':managers.join(people, people.c.person_id==managers.c.person_id)
+            }, None)
 
-        mapper(Person, people, select_table=poly_union, polymorphic_identity='person', polymorphic_on=people.c.type)
-        mapper(Manager, managers, inherits=Person, inherit_condition=people.c.person_id==managers.c.person_id, polymorphic_identity='manager',
-              properties={
-                'colleague':relation(Person, primaryjoin=managers.c.manager_id==people.c.person_id, uselist=False)
-        })
-        class_mapper(Person).compile()
+        if usedata:
+            class Data(object):
+                def __init__(self, data):
+                    self.data = data
+            mapper(Data, data)
+            
+        mapper(Person, people, select_table=poly_union, polymorphic_identity='person', polymorphic_on=poly_union.c.type)
+
+        if usedata:
+            mapper(Manager, managers, inherits=Person, inherit_condition=people.c.person_id==managers.c.person_id, polymorphic_identity='manager',
+                  properties={
+                    'colleague':relation(Person, primaryjoin=managers.c.manager_id==people.c.person_id, lazy=True, uselist=False),
+                    'data':relation(Data, uselist=False)
+                 }
+            )
+        else:
+            mapper(Manager, managers, inherits=Person, inherit_condition=people.c.person_id==managers.c.person_id, polymorphic_identity='manager',
+                  properties={
+                    'colleague':relation(Person, primaryjoin=managers.c.manager_id==people.c.person_id, lazy=True, uselist=False)
+                 }
+            )
+
         sess = create_session()
         p = Person(name='person1')
         m = Manager(name='manager1')
         m.colleague = p
+        if usedata:
+            m.data = Data('ms data')
         sess.save(m)
         sess.flush()
         
@@ -106,11 +172,13 @@ class RelationTest2(testbase.ORMTest):
         print p
         print m
         assert m.colleague is p
+        if usedata:
+            assert m.data.data == 'ms data'
 
 class RelationTest3(testbase.ORMTest):
     """test self-referential relationships on polymorphic mappers"""
     def define_tables(self, metadata):
-        global people, managers
+        global people, managers, data
         people = Table('people', metadata, 
            Column('person_id', Integer, Sequence('person_id_seq', optional=True), primary_key=True),
            Column('colleague_id', Integer, ForeignKey('people.person_id')),
@@ -122,25 +190,60 @@ class RelationTest3(testbase.ORMTest):
            Column('status', String(30)),
            )
 
-    def testrelationonbaseclass(self):
+        data = Table('data', metadata,
+           Column('person_id', Integer, ForeignKey('people.person_id'), primary_key=True),
+           Column('data', String(30))
+           )
+
+    def testrelationonbaseclass_j1_nodata(self):
+       self.do_test("join1", False)
+    def testrelationonbaseclass_j2_nodata(self):
+       self.do_test("join2", False)
+    def testrelationonbaseclass_j1_data(self):
+       self.do_test("join1", True)
+    def testrelationonbaseclass_j2_data(self):
+       self.do_test("join2", True)
+
+    def do_test(self, jointype="join1", usedata=False):
         class Person(AttrSettable):
             pass
         class Manager(Person):
             pass
 
-        poly_union = polymorphic_union({
-            'manager':managers.join(people, people.c.person_id==managers.c.person_id),
-            'person':people.select(people.c.type=='person')
-        }, None)
+        if usedata:
+            class Data(object):
+                def __init__(self, data):
+                    self.data = data
 
-        mapper(Person, people, select_table=poly_union, polymorphic_identity='person', polymorphic_on=people.c.type,
-              properties={
-                'colleagues':relation(Person, primaryjoin=people.c.colleague_id==people.c.person_id, 
-                    remote_side=people.c.colleague_id, 
-                    uselist=True)
-                }        
-        )
+        if jointype == "join1":
+            poly_union = polymorphic_union({
+                'manager':managers.join(people, people.c.person_id==managers.c.person_id),
+                'person':people.select(people.c.type=='person')
+            }, None)
+        elif jointype =="join2":
+            poly_union = polymorphic_union({
+                'manager':join(people, managers, people.c.person_id==managers.c.person_id),
+                'person':people.select(people.c.type=='person')
+            }, None)
+            
+        if usedata:
+            mapper(Data, data)
+        
         mapper(Manager, managers, inherits=Person, inherit_condition=people.c.person_id==managers.c.person_id, polymorphic_identity='manager')
+        if usedata:
+            mapper(Person, people, select_table=poly_union, polymorphic_identity='person', polymorphic_on=people.c.type,
+                  properties={
+                    'colleagues':relation(Person, primaryjoin=people.c.colleague_id==people.c.person_id, remote_side=people.c.colleague_id, uselist=True),
+                    'data':relation(Data, uselist=False)
+                    }        
+            )
+        else:
+            mapper(Person, people, select_table=poly_union, polymorphic_identity='person', polymorphic_on=people.c.type,
+                  properties={
+                    'colleagues':relation(Person, primaryjoin=people.c.colleague_id==people.c.person_id, 
+                        remote_side=people.c.colleague_id, uselist=True)
+                    }        
+            )
 
         sess = create_session()
         p = Person(name='person1')
@@ -148,6 +251,10 @@ class RelationTest3(testbase.ORMTest):
         m = Manager(name='manager1')
         p.colleagues.append(p2)
         m.colleagues.append(p2)
+        if usedata:
+            p.data = Data('ps data')
+            m.data = Data('ms data')
+
         sess.save(m)
         sess.save(p)
         sess.flush()
@@ -158,7 +265,11 @@ class RelationTest3(testbase.ORMTest):
         print p, p2, p.colleagues
         assert len(p.colleagues) == 1
         assert p.colleagues == [p2]
+        if usedata:
+            assert p.data.data == 'ps data'
+            assert m.data.data == 'ms data'
 
+        
 class RelationTest4(testbase.ORMTest):
     def define_tables(self, metadata):
         global people, engineers, managers, cars
