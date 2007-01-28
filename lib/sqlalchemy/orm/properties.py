@@ -251,9 +251,12 @@ class PropertyLoader(StrategizedProperty):
         if self.direction is None:
             self.direction = self._get_direction()
         
-        print "DIRECTION IS ", self.direction, sync.ONETOMANY, sync.MANYTOONE
-        print "FKEY IS", self.foreignkey
+        #print "DIRECTION IS ", self.direction, sync.ONETOMANY, sync.MANYTOONE
+        #print "FKEY IS", self.foreignkey
 
+        parent_equivalents = self.parent._get_inherited_column_equivalents()
+        target_equivalents = self.mapper._get_inherited_column_equivalents()
+        print "EQUIVALENTS:", parent_equivalents, target_equivalents
         if self.loads_polymorphic:
             if self.secondaryjoin:
                 self.polymorphic_secondaryjoin = self.secondaryjoin.copy_container()
@@ -262,24 +265,25 @@ class PropertyLoader(StrategizedProperty):
             else:
                 self.polymorphic_primaryjoin = self.primaryjoin.copy_container()
                 if self.direction is sync.ONETOMANY:
-                    self.polymorphic_primaryjoin.accept_visitor(sql_util.ClauseAdapter(self.mapper.select_table, include=self.foreignkey))
+                    self.polymorphic_primaryjoin.accept_visitor(sql_util.ClauseAdapter(self.mapper.select_table, include=self.foreignkey, equivalents=target_equivalents))
                 elif self.direction is sync.MANYTOONE:
-                    self.polymorphic_primaryjoin.accept_visitor(sql_util.ClauseAdapter(self.mapper.select_table, exclude=self.foreignkey))
+                    self.polymorphic_primaryjoin.accept_visitor(sql_util.ClauseAdapter(self.mapper.select_table, exclude=self.foreignkey, equivalents=target_equivalents))
                     
                 self.polymorphic_secondaryjoin = None
-                print "REG PRIMARY JOIN", str(self.primaryjoin)
-                print "POLY PRIMARY JOIN", str(self.polymorphic_primaryjoin)
         else:
             self.polymorphic_primaryjoin = self.primaryjoin.copy_container()
             self.polymorphic_secondaryjoin = self.secondaryjoin and self.secondaryjoin.copy_container() or None
 
         if self.parent.select_table is not self.parent.mapped_table:
             if self.direction is sync.ONETOMANY:
-                self.polymorphic_primaryjoin.accept_visitor(sql_util.ClauseAdapter(self.parent.select_table, exclude=self.foreignkey))
+                self.polymorphic_primaryjoin.accept_visitor(sql_util.ClauseAdapter(self.parent.select_table, exclude=self.foreignkey, equivalents=parent_equivalents))
             elif self.direction is sync.MANYTOONE:
-                self.polymorphic_primaryjoin.accept_visitor(sql_util.ClauseAdapter(self.parent.select_table, include=self.foreignkey))
+                self.polymorphic_primaryjoin.accept_visitor(sql_util.ClauseAdapter(self.parent.select_table, include=self.foreignkey, equivalents=parent_equivalents))
             elif self.secondaryjoin:
-                self.polymorphic_primaryjoin.accept_visitor(sql_util.ClauseAdapter(self.parent.select_table, exclude=self.foreignkey))
+                self.polymorphic_primaryjoin.accept_visitor(sql_util.ClauseAdapter(self.parent.select_table, exclude=self.foreignkey, equivalents=parent_equivalents))
+
+        print "KEY", self.key, "REG PRIMARY JOIN", str(self.primaryjoin)
+        print "KEY", self.key, "POLY PRIMARY JOIN", str(self.polymorphic_primaryjoin)
                 
         if self.uselist is None and self.direction == sync.MANYTOONE:
             self.uselist = False

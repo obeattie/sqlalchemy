@@ -151,10 +151,8 @@ NoLoader.logger = logging.class_logger(NoLoader)
 class LazyLoader(AbstractRelationLoader):
     def init(self):
         super(LazyLoader, self).init()
-        if self.loads_polymorphic:
-            (self.lazywhere, self.lazybinds, self.lazyreverse) = self._create_lazy_clause(self.parent.unjoined_table, self.polymorphic_primaryjoin, self.polymorphic_secondaryjoin, self.foreignkey, self.remote_side, self.mapper.select_table)
-        else:
-            (self.lazywhere, self.lazybinds, self.lazyreverse) = self._create_lazy_clause(self.parent.unjoined_table, self.primaryjoin, self.secondaryjoin, self.foreignkey, self.remote_side, self.mapper.select_table)
+        (self.lazywhere, self.lazybinds, self.lazyreverse) = self._create_lazy_clause(self.parent.unjoined_table, self.polymorphic_primaryjoin, self.polymorphic_secondaryjoin, self.foreignkey, self.remote_side, self.mapper.select_table)
+
         # determine if our "lazywhere" clause is the same as the mapper's
         # get() clause.  then we can just use mapper.get()
         self.use_get = not self.uselist and query.Query(self.mapper)._get_clause.compare(self.lazywhere)
@@ -242,8 +240,7 @@ class LazyLoader(AbstractRelationLoader):
         binds = {}
         reverse = {}
         def column_in_table(table, column):
-            return table.c.get(column.key) is column
-            #return table.corresponding_column(column, raiseerr=False, keys_ok=False) is not None
+            return table.corresponding_column(column, raiseerr=False, keys_ok=False) is not None
 
         if remote_side is None or len(remote_side) == 0:
             remote_side = foreignkey
@@ -291,14 +288,8 @@ class LazyLoader(AbstractRelationLoader):
         
         if secondaryjoin is not None:
             secondaryjoin = secondaryjoin.copy_container()
-#            if self.loads_polymorphic:
-#                secondaryjoin.accept_visitor(sql_util.ClauseAdapter(select_table))
             lazywhere = sql.and_(lazywhere, secondaryjoin)
-#        else:
-#            if self.loads_polymorphic:
-#                lazywhere.accept_visitor(sql_util.ClauseAdapter(select_table))
  
-        print "LAZYCLAUSEE", str(lazywhere)
         LazyLoader.logger.info("create_lazy_clause " + str(lazywhere))
         return (lazywhere, binds, reverse)
 
@@ -310,7 +301,6 @@ class EagerLoader(AbstractRelationLoader):
     """loads related objects inline with a parent query."""
     def init(self):
         super(EagerLoader, self).init()
-        print "PARENT", self.parent, "MAPPER", self.mapper, "SEL MAPPER", self.select_mapper, self.parent.isa(self.mapper)
         if self.parent.isa(self.select_mapper):
             raise exceptions.ArgumentError("Error creating eager relationship '%s' on parent class '%s' to child class '%s': Cant use eager loading on a self referential relationship." % (self.key, repr(self.parent.class_), repr(self.mapper.class_)))
         self.parent._eager_loaders.add(self.parent_property)
@@ -358,16 +348,12 @@ class EagerLoader(AbstractRelationLoader):
                         eagerloader.target:self.eagertarget,
                         eagerloader.secondary:self.eagersecondary
                         })
-                self.eagersecondaryjoin = eagerloader.secondaryjoin.copy_container()
-                if eagerloader.loads_polymorphic:
-                    self.eagersecondaryjoin.accept_visitor(sql_util.ClauseAdapter(eagerloader.select_table))
+                self.eagersecondaryjoin = eagerloader.polymorphic_secondaryjoin.copy_container()
                 self.eagersecondaryjoin.accept_visitor(self.aliasizer)
-                self.eagerprimary = eagerloader.primaryjoin.copy_container()
+                self.eagerprimary = eagerloader.polymorphic_primaryjoin.copy_container()
                 self.eagerprimary.accept_visitor(self.aliasizer)
             else:
-                self.eagerprimary = eagerloader.primaryjoin.copy_container()
-                if eagerloader.loads_polymorphic:
-                    self.eagerprimary.accept_visitor(sql_util.ClauseAdapter(eagerloader.select_table))
+                self.eagerprimary = eagerloader.polymorphic_primaryjoin.copy_container()
                 self.aliasizer = sql_util.Aliasizer(self.target, aliases={self.target:self.eagertarget})
                 self.eagerprimary.accept_visitor(self.aliasizer)
 

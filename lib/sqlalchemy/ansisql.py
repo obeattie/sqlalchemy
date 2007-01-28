@@ -204,6 +204,7 @@ class ANSICompiler(sql.Compiled):
         if len(self.select_stack):
             self.typemap.setdefault(label.name.lower(), label.obj.type)
         self.strings[label] = self.strings[label.obj] + " AS "  + self.preparer.format_label(label)
+        print "STEP3", self.strings[label]
         
     def visit_column(self, column):
         if len(self.select_stack):
@@ -213,6 +214,7 @@ class ANSICompiler(sql.Compiled):
             self.columns.setdefault(column.key, column)
         if column.table is None or not column.table.named_with_column():
             self.strings[column] = self.preparer.format_column(column)
+            print "STEP1", self.strings[column]
         else:
             if column.table.oid_column is column:
                 n = self.dialect.oid_column_name(column)
@@ -224,6 +226,7 @@ class ANSICompiler(sql.Compiled):
                     self.strings[column] = None
             else:
                 self.strings[column] = self.preparer.format_column_with_table(column)
+                print "STEP2", type(column), self.strings[column]
 
     def visit_fromclause(self, fromclause):
         self.froms[fromclause] = fromclause.name
@@ -890,22 +893,30 @@ class ANSIIdentifierPreparer(object):
             or (case_sensitive and value.lower() != value)
     
     def __generic_obj_format(self, obj, ident):
+        print "CHECKING FOR QUOTES", ident
         if getattr(obj, 'quote', False):
+            print "HEY1"
             return self._quote_identifier(ident)
         if self.dialect.cache_identifiers:
             case_sens = getattr(obj, 'case_sensitive', None)
             try:
                 return self.__strings[(ident, case_sens)]
             except KeyError:
+                print "HEY2", getattr(obj, "case_sensitive", None), getattr(obj, 'case_sensitive', ident == ident.lower())
                 if self._requires_quotes(ident, getattr(obj, 'case_sensitive', ident == ident.lower())):
+                    print "HEY2.5", ident
                     self.__strings[(ident, case_sens)] = self._quote_identifier(ident)
                 else:
+                    print "HEY2.7", ident
                     self.__strings[(ident, case_sens)] = ident
+                print "HEY3", self.__strings[(ident, case_sens)]
                 return self.__strings[(ident, case_sens)]
         else:
             if self._requires_quotes(ident, getattr(obj, 'case_sensitive', ident == ident.lower())):
+                print "HEY4"
                 return self._quote_identifier(ident)
             else:
+                print "HEY5"
                 return ident
             
     def should_quote(self, object):

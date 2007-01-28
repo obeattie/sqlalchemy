@@ -324,7 +324,7 @@ class RelationTest5(testbase.ORMTest):
         assert carlist[0].manager is None
         assert carlist[1].manager.person_id == car2.manager.person_id
 
-class RelationTest6(testbase.AssertMixin):
+class SelectResultsTest(testbase.AssertMixin):
     def setUpAll(self):
         #  cars---owned by---  people (abstract) --- has a --- status
         #   |                  ^    ^                            |
@@ -439,6 +439,8 @@ class RelationTest6(testbase.AssertMixin):
 #            print activeCars
         for activePerson in  SelectResults(session.query(Person)).join_to('status').select(status.c.name=="active"):
             print activePerson
+#        for activePerson in  SelectResults(session.query(Person)).join_to('status').select_by(name="active"):
+#            print activePerson
 
 
 class MultiLevelTest(testbase.ORMTest):
@@ -468,9 +470,16 @@ class MultiLevelTest(testbase.ORMTest):
             __repr__ = __str__
         class Engineer( Employee): pass
         class Manager( Engineer): pass
+
+#        pu_Employee = polymorphic_union( {
+#                    'Manager':  table_Employee.join( table_Engineer).join( table_Manager),
+#                    'Engineer': select([table_Employee, table_Engineer.c.machine], table_Employee.c.atype == 'Engineer', from_obj=[table_Employee.join(table_Engineer)]),
+#                    'Employee': table_Employee.select( table_Employee.c.atype == 'Employee'),
+#                }, None, 'pu_employee', )
+
         pu_Employee = polymorphic_union( {
                     'Manager':  table_Employee.join( table_Engineer).join( table_Manager),
-                    'Engineer': select([table_Employee, table_Engineer.c.machine], table_Employee.c.atype == 'Engineer', from_obj=[table_Employee.join(table_Engineer)]),
+                    'Engineer': table_Employee.join(table_Engineer).select(table_Employee.c.atype == 'Engineer', use_labels=True),
                     'Employee': table_Employee.select( table_Employee.c.atype == 'Employee'),
                 }, None, 'pu_employee', )
         

@@ -72,8 +72,8 @@ class SelectResults(object):
     def select(self, clause):
         return self.filter(clause)
     
-    def select_by(self, **kwargs):
-        return self.filter(self._query.join_by(**kwargs))
+    def select_by(self, *args, **kwargs):
+        return self.filter(self._query._join_by(args, kwargs, start=self._joinpoint[1]))
             
     def order_by(self, order_by):
         """apply an ORDER BY to the query."""
@@ -130,7 +130,7 @@ class SelectResults(object):
     def _join_to(self, prop, outerjoin=False):
         [keys,p] = self._query._locate_prop(prop, start=self._joinpoint[1])
         clause = self._joinpoint[0]
-        mapper = orm.class_mapper(self._joinpoint[1].class_)
+        mapper = self._joinpoint[1]
         for key in keys:
             prop = mapper.props[key]
             if outerjoin:

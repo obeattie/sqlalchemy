@@ -52,16 +52,20 @@ def polymorphic_union(table_map, typecolname, aliasname='p_union'):
         
     def col(name, table):
         try:
-            return colnamemaps[table][name]
+            return colnamemaps[table][name].label(name)
         except KeyError:
             return sql.cast(sql.null(), types[name]).label(name)
 
+    print "-------------------------------------------------------------"
     result = []
     for type, table in table_map.iteritems():
         if typecolname is not None:
             result.append(sql.select([col(name, table) for name in colnames] + [sql.column("'%s'" % type).label(typecolname)], from_obj=[table]))
         else:
+            print "\n\nTABLE:", str(table), "COLS:", [(name, col(name, table), col(name,table)._label) for name in colnames]
             result.append(sql.select([col(name, table) for name in colnames], from_obj=[table]))
+    print "\n\nFINISHED PRODUCT", sql.union_all(*result).alias(aliasname)
+    print "-------------------------------------------------------------"
     return sql.union_all(*result).alias(aliasname)
 
 class TranslatingDict(dict):

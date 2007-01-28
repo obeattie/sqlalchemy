@@ -89,6 +89,11 @@ class QuoteTest(PersistTest):
         where the "UPPERCASE" column of "LaLa" doesnt exist.
         """
         x = table1.select(distinct=True).alias("LaLa").select().scalar()
+
+    def testlabels2(self):
+        x = select([
+            table1.join(table2, table2.c.d123==table1.c.lowercase).select(table2.c.MixedCase==5).alias('SomeAlias')
+        ]).execute()
         
     def testlabelsnocase(self):
         metadata = MetaData()

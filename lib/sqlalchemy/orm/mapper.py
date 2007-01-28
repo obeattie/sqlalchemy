@@ -626,7 +626,19 @@ class Mapper(object):
                 for x in iterate(mapper):
                     yield x
         return iterate(self)
-                
+    
+    def _get_inherited_column_equivalents(self):
+        result = {}
+        def visit_binary(binary):
+            if binary.operator == '=':
+                result[binary.left] = binary.right
+                result[binary.right] = binary.left
+        vis = mapperutil.BinaryVisitor(visit_binary)
+        for mapper in self.polymorphic_iterator():
+            if mapper.inherit_condition is not None:
+                mapper.inherit_condition.accept_visitor(vis)
+        return result
+            
     def add_properties(self, dict_of_properties):
         """adds the given dictionary of properties to this mapper, using add_property."""
         for key, value in dict_of_properties.iteritems():

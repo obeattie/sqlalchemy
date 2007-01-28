@@ -1400,6 +1400,7 @@ class CompoundSelect(_SelectBaseMixin, FromClause):
             for c in s.c:
                 yield c
     def _proxy_column(self, column):
+        print "PROXYING COLUMN", type(column), column
         if self.use_labels:
             col = column._make_proxy(self, name=column._label)
         else:
