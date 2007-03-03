@@ -4,7 +4,7 @@ defines a pickleable, recursive "table of contents" datastructure.
 TOCElements define a name, a description, and also a uniquely-identifying "path" which is
 used to generate hyperlinks between document sections.
 """
-import time
+import time, re
 
 toc_by_file = {}
 toc_by_path = {}
@@ -13,13 +13,13 @@ filenames = []
 class TOCElement(object):
     def __init__(self, filename, name, description, parent=None, version=None, last_updated=None, doctitle=None, **kwargs):
         self.filename = filename
-        self.name = name
+        self.name = re.sub(r'[<>&;%]', '', name)
         self.description = description
         self.parent = parent
         self.content = None
+        self.filenames = filenames
         self.toc_by_path = toc_by_path
         self.toc_by_file = toc_by_file
-        self.filenames = filenames
         self.last_updated = time.time()
         self.version = version
         self.doctitle = doctitle
@@ -35,6 +35,7 @@ class TOCElement(object):
             toc_by_file[self.filename] = self
             if self.filename:
                 filenames.append(self.filename)
+                
         self.root = self.parent or self
 
         self.content = None
@@ -64,7 +65,8 @@ class TOCElement(object):
                 return "%s.%s" % (self.filename, extension)
         else:
             return "#%s" % (self.path) 
-                
+
+
     def _create_path(self):
         elem = self
         tokens = []

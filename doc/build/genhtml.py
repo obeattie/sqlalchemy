@@ -1,15 +1,16 @@
 #!/usr/bin/env python
 import sys,re,os,shutil
-import myghty.interp
-import myghty.exception as exception
 import cPickle as pickle
 
 sys.path = ['../../lib', './lib/'] + sys.path
 
 import gen_docstrings, read_markdown, toc
+from mako.lookup import TemplateLookup
+from mako import exceptions
 
 files = [
     'index',
+    'documentation',
     'tutorial',
     'dbengine',
     'metadata',
@@ -20,7 +21,7 @@ files = [
     'types',
     'pooling',
     'plugins',
-    'docstrings'
+#    'docstrings'
     ]
 
 title='SQLAlchemy 0.3 Documentation'
@@ -28,9 +29,9 @@ version = '0.3.5'
 
 root = toc.TOCElement('', 'root', '', version=version, doctitle=title)
 
-shutil.copy('./content/index.myt', './output/index.myt')
-shutil.copy('./content/docstrings.myt', './output/docstrings.myt')
-shutil.copy('./content/documentation.myt', './output/documentation.myt')
+shutil.copy('./content/index.html', './output/index.html')
+shutil.copy('./content/docstrings.html', './output/docstrings.html')
+shutil.copy('./content/documentation.html', './output/documentation.html')
 
 read_markdown.parse_markdown_files(root, files)
 docstrings = gen_docstrings.make_all_docs()
@@ -39,27 +40,24 @@ gen_docstrings.create_docstring_toc(docstrings, root)
 pickle.dump(docstrings, file('./output/compiled_docstrings.pickle', 'w'))
 pickle.dump(root, file('./output/table_of_contents.pickle', 'w'))
 
-component_root = [
-    {'components': './components'},
-    {'output' :'./output'}
-]
+template_dirs = ['./templates', './output']
 output = os.path.dirname(os.getcwd())
 
-interp = myghty.interp.Interpreter(component_root = component_root, output_encoding='utf-8')
+lookup = TemplateLookup(template_dirs, module_directory='./modules', output_encoding='utf-8')
 
 def genfile(name, toc):
-    infile = name + ".myt"
+    infile = name + ".html"
     outname = os.path.join(os.getcwd(), '../', name + ".html")
     outfile = file(outname, 'w')
     print infile, '->', outname
-    interp.execute(infile, out_buffer=outfile, request_args={'toc':toc,'extension':'html'}, raise_error=True)
+    outfile.write(lookup.get_template(infile).render(attributes={}))
     
-try:
-    for filename in files:
+for filename in files:
+    try:
         genfile(filename, root)
-    genfile("documentation", root)
-except exception.Error, e:
-    sys.stderr.write(e.textformat())
+    except:
+        print exceptions.text_error_template().render()
+
 
 
         
