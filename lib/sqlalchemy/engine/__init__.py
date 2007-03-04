@@ -46,11 +46,10 @@ def create_engine(*args, **kwargs):
     dialect and connection arguments, with additional keyword
     arguments sent as options to the dialect and resulting Engine.
 
-    The URL is in the form ``<dialect>://opt1=val1&opt2=val2``, where
-    ``<dialect>`` is a name such as ``mysql``, ``oracle``, ``postgres``, 
-    and the options indicate username, password, database, etc.  Supported
-    keynames include `username`, `user`, `password`, `pw`, `db`,
-    `database`, `host`, `filename`.
+    The URL is in the form 
+    ``dialect://user:password@host/dbname[?key=value..]``, where 
+    ``dialect`` is a name such as ``mysql``, ``oracle``, ``postgres``,
+    etc.
 
     `**kwargs` represents options to be sent to the Engine itself as
     well as the components of the Engine, including the Dialect, the
