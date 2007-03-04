@@ -36,25 +36,41 @@
 
     ${pagenav(item, extension=extension, paged=paged)}
 
-    <br/>
-	${itemlink(item=item, anchor=True, paged=pagd, extension=extension)}
 	
 	${tocns.printtoc(root=item, current=None, anchor_toplevel=True, paged=paged, extension=extension)}
 	</div>
 </%def>
 
 <%def name="pagenav(item, paged, extension)">
-    <div class="toolbar">
+    <div class="navbanner">
+        <a href="${paged and 'index' or 'documentation'}.${ extension }">Table of Contents</a>
         <div class="prevnext">
         % if item.previous is not None:
             Previous: ${itemlink(item=item.previous, paged=paged, anchor=not paged, extension=extension)}
         % endif
 
         % if item.next is not None:
-            ${item.previous is not None and "|" or ""}
+            ${item.previous is not None and "   |   " or ""}
             Next: ${itemlink(item=item.next, paged=paged, anchor=not paged, extension=extension)}
         % endif
         </div>
-        <h3><a href="${paged and 'index' or 'documentation'}.${ extension }">Table of Contents</a></h3>
+
+        <h2>${item.description}</h2>
+
+    </div>
+</%def>
+
+<%def name="bottomnav(item, paged, extension)">
+    <div class="bottomnav">
+        <div class="prevnext">
+        % if item.previous is not None:
+            Previous: ${itemlink(item=item.previous, paged=paged, anchor=not paged, extension=extension)}
+        % endif
+
+        % if item.next is not None:
+            ${item.previous is not None and "   |   " or ""}
+            Next: ${itemlink(item=item.next, paged=paged, anchor=not paged, extension=extension)}
+        % endif
+        </div>
     </div>
 </%def>

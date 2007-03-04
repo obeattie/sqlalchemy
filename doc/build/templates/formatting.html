@@ -27,7 +27,9 @@
     
     <div class="${subsection and 'subsection' or 'section'}">
 
+    % if (subsection):
     <h3>${description or item.description}</h3>
+    % endif
     
     ${content}
 
@@ -89,7 +91,7 @@
 </%def>
 
 
-<%def name="popboxlink(name=None, show='show', hide='hide')"> 
+<%def name="popboxlink(name=None, show='show', hide='hide')" filter="trim"> 
     <%
         if name is None:
             name = attributes.setdefault('popbox_name', 0)
@@ -100,7 +102,7 @@
 javascript:togglePopbox('${name}', '${show}', '${hide}')
 </%def>
 
-<%def name="popbox(name=None, class_=None)">
+<%def name="popbox(name=None, class_=None)" filter="trim">
 <%
     if name is None:
         name = 'popbox_' + repr(attributes['popbox_name'])
@@ -108,14 +110,14 @@ javascript:togglePopbox('${name}', '${show}', '${hide}')
 <div id="${name}_div" class="${class_}" style="display:none;">${capture(caller.body) | trim}</div>
 </%def>
 
-<%def name="poplink(link='sql')">
+<%def name="poplink(link='sql')" filter="trim">
     <%
         href = capture(popboxlink)
     %>
     '''PYESC${nav.link(href=href, text=link, class_="codepoplink")}PYESC'''
 </%def>
 
-<%def name="codepopper()">
+<%def name="codepopper()" filter="trim">
     <%
 		c = capture(caller.body)
 		c = re.sub(r'\n', '<br/>\n', c.strip())
@@ -123,7 +125,7 @@ javascript:togglePopbox('${name}', '${show}', '${hide}')
     </pre><%call expr="popbox(class_='codepop')">${c}</%call><pre>
 </%def>
 
-<%def name="poppedcode()">
+<%def name="poppedcode()" filter="trim">
     <%
 		c = capture(caller.body)
 		c = re.sub(r'\n', '<br/>\n', c.strip())

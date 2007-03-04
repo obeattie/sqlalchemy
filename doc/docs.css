@@ -1,5 +1,8 @@
 /* documentation section styles */
 
+#topanchor {position:absolute;left:0px;top:0px;width:0px;height:0px;}
+#pagecontrol {float:right;}
+
 .doccontainer {
 }
 
@@ -32,7 +35,7 @@
 	background-color: #fbfbee;
 	border: solid 1px #ccc;
 	padding:10px 10px 0px 10px;
-	margin:0px 0px 10px 0px;
+	margin:10px 0px 10px 0px;
 }
 
 .tipbox {
@@ -110,7 +113,7 @@
 	margin: 0px 0px 0px 0px;
 }
 
-h1, .docheadertext {
+h1 {
     font: normal 20px/22px arial,helvetica,sans-serif;
     color: #222;
     padding:0px;
@@ -118,11 +121,21 @@ h1, .docheadertext {
 }
 
 h2 {
-    font-size:16px;
-    font-weight:bold;
-    display:inline;
-    padding:0px;
+    font-family:arial,helvetica,sans-serif;
+    font-size:20px;
+    font-weight:normal;
+    line-height:24px;
     margin:0px;
+}
+
+h3 {
+    font-family: arial, sans-serif;
+	font-weight: bold;
+	font-size: 16px;
+}
+
+.topnav h2 {
+    margin:26px 4px 0px 5px;
 }
 
 .docheader {
@@ -134,21 +147,17 @@ h2 {
 	margin: 0.8em 0;
 }
 
-.subsection {
-	/* this style is dynamically modified by the indentation */
-	margin:15px 0px 0px 0px;
-	clear:right;
-}
-
 .section {
-	padding: 20px 0px 0px 0px;
+    line-height: 1.5em;
+    padding:8px 10px 20px 10px;
+    margin:10px 0px 0px;
 }
 
-h3, .sectionheadertext {
-    font-family: arial, sans-serif;
-	font-weight: bold;
-	font-size: 16px;
+.subsection {
+    margin:0px 0px 0px 20px;
+    line-height: 1.5em;
 }
+
 
 .sectiontext {
 	font-size: 12px;
@@ -172,28 +181,29 @@ h3, .sectionheadertext {
 	padding:2px 2px 2px 8px;
 }
 
-.toc_list {
-   padding:0px;
-   margin:0px;
-}
 
-.toc_list li {
+.topnav li {
    font-size:12px;
    list-style-type:none;
    padding:0px 0px 3px 8px;
    margin:0px;
 }
 
-.small_toc_list {
+.topnav ul ul {
    padding:0px 0px 0px 8px;
 }
 
-.small_toc_list li {
+.topnav ul ul li {
    font-size: 11px;
-  list-style-type:none;
 }
 
-
+.bottomnav {
+    background-color:#FBFBEE;
+    border:1px solid #CCCCCC;
+    float:right;
+    margin:0px 0px 15px 5px;
+    padding:10px;
+}
 
 .toclink {
     font-weight: bold;
