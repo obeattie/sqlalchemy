@@ -3,34 +3,6 @@
 #topanchor {position:absolute;left:0px;top:0px;width:0px;height:0px;}
 #pagecontrol {float:right;}
 
-.doccontainer {
-}
-
-.panecontainer {
-}
-
-.sidebar {
-	background-color: #fbfbee;
-	border: solid 1px #ccc;
-	padding: 5px 5px 5px 5px;
-	margin: 0px 5px 5px 0px;
-	width:120px;
-	float:left;
-}
-
- 
-.sectionnavblock {
-}
-
-.sectionnav {
-	background-color: #fbfbee;
-	border: solid 1px #ccc;
-	padding: 10px 10px 10px 10px; 
-	margin: 35px 0px 15px 5px;
-	float:right;
-}
-
-
 .topnav {
 	background-color: #fbfbee;
 	border: solid 1px #ccc;
@@ -38,49 +10,9 @@
 	margin:10px 0px 10px 0px;
 }
 
-.tipbox {
-	background-color: #fbfbee;
-	border:1px solid;
-	padding:10px;
-	margin: 5px;
-}
-
-.multipage {
-	float:right;
-}
-
-/* optional margin to add to topnav */
-.topnavmargin {
-	margin:10px;
-}
-
-.topnavsectionlink {
-	padding: 0px 0px 0px 0px; 
-	margin: 0px 0px 0px 0px;
-}
-
-.topnavcontrol {
-	float:right;
-}
-
-.topnavmain {
-	margin: 25px 5px 15px 5px;
-}
-
-.topnavheader {
-    font: normal 20px/24px arial,helvetica,sans-serif;
-	margin: 0px 0px 0px 0px;
-	padding:0px 0px 15px 0px;
-}
-
-.topnavitems {
-	margin: 0px 0px 0px 40px;
-}
-
 .prevnext {
 	padding: 5px 0px 0px 0px;
 }
-
 
 .codetitle {
 	font-family: verdana, sans-serif;
@@ -94,23 +26,6 @@
 	font-family: courier, "courier new", serif;
 	font-size:1.1em;
     color: #960;
-}
-
-
-.content {
-	border: solid 1px #ccc;
-	padding: 0px 10px 20px 0px;
-}
-
-.sectioncontent {
-	border: solid 1px #fff;
-	padding: 0px 10px 20px 0px;
-    line-height: 1.5em;
-}
-
-.onepagecontent {
-	border: solid 1px #ccc;
-	margin: 0px 0px 0px 0px;
 }
 
 h1 {
@@ -138,15 +53,6 @@ h3 {
     margin:26px 4px 0px 5px;
 }
 
-.docheader {
-	margin: 0px 0px 10px 0px;
-    line-height: 1.2em;
-}
-
-.docheaderversion {
-	margin: 0.8em 0;
-}
-
 .section {
     line-height: 1.5em;
     padding:8px 10px 20px 10px;
@@ -156,29 +62,6 @@ h3 {
 .subsection {
     margin:0px 0px 0px 20px;
     line-height: 1.5em;
-}
-
-
-.sectiontext {
-	font-size: 12px;
-	margin: 5px 0px 0px 0px;
-}
-
-.maintoc {
-	/*background-color: #fbfbee;*/
-    background-color: #fbfbee;	
-	border: solid 1px #ccc;
-	padding: 10px 10px 10px 10px; 
-	margin: 0px 0px 10px 0px;
-}
-
-.toclinkcontainer {
-	padding:0px 0px 0px 8px;
-	/*border:1px solid;*/
-}
-
-.tocsection {
-	padding:2px 2px 2px 8px;
 }
 
 
@@ -264,7 +147,6 @@ h3 {
 	/*clear:right;*/
 }
 
-
 .codepoplink,
 #docs a.codepoplink
 {
@@ -288,6 +170,3 @@ h3 {
     background-color: #900;
 }
 
-.popup {
-	margin:10px;
-}
