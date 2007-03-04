@@ -28,6 +28,10 @@
     color: #960;
 }
 
+h1, h2, h3 {
+    font-family:arial,helvetica,sans-serif;
+}
+
 h1 {
     font: normal 20px/22px arial,helvetica,sans-serif;
     color: #222;
@@ -45,8 +49,16 @@ h2 {
 
 h3 {
     font-family: arial, sans-serif;
+    font-size:16px;
+    font-weight:bold;
+}
+
+.topnav h3 {
 	font-weight: bold;
 	font-size: 16px;
+	margin:0px;
+	display:inline;
+    font-family:verdana,sans-serif;	
 }
 
 .topnav h2 {

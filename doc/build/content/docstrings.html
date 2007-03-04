@@ -1,19 +1,20 @@
-<%flags>inherit='content_layout.myt'</%flags>
-<%attr>
-    title='Modules and Classes'
-    filename='docstrings'
-</%attr>
-<%args>
-    toc
-    extension
-</%args>
-<%init>
+# -*- coding: utf-8 -*-
+<%inherit file="content_layout.html"/>
+<%page args="toc, extension, paged"/>
+<%namespace  name="formatting" file="formatting.html"/>
+<%namespace  name="nav" file="nav.html"/>
+<%namespace name="pydoc" file="pydoc.html"/>
+<%def name="title()">SQLAlchemy 0.3 Documentation - Modules and Classes</%def>
+<%!
+    filename = 'docstrings'
     import cPickle as pickle
     import os
-    filename = os.path.join(os.path.dirname(self.file), 'compiled_docstrings.pickle')
+%>
+<%
+    filename = os.path.join(os.path.dirname(self.filename), 'compiled_docstrings.pickle')
     data = pickle.load(file(filename))
-</%init>
+%>
 
 % for obj in data:
-<& pydoc.myt:obj_doc, obj=obj, toc=toc, extension=extension &>
-%
+    ${pydoc.obj_doc(obj=obj, toc=toc, extension=extension, paged=paged)}
+% endfor

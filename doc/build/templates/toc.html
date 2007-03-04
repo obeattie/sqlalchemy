@@ -3,8 +3,17 @@
 <%def name="toc(toc, paged, extension)">
 	<div class="topnav">
 
-	<a name="full_index"></a>
+	<a name="table_of_contents"></a>
 	<h3>Table of Contents</h3>
+	&nbsp;&nbsp;
+	<a href="#full_index">(view full table)</a>
+	<br/><br/>
+	${printtoc(root=toc,paged=paged, extension=extension, current=None,children=False,anchor_toplevel=False)}
+
+	<a name="full_index"></a>
+	<h3>Table of Contents: Full</h3>
+	&nbsp;&nbsp;
+	<a href="#table_of_contents">(view brief table)</a>
 	
 	${printtoc(root=toc,paged=paged, extension=extension, current=None,children=True,anchor_toplevel=False)}
 

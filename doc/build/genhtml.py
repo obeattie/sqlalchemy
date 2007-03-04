@@ -21,7 +21,7 @@ files = [
     'types',
     'pooling',
     'plugins',
-#    'docstrings'
+    'docstrings'
     ]
 
 title='SQLAlchemy 0.3 Documentation'
