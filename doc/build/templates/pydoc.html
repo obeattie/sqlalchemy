@@ -3,7 +3,7 @@
 import docstring
 import sys, re
 
-def trim(docstring):
+def whitespace(docstring):
     if not docstring:
         return ''
     
@@ -52,7 +52,7 @@ def convquotes(text):
     %>
 
     <%call expr="formatting.section(toc=toc, path=obj.toc_path, description=htmldescription, paged=paged, extension=extension)">
-    <pre>${trim(obj.doc) |h,convquotes}</pre>
+    <pre>${obj.doc or '' |whitespace, h,convquotes}</pre>
 
     % if not obj.isclass and obj.functions:
 
@@ -88,7 +88,7 @@ def convquotes(text):
     <A name=""></a>
     <b>${func.name}(${", ".join(map(lambda k: "<i>%s</i>" % k, func.arglist))})</b>
     <div class="docstring">
-    <pre>${func.doc |trim, h, convquotes}</pre>
+    <pre>${func.doc or '' | whitespace, h, convquotes}</pre>
     </div>
     </div>
 </%def>
@@ -98,7 +98,7 @@ def convquotes(text):
          <A name=""></a>
          <b>${prop.name}</b>
          <div class="docstring">
-         <pre>${prop.doc |trim, h, convquotes}</pre>
+         <pre>${prop.doc or '' | whitespace, h, convquotes}</pre>
          </div> 
          </div>
 </%def>
