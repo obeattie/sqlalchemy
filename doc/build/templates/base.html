@@ -21,7 +21,7 @@
     # bootstrap TOC structure from request args, or pickled file if not present.
     import cPickle as pickle
     import os, time
-    print "%s generating from table of contents for file %s" % (local.filename, self.filename)
+    #print "%s generating from table of contents for file %s" % (local.filename, self.filename)
     filename = os.path.join(os.path.dirname(self.filename), 'table_of_contents.pickle')
     toc = pickle.load(file(filename))
     version = toc.version

@@ -11,7 +11,7 @@ toc_by_path = {}
 filenames = []
 
 class TOCElement(object):
-    def __init__(self, filename, name, description, parent=None, version=None, last_updated=None, doctitle=None, **kwargs):
+    def __init__(self, filename, name, description, parent=None, version=None, last_updated=None, doctitle=None, requires_paged=False, **kwargs):
         self.filename = filename
         self.name = re.sub(r'[<>&;%]', '', name)
         self.description = description
@@ -23,6 +23,7 @@ class TOCElement(object):
         self.last_updated = time.time()
         self.version = version
         self.doctitle = doctitle
+        self.requires_paged = requires_paged
         (self.path, self.depth) = self._create_path()
         #print "NEW TOC:", self.path
         for key, value in kwargs.iteritems():
@@ -62,7 +63,7 @@ class TOCElement(object):
         return self.toc_by_file[filename]
 
     def get_link(self, extension='html', anchor=True, usefilename=True):
-        if usefilename:
+        if usefilename or self.requires_paged:
             if anchor:
                 return "%s.%s#%s" % (self.filename, extension, self.path) 
             else:

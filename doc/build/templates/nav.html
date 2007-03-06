@@ -43,34 +43,25 @@
 <%def name="pagenav(item, paged, extension)">
     <div class="navbanner">
         <a href="${paged and 'index' or 'documentation'}.${ extension }">Table of Contents</a>
-        <div class="prevnext">
-        % if item.up:
-            Up: ${itemlink(item=item.up, paged=paged, anchor=not paged, extension=extension)}
-        % endif
-
-        % if item.previous is not None:
-            Previous: ${itemlink(item=item.previous, paged=paged, anchor=not paged, extension=extension)}
-        % endif
-
-        % if item.next is not None:
-            ${item.previous is not None and "   |   " or ""}
-            Next: ${itemlink(item=item.next, paged=paged, anchor=not paged, extension=extension)}
-        % endif
-        </div>
-
+        ${prevnext(item, paged, extension)}
         <h2>${item.description}</h2>
-
     </div>
 </%def>
 
 <%def name="bottomnav(item, paged, extension)">
     <div class="bottomnav">
-        <div class="prevnext">
+        ${prevnext(item, paged, extension)}
+    </div>
+</%def>
+
+<%def name="prevnext(item, paged, extension)">
+    <div class="prevnext">
         % if item.up:
             Up: ${itemlink(item=item.up, paged=paged, anchor=not paged, extension=extension)}
         % endif
 
         % if item.previous is not None:
+            ${item.up is not None and "   |   " or ""}
             Previous: ${itemlink(item=item.previous, paged=paged, anchor=not paged, extension=extension)}
         % endif
 
@@ -78,6 +69,5 @@
             ${item.previous is not None and "   |   " or ""}
             Next: ${itemlink(item=item.next, paged=paged, anchor=not paged, extension=extension)}
         % endif
-        </div>
     </div>
 </%def>

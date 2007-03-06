@@ -52,8 +52,10 @@ def convquotes(text):
     %>
 
     <%call expr="formatting.section(toc=toc, path=obj.toc_path, description=htmldescription, paged=paged, extension=extension)">
-    <pre>${obj.doc or '' |whitespace, h,convquotes}</pre>
-
+    % if obj.doc:
+    <div class="darkcell"><pre>${obj.doc or '' |whitespace, h,convquotes}</pre></div>
+    % endif
+    
     % if not obj.isclass and obj.functions:
 
         <%call expr="formatting.section(toc=toc, path=obj.mod_path, paged=paged, extension=extension)">
