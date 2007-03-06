@@ -6,7 +6,8 @@ sys.path = ['../../lib', './lib/'] + sys.path
 
 import gen_docstrings, read_markdown, toc
 from mako.lookup import TemplateLookup
-from mako import exceptions
+from mako import exceptions, runtime
+import time
 
 files = [
     'index',
@@ -35,7 +36,7 @@ shutil.copy('./content/documentation.html', './output/documentation.html')
 
 read_markdown.parse_markdown_files(root, files)
 docstrings = gen_docstrings.make_all_docs()
-gen_docstrings.create_docstring_toc(docstrings, root)
+doc_files = gen_docstrings.create_docstring_toc(docstrings, root)
 
 pickle.dump(docstrings, file('./output/compiled_docstrings.pickle', 'w'))
 pickle.dump(root, file('./output/table_of_contents.pickle', 'w'))
@@ -43,20 +44,27 @@ pickle.dump(root, file('./output/table_of_contents.pickle', 'w'))
 template_dirs = ['./templates', './output']
 output = os.path.dirname(os.getcwd())
 
-lookup = TemplateLookup(template_dirs, module_directory='./modules', output_encoding='utf-8')
+lookup = TemplateLookup(template_dirs, output_encoding='utf-8')
 
-def genfile(name, toc):
+def genfile(name, outname):
     infile = name + ".html"
-    outname = os.path.join(os.getcwd(), '../', name + ".html")
     outfile = file(outname, 'w')
     print infile, '->', outname
-    outfile.write(lookup.get_template(infile).render(attributes={}))
-    
+    t = lookup.get_template(infile)
+    outfile.write(t.render(attributes={}))
+
 for filename in files:
     try:
-        genfile(filename, root)
+        genfile(filename, os.path.join(os.getcwd(), '../', filename + ".html"))
     except:
         print exceptions.text_error_template().render()
+
+for filename in doc_files:
+    try:
+        genfile(filename, os.path.join(os.getcwd(), '../', os.path.basename(filename) + ".html"))
+    except:
+        print exceptions.text_error_template().render()
+        
 
 
 

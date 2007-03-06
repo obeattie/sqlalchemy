@@ -35,7 +35,6 @@
     <div class="topnav">
 
     ${pagenav(item, extension=extension, paged=paged)}
-
 	
 	${tocns.printtoc(root=item, current=None, anchor_toplevel=True, paged=paged, extension=extension)}
 	</div>
@@ -45,6 +44,10 @@
     <div class="navbanner">
         <a href="${paged and 'index' or 'documentation'}.${ extension }">Table of Contents</a>
         <div class="prevnext">
+        % if item.up:
+            Up: ${itemlink(item=item.up, paged=paged, anchor=not paged, extension=extension)}
+        % endif
+
         % if item.previous is not None:
             Previous: ${itemlink(item=item.previous, paged=paged, anchor=not paged, extension=extension)}
         % endif
@@ -63,6 +66,10 @@
 <%def name="bottomnav(item, paged, extension)">
     <div class="bottomnav">
         <div class="prevnext">
+        % if item.up:
+            Up: ${itemlink(item=item.up, paged=paged, anchor=not paged, extension=extension)}
+        % endif
+
         % if item.previous is not None:
             Previous: ${itemlink(item=item.previous, paged=paged, anchor=not paged, extension=extension)}
         % endif

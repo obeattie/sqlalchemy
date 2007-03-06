@@ -36,7 +36,7 @@ class TOCElement(object):
             if self.filename:
                 filenames.append(self.filename)
                 
-        self.root = self.parent or self
+        self.root = self.parent and self.parent.root or self
 
         self.content = None
         self.previous = None
@@ -47,7 +47,11 @@ class TOCElement(object):
                 self.previous = parent.children[-1]
                 parent.children[-1].next = self
             parent.children.append(self)
-
+            if parent is not parent.root:
+                self.up = parent
+            else:
+                self.up = None
+                
     def get_page_root(self):
         return self.toc_by_file[self.filename]
         
