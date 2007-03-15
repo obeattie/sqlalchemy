@@ -60,7 +60,7 @@ def convquotes(text):
 
         <%call expr="formatting.section(toc=toc, path=obj.mod_path, paged=paged, extension=extension)">
             % for func in obj.functions:
-                ${function_doc(func=func)}
+                ${function_doc(func=func,toc=toc)}
             % endfor
         </%call>
 
@@ -69,7 +69,7 @@ def convquotes(text):
         % if obj.functions:
             % for func in obj.functions:
                 % if isinstance(func, docstring.FunctionDoc):
-                    ${function_doc(func=func)}
+                    ${function_doc(func=func, toc=toc)}
                 % elif isinstance(func, docstring.PropertyDoc):
                     ${property_doc(prop=func)}
                 % endif
@@ -85,10 +85,16 @@ def convquotes(text):
     </%call>
 </%def>
 
-<%def name="function_doc(func)">
+<%def name="function_doc(func, toc)">
     <div class="darkcell">
-    <A name=""></a>
-    <b>${func.name}(${", ".join(map(lambda k: "<i>%s</i>" % k, func.arglist))})</b>
+    <%
+        if hasattr(func, 'toc_path'):
+            item = toc.get_by_path(func.toc_path)
+        else:
+            item = None
+    %>
+    <A name="${item and item.path or ''}"></a>
+    <b>def ${func.name}(${", ".join(map(lambda k: "<i>%s</i>" % k, func.arglist))})</b>
     <div class="docstring">
     <pre>${func.doc or '' | whitespace, h, convquotes}</pre>
     </div>
@@ -98,7 +104,7 @@ def convquotes(text):
 <%def name="property_doc(prop)">
          <div class="darkcell">
          <A name=""></a>
-         <b>${prop.name}</b>
+         <b>${prop.name} = property()</b>
          <div class="docstring">
          <pre>${prop.doc or '' | whitespace, h, convquotes}</pre>
          </div> 
