@@ -267,6 +267,7 @@ class ReflectionTest(PersistTest):
             testbase.db.execute("drop table django_admin_log")
             testbase.db.execute("drop table django_content_type")
 
+    @testbase.unsupported('mssql')
     def testmultipk(self):
         """test that creating a table checks for a sequence before creating it"""
         meta = BoundMetaData(testbase.db)
@@ -500,8 +501,8 @@ class SchemaTest(PersistTest):
         def foo(s, p):
             buf.write(s)
         gen = testbase.db.dialect.schemagenerator(testbase.db.engine, foo, None)
-        table1.accept_schema_visitor(gen)
-        table2.accept_schema_visitor(gen)
+        gen.traverse(table1)
+        gen.traverse(table2)
         buf = buf.getvalue()
         print buf
         assert buf.index("CREATE TABLE someschema.table1") > -1

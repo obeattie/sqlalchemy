@@ -767,7 +767,7 @@ class Mapper(object):
         vis = mapperutil.BinaryVisitor(visit_binary)
         for mapper in self.base_mapper().polymorphic_iterator():
             if mapper.inherit_condition is not None:
-                mapper.inherit_condition.accept_visitor(vis)
+                vis.traverse(mapper.inherit_condition)
         return result
 
     def add_properties(self, dict_of_properties):
@@ -956,6 +956,13 @@ class Mapper(object):
 
         return [self.get_attr_by_column(instance, column) for column in self.pks_by_table[self.mapped_table]]
 
+    def canload(self, instance):
+        """return true if this mapper is capable of loading the given instance"""
+        if self.polymorphic_on is not None:
+            return isinstance(instance, self.class_)
+        else:
+            return instance.__class__ is self.class_
+        
     def instance_key(self, instance):
         """Deprecated. A synonym for `identity_key_from_instance`."""
 
@@ -1151,9 +1158,9 @@ class Mapper(object):
                 mapper = table_to_mapper[table]
                 clause = sql.and_()
                 for col in mapper.pks_by_table[table]:
-                    clause.clauses.append(col == sql.bindparam(col._label, type=col.type))
+                    clause.clauses.append(col == sql.bindparam(col._label, type=col.type, unique=True))
                 if mapper.version_id_col is not None:
-                    clause.clauses.append(mapper.version_id_col == sql.bindparam(mapper.version_id_col._label, type=col.type))
+                    clause.clauses.append(mapper.version_id_col == sql.bindparam(mapper.version_id_col._label, type=col.type, unique=True))
                 statement = table.update(clause)
                 rows = 0
                 supports_sane_rowcount = True
@@ -1277,9 +1284,9 @@ class Mapper(object):
                 delete.sort(comparator)
                 clause = sql.and_()
                 for col in self.pks_by_table[table]:
-                    clause.clauses.append(col == sql.bindparam(col.key, type=col.type))
+                    clause.clauses.append(col == sql.bindparam(col.key, type=col.type, unique=True))
                 if self.version_id_col is not None:
-                    clause.clauses.append(self.version_id_col == sql.bindparam(self.version_id_col.key, type=self.version_id_col.type))
+                    clause.clauses.append(self.version_id_col == sql.bindparam(self.version_id_col.key, type=self.version_id_col.type, unique=True))
                 statement = table.delete(clause)
                 c = connection.execute(statement, delete)
                 if c.supports_sane_rowcount() and c.rowcount != len(delete):
@@ -1688,6 +1695,9 @@ class _ExtensionCarrier(MapperExtension):
     def __init__(self):
         self.__elements = []
 
+    def __iter__(self):
+        return iter(self.__elements)
+        
     def insert(self, extension):
         """Insert a MapperExtension at the beginning of this ExtensionCarrier's list."""
 
@@ -1759,7 +1769,7 @@ class ExtensionOption(MapperOption):
         self.ext = ext
 
     def process_query(self, query):
-        query._insert_extension(self.ext)
+        query.extension.append(self.ext)
 
 class ClassKey(object):
     """Key a class and an entity name to a mapper, via the mapper_registry."""

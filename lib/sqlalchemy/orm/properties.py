@@ -62,7 +62,7 @@ class PropertyLoader(StrategizedProperty):
     of items that correspond to a related database table.
     """
 
-    def __init__(self, argument, secondary, primaryjoin, secondaryjoin, foreign_keys=None, foreignkey=None, uselist=None, private=False, association=None, order_by=False, attributeext=None, backref=None, is_backref=False, post_update=False, cascade=None, viewonly=False, lazy=True, collection_class=None, passive_deletes=False, remote_side=None):
+    def __init__(self, argument, secondary, primaryjoin, secondaryjoin, foreign_keys=None, foreignkey=None, uselist=None, private=False, association=None, order_by=False, attributeext=None, backref=None, is_backref=False, post_update=False, cascade=None, viewonly=False, lazy=True, collection_class=None, passive_deletes=False, remote_side=None, enable_typechecks=True):
         self.uselist = uselist
         self.argument = argument
         self.secondary = secondary
@@ -77,6 +77,7 @@ class PropertyLoader(StrategizedProperty):
         self.collection_class = collection_class
         self.passive_deletes = passive_deletes
         self.remote_side = util.to_set(remote_side)
+        self.enable_typechecks = enable_typechecks
         self._parent_join_cache = {}
 
         if cascade is not None:
@@ -232,9 +233,9 @@ class PropertyLoader(StrategizedProperty):
         # error message in case its the "old" way.
         if self.loads_polymorphic:
             vis = sql_util.ColumnsInClause(self.mapper.select_table)
-            self.primaryjoin.accept_visitor(vis)
+            vis.traverse(self.primaryjoin)
             if self.secondaryjoin:
-                self.secondaryjoin.accept_visitor(vis)
+                vis.traverse(self.secondaryjoin)
             if vis.result:
                 raise exceptions.ArgumentError("In relationship '%s', primary and secondary join conditions must not include columns from the polymorphic 'select_table' argument as of SA release 0.3.4.  Construct join conditions using the base tables of the related mappers." % (str(self)))
 
@@ -250,9 +251,9 @@ class PropertyLoader(StrategizedProperty):
                     self._opposite_side.add(binary.right)
                 if binary.right in self.foreign_keys:
                     self._opposite_side.add(binary.left)
-            self.primaryjoin.accept_visitor(mapperutil.BinaryVisitor(visit_binary))
+            mapperutil.BinaryVisitor(visit_binary).traverse(self.primaryjoin)
             if self.secondaryjoin is not None:
-                self.secondaryjoin.accept_visitor(mapperutil.BinaryVisitor(visit_binary))
+                mapperutil.BinaryVisitor(visit_binary).traverse(self.secondaryjoin)
         else:
             self.foreign_keys = util.Set()
             self._opposite_side = util.Set()
@@ -267,12 +268,12 @@ class PropertyLoader(StrategizedProperty):
                     if f.references(binary.left.table):
                         self.foreign_keys.add(binary.right)
                         self._opposite_side.add(binary.left)
-            self.primaryjoin.accept_visitor(mapperutil.BinaryVisitor(visit_binary))
+            mapperutil.BinaryVisitor(visit_binary).traverse(self.primaryjoin)
 
             if len(self.foreign_keys) == 0:
                 raise exceptions.ArgumentError("Cant locate any foreign key columns in primary join condition '%s' for relationship '%s'.  Specify 'foreign_keys' argument to indicate which columns in the join condition are foreign." %(str(self.primaryjoin), str(self)))
             if self.secondaryjoin is not None:
-                self.secondaryjoin.accept_visitor(mapperutil.BinaryVisitor(visit_binary))
+                mapperutil.BinaryVisitor(visit_binary).traverse(self.secondaryjoin)
 
     def _determine_direction(self):
         """Determine our *direction*, i.e. do we represent one to
@@ -302,8 +303,9 @@ class PropertyLoader(StrategizedProperty):
             else:
                 self.direction = sync.ONETOMANY
         else:
-            onetomany = len([c for c in self.foreign_keys if self.mapper.unjoined_table.corresponding_column(c, False) is not None])
-            manytoone = len([c for c in self.foreign_keys if self.parent.unjoined_table.corresponding_column(c, False) is not None])
+            onetomany = len([c for c in self.foreign_keys if self.mapper.unjoined_table.c.contains_column(c)])
+            manytoone = len([c for c in self.foreign_keys if self.parent.unjoined_table.c.contains_column(c)])
+
             if not onetomany and not manytoone:
                 raise exceptions.ArgumentError("Cant determine relation direction for relationship '%s' - foreign key columns are not present in neither the parent nor the child's mapped tables" %(str(self)))
             elif onetomany and manytoone:
@@ -341,14 +343,14 @@ class PropertyLoader(StrategizedProperty):
         if self.loads_polymorphic:
             if self.secondaryjoin:
                 self.polymorphic_secondaryjoin = self.secondaryjoin.copy_container()
-                self.polymorphic_secondaryjoin.accept_visitor(sql_util.ClauseAdapter(self.mapper.select_table))
+                sql_util.ClauseAdapter(self.mapper.select_table).traverse(self.polymorphic_secondaryjoin)
                 self.polymorphic_primaryjoin = self.primaryjoin.copy_container()
             else:
                 self.polymorphic_primaryjoin = self.primaryjoin.copy_container()
                 if self.direction is sync.ONETOMANY:
-                    self.polymorphic_primaryjoin.accept_visitor(sql_util.ClauseAdapter(self.mapper.select_table, include=self.foreign_keys, equivalents=target_equivalents))
+                    sql_util.ClauseAdapter(self.mapper.select_table, include=self.foreign_keys, equivalents=target_equivalents).traverse(self.polymorphic_primaryjoin)
                 elif self.direction is sync.MANYTOONE:
-                    self.polymorphic_primaryjoin.accept_visitor(sql_util.ClauseAdapter(self.mapper.select_table, exclude=self.foreign_keys, equivalents=target_equivalents))
+                    sql_util.ClauseAdapter(self.mapper.select_table, exclude=self.foreign_keys, equivalents=target_equivalents).traverse(self.polymorphic_primaryjoin)
                 self.polymorphic_secondaryjoin = None
             # load "polymorphic" versions of the columns present in "remote_side" - this is
             # important for lazy-clause generation which goes off the polymorphic target selectable
@@ -398,9 +400,9 @@ class PropertyLoader(StrategizedProperty):
     def _is_self_referential(self):
         return self.parent.mapped_table is self.target or self.parent.select_table is self.target
 
-    def get_join(self, parent):
+    def get_join(self, parent, primary=True, secondary=True):
         try:
-            return self._parent_join_cache[parent]
+            return self._parent_join_cache[(parent, primary, secondary)]
         except KeyError:
             parent_equivalents = parent._get_inherited_column_equivalents()
             primaryjoin = self.polymorphic_primaryjoin.copy_container()
@@ -409,17 +411,22 @@ class PropertyLoader(StrategizedProperty):
             else:
                 secondaryjoin = None
             if self.direction is sync.ONETOMANY:
-                primaryjoin.accept_visitor(sql_util.ClauseAdapter(parent.select_table, exclude=self.foreign_keys, equivalents=parent_equivalents))
+                sql_util.ClauseAdapter(parent.select_table, exclude=self.foreign_keys, equivalents=parent_equivalents).traverse(primaryjoin)
             elif self.direction is sync.MANYTOONE:
-                primaryjoin.accept_visitor(sql_util.ClauseAdapter(parent.select_table, include=self.foreign_keys, equivalents=parent_equivalents))
+                sql_util.ClauseAdapter(parent.select_table, include=self.foreign_keys, equivalents=parent_equivalents).traverse(primaryjoin)
             elif self.secondaryjoin:
-                primaryjoin.accept_visitor(sql_util.ClauseAdapter(parent.select_table, exclude=self.foreign_keys, equivalents=parent_equivalents))
+                sql_util.ClauseAdapter(parent.select_table, exclude=self.foreign_keys, equivalents=parent_equivalents).traverse(primaryjoin)
 
             if secondaryjoin is not None:
-                j = primaryjoin & secondaryjoin
+                if secondary and not primary:
+                    j = secondaryjoin
+                elif primary and secondary:
+                    j = primaryjoin & secondaryjoin
+                elif primary and not secondary:
+                    j = primaryjoin
             else:
                 j = primaryjoin
-            self._parent_join_cache[parent] = j
+            self._parent_join_cache[(parent, primary, secondary)] = j
             return j
 
     def register_dependencies(self, uowcommit):

@@ -11,7 +11,7 @@ from sqlalchemy.orm import mapper, query
 from sqlalchemy.orm.interfaces import *
 from sqlalchemy.orm import session as sessionlib
 from sqlalchemy.orm import util as mapperutil
-import sets, random
+import random
 
 
 class ColumnLoader(LoaderStrategy):
@@ -260,7 +260,7 @@ class LazyLoader(AbstractRelationLoader):
             class FindColumnInColumnClause(sql.ClauseVisitor):
                 def visit_column(self, c):
                     columns.append(c)
-            expr.accept_visitor(FindColumnInColumnClause())
+            FindColumnInColumnClause().traverse(expr)
             return len(columns) and columns[0] or None
         
         def col_in_collection(column, collection):
@@ -281,7 +281,7 @@ class LazyLoader(AbstractRelationLoader):
             if should_bind(leftcol, rightcol):
                 col = leftcol
                 binary.left = binds.setdefault(leftcol,
-                        sql.bindparam(bind_label(), None, shortname=leftcol.name, type=binary.right.type))
+                        sql.bindparam(bind_label(), None, shortname=leftcol.name, type=binary.right.type, unique=True))
                 reverse[rightcol] = binds[col]
 
             # the "left is not right" compare is to handle part of a join clause that is "table.c.col1==table.c.col1",
@@ -289,12 +289,12 @@ class LazyLoader(AbstractRelationLoader):
             if leftcol is not rightcol and should_bind(rightcol, leftcol):
                 col = rightcol
                 binary.right = binds.setdefault(rightcol,
-                        sql.bindparam(bind_label(), None, shortname=rightcol.name, type=binary.left.type))
+                        sql.bindparam(bind_label(), None, shortname=rightcol.name, type=binary.left.type, unique=True))
                 reverse[leftcol] = binds[col]
 
         lazywhere = primaryjoin.copy_container()
         li = mapperutil.BinaryVisitor(visit_binary)
-        lazywhere.accept_visitor(li)
+        li.traverse(lazywhere)
         
         if secondaryjoin is not None:
             secondaryjoin = secondaryjoin.copy_container()
@@ -363,16 +363,16 @@ class EagerLoader(AbstractRelationLoader):
                         eagerloader.secondary:self.eagersecondary
                         })
                 self.eagersecondaryjoin = eagerloader.polymorphic_secondaryjoin.copy_container()
-                self.eagersecondaryjoin.accept_visitor(self.aliasizer)
+                self.aliasizer.traverse(self.eagersecondaryjoin)
                 self.eagerprimary = eagerloader.polymorphic_primaryjoin.copy_container()
-                self.eagerprimary.accept_visitor(self.aliasizer)
+                self.aliasizer.traverse(self.eagerprimary)
             else:
                 self.eagerprimary = eagerloader.polymorphic_primaryjoin.copy_container()
                 self.aliasizer = sql_util.Aliasizer(self.target, aliases={self.target:self.eagertarget})
-                self.eagerprimary.accept_visitor(self.aliasizer)
+                self.aliasizer.traverse(self.eagerprimary)
 
             if parentclauses is not None:
-                self.eagerprimary.accept_visitor(parentclauses.aliasizer)
+                parentclauses.aliasizer.traverse(self.eagerprimary)
 
             if eagerloader.order_by:
                 self.eager_order_by = self._aliasize_orderby(eagerloader.order_by)
@@ -472,8 +472,6 @@ class EagerLoader(AbstractRelationLoader):
 
         if clauses.eager_order_by:
             statement.order_by(*util.to_list(clauses.eager_order_by))
-        elif getattr(statement, 'order_by_clause', None):
-            clauses._aliasize_orderby(statement.order_by_clause, False)
                 
         statement.append_from(statement._outerjoin)
         for value in self.select_mapper.props.values():

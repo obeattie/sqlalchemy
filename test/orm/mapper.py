@@ -296,16 +296,16 @@ class MapperTest(MapperSuperTest):
         sess = create_session()
         q = sess.query(m)
 
-        l = q.select((orderitems.c.item_name=='item 4') & q.join_via(['orders', 'items']))
+        l = q.filter(orderitems.c.item_name=='item 4').join(['orders', 'items']).list()
         self.assert_result(l, User, user_result[0])
         
         l = q.select_by(item_name='item 4')
         self.assert_result(l, User, user_result[0])
 
-        l = q.select((orderitems.c.item_name=='item 4') & q.join_to('item_name'))
+        l = q.filter(orderitems.c.item_name=='item 4').join('item_name').list()
         self.assert_result(l, User, user_result[0])
 
-        l = q.select((orderitems.c.item_name=='item 4') & q.join_to('items'))
+        l = q.filter(orderitems.c.item_name=='item 4').join('items').list()
         self.assert_result(l, User, user_result[0])
 
         # test comparing to an object instance
@@ -319,6 +319,21 @@ class MapperTest(MapperSuperTest):
             assert False
         except AttributeError:
             assert True
+
+    def testjoinviam2m(self):
+        """test the join_via and join_to functions"""
+        m = mapper(Order, orders, properties = {
+            'items' : relation(mapper(Item, orderitems, properties = {
+                'keywords' : relation(mapper(Keyword, keywords), itemkeywords)
+            }))
+        })
+        
+        sess = create_session()
+        q = sess.query(m)
+
+        l = q.filter(keywords.c.name=='square').join(['items', 'keywords']).list()
+        self.assert_result(l, Order, order_result[1])
+
         
     def testcustomjoin(self):
         """test that the from_obj parameter to query.select() can be used
@@ -587,15 +602,29 @@ class MapperTest(MapperSuperTest):
             })
             
         sess = create_session()
-        q2 = sess.query(User).options(eagerload('orders.items.keywords'))
+        
+        # eagerload nothing.
         u = sess.query(User).select()
         def go():
             print u[0].orders[1].items[0].keywords[1]
         self.assert_sql_count(db, go, 3)
         sess.clear()
+        
+        
         print "-------MARK----------"
+        # eagerload orders, orders.items, orders.items.keywords
+        q2 = sess.query(User).options(eagerload('orders'), eagerload('orders.items'), eagerload('orders.items.keywords'))
         u = q2.select()
         print "-------MARK2----------"
+        self.assert_sql_count(db, go, 0)
+
+        sess.clear()
+        
+        # eagerload "keywords" on items.  it will lazy load "orders", then lazy load
+        # the "items" on the order, but on "items" it will eager load the "keywords"
+        print "-------MARK3----------"
+        q3 = sess.query(User).options(eagerload('orders.items.keywords'))
+        u = q3.select()
         self.assert_sql_count(db, go, 2)
         
 class InheritanceTest(MapperSuperTest):
@@ -867,7 +896,7 @@ class LazyTest(MapperSuperTest):
             addresses = relation(mapper(Address, addresses, extension=ctx.mapper_extension), lazy=True)
         ), extension=ctx.mapper_extension)
         q = ctx.current.query(m)
-        u = q.selectfirst(users.c.user_id == 7)
+        u = q.filter(users.c.user_id == 7).selectfirst()
         ctx.current.expunge(u)
         self.assert_result([u], User,
             {'user_id' : 7, 'addresses' : (Address, [{'address_id' : 1}])},
@@ -954,8 +983,14 @@ class LazyTest(MapperSuperTest):
         ))
         sess= create_session()
         q = sess.query(m)
-        l = q.select(limit=2, offset=1)
-        self.assert_result(l, User, *user_all_result[1:3])
+        
+        if db.engine.name == 'mssql':
+            l = q.select(limit=2)
+            self.assert_result(l, User, *user_all_result[:2])
+        else:        
+            l = q.select(limit=2, offset=1)
+            self.assert_result(l, User, *user_all_result[1:3])
+
         # use a union all to get a lot of rows to join against
         u2 = users.alias('u2')
         s = union_all(u2.select(use_labels=True), u2.select(use_labels=True), u2.select(use_labels=True)).alias('u')
@@ -1067,85 +1102,6 @@ class EagerTest(MapperSuperTest):
             {'user_id' : 9, 'addresses' : (Address, [])}
             )
 
-    def testcustomfromalias(self):
-        mapper(User, users, properties={
-            'addresses':relation(Address, lazy=True)
-        })
-        mapper(Address, addresses)
-        query = users.select(users.c.user_id==7).union(users.select(users.c.user_id>7)).alias('ulist').outerjoin(addresses).select(use_labels=True)
-        q = create_session().query(User)
-        
-        def go():
-            l = q.options(contains_alias('ulist'), contains_eager('addresses')).instances(query.execute())
-            self.assert_result(l, User, *user_address_result)
-        self.assert_sql_count(testbase.db, go, 1)
-        
-    def testcustomeagerquery(self):
-        mapper(User, users, properties={
-            # setting lazy=True - the contains_eager() option below
-            # should imply eagerload()
-            'addresses':relation(Address, lazy=True)
-        })
-        mapper(Address, addresses)
-        
-        selectquery = users.outerjoin(addresses).select(use_labels=True)
-        q = create_session().query(User)
-        
-        def go():
-            l = q.options(contains_eager('addresses')).instances(selectquery.execute())
-            self.assert_result(l, User, *user_address_result)
-        self.assert_sql_count(testbase.db, go, 1)
-
-    def testcustomeagerwithstringalias(self):
-        mapper(User, users, properties={
-            'addresses':relation(Address, lazy=False)
-        })
-        mapper(Address, addresses)
-
-        adalias = addresses.alias('adalias')
-        selectquery = users.outerjoin(adalias).select(use_labels=True)
-        q = create_session().query(User)
-
-        def go():
-            l = q.options(contains_eager('addresses', alias="adalias")).instances(selectquery.execute())
-            self.assert_result(l, User, *user_address_result)
-        self.assert_sql_count(testbase.db, go, 1)
-
-    def testcustomeagerwithalias(self):
-        mapper(User, users, properties={
-            'addresses':relation(Address, lazy=False)
-        })
-        mapper(Address, addresses)
-
-        adalias = addresses.alias('adalias')
-        selectquery = users.outerjoin(adalias).select(use_labels=True)
-        q = create_session().query(User)
-
-        def go():
-            l = q.options(contains_eager('addresses', alias=adalias)).instances(selectquery.execute())
-            self.assert_result(l, User, *user_address_result)
-        self.assert_sql_count(testbase.db, go, 1)
-
-    def testcustomeagerwithdecorator(self):
-        mapper(User, users, properties={
-            'addresses':relation(Address, lazy=False)
-        })
-        mapper(Address, addresses)
-
-        adalias = addresses.alias('adalias')
-        selectquery = users.outerjoin(adalias).select(use_labels=True)
-        def decorate(row):
-            d = {}
-            for c in addresses.columns:
-                d[c] = row[adalias.corresponding_column(c)]
-            return d
-            
-        q = create_session().query(User)
-
-        def go():
-            l = q.options(contains_eager('addresses', decorator=decorate)).instances(selectquery.execute())
-            self.assert_result(l, User, *user_address_result)
-        self.assert_sql_count(testbase.db, go, 1)
         
     def testorderby_desc(self):
         m = mapper(Address, addresses)
@@ -1174,8 +1130,13 @@ class EagerTest(MapperSuperTest):
         sess = create_session()
         q = sess.query(m)
         
-        l = q.select(limit=2, offset=1)
-        self.assert_result(l, User, *user_all_result[1:3])
+        if db.engine.name == 'mssql':
+            l = q.select(limit=2)
+            self.assert_result(l, User, *user_all_result[:2])
+        else:        
+            l = q.select(limit=2, offset=1)
+            self.assert_result(l, User, *user_all_result[1:3])
+
         # this is an involved 3x union of the users table to get a lot of rows.
         # then see if the "distinct" works its way out.  you actually get the same
         # result with or without the distinct, just via less or more rows.
@@ -1206,8 +1167,9 @@ class EagerTest(MapperSuperTest):
         sess = create_session()
         q = sess.query(m)
         
-        l = q.select(q.join_to('orders'), order_by=desc(orders.c.user_id), limit=2, offset=1)
-        self.assert_result(l, User, *(user_all_result[2], user_all_result[0]))
+        if db.engine.name != 'mssql':
+            l = q.select(q.join_to('orders'), order_by=desc(orders.c.user_id), limit=2, offset=1)
+            self.assert_result(l, User, *(user_all_result[2], user_all_result[0]))
         
         l = q.select(q.join_to('addresses'), order_by=desc(addresses.c.email_address), limit=1, offset=0)
         self.assert_result(l, User, *(user_all_result[0],))
@@ -1380,7 +1342,6 @@ class EagerTest(MapperSuperTest):
     
     def testmanytomany(self):
         items = orderitems
-        
         m = mapper(Item, items, properties = dict(
                 keywords = relation(mapper(Keyword, keywords), itemkeywords, lazy=False, order_by=[keywords.c.keyword_id]),
             ))
@@ -1393,6 +1354,7 @@ class EagerTest(MapperSuperTest):
             {'item_id' : 1, 'keywords' : (Keyword, [{'keyword_id' : 2}, {'keyword_id' : 4}, {'keyword_id' : 6}])},
             {'item_id' : 2, 'keywords' : (Keyword, [{'keyword_id' : 2}, {'keyword_id' : 5}, {'keyword_id' : 7}])},
         )
+
     
     def testmanytomanyoptions(self):
         items = orderitems
@@ -1441,7 +1403,160 @@ class EagerTest(MapperSuperTest):
                 {'item_id':5, 'item_name':'item 5'}
                ])},
         )
+
+class InstancesTest(MapperSuperTest):
+    def testcustomfromalias(self):
+        mapper(User, users, properties={
+            'addresses':relation(Address, lazy=True)
+        })
+        mapper(Address, addresses)
+        query = users.select(users.c.user_id==7).union(users.select(users.c.user_id>7)).alias('ulist').outerjoin(addresses).select(use_labels=True)
+        q = create_session().query(User)
         
+        def go():
+            l = q.options(contains_alias('ulist'), contains_eager('addresses')).instances(query.execute())
+            self.assert_result(l, User, *user_address_result)
+        self.assert_sql_count(testbase.db, go, 1)
         
+    def testcustomeagerquery(self):
+        mapper(User, users, properties={
+            # setting lazy=True - the contains_eager() option below
+            # should imply eagerload()
+            'addresses':relation(Address, lazy=True)
+        })
+        mapper(Address, addresses)
+        
+        selectquery = users.outerjoin(addresses).select(use_labels=True)
+        q = create_session().query(User)
+        
+        def go():
+            l = q.options(contains_eager('addresses')).instances(selectquery.execute())
+            self.assert_result(l, User, *user_address_result)
+        self.assert_sql_count(testbase.db, go, 1)
+
+    def testcustomeagerwithstringalias(self):
+        mapper(User, users, properties={
+            'addresses':relation(Address, lazy=False)
+        })
+        mapper(Address, addresses)
+
+        adalias = addresses.alias('adalias')
+        selectquery = users.outerjoin(adalias).select(use_labels=True)
+        q = create_session().query(User)
+
+        def go():
+            l = q.options(contains_eager('addresses', alias="adalias")).instances(selectquery.execute())
+            self.assert_result(l, User, *user_address_result)
+        self.assert_sql_count(testbase.db, go, 1)
+
+    def testcustomeagerwithalias(self):
+        mapper(User, users, properties={
+            'addresses':relation(Address, lazy=False)
+        })
+        mapper(Address, addresses)
+
+        adalias = addresses.alias('adalias')
+        selectquery = users.outerjoin(adalias).select(use_labels=True)
+        q = create_session().query(User)
+
+        def go():
+            l = q.options(contains_eager('addresses', alias=adalias)).instances(selectquery.execute())
+            self.assert_result(l, User, *user_address_result)
+        self.assert_sql_count(testbase.db, go, 1)
+
+    def testcustomeagerwithdecorator(self):
+        mapper(User, users, properties={
+            'addresses':relation(Address, lazy=False)
+        })
+        mapper(Address, addresses)
+
+        adalias = addresses.alias('adalias')
+        selectquery = users.outerjoin(adalias).select(use_labels=True)
+        def decorate(row):
+            d = {}
+            for c in addresses.columns:
+                d[c] = row[adalias.corresponding_column(c)]
+            return d
+            
+        q = create_session().query(User)
+
+        def go():
+            l = q.options(contains_eager('addresses', decorator=decorate)).instances(selectquery.execute())
+            self.assert_result(l, User, *user_address_result)
+        self.assert_sql_count(testbase.db, go, 1)
+    
+    def testmultiplemappers(self):
+        mapper(User, users, properties={
+            'addresses':relation(Address, lazy=True)
+        })
+        mapper(Address, addresses)
+
+        sess = create_session()
+        
+        (user7, user8, user9) = sess.query(User).select()
+        (address1, address2, address3, address4) = sess.query(Address).select()
+        
+        selectquery = users.outerjoin(addresses).select(use_labels=True)
+        q = sess.query(User)
+        l = q.instances(selectquery.execute(), Address)
+        # note the result is a cartesian product
+        assert l == [
+            (user7, address1),
+            (user8, address2),
+            (user8, address3),
+            (user8, address4),
+            (user9, None)
+        ]
+    
+    def testmultipleonquery(self):
+        mapper(User, users, properties={
+            'addresses':relation(Address, lazy=True)
+        })
+        mapper(Address, addresses)
+        sess = create_session()
+        (user7, user8, user9) = sess.query(User).select()
+        (address1, address2, address3, address4) = sess.query(Address).select()
+        q = sess.query(User)
+        q = q.add_entity(Address).outerjoin('addresses')
+        l = q.list()
+        assert l == [
+            (user7, address1),
+            (user8, address2),
+            (user8, address3),
+            (user8, address4),
+            (user9, None)
+        ]
+
+    def testcolumnonquery(self):
+        mapper(User, users, properties={
+            'addresses':relation(Address, lazy=True)
+        })
+        mapper(Address, addresses)
+        
+        sess = create_session()
+        (user7, user8, user9) = sess.query(User).select()
+        q = sess.query(User)
+        q = q.group_by([c for c in users.c]).outerjoin('addresses').add_column(func.count(addresses.c.address_id).label('count'))
+        l = q.list()
+        assert l == [
+            (user7, 1),
+            (user8, 3),
+            (user9, 0)
+        ]
+        
+    def testmapperspluscolumn(self):
+        mapper(User, users)
+        s = select([users, func.count(addresses.c.address_id).label('count')], from_obj=[users.outerjoin(addresses)], group_by=[c for c in users.c])
+        sess = create_session()
+        (user7, user8, user9) = sess.query(User).select()
+        q = sess.query(User)
+        l = q.instances(s.execute(), "count")
+        assert l == [
+            (user7, 1),
+            (user8, 3),
+            (user9, 0)
+        ]
+
+
 if __name__ == "__main__":    
     testbase.main()

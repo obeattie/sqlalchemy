@@ -10,7 +10,7 @@ Contains default implementations for the abstract objects in the sql
 module.
 """
 
-from sqlalchemy import schema, sql, engine, util, sql_util
+from sqlalchemy import schema, sql, engine, util, sql_util, exceptions
 from  sqlalchemy.engine import default
 import string, re, sets, weakref
 
@@ -74,6 +74,8 @@ class ANSICompiler(sql.Compiled):
 
     Compiles ClauseElements into ANSI-compliant SQL strings.
     """
+
+    __traverse_options__ = {'column_collections':False}
 
     def __init__(self, dialect, statement, parameters=None, **kwargs):
         """Construct a new ``ANSICompiler`` object.
@@ -353,20 +355,27 @@ class ANSICompiler(sql.Compiled):
     def visit_bindparam(self, bindparam):
         if bindparam.shortname != bindparam.key:
             self.binds.setdefault(bindparam.shortname, bindparam)
-        count = 1
-        key = bindparam.key
+        if bindparam.unique:
+            count = 1
+            key = bindparam.key
 
-        # redefine the generated name of the bind param in the case
-        # that we have multiple conflicting bind parameters.
-        while self.binds.setdefault(key, bindparam) is not bindparam:
-            # ensure the name doesn't expand the length of the string
-            # in case we're at the edge of max identifier length
-            tag = "_%d" % count
-            key = bindparam.key[0 : len(bindparam.key) - len(tag)] + tag
-            count += 1
-        bindparam.key = key
-        self.strings[bindparam] = self.bindparam_string(key)
-
+            # redefine the generated name of the bind param in the case
+            # that we have multiple conflicting bind parameters.
+            while self.binds.setdefault(key, bindparam) is not bindparam:
+                # ensure the name doesn't expand the length of the string
+                # in case we're at the edge of max identifier length
+                tag = "_%d" % count
+                key = bindparam.key[0 : len(bindparam.key) - len(tag)] + tag
+                count += 1
+            bindparam.key = key
+            self.strings[bindparam] = self.bindparam_string(key)
+        else:
+            existing = self.binds.get(bindparam.key)
+            if existing is not None and existing.unique:
+                raise exceptions.CompileError("Bind parameter '%s' conflicts with unique bind parameter of the same name" % bindparam.key)
+            self.strings[bindparam] = self.bindparam_string(bindparam.key)
+            self.binds[bindparam.key] = bindparam
+            
     def bindparam_string(self, name):
         return self.bindtemplate % name
 
@@ -381,13 +390,13 @@ class ANSICompiler(sql.Compiled):
         self.select_stack.append(select)
         for c in select._raw_columns:
             if isinstance(c, sql.Select) and c.is_scalar:
-                c.accept_visitor(self)
+                self.traverse(c)
                 inner_columns[self.get_str(c)] = c
                 continue
-            try:
+            if hasattr(c, '_selectable'):
                 s = c._selectable()
-            except AttributeError:
-                c.accept_visitor(self)
+            else:
+                self.traverse(c)
                 inner_columns[self.get_str(c)] = c
                 continue
             for co in s.columns:
@@ -395,10 +404,10 @@ class ANSICompiler(sql.Compiled):
                     labelname = co._label
                     if labelname is not None:
                         l = co.label(labelname)
-                        l.accept_visitor(self)
+                        self.traverse(l)
                         inner_columns[labelname] = l
                     else:
-                        co.accept_visitor(self)
+                        self.traverse(co)
                         inner_columns[self.get_str(co)] = co
                 # TODO: figure this out, a ColumnClause with a select as a parent
                 # is different from any other kind of parent
@@ -407,10 +416,10 @@ class ANSICompiler(sql.Compiled):
                     # names look like table.colname, so add a label synonomous with
                     # the column name
                     l = co.label(co.name)
-                    l.accept_visitor(self)
+                    self.traverse(l)
                     inner_columns[self.get_str(l.obj)] = l
                 else:
-                    co.accept_visitor(self)
+                    self.traverse(co)
                     inner_columns[self.get_str(co)] = co
         self.select_stack.pop(-1)
 
@@ -436,7 +445,7 @@ class ANSICompiler(sql.Compiled):
                     else:
                         continue
                     clause = c==value
-                    clause.accept_visitor(self)
+                    self.traverse(clause)
                     whereclause = sql.and_(clause, whereclause)
                     self.visit_compound(whereclause)
 
@@ -589,7 +598,7 @@ class ANSICompiler(sql.Compiled):
         vis = DefaultVisitor()
         for c in insert_stmt.table.c:
             if (isinstance(c, schema.SchemaItem) and (self.parameters is None or self.parameters.get(c.key, None) is None)):
-                c.accept_schema_visitor(vis)
+                vis.traverse(c)
 
         self.isinsert = True
         colparams = self._get_colparams(insert_stmt, default_params)
@@ -603,7 +612,7 @@ class ANSICompiler(sql.Compiled):
                 return self.bindparam_string(p.key)
             else:
                 self.inline_params.add(col)
-                p.accept_visitor(self)
+                self.traverse(p)
                 if isinstance(p, sql.ClauseElement) and not isinstance(p, sql.ColumnElement):
                     return "(" + self.get_str(p) + ")"
                 else:
@@ -624,7 +633,7 @@ class ANSICompiler(sql.Compiled):
         vis = OnUpdateVisitor()
         for c in update_stmt.table.c:
             if (isinstance(c, schema.SchemaItem) and (self.parameters is None or self.parameters.get(c.key, None) is None)):
-                c.accept_schema_visitor(vis)
+                vis.traverse(c)
 
         self.isupdate = True
         colparams = self._get_colparams(update_stmt, default_params)
@@ -636,7 +645,7 @@ class ANSICompiler(sql.Compiled):
                 self.binds[p.shortname] = p
                 return self.bindparam_string(p.key)
             else:
-                p.accept_visitor(self)
+                self.traverse(p)
                 self.inline_params.add(col)
                 if isinstance(p, sql.ClauseElement) and not isinstance(p, sql.ColumnElement):
                     return "(" + self.get_str(p) + ")"
@@ -702,7 +711,7 @@ class ANSICompiler(sql.Compiled):
             if parameters.has_key(c):
                 value = parameters[c]
                 if sql._is_literal(value):
-                    value = sql.bindparam(c.key, value, type=c.type)
+                    value = sql.bindparam(c.key, value, type=c.type, unique=True)
                 values.append((c, value))
         return values
 
@@ -727,7 +736,7 @@ class ANSISchemaBase(engine.SchemaIterator):
         findalterables = FindAlterables()
         for table in tables:
             for c in table.constraints:
-                c.accept_schema_visitor(findalterables)
+                findalterables.traverse(c)
         return alterables
 
 class ANSISchemaGenerator(ANSISchemaBase):
@@ -745,7 +754,7 @@ class ANSISchemaGenerator(ANSISchemaBase):
     def visit_metadata(self, metadata):
         collection = [t for t in metadata.table_iterator(reverse=False, tables=self.tables) if (not self.checkfirst or not self.dialect.has_table(self.connection, t.name, schema=t.schema))]
         for table in collection:
-            table.accept_schema_visitor(self, traverse=False)
+            table.accept_visitor(self)
         if self.supports_alter():
             for alterable in self.find_alterables(collection):
                 self.add_foreignkey(alterable)
@@ -753,9 +762,9 @@ class ANSISchemaGenerator(ANSISchemaBase):
     def visit_table(self, table):
         for column in table.columns:
             if column.default is not None:
-                column.default.accept_schema_visitor(self, traverse=False)
+                column.default.accept_visitor(self)
             #if column.onupdate is not None:
-            #    column.onupdate.accept_schema_visitor(visitor, traverse=False)
+            #    column.onupdate.accept_visitor(visitor)
 
         self.append("\nCREATE TABLE " + self.preparer.format_table(table) + " (")
 
@@ -770,20 +779,20 @@ class ANSISchemaGenerator(ANSISchemaBase):
             if column.primary_key:
                 first_pk = True
             for constraint in column.constraints:
-                constraint.accept_schema_visitor(self, traverse=False)
+                constraint.accept_visitor(self)
 
         # On some DB order is significant: visit PK first, then the
         # other constraints (engine.ReflectionTest.testbasic failed on FB2)
         if len(table.primary_key):
-            table.primary_key.accept_schema_visitor(self, traverse=False)
+            table.primary_key.accept_visitor(self)
         for constraint in [c for c in table.constraints if c is not table.primary_key]:
-            constraint.accept_schema_visitor(self, traverse=False)
+            constraint.accept_visitor(self)
 
         self.append("\n)%s\n\n" % self.post_create_table(table))
         self.execute()
         if hasattr(table, 'indexes'):
             for index in table.indexes:
-                index.accept_schema_visitor(self, traverse=False)
+                index.accept_visitor(self)
 
     def post_create_table(self, table):
         return ''
@@ -883,7 +892,7 @@ class ANSISchemaDropper(ANSISchemaBase):
             for alterable in self.find_alterables(collection):
                 self.drop_foreignkey(alterable)
         for table in collection:
-            table.accept_schema_visitor(self, traverse=False)
+            table.accept_visitor(self)
 
     def supports_alter(self):
         return True
@@ -899,7 +908,7 @@ class ANSISchemaDropper(ANSISchemaBase):
     def visit_table(self, table):
         for column in table.columns:
             if column.default is not None:
-                column.default.accept_schema_visitor(self, traverse=False)
+                column.default.accept_visitor(self)
 
         self.append("\nDROP TABLE " + self.preparer.format_table(table))
         self.execute()

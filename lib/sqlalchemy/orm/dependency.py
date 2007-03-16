@@ -12,7 +12,7 @@ list-based dependencies at flush time.
 
 from sqlalchemy.orm import sync
 from sqlalchemy.orm.sync import ONETOMANY,MANYTOONE,MANYTOMANY
-from sqlalchemy import sql, util
+from sqlalchemy import sql, util, exceptions
 from sqlalchemy.orm import session as sessionlib
 
 def create_dependency_processor(prop):
@@ -39,6 +39,7 @@ class DependencyProcessor(object):
         self.post_update = prop.post_update
         self.foreign_keys = prop.foreign_keys
         self.passive_deletes = prop.passive_deletes
+        self.enable_typechecks = prop.enable_typechecks
         self.key = prop.key
 
         self._compile_synchronizers()
@@ -100,6 +101,12 @@ class DependencyProcessor(object):
 
         raise NotImplementedError()
 
+    def _verify_canload(self, child):
+        if not self.enable_typechecks:
+            return
+        if child is not None and not self.mapper.canload(child):
+            raise exceptions.FlushError("Attempting to flush an item of type %s on collection '%s', which is handled by mapper '%s' and does not load items of that type.  Did you mean to use a polymorphic mapper for this relationship ?  Set 'enable_typechecks=False' on the relation() to disable this exception.  Mismatched typeloading may cause bi-directional relationships (backrefs) to not function properly." % (child.__class__, self.prop, self.mapper))
+        
     def _synchronize(self, obj, child, associationrow, clearkeys, uowcommit):
         """Called during a flush to synchronize primary key identifier
         values between a parent/child object, as well as to an
@@ -245,6 +252,7 @@ class OneToManyDP(DependencyProcessor):
         dest = child
         if dest is None or (not self.post_update and uowcommit.is_deleted(dest)):
             return
+        self._verify_canload(child)
         self.syncrules.execute(source, dest, obj, child, clearkeys)
 
 class ManyToOneDP(DependencyProcessor):
@@ -309,6 +317,7 @@ class ManyToOneDP(DependencyProcessor):
         dest = obj
         if dest is None or (not self.post_update and uowcommit.is_deleted(dest)):
             return
+        self._verify_canload(child)
         self.syncrules.execute(source, dest, obj, child, clearkeys)
 
 class ManyToManyDP(DependencyProcessor):
@@ -379,6 +388,7 @@ class ManyToManyDP(DependencyProcessor):
         source = None
         if dest is None:
             return
+        self._verify_canload(child)
         self.syncrules.execute(source, dest, obj, child, clearkeys)
 
 class AssociationDP(OneToManyDP):

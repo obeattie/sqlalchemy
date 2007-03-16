@@ -75,7 +75,7 @@ def parse_argv():
             db_uri = 'oracle://scott:tiger@127.0.0.1:1521'
         elif DBTYPE == 'oracle8':
             db_uri = 'oracle://scott:tiger@127.0.0.1:1521'
-            opts = {'use_ansi':False, 'auto_setinputsizes':True}
+            opts = {'use_ansi':False}
         elif DBTYPE == 'mssql':
             db_uri = 'mssql://scott:tiger@SQUAWK\\SQLEXPRESS/test'
         elif DBTYPE == 'firebird':
@@ -407,12 +407,13 @@ def cover(callable_):
         coverage_client.save()
         coverage_client.report(list(covered_files()), show_missing=False, ignore_errors=False)
 
-def main():
+def main(suite=None):
     
-    if len(sys.argv[1:]):
-        suite =unittest.TestLoader().loadTestsFromNames(sys.argv[1:], __import__('__main__'))
-    else:
-        suite = unittest.TestLoader().loadTestsFromModule(__import__('__main__'))
+    if not suite:
+        if len(sys.argv[1:]):
+            suite =unittest.TestLoader().loadTestsFromNames(sys.argv[1:], __import__('__main__'))
+        else:
+            suite = unittest.TestLoader().loadTestsFromModule(__import__('__main__'))
 
     result = runTests(suite)
     sys.exit(not result.wasSuccessful())
