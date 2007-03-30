@@ -83,7 +83,7 @@ class Dialect(sql.AbstractDialect):
         raise NotImplementedError()
 
     def type_descriptor(self, typeobj):
-        """Trasform the type from generic to database-specific.
+        """Transform the type from generic to database-specific.
 
         Provides a database-specific TypeEngine object, given the
         generic object which comes from the types module.  Subclasses
@@ -124,17 +124,23 @@ class Dialect(sql.AbstractDialect):
 
         raise NotImplementedError()
 
-    def schemagenerator(self, engine, proxy, **params):
+    def schemagenerator(self, connection, **kwargs):
         """Return a ``schema.SchemaVisitor`` instance that can generate schemas.
 
+            connection
+                a Connection to use for statement execution
+                
         `schemagenerator()` is called via the `create()` method on Table,
         Index, and others.
         """
 
         raise NotImplementedError()
 
-    def schemadropper(self, engine, proxy, **params):
+    def schemadropper(self, connection, **kwargs):
         """Return a ``schema.SchemaVisitor`` instance that can drop schemas.
+
+            connection
+                a Connection to use for statement execution
 
         `schemadropper()` is called via the `drop()` method on Table,
         Index, and others.
@@ -142,8 +148,13 @@ class Dialect(sql.AbstractDialect):
 
         raise NotImplementedError()
 
-    def defaultrunner(self, engine, proxy, **params):
-        """Return a ``schema.SchemaVisitor`` instance that can execute defaults."""
+    def defaultrunner(self, connection, **kwargs):
+        """Return a ``schema.SchemaVisitor`` instance that can execute defaults.
+        
+            connection
+                a Connection to use for statement execution
+        
+        """
 
         raise NotImplementedError()
 
@@ -347,7 +358,7 @@ class ExecutionContext(object):
         raise NotImplementedError()
 
 
-class Connectable(object):
+class Connectable(sql.Executor):
     """Interface for an object that can provide an Engine and a Connection object which correponds to that Engine."""
 
     def contextual_connect(self):
@@ -395,7 +406,8 @@ class Connection(Connectable):
         except AttributeError:
             raise exceptions.InvalidRequestError("This Connection is closed")
 
-    engine = property(lambda s:s.__engine, doc="The Engine with which this Connection is associated (read only)")
+    engine = property(lambda s:s.__engine, doc="The Engine with which this Connection is associated.")
+    dialect = property(lambda s:s.__engine.dialect, doc="Dialect used by this Connection.")
     connection = property(_get_connection, doc="The underlying DBAPI connection managed by this Connection.")
     should_close_with_result = property(lambda s:s.__close_with_result, doc="Indicates if this Connection should be closed when a corresponding ResultProxy is closed; this is essentially an auto-release mode.")
 
@@ -458,6 +470,9 @@ class Connection(Connectable):
     def scalar(self, object, *multiparams, **params):
         return self.execute(object, *multiparams, **params).scalar()
 
+    def compiler(self, statement, parameters, **kwargs):
+        return self.dialect.compiler(statement, parameters, engine=self.engine, **kwargs)
+
     def execute(self, object, *multiparams, **params):
         for c in type(object).__mro__:
             if c in Connection.executors:
@@ -466,7 +481,7 @@ class Connection(Connectable):
             raise exceptions.InvalidRequestError("Unexecuteable object type: " + str(type(object)))
 
     def execute_default(self, default, **kwargs):
-        return default.accept_visitor(self.__engine.dialect.defaultrunner(self.create_execution_context()))
+        return default.accept_visitor(self.__engine.dialect.defaultrunner(self))
 
     def execute_text(self, statement, *multiparams, **params):
         if len(multiparams) == 0:
@@ -475,7 +490,7 @@ class Connection(Connectable):
             parameters = multiparams[0]
         else:
             parameters = list(multiparams)
-        context = self._create_execution_context(statement=statement, parameters=parameters, connection=self)
+        context = self._create_execution_context(statement=statement, parameters=parameters)
         return self._execute_raw(context)
 
     def _params_to_listofdicts(self, *multiparams, **params):
@@ -509,7 +524,7 @@ class Connection(Connectable):
         parameters = [compiled.construct_params(m) for m in self._params_to_listofdicts(*multiparams, **params)]
         if len(parameters) == 1:
             parameters = parameters[0]
-        context = self._create_execution_context(compiled=compiled, compiled_parameters=parameters, connection=self)
+        context = self._create_execution_context(compiled=compiled, compiled_parameters=parameters)
         context.pre_exec()
         result = self._execute_raw(context)
         context.post_exec()
@@ -519,12 +534,9 @@ class Connection(Connectable):
         return self.__engine.dialect.create_execution_context(connection=self, **kwargs)
         
     def _execute_raw(self, context):
-        if not dialect.supports_unicode_statements():
-            # encode to ascii, with full error handling
-            context.statement = context.statement.encode('ascii')
         self.__engine.logger.info(context.statement)
         self.__engine.logger.info(repr(context.parameters))
-        if parameters is not None and isinstance(parameters, list) and len(parameters) > 0 and (isinstance(parameters[0], list) or isinstance(parameters[0], dict)):
+        if context.parameters is not None and isinstance(context.parameters, list) and len(context.parameters) > 0 and (isinstance(context.parameters[0], list) or isinstance(context.parameters[0], dict)):
             self._executemany(context)
         else:
             self._execute(context)
@@ -586,20 +598,6 @@ class Connection(Connectable):
     def run_callable(self, callable_):
         return callable_(self)
 
-
-    def REMOVE_proxy(self, statement=None, parameters=None):
-        """Execute the given statement string and parameter object.
-
-        The parameter object is expected to be the result of a call to
-        ``compiled.get_params()``.  This callable is a generic version
-        of a connection/cursor-specific callable that is produced
-        within the execute_compiled method, and is used for objects
-        that require this style of proxy when outside of an
-        execute_compiled method, primarily the DefaultRunner.
-        """
-        parameters = self.__engine.dialect.convert_compiled_params(parameters)
-        return self._execute_raw(statement, parameters)
-
 class Transaction(object):
     """Represent a Transaction in progress.
 
@@ -632,7 +630,7 @@ class Transaction(object):
             self.__connection._commit_impl()
             self.__is_active = False
 
-class Engine(sql.Executor, Connectable):
+class Engine(Connectable):
     """
     Connects a ConnectionProvider, a Dialect and a CompilerFactory together to
     provide a default implementation of SchemaEngine.
@@ -684,7 +682,7 @@ class Engine(sql.Executor, Connectable):
         else:
             conn = connection
         try:
-            element.accept_visitor(visitorcallable(connection._create_execution_context(), **kwargs))
+            element.accept_visitor(visitorcallable(conn, **kwargs))
         finally:
             if connection is None:
                 conn.close()
@@ -813,19 +811,18 @@ class ResultProxy(object):
         """ResultProxy objects are constructed via the execute() method on SQLEngine."""
         self.context = context
         self.closed = False
+        self.__echo = context.engine.echo == 'debug'
         self.__key_cache = {}
-        self.__echo = engine.echo == 'debug'
-        metadata = context.cursor.description
         self.props = {}
         self.keys = []
-        i = 0
-        
+
+        metadata = context.cursor.description
         if metadata is not None:
-            for item in metadata:
+            for i, item in enumerate(metadata):
                 # sqlite possibly prepending table name to colnames so strip
                 colname = item[0].split('.')[-1].lower()
-                if typemap is not None:
-                    rec = (typemap.get(colname, types.NULLTYPE), i)
+                if context.typemap is not None:
+                    rec = (context.typemap.get(colname, types.NULLTYPE), i)
                 else:
                     rec = (types.NULLTYPE, i)
                 if rec[0] is None:
@@ -834,11 +831,11 @@ class ResultProxy(object):
                     self.props[colname] = (ResultProxy.AmbiguousColumn(colname), 0)
                 self.keys.append(colname)
                 self.props[i] = rec
-                i+=1
 
     cursor = property(lambda s:s.context.cursor)
     connection = property(lambda s:s.context.connection)
     dialect = property(lambda s:s.context.dialect)
+    rowcount = property(lambda s:s.context.get_rowcount())
     
     def close(self):
         """Close this ResultProxy, and the underlying DBAPI cursor corresponding to the execution.
@@ -865,15 +862,15 @@ class ResultProxy(object):
         metadata; then cache it locally for quick re-access.
         """
 
-        try:
+        if key in self.__key_cache:
             return self.__key_cache[key]
-        except KeyError:
+        else:
             if isinstance(key, int) and key in self.props:
                 rec = self.props[key]
             elif isinstance(key, basestring) and key.lower() in self.props:
                 rec = self.props[key.lower()]
             elif isinstance(key, sql.ColumnElement):
-                label = self.column_labels.get(key._label, key.name).lower()
+                label = self.context.column_labels.get(key._label, key.name).lower()
                 if label in self.props:
                     rec = self.props[label]
                         
@@ -1046,7 +1043,7 @@ class RowProxy(object):
         self.__parent = parent
         self.__row = row
         if self.__parent._ResultProxy__echo:
-            self.__parent.engine.logger.debug("Row " + repr(row))
+            self.__parent.context.engine.logger.debug("Row " + repr(row))
 
     def close(self):
         """Close the parent ResultProxy."""
@@ -1098,18 +1095,10 @@ class RowProxy(object):
 class SchemaIterator(schema.SchemaVisitor):
     """A visitor that can gather text into a buffer and execute the contents of the buffer."""
 
-    def __init__(self, context):
+    def __init__(self, connection):
         """Construct a new SchemaIterator.
-
-        engine
-          the Engine used by this SchemaIterator
-
-        proxy
-          a callable which takes a statement and bind parameters and
-          executes it, returning the cursor (the actual DBAPI cursor).
-          The callable should use the same cursor repeatedly.
         """
-        self.context = context
+        self.connection = connection
         self.buffer = StringIO.StringIO()
 
     def append(self, s):
@@ -1121,7 +1110,7 @@ class SchemaIterator(schema.SchemaVisitor):
         """Execute the contents of the SchemaIterator's buffer."""
 
         try:
-            return self.context.execute(self.buffer.getvalue())
+            return self.connection.execute(self.buffer.getvalue())
         finally:
             self.buffer.truncate(0)
 
@@ -1135,8 +1124,8 @@ class DefaultRunner(schema.SchemaVisitor):
     DefaultRunner to allow database-specific behavior.
     """
 
-    def __init__(self, context):
-        self.context = context
+    def __init__(self, connection):
+        self.connection = connection
 
     def get_column_default(self, column):
         if column.default is not None:
@@ -1168,8 +1157,8 @@ class DefaultRunner(schema.SchemaVisitor):
         return None
 
     def exec_default_sql(self, default):
-        c = sql.select([default.arg], engine=self.engine).compile()
-        return self.context.execute_compiled(c, c.get_params()).fetchone()[0]
+        c = sql.select([default.arg], engine=self.connection).compile()
+        return self.connection.execute_compiled(c, c.get_params()).scalar()
 
     def visit_column_onupdate(self, onupdate):
         if isinstance(onupdate.arg, sql.ClauseElement):

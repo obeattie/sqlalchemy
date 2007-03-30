@@ -92,8 +92,8 @@ class DefaultDialect(base.Dialect):
     def do_execute(self, cursor, statement, parameters, **kwargs):
         cursor.execute(statement, parameters)
 
-    def defaultrunner(self, context):
-        return base.DefaultRunner(context)
+    def defaultrunner(self, connection):
+        return base.DefaultRunner(connection)
 
     def create_cursor(self, connection):
         return connection.cursor()
@@ -159,12 +159,11 @@ class DefaultExecutionContext(base.ExecutionContext):
         self.connection = connection
         self.compiled = compiled
         self.compiled_parameters = compiled_parameters
-    
+        
         if compiled is not None:
             self.typemap = compiled.typemap
             self.column_labels = compiled.column_labels
             self.statement = unicode(compiled)
-            self.parameters = dialect.convert_compiled_params(compiled_parameters)
         else:
             self.typemap = self.column_labels = None
             self.parameters = parameters
@@ -175,37 +174,12 @@ class DefaultExecutionContext(base.ExecutionContext):
 
         self.cursor = self.dialect.create_cursor(self.connection.connection)
 
-    def execute(self, statement=None, parameters=None):
-        """execute a string statement and ClauseParameters-based parameters
-        
-        """
-        if statement is not None:
-            (s, p) = (self.statement, self.parameters)
-            try:
-                (self.statement, self.parameters) = (statement, parameters)
-                self.connection._execute_raw(self)
-            finally:
-                (self.statement, self.parameters) = (s, p)
-        return self.cursor
-
-    def execute_compiled(self, statement=None, parameters=None):
-        """execute a string statement and ClauseParameters-based parameters
-
-        """
-        if statement is not None:
-            (s, p) = (self.statement, self.parameters)
-            try:
-                statement = unicode(statement)
-                if not dialect.supports_unicode_statements():
-                    statement = statement.encode('ascii')
-                (self.statement, self.parameters) = (statement, dialect.convert_compiled_params(parameters))
-                self.connection._execute_raw(self)
-            finally:
-                (self.statement, self.parameters) = (s, p)
-        return self.cursor
-
+    engine = property(lambda s:s.connection.engine)
+    
     def pre_exec(self):
-        self._process_defaults()
+        if self.compiled is not None:
+            self._process_defaults()
+            self.parameters = self.dialect.convert_compiled_params(self.compiled_parameters)
 
     def post_exec(self):
         pass
@@ -213,11 +187,11 @@ class DefaultExecutionContext(base.ExecutionContext):
     def get_result_proxy(self):
         return base.ResultProxy(self)
 
-    def get_rowcount(self, cursor):
+    def get_rowcount(self):
         if hasattr(self, '_rowcount'):
             return self._rowcount
         else:
-            return cursor.rowcount
+            return self.cursor.rowcount
 
     def supports_sane_rowcount(self):
         return self.dialect.supports_sane_rowcount()
@@ -282,11 +256,11 @@ class DefaultExecutionContext(base.ExecutionContext):
         """
 
         if getattr(self.compiled, "isinsert", False):
-            if isinstance(self.parameters, list):
-                plist = self.parameters
+            if isinstance(self.compiled_parameters, list):
+                plist = self.compiled_parameters
             else:
-                plist = [self.parameters]
-            drunner = self.dialect.defaultrunner(self.engine, self.proxy)
+                plist = [self.compiled_parameters]
+            drunner = self.dialect.defaultrunner(base.Connection(self.engine, self.connection.connection))
             self._lastrow_has_defaults = False
             for param in plist:
                 last_inserted_ids = []
@@ -324,11 +298,11 @@ class DefaultExecutionContext(base.ExecutionContext):
                     self._last_inserted_ids = last_inserted_ids
                 self._last_inserted_params = param
         elif getattr(self.compiled, 'isupdate', False):
-            if isinstance(self.parameters, list):
-                plist = self.parameters
+            if isinstance(self.compiled_parameters, list):
+                plist = self.compiled_parameters
             else:
-                plist = [self.parameters]
-            drunner = self.dialect.defaultrunner(self.engine, self.proxy)
+                plist = [self.compiled_parameters]
+            drunner = self.dialect.defaultrunner(base.Connection(self.engine, self.connection.connection))
             self._lastrow_has_defaults = False
             for param in plist:
                 # check the "onupdate" status of each column in the table

@@ -260,9 +260,9 @@ class EngineAssert(proxy.BaseProxyEngine):
     def _set_echo(self, echo):
         self.engine.echo = echo
     echo = property(lambda s: s.engine.echo, _set_echo)
-    
-    def execution_context(self):
-        def post_exec(engine, proxy, compiled, parameters, **kwargs):
+
+    def execution_context(self, connection, compiled=None, compiled_parameters=None, statement=None, parameters=None):
+        def post_exec(_self):
             ctx = e
             self.engine.logger = self.logger
             statement = unicode(compiled)
@@ -297,19 +297,18 @@ class EngineAssert(proxy.BaseProxyEngine):
                 if params is not None and isinstance(params, list) and len(params) == 1:
                     params = params[0]
                 
-                if isinstance(parameters, sql.ClauseParameters):
-                    parameters = parameters.get_original_dict()
-                elif isinstance(parameters, list):
-                    parameters = [p.get_original_dict() for p in parameters]
+                if isinstance(compiled_parameters, sql.ClauseParameters):
+                    parameters = compiled_parameters.get_original_dict()
+                elif isinstance(compiled_parameters, list):
+                    parameters = [p.get_original_dict() for p in compiled_parameters]
                         
                 query = self.convert_statement(query)
                 self.unittest.assert_(statement == query and (params is None or params == parameters), "Testing for query '%s' params %s, received '%s' with params %s" % (query, repr(params), statement, repr(parameters)))
             self.sql_count += 1
             return realexec(ctx, proxy, compiled, parameters, **kwargs)
 
-        e = self.real_execution_context()
+        e = self.real_execution_context(connection=connection, compiled=compiled, compiled_parameters=compiled_parameters, statement=statement, parameters=parameters)
         realexec = e.post_exec
-        realexec.im_self.post_exec = post_exec
         return e
         
     def convert_statement(self, query):

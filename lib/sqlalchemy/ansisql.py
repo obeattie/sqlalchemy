@@ -789,13 +789,13 @@ class ANSISchemaBase(engine.SchemaIterator):
         return alterables
 
 class ANSISchemaGenerator(ANSISchemaBase):
-    def __init__(self, engine, proxy, connection, checkfirst=False, tables=None, **kwargs):
-        super(ANSISchemaGenerator, self).__init__(engine, proxy, **kwargs)
+    def __init__(self, connection, checkfirst=False, tables=None, **kwargs):
+        super(ANSISchemaGenerator, self).__init__(connection, **kwargs)
         self.checkfirst = checkfirst
         self.tables = tables and util.Set(tables) or None
         self.connection = connection
-        self.preparer = self.engine.dialect.preparer()
-        self.dialect = self.engine.dialect
+        self.preparer = connection.dialect.preparer()
+        self.dialect = connection.dialect
 
     def get_column_specification(self, column, first_pk=False):
         raise NotImplementedError()
@@ -857,7 +857,7 @@ class ANSISchemaGenerator(ANSISchemaBase):
 
     def _compile(self, tocompile, parameters):
         """compile the given string/parameters using this SchemaGenerator's dialect."""
-        compiler = self.engine.dialect.compiler(tocompile, parameters)
+        compiler = self.dialect.compiler(tocompile, parameters)
         compiler.compile()
         return compiler
 
@@ -927,13 +927,13 @@ class ANSISchemaGenerator(ANSISchemaBase):
         self.execute()
 
 class ANSISchemaDropper(ANSISchemaBase):
-    def __init__(self, engine, proxy, connection, checkfirst=False, tables=None, **kwargs):
-        super(ANSISchemaDropper, self).__init__(engine, proxy, **kwargs)
+    def __init__(self, connection, checkfirst=False, tables=None, **kwargs):
+        super(ANSISchemaDropper, self).__init__(connection, **kwargs)
         self.checkfirst = checkfirst
         self.tables = tables
         self.connection = connection
-        self.preparer = self.engine.dialect.preparer()
-        self.dialect = self.engine.dialect
+        self.preparer = connection.dialect.preparer()
+        self.dialect = connection.dialect
 
     def visit_metadata(self, metadata):
         collection = [t for t in metadata.table_iterator(reverse=True, tables=self.tables) if (not self.checkfirst or  self.dialect.has_table(self.connection, t.name, schema=t.schema))]
