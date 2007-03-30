@@ -152,9 +152,9 @@ def descriptor():
     ]}
 
 class SQLiteExecutionContext(default.DefaultExecutionContext):
-    def post_exec(self, engine, proxy, compiled, parameters, **kwargs):
-        if getattr(compiled, "isinsert", False):
-            self._last_inserted_ids = [proxy().lastrowid]
+    def post_exec(self):
+        if getattr(self.compiled, "isinsert", False):
+            self._last_inserted_ids = [self.cursor.lastrowid]
 
 class SQLiteDialect(ansisql.ANSIDialect):
     def __init__(self, **kwargs):
@@ -182,8 +182,8 @@ class SQLiteDialect(ansisql.ANSIDialect):
     def type_descriptor(self, typeobj):
         return sqltypes.adapt_type(typeobj, colspecs)
 
-    def create_execution_context(self):
-        return SQLiteExecutionContext(self)
+    def create_execution_context(self, **kwargs):
+        return SQLiteExecutionContext(self, **kwargs)
 
     def last_inserted_ids(self):
         return self.context.last_inserted_ids

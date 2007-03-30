@@ -202,9 +202,8 @@ class Dialect(sql.AbstractDialect):
 
         raise NotImplementedError()
 
-    def execution_context(self):
+    def create_execution_context(self, connection, compiled=None, compiled_parameters=None, statement=None, parameters=None):
         """Return a new ExecutionContext object."""
-
         raise NotImplementedError()
 
     def do_begin(self, connection):
@@ -283,7 +282,11 @@ class ExecutionContext(object):
         """
 
         raise NotImplementedError()
-
+    
+    def execute(self, statement):
+        """execute an ad-hoc statement using this ExecutionContext's cursor."""
+        raise NotImplementedError()
+        
     def get_result_proxy(self):
         """return a ResultProxy corresponding to this ExecutionContext."""
         raise NotImplementedError()
@@ -463,7 +466,7 @@ class Connection(Connectable):
             raise exceptions.InvalidRequestError("Unexecuteable object type: " + str(type(object)))
 
     def execute_default(self, default, **kwargs):
-        return default.accept_visitor(self.__engine.dialect.defaultrunner(self.__engine, self.proxy, **kwargs))
+        return default.accept_visitor(self.__engine.dialect.defaultrunner(self.create_execution_context()))
 
     def execute_text(self, statement, *multiparams, **params):
         if len(multiparams) == 0:
@@ -472,9 +475,8 @@ class Connection(Connectable):
             parameters = multiparams[0]
         else:
             parameters = list(multiparams)
-        cursor = self._execute_raw(statement, parameters)
-        rpargs = self.__engine.dialect.create_result_proxy_args(self, cursor)
-        return ResultProxy(self.__engine, self, cursor, **rpargs)
+        context = self._create_execution_context(statement=statement, parameters=parameters, connection=self)
+        return self._execute_raw(context)
 
     def _params_to_listofdicts(self, *multiparams, **params):
         if len(multiparams) == 0:
@@ -507,57 +509,52 @@ class Connection(Connectable):
         parameters = [compiled.construct_params(m) for m in self._params_to_listofdicts(*multiparams, **params)]
         if len(parameters) == 1:
             parameters = parameters[0]
-        context = self.__engine.dialect.create_execution_context(compiled=compiled, parameters=parameters, connection=self, engine=self.__engine)
+        context = self._create_execution_context(compiled=compiled, compiled_parameters=parameters, connection=self)
         context.pre_exec()
-        self.execute_compiled_impl(compiled, parameters, context)
+        result = self._execute_raw(context)
         context.post_exec()
-        return context.get_result_proxy()
+        return result
     
-    def _execute_compiled_impl(self, compiled, parameters, context):
-        self._execute_raw(unicode(compiled), self.__engine.dialect.convert_compiled_params(parameters), context=context)
-            
-    def _execute_raw(self, statement, parameters=None, context=None, **kwargs):
-        if not self.__engine.dialect.supports_unicode_statements():
+    def _create_execution_context(self, **kwargs):
+        return self.__engine.dialect.create_execution_context(connection=self, **kwargs)
+        
+    def _execute_raw(self, context):
+        if not dialect.supports_unicode_statements():
             # encode to ascii, with full error handling
-            statement = statement.encode('ascii')
-        if context is None:
-            context = self.__engine.dialect.create_execution_context(statement=statement, parameters=parameters, connection=self, engine=self.__engine)
-        self.__engine.logger.info(statement)
-        self.__engine.logger.info(repr(parameters))
+            context.statement = context.statement.encode('ascii')
+        self.__engine.logger.info(context.statement)
+        self.__engine.logger.info(repr(context.parameters))
         if parameters is not None and isinstance(parameters, list) and len(parameters) > 0 and (isinstance(parameters[0], list) or isinstance(parameters[0], dict)):
-            self._executemany(context.cursor, statement, parameters, context=context)
+            self._executemany(context)
         else:
-            self._execute(context.cursor, statement, parameters, context=context)
-        self._autocommit(statement)
-        return context.cursor
+            self._execute(context)
+        self._autocommit(context.statement)
+        return context.get_result_proxy()
 
-    def _execute(self, c, statement, parameters, context=None):
-        if parameters is None:
-            if self.__engine.dialect.positional:
+    def _execute(self, context):
+        if context.parameters is None:
+            if context.dialect.positional:
                 parameters = ()
             else:
                 parameters = {}
         try:
-            self.__engine.dialect.do_execute(c, statement, parameters, context=context)
+            context.dialect.do_execute(context.cursor, context.statement, context.parameters, context=context)
         except Exception, e:
             self._autorollback()
             #self._rollback_impl()
             if self.__close_with_result:
                 self.close()
-            raise exceptions.SQLError(statement, parameters, e)
+            raise exceptions.SQLError(context.statement, context.parameters, e)
 
-    def _executemany(self, c, statement, parameters, context=None):
+    def _executemany(self, context):
         try:
-            self.__engine.dialect.do_executemany(c, statement, parameters, context=context)
+            context.dialect.do_executemany(context.cursor, context.statement, context.parameters, context=context)
         except Exception, e:
             self._autorollback()
             #self._rollback_impl()
             if self.__close_with_result:
                 self.close()
-            raise exceptions.SQLError(statement, parameters, e)
-
-
-
+            raise exceptions.SQLError(context.statement, context.parameters, e)
 
     # poor man's multimethod/generic function thingy
     executors = {
@@ -590,7 +587,7 @@ class Connection(Connectable):
         return callable_(self)
 
 
-    def proxy(self, statement=None, parameters=None):
+    def REMOVE_proxy(self, statement=None, parameters=None):
         """Execute the given statement string and parameter object.
 
         The parameter object is expected to be the result of a call to
@@ -687,7 +684,7 @@ class Engine(sql.Executor, Connectable):
         else:
             conn = connection
         try:
-            element.accept_visitor(visitorcallable(self, conn.proxy, connection=conn, **kwargs))
+            element.accept_visitor(visitorcallable(connection._create_execution_context(), **kwargs))
         finally:
             if connection is None:
                 conn.close()
@@ -812,29 +809,13 @@ class ResultProxy(object):
         def convert_result_value(self, arg, engine):
             raise exceptions.InvalidRequestError("Ambiguous column name '%s' in result set! try 'use_labels' option on select statement." % (self.key))
 
-    def __new__(cls, *args, **kwargs):
-        if cls is ResultProxy and kwargs.has_key('should_prefetch') and kwargs['should_prefetch']:
-            return PrefetchingResultProxy(*args, **kwargs)
-        else:
-            return object.__new__(cls, *args, **kwargs)
-
-    def __init__(self, engine, connection, cursor, executioncontext=None, typemap=None, column_labels=None, should_prefetch=None):
+    def __init__(self, context):
         """ResultProxy objects are constructed via the execute() method on SQLEngine."""
-
-        self.connection = connection
-        self.dialect = engine.dialect
-        self.cursor = cursor
-        self.engine = engine
+        self.context = context
         self.closed = False
-        self.column_labels = column_labels
-        if executioncontext is not None:
-            self.__executioncontext = executioncontext
-            self.rowcount = executioncontext.get_rowcount(cursor)
-        else:
-            self.rowcount = cursor.rowcount
         self.__key_cache = {}
         self.__echo = engine.echo == 'debug'
-        metadata = cursor.description
+        metadata = context.cursor.description
         self.props = {}
         self.keys = []
         i = 0
@@ -855,13 +836,10 @@ class ResultProxy(object):
                 self.props[i] = rec
                 i+=1
 
-    def _executioncontext(self):
-        try:
-            return self.__executioncontext
-        except AttributeError:
-            raise exceptions.InvalidRequestError("This ResultProxy does not have an execution context with which to complete this operation.  Execution contexts are not generated for literal SQL execution.")
-    executioncontext = property(_executioncontext)
-
+    cursor = property(lambda s:s.context.cursor)
+    connection = property(lambda s:s.context.connection)
+    dialect = property(lambda s:s.context.dialect)
+    
     def close(self):
         """Close this ResultProxy, and the underlying DBAPI cursor corresponding to the execution.
 
@@ -931,7 +909,7 @@ class ResultProxy(object):
         See ExecutionContext for details.
         """
 
-        return self.executioncontext.last_inserted_ids()
+        return self.context.last_inserted_ids()
 
     def last_updated_params(self):
         """Return ``last_updated_params()`` from the underlying ExecutionContext.
@@ -939,7 +917,7 @@ class ResultProxy(object):
         See ExecutionContext for details.
         """
 
-        return self.executioncontext.last_updated_params()
+        return self.context.last_updated_params()
 
     def last_inserted_params(self):
         """Return ``last_inserted_params()`` from the underlying ExecutionContext.
@@ -947,7 +925,7 @@ class ResultProxy(object):
         See ExecutionContext for details.
         """
 
-        return self.executioncontext.last_inserted_params()
+        return self.context.last_inserted_params()
 
     def lastrow_has_defaults(self):
         """Return ``lastrow_has_defaults()`` from the underlying ExecutionContext.
@@ -955,7 +933,7 @@ class ResultProxy(object):
         See ExecutionContext for details.
         """
 
-        return self.executioncontext.lastrow_has_defaults()
+        return self.context.lastrow_has_defaults()
 
     def supports_sane_rowcount(self):
         """Return ``supports_sane_rowcount()`` from the underlying ExecutionContext.
@@ -963,7 +941,7 @@ class ResultProxy(object):
         See ExecutionContext for details.
         """
 
-        return self.executioncontext.supports_sane_rowcount()
+        return self.context.supports_sane_rowcount()
 
     def fetchall(self):
         """Fetch all rows, just like DBAPI ``cursor.fetchall()``."""
@@ -1120,7 +1098,7 @@ class RowProxy(object):
 class SchemaIterator(schema.SchemaVisitor):
     """A visitor that can gather text into a buffer and execute the contents of the buffer."""
 
-    def __init__(self, engine, proxy, **params):
+    def __init__(self, context):
         """Construct a new SchemaIterator.
 
         engine
@@ -1131,9 +1109,7 @@ class SchemaIterator(schema.SchemaVisitor):
           executes it, returning the cursor (the actual DBAPI cursor).
           The callable should use the same cursor repeatedly.
         """
-
-        self.proxy = proxy
-        self.engine = engine
+        self.context = context
         self.buffer = StringIO.StringIO()
 
     def append(self, s):
@@ -1145,7 +1121,7 @@ class SchemaIterator(schema.SchemaVisitor):
         """Execute the contents of the SchemaIterator's buffer."""
 
         try:
-            return self.proxy(self.buffer.getvalue(), None)
+            return self.context.execute(self.buffer.getvalue())
         finally:
             self.buffer.truncate(0)
 
@@ -1159,9 +1135,8 @@ class DefaultRunner(schema.SchemaVisitor):
     DefaultRunner to allow database-specific behavior.
     """
 
-    def __init__(self, engine, proxy):
-        self.proxy = proxy
-        self.engine = engine
+    def __init__(self, context):
+        self.context = context
 
     def get_column_default(self, column):
         if column.default is not None:
@@ -1194,7 +1169,7 @@ class DefaultRunner(schema.SchemaVisitor):
 
     def exec_default_sql(self, default):
         c = sql.select([default.arg], engine=self.engine).compile()
-        return self.proxy(str(c), c.get_params()).fetchone()[0]
+        return self.context.execute_compiled(c, c.get_params()).fetchone()[0]
 
     def visit_column_onupdate(self, onupdate):
         if isinstance(onupdate.arg, sql.ClauseElement):

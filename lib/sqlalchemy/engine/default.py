@@ -34,8 +34,8 @@ class DefaultDialect(base.Dialect):
         self._ischema = None
         self._figure_paramstyle(default=default_paramstyle)
 
-    def create_execution_context(self):
-        return DefaultExecutionContext(self)
+    def create_execution_context(self, **kwargs):
+        return DefaultExecutionContext(self, **kwargs)
 
     def type_descriptor(self, typeobj):
         """Provide a database-specific ``TypeEngine`` object, given
@@ -92,14 +92,11 @@ class DefaultDialect(base.Dialect):
     def do_execute(self, cursor, statement, parameters, **kwargs):
         cursor.execute(statement, parameters)
 
-    def defaultrunner(self, engine, proxy):
-        return base.DefaultRunner(engine, proxy)
+    def defaultrunner(self, context):
+        return base.DefaultRunner(context)
 
     def create_cursor(self, connection):
         return connection.cursor()
-
-    def create_result_proxy_args(self, connection, cursor):
-        return dict(should_prefetch=False)
 
     def _set_paramstyle(self, style):
         self._paramstyle = style
@@ -157,34 +154,64 @@ class DefaultDialect(base.Dialect):
     ischema = property(_get_ischema, doc="""returns an ISchema object for this engine, which allows access to information_schema tables (if supported)""")
 
 class DefaultExecutionContext(base.ExecutionContext):
-    def __init__(self, dialect, engine, connection, compiled=None, parameters=None, statement=None):
+    def __init__(self, dialect, connection, compiled=None, compiled_parameters=None, statement=None, parameters=None):
         self.dialect = dialect
-        self.engine = engine
         self.connection = connection
         self.compiled = compiled
-        self.parameters = parameters
-        self.statement = statement
+        self.compiled_parameters = compiled_parameters
+    
         if compiled is not None:
             self.typemap = compiled.typemap
             self.column_labels = compiled.column_labels
+            self.statement = unicode(compiled)
+            self.parameters = dialect.convert_compiled_params(compiled_parameters)
         else:
             self.typemap = self.column_labels = None
+            self.parameters = parameters
+            self.statement = statement
+
+        if not dialect.supports_unicode_statements():
+            self.statement = self.statement.encode('ascii')
+
         self.cursor = self.dialect.create_cursor(self.connection.connection)
 
-    def proxy(self, statement=None, parameters=None):
+    def execute(self, statement=None, parameters=None):
+        """execute a string statement and ClauseParameters-based parameters
+        
+        """
         if statement is not None:
-            self.connection._execute_compiled_impl(compiled, parameters, self)
+            (s, p) = (self.statement, self.parameters)
+            try:
+                (self.statement, self.parameters) = (statement, parameters)
+                self.connection._execute_raw(self)
+            finally:
+                (self.statement, self.parameters) = (s, p)
+        return self.cursor
+
+    def execute_compiled(self, statement=None, parameters=None):
+        """execute a string statement and ClauseParameters-based parameters
+
+        """
+        if statement is not None:
+            (s, p) = (self.statement, self.parameters)
+            try:
+                statement = unicode(statement)
+                if not dialect.supports_unicode_statements():
+                    statement = statement.encode('ascii')
+                (self.statement, self.parameters) = (statement, dialect.convert_compiled_params(parameters))
+                self.connection._execute_raw(self)
+            finally:
+                (self.statement, self.parameters) = (s, p)
         return self.cursor
 
     def pre_exec(self):
-        if self.compiled is not None:
-            self._process_defaults()
+        self._process_defaults()
 
     def post_exec(self):
         pass
 
     def get_result_proxy(self):
-        return base.ResultProxy(self.engine, self.connection, self.cursor, self, typemap=self.typemap, column_labels=self.column_labels)
+        return base.ResultProxy(self)
 
     def get_rowcount(self, cursor):
         if hasattr(self, '_rowcount'):
