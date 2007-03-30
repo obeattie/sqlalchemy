@@ -265,8 +265,35 @@ class Dialect(sql.AbstractDialect):
 class ExecutionContext(object):
     """A messenger object for a Dialect that corresponds to a single execution.
 
-    ExecutionContext should have a datamember "cursor" which is created
-    at initialization time.
+    ExecutionContext should have these datamembers:
+    
+        connection
+            Connection object which initiated the call to the
+            dialect to create this ExecutionContext.
+
+        dialect
+            dialect which created this ExecutionContext.
+            
+        cursor
+            DBAPI cursor procured from the connection
+            
+        compiled
+            if passed to constructor, sql.Compiled object being executed
+        
+        compiled_parameters
+            if passed to constructor, sql.ClauseParameters object
+             
+        statement
+            string version of the statement to be executed.  Is either
+            passed to the constructor, or must be created from the 
+            sql.Compiled object by the time pre_exec() has completed.
+            
+        parameters
+            "raw" parameters suitable for direct execution by the
+            dialect.  Either passed to the constructor, or must be
+            created from the sql.ClauseParameters object by the time 
+            pre_exec() has completed.
+            
     
     The Dialect should provide an ExecutionContext via the
     create_execution_context() method.  The `pre_exec` and `post_exec`
@@ -274,44 +301,31 @@ class ExecutionContext(object):
     expected that the various methods `last_inserted_ids`,
     `last_inserted_params`, etc.  will contain appropriate values, if
     applicable.
+    
     """
 
     def pre_exec(self):
         """Called before an execution of a compiled statement.
-
-        `proxy` is a callable that takes a string statement and a bind
-        parameter list/dictionary.
+        
+        If compiled and compiled_parameters were passed to this
+        ExecutionContext, the statement and parameters datamembers
+        must be initialized after this statement is complete.
         """
 
         raise NotImplementedError()
 
     def post_exec(self):
         """Called after the execution of a compiled statement.
-
-        `proxy` is a callable that takes a string statement and a bind
-        parameter list/dictionary.
         """
 
         raise NotImplementedError()
     
-    def execute(self, statement):
-        """execute an ad-hoc statement using this ExecutionContext's cursor."""
-        raise NotImplementedError()
-        
     def get_result_proxy(self):
         """return a ResultProxy corresponding to this ExecutionContext."""
         raise NotImplementedError()
         
     def get_rowcount(self):
         """Return the count of rows updated/deleted for an UPDATE/DELETE statement."""
-
-        raise NotImplementedError()
-
-    def supports_sane_rowcount(self):
-        """Indicate if the "rowcount" DBAPI cursor function works properly.
-
-        Currently, MySQLDB does not properly implement this function.
-        """
 
         raise NotImplementedError()
 

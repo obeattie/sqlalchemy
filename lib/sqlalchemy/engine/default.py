@@ -143,10 +143,6 @@ class DefaultDialect(base.Dialect):
             raise DBAPIError("Unsupported paramstyle '%s'" % self._paramstyle)
 
     def _get_ischema(self):
-        # We use a property for ischema so that the accessor
-        # creation only happens as needed, since otherwise we
-        # have a circularity problem with the generic
-        # ansisql.engine()
         if self._ischema is None:
             import sqlalchemy.databases.information_schema as ischema
             self._ischema = ischema.ISchema(self)
@@ -244,8 +240,8 @@ class DefaultExecutionContext(base.ExecutionContext):
         present on the ``Table`` object (i.e. ``ColumnDefault``,
         ``Sequence``, ``PassiveDefault``).  This method pre-execs
         those ``DefaultGenerator`` objects that require pre-execution
-        and sets their values within the parameter list, and flags the
-        thread-local state about ``PassiveDefault`` objects that may
+        and sets their values within the parameter list, and flags this
+        ExecutionContext about ``PassiveDefault`` objects that may
         require post-fetching the row after it is inserted/updated.
 
         This method relies upon logic within the ``ANSISQLCompiler``
@@ -276,7 +272,7 @@ class DefaultExecutionContext(base.ExecutionContext):
                     # check if its not present at all.  see if theres a default
                     # and fire it off, and add to bind parameters.  if
                     # its a pk, add the value to our last_inserted_ids list,
-                    # or, if its a SQL-side default, dont do any of that, but we'll need
+                    # or, if its a SQL-side default, let it fire off on the DB side, but we'll need
                     # the SQL-generated value after execution.
                     elif not c.key in param or param.get_original(c.key) is None:
                         if isinstance(c.default, schema.PassiveDefault):
