@@ -105,6 +105,10 @@ class Dialect(sql.AbstractDialect):
 
         raise NotImplementedError()
 
+    def supports_alter(self):
+        """return True if the database supports ALTER TABLE."""
+        raise NotImplementedError()
+
     def max_identifier_length(self):
         """Return the maximum length of identifier names.
         
@@ -118,8 +122,8 @@ class Dialect(sql.AbstractDialect):
     def supports_sane_rowcount(self):
         """Indicate whether the dialect properly implements statements rowcount.
 
-        Provided to indicate when MySQL is being used, which does not
-        have standard behavior for the "rowcount" function on a statement handle.
+        This was needed for MySQL which had non-standard behavior of rowcount,
+        but this issue has since been resolved.
         """
 
         raise NotImplementedError()
@@ -165,7 +169,6 @@ class Dialect(sql.AbstractDialect):
         ansisql.ANSICompiler, and will produce a string representation
         of the given ClauseElement and `parameters` dictionary.
 
-        `compiler()` is called within the context of the compile() method.
         """
 
         raise NotImplementedError()
@@ -247,11 +250,6 @@ class Dialect(sql.AbstractDialect):
 
         raise NotImplementedError()
 
-    def create_result_proxy_args(self, connection, cursor):
-        """Return a dictionary of arguments that should be passed to ResultProxy()."""
-
-        raise NotImplementedError()
-
     def compile(self, clauseelement, parameters=None):
         """Compile the given ClauseElement using this Dialect.
 
@@ -297,10 +295,7 @@ class ExecutionContext(object):
     
     The Dialect should provide an ExecutionContext via the
     create_execution_context() method.  The `pre_exec` and `post_exec`
-    methods will be called for compiled statements, afterwhich it is
-    expected that the various methods `last_inserted_ids`,
-    `last_inserted_params`, etc.  will contain appropriate values, if
-    applicable.
+    methods will be called for compiled statements.
     
     """
 
@@ -308,7 +303,7 @@ class ExecutionContext(object):
         """Called before an execution of a compiled statement.
         
         If compiled and compiled_parameters were passed to this
-        ExecutionContext, the statement and parameters datamembers
+        ExecutionContext, the `statement` and `parameters` datamembers
         must be initialized after this statement is complete.
         """
 
@@ -316,6 +311,11 @@ class ExecutionContext(object):
 
     def post_exec(self):
         """Called after the execution of a compiled statement.
+        
+        If compiled was passed to this ExecutionContext,
+        the `last_insert_ids`, `last_inserted_params`, etc. 
+        datamembers should be available after this method
+        completes.
         """
 
         raise NotImplementedError()
@@ -334,7 +334,7 @@ class ExecutionContext(object):
 
         This does not apply to straight textual clauses; only to
         ``sql.Insert`` objects compiled against a ``schema.Table`` object,
-        which are executed via `statement.execute()`.  The order of
+        which are executed via `execute()`.  The order of
         items in the list is the same as that of the Table's
         'primary_key' attribute.
 
@@ -560,9 +560,9 @@ class Connection(Connectable):
     def _execute(self, context):
         if context.parameters is None:
             if context.dialect.positional:
-                parameters = ()
+                context.parameters = ()
             else:
-                parameters = {}
+                context.parameters = {}
         try:
             context.dialect.do_execute(context.cursor, context.statement, context.parameters, context=context)
         except Exception, e:
@@ -592,17 +592,17 @@ class Connection(Connectable):
     }
 
     def create(self, entity, **kwargs):
-        """Create a table or index given an appropriate schema object."""
+        """Create a Table or Index given an appropriate Schema object."""
 
         return self.__engine.create(entity, connection=self, **kwargs)
 
     def drop(self, entity, **kwargs):
-        """Drop a table or index given an appropriate schema object."""
+        """Drop a Table or Index given an appropriate Schema object."""
 
         return self.__engine.drop(entity, connection=self, **kwargs)
 
     def reflecttable(self, table, **kwargs):
-        """Reflect the columns in the given table from the database."""
+        """Reflect the columns in the given string table name from the database."""
 
         return self.__engine.reflecttable(table, connection=self, **kwargs)
 

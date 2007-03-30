@@ -172,6 +172,9 @@ class SQLiteDialect(ansisql.ANSIDialect):
     def schemadropper(self, *args, **kwargs):
         return SQLiteSchemaDropper(*args, **kwargs)
 
+    def supports_alter(self):
+        return False
+
     def preparer(self):
         return SQLiteIdentifierPreparer(self)
 
@@ -321,8 +324,6 @@ class SQLiteCompiler(ansisql.ANSICompiler):
             return ansisql.ANSICompiler.binary_operator_string(self, binary)
 
 class SQLiteSchemaGenerator(ansisql.ANSISchemaGenerator):
-    def supports_alter(self):
-        return False
 
     def get_column_specification(self, column, **kwargs):
         colspec = self.preparer.format_column(column) + " " + column.type.dialect_impl(self.dialect).get_col_spec()
@@ -345,8 +346,7 @@ class SQLiteSchemaGenerator(ansisql.ANSISchemaGenerator):
     #        super(SQLiteSchemaGenerator, self).visit_primary_key_constraint(constraint)
 
 class SQLiteSchemaDropper(ansisql.ANSISchemaDropper):
-    def supports_alter(self):
-        return False
+    pass
 
 class SQLiteIdentifierPreparer(ansisql.ANSIIdentifierPreparer):
     def __init__(self, dialect):

@@ -804,7 +804,7 @@ class ANSISchemaGenerator(ANSISchemaBase):
         collection = [t for t in metadata.table_iterator(reverse=False, tables=self.tables) if (not self.checkfirst or not self.dialect.has_table(self.connection, t.name, schema=t.schema))]
         for table in collection:
             table.accept_visitor(self)
-        if self.supports_alter():
+        if self.dialect.supports_alter():
             for alterable in self.find_alterables(collection):
                 self.add_foreignkey(alterable)
 
@@ -880,11 +880,8 @@ class ANSISchemaGenerator(ANSISchemaBase):
         self.append("PRIMARY KEY ")
         self.append("(%s)" % (string.join([self.preparer.format_column(c) for c in constraint],', ')))
 
-    def supports_alter(self):
-        return True
-
     def visit_foreign_key_constraint(self, constraint):
-        if constraint.use_alter and self.supports_alter():
+        if constraint.use_alter and self.dialect.supports_alter():
             return
         self.append(", \n\t ")
         self.define_foreign_key(constraint)
@@ -937,14 +934,11 @@ class ANSISchemaDropper(ANSISchemaBase):
 
     def visit_metadata(self, metadata):
         collection = [t for t in metadata.table_iterator(reverse=True, tables=self.tables) if (not self.checkfirst or  self.dialect.has_table(self.connection, t.name, schema=t.schema))]
-        if self.supports_alter():
+        if self.dialect.supports_alter():
             for alterable in self.find_alterables(collection):
                 self.drop_foreignkey(alterable)
         for table in collection:
             table.accept_visitor(self)
-
-    def supports_alter(self):
-        return True
 
     def visit_index(self, index):
         self.append("\nDROP INDEX " + index.name)

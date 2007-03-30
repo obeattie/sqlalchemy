@@ -56,6 +56,9 @@ class DefaultDialect(base.Dialect):
         # TODO: probably raise this and fill out
         # db modules better
         return 30
+
+    def supports_alter(self):
+        return True
         
     def oid_column_name(self, column):
         return None
