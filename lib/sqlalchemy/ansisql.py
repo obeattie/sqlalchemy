@@ -52,11 +52,11 @@ class ANSIDialect(default.DefaultDialect):
     def dbapi(self):
         return None
 
-    def schemagenerator(self, *args, **params):
-        return ANSISchemaGenerator(*args, **params)
+    def schemagenerator(self, *args, **kwargs):
+        return ANSISchemaGenerator(self, *args, **kwargs)
 
-    def schemadropper(self, *args, **params):
-        return ANSISchemaDropper(*args, **params)
+    def schemadropper(self, *args, **kwargs):
+        return ANSISchemaDropper(self, *args, **kwargs)
 
     def compiler(self, statement, parameters, **kwargs):
         return ANSICompiler(self, statement, parameters, **kwargs)
@@ -789,13 +789,12 @@ class ANSISchemaBase(engine.SchemaIterator):
         return alterables
 
 class ANSISchemaGenerator(ANSISchemaBase):
-    def __init__(self, connection, checkfirst=False, tables=None, **kwargs):
-        super(ANSISchemaGenerator, self).__init__(connection, **kwargs)
+    def __init__(self, dialect, executor, checkfirst=False, tables=None, **kwargs):
+        super(ANSISchemaGenerator, self).__init__(executor, **kwargs)
         self.checkfirst = checkfirst
         self.tables = tables and util.Set(tables) or None
-        self.connection = connection
-        self.preparer = connection.dialect.preparer()
-        self.dialect = connection.dialect
+        self.preparer = dialect.preparer()
+        self.dialect = dialect
 
     def get_column_specification(self, column, first_pk=False):
         raise NotImplementedError()
@@ -924,13 +923,12 @@ class ANSISchemaGenerator(ANSISchemaBase):
         self.execute()
 
 class ANSISchemaDropper(ANSISchemaBase):
-    def __init__(self, connection, checkfirst=False, tables=None, **kwargs):
-        super(ANSISchemaDropper, self).__init__(connection, **kwargs)
+    def __init__(self, dialect, executor, checkfirst=False, tables=None, **kwargs):
+        super(ANSISchemaDropper, self).__init__(executor, **kwargs)
         self.checkfirst = checkfirst
         self.tables = tables
-        self.connection = connection
-        self.preparer = connection.dialect.preparer()
-        self.dialect = connection.dialect
+        self.preparer = dialect.preparer()
+        self.dialect = dialect
 
     def visit_metadata(self, metadata):
         collection = [t for t in metadata.table_iterator(reverse=True, tables=self.tables) if (not self.checkfirst or  self.dialect.has_table(self.connection, t.name, schema=t.schema))]
@@ -1093,3 +1091,5 @@ class ANSIIdentifierPreparer(object):
         """Prepare a quoted column name with table name."""
         
         return self.format_column(column, use_table=True, name=column_name)
+
+dialect = ANSIDialect

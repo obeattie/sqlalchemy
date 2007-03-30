@@ -167,10 +167,10 @@ class SQLiteDialect(ansisql.ANSIDialect):
         return SQLiteCompiler(self, statement, bindparams, **kwargs)
 
     def schemagenerator(self, *args, **kwargs):
-        return SQLiteSchemaGenerator(*args, **kwargs)
+        return SQLiteSchemaGenerator(self, *args, **kwargs)
 
     def schemadropper(self, *args, **kwargs):
-        return SQLiteSchemaDropper(*args, **kwargs)
+        return SQLiteSchemaDropper(self, *args, **kwargs)
 
     def supports_alter(self):
         return False

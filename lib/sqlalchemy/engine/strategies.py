@@ -140,3 +140,47 @@ class ThreadLocalEngineStrategy(DefaultEngineStrategy):
         return threadlocal.TLEngine
 
 ThreadLocalEngineStrategy()
+
+
+class MockEngineStrategy(EngineStrategy):
+    def __init__(self):
+        EngineStrategy.__init__(self, 'mock')
+        
+    def create(self, name_or_url, executor, **kwargs):
+        # create url.URL object
+        u = url.make_url(name_or_url)
+
+        # get module from sqlalchemy.databases
+        module = u.get_module()
+
+        dialect_args = {}
+        # consume dialect arguments from kwargs
+        for k in util.get_cls_kwargs(module.dialect):
+            if k in kwargs:
+                dialect_args[k] = kwargs.pop(k)
+
+        # create dialect
+        dialect = module.dialect(**dialect_args)
+
+        return MockEngineStrategy.MockConnection(dialect, executor)
+
+    class MockConnection(base.Connectable):
+        def __init__(self, dialect, execute):
+            self.dialect = dialect
+            self.execute = execute
+
+        engine = property(lambda s: s)
+        
+        def contextual_connect(self):
+            return self
+
+        def create(self, entity, **kwargs):
+            entity.accept_visitor(self.dialect.schemagenerator(self))
+
+        def drop(self, entity, **kwargs):
+            entity.accept_visitor(self.dialect.schemadropper(self))
+
+        def execute(self, object, *multiparams, **params):
+            raise NotImplementedError()
+
+MockEngineStrategy()
