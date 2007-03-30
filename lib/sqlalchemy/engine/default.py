@@ -170,9 +170,9 @@ class DefaultExecutionContext(base.ExecutionContext):
 
         if not dialect.supports_unicode_statements():
             self.statement = self.statement.encode('ascii')
-
+        
         self.cursor = self.dialect.create_cursor(self.connection.connection)
-
+        
     engine = property(lambda s:s.connection.engine)
     
     def pre_exec(self):

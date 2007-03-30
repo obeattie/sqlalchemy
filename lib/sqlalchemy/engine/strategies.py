@@ -175,10 +175,12 @@ class MockEngineStrategy(EngineStrategy):
             return self
 
         def create(self, entity, **kwargs):
-            entity.accept_visitor(self.dialect.schemagenerator(self))
+            kwargs['checkfirst'] = False
+            entity.accept_visitor(self.dialect.schemagenerator(self, **kwargs))
 
         def drop(self, entity, **kwargs):
-            entity.accept_visitor(self.dialect.schemadropper(self))
+            kwargs['checkfirst'] = False
+            entity.accept_visitor(self.dialect.schemadropper(self, **kwargs))
 
         def execute(self, object, *multiparams, **params):
             raise NotImplementedError()

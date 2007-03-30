@@ -1,12 +1,9 @@
 import sys
 sys.path.insert(0, './lib/')
-import os
-import unittest
-import StringIO
-import sqlalchemy.ext.proxy as proxy
-import re
+import os, unittest, StringIO, re
 import sqlalchemy
 from sqlalchemy import sql, engine, pool
+import sqlalchemy.engine.base as base
 import optparse
 from sqlalchemy.schema import BoundMetaData
 from sqlalchemy.orm import clear_mappers
@@ -105,7 +102,16 @@ def parse_argv():
         db = engine.create_engine(db_uri, poolclass=pool.AssertionPool, **opts)
     else:
         db = engine.create_engine(db_uri, **opts)
-    db = EngineAssert(db)
+
+    # decorate the dialect's create_execution_context() method
+    # to produce a wrapper
+    create_context = db.dialect.create_execution_context
+    def create_exec_context(*args, **kwargs):
+        return ExecutionContextWrapper(create_context(*args, **kwargs))
+    db.dialect.create_execution_context = create_exec_context
+    
+    global testdata
+    testdata = TestData(db)
     
     if options.topological:
         from sqlalchemy.orm import unitofwork
@@ -176,8 +182,6 @@ class PersistTest(unittest.TestCase):
         """overridden to not return docstrings"""
         return None
 
-
-
 class AssertMixin(PersistTest):
     """given a list-based structure of keys/properties which represent information within an object structure, and
     a list of actual objects, asserts that the list of objects corresponds to the structure."""
@@ -201,20 +205,24 @@ class AssertMixin(PersistTest):
             else:
                 self.assert_(getattr(rowobj, key) == value, "attribute %s value %s does not match %s" % (key, getattr(rowobj, key), value))
     def assert_sql(self, db, callable_, list, with_sequences=None):
+        global testdata
+        testdata = TestData(db)
         if with_sequences is not None and (db.engine.name == 'postgres' or db.engine.name == 'oracle'):
-            db.set_assert_list(self, with_sequences)
+            testdata.set_assert_list(self, with_sequences)
         else:
-            db.set_assert_list(self, list)
+            testdata.set_assert_list(self, list)
         try:
             callable_()
         finally:
-            db.set_assert_list(None, None)
+            testdata.set_assert_list(None, None)
+
     def assert_sql_count(self, db, callable_, count):
-        db.sql_count = 0
+        global testdata
+        testdata = TestData(db)
         try:
             callable_()
         finally:
-            self.assert_(db.sql_count == count, "desired statement count %d does not match %d" % (count, db.sql_count))
+            self.assert_(testdata.sql_count == count, "desired statement count %d does not match %d" % (count, testdata.sql_count))
 
 class ORMTest(AssertMixin):
     keep_mappers = False
@@ -237,82 +245,71 @@ class ORMTest(AssertMixin):
             for t in metadata.table_iterator(reverse=True):
                 t.delete().execute().close()
 
-class EngineAssert(proxy.BaseProxyEngine):
-    """decorates a SQLEngine object to match the incoming queries against a set of assertions."""
+class TestData(object):
     def __init__(self, engine):
         self._engine = engine
-
-        self.real_execution_context = engine.dialect.create_execution_context
-        engine.dialect.create_execution_context = self.execution_context
-        
         self.logger = engine.logger
         self.set_assert_list(None, None)
         self.sql_count = 0
-    def get_engine(self):
-        return self._engine
-    def set_engine(self, e):
-        self._engine = e
+        
     def set_assert_list(self, unittest, list):
         self.unittest = unittest
         self.assert_list = list
         if list is not None:
             self.assert_list.reverse()
-    def _set_echo(self, echo):
-        self.engine.echo = echo
-    echo = property(lambda s: s.engine.echo, _set_echo)
+    
+class ExecutionContextWrapper(object):
+    def __init__(self, ctx):
+        self.ctx = ctx
+    def __getattr__(self, key):
+        return getattr(self.ctx, key)
+        
+    def post_exec(self):
+        ctx = self.ctx
+        statement = unicode(ctx.compiled)
+        statement = re.sub(r'\n', '', ctx.statement)
 
-    def execution_context(self, connection, compiled=None, compiled_parameters=None, statement=None, parameters=None):
-        def post_exec(_self):
-            ctx = e
-            self.engine.logger = self.logger
-            statement = unicode(compiled)
-            statement = re.sub(r'\n', '', statement)
+        if testdata.assert_list is not None:
+            item = testdata.assert_list[-1]
+            if not isinstance(item, dict):
+                item = testdata.assert_list.pop()
+            else:
+                # asserting a dictionary of statements->parameters
+                # this is to specify query assertions where the queries can be in 
+                # multiple orderings
+                if not item.has_key('_converted'):
+                    for key in item.keys():
+                        ckey = self.convert_statement(key)
+                        item[ckey] = item[key]
+                        if ckey != key:
+                            del item[key]
+                    item['_converted'] = True
+                try:
+                    entry = item.pop(statement)
+                    if len(item) == 1:
+                        testdata.assert_list.pop()
+                    item = (statement, entry)
+                except KeyError:
+                    self.unittest.assert_(False, "Testing for one of the following queries: %s, received '%s'" % (repr([k for k in item.keys()]), statement))
 
-            if self.assert_list is not None:
-                item = self.assert_list[-1]
-                if not isinstance(item, dict):
-                    item = self.assert_list.pop()
-                else:
-                    # asserting a dictionary of statements->parameters
-                    # this is to specify query assertions where the queries can be in 
-                    # multiple orderings
-                    if not item.has_key('_converted'):
-                        for key in item.keys():
-                            ckey = self.convert_statement(key)
-                            item[ckey] = item[key]
-                            if ckey != key:
-                                del item[key]
-                        item['_converted'] = True
-                    try:
-                        entry = item.pop(statement)
-                        if len(item) == 1:
-                            self.assert_list.pop()
-                        item = (statement, entry)
-                    except KeyError:
-                        self.unittest.assert_(False, "Testing for one of the following queries: %s, received '%s'" % (repr([k for k in item.keys()]), statement))
-
-                (query, params) = item
-                if callable(params):
-                    params = params(ctx)
-                if params is not None and isinstance(params, list) and len(params) == 1:
-                    params = params[0]
-                
-                if isinstance(compiled_parameters, sql.ClauseParameters):
-                    parameters = compiled_parameters.get_original_dict()
-                elif isinstance(compiled_parameters, list):
-                    parameters = [p.get_original_dict() for p in compiled_parameters]
-                        
-                query = self.convert_statement(query)
-                self.unittest.assert_(statement == query and (params is None or params == parameters), "Testing for query '%s' params %s, received '%s' with params %s" % (query, repr(params), statement, repr(parameters)))
-            self.sql_count += 1
-            return realexec(ctx, proxy, compiled, parameters, **kwargs)
-
-        e = self.real_execution_context(connection=connection, compiled=compiled, compiled_parameters=compiled_parameters, statement=statement, parameters=parameters)
-        realexec = e.post_exec
-        return e
+            (query, params) = item
+            if callable(params):
+                params = params(ctx)
+            if params is not None and isinstance(params, list) and len(params) == 1:
+                params = params[0]
+            
+            if isinstance(ctx.compiled_parameters, sql.ClauseParameters):
+                parameters = ctx.compiled_parameters.get_original_dict()
+            elif isinstance(ctx.compiled_parameters, list):
+                parameters = [p.get_original_dict() for p in ctx.compiled_parameters]
+                    
+            query = self.convert_statement(query)
+            testdata.unittest.assert_(statement == query and (params is None or params == parameters), "Testing for query '%s' params %s, received '%s' with params %s" % (query, repr(params), statement, repr(parameters)))
+        testdata.sql_count += 1
+        self.ctx.post_exec()
         
     def convert_statement(self, query):
-        paramstyle = self.engine.dialect.paramstyle
+        paramstyle = self.ctx.dialect.paramstyle
         if paramstyle == 'named':
             pass
         elif paramstyle =='pyformat':

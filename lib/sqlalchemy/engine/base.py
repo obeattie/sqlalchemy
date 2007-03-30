@@ -505,7 +505,8 @@ class Connection(Connectable):
         else:
             parameters = list(multiparams)
         context = self._create_execution_context(statement=statement, parameters=parameters)
-        return self._execute_raw(context)
+        self._execute_raw(context)
+        return context.get_result_proxy()
 
     def _params_to_listofdicts(self, *multiparams, **params):
         if len(multiparams) == 0:
@@ -540,9 +541,9 @@ class Connection(Connectable):
             parameters = parameters[0]
         context = self._create_execution_context(compiled=compiled, compiled_parameters=parameters)
         context.pre_exec()
-        result = self._execute_raw(context)
+        self._execute_raw(context)
         context.post_exec()
-        return result
+        return context.get_result_proxy()
     
     def _create_execution_context(self, **kwargs):
         return self.__engine.dialect.create_execution_context(connection=self, **kwargs)
@@ -555,7 +556,6 @@ class Connection(Connectable):
         else:
             self._execute(context)
         self._autocommit(context.statement)
-        return context.get_result_proxy()
 
     def _execute(self, context):
         if context.parameters is None:
@@ -692,7 +692,7 @@ class Engine(Connectable):
 
     def _run_visitor(self, visitorcallable, element, connection=None, **kwargs):
         if connection is None:
-            conn = self.contextual_connect()
+            conn = self.contextual_connect(close_with_result=False)
         else:
             conn = connection
         try:
@@ -825,32 +825,35 @@ class ResultProxy(object):
         """ResultProxy objects are constructed via the execute() method on SQLEngine."""
         self.context = context
         self.closed = False
-        self.__echo = context.engine.echo == 'debug'
-        self.__key_cache = {}
-        self.props = {}
-        self.keys = []
+        self.cursor = context.cursor
+        self.__echo = logging.is_debug_enabled(context.engine.logger)
 
-        metadata = context.cursor.description
+    dialect = property(lambda s:s.context.dialect)
+    rowcount = property(lambda s:s.context.get_rowcount())
+    connection = property(lambda s:s.context.connection)
+    
+    def __init_metadata(self):
+        if hasattr(self, '_ResultProxy__props'):
+            return
+        self.__key_cache = {}
+        self.__props = {}
+        self.__keys = []
+        metadata = self.cursor.description
         if metadata is not None:
             for i, item in enumerate(metadata):
                 # sqlite possibly prepending table name to colnames so strip
-                colname = item[0].split('.')[-1].lower()
-                if context.typemap is not None:
-                    rec = (context.typemap.get(colname, types.NULLTYPE), i)
+                colname = item[0].split('.')[-1]
+                if self.context.typemap is not None:
+                    rec = (self.context.typemap.get(colname.lower(), types.NULLTYPE), i)
                 else:
                     rec = (types.NULLTYPE, i)
                 if rec[0] is None:
                     raise DBAPIError("None for metadata " + colname)
-                if self.props.setdefault(colname, rec) is not rec:
-                    self.props[colname] = (ResultProxy.AmbiguousColumn(colname), 0)
-                self.keys.append(colname)
-                self.props[i] = rec
+                if self.__props.setdefault(colname.lower(), rec) is not rec:
+                    self.__props[colname.lower()] = (ResultProxy.AmbiguousColumn(colname), 0)
+                self.__keys.append(colname)
+                self.__props[i] = rec
 
-    cursor = property(lambda s:s.context.cursor)
-    connection = property(lambda s:s.context.connection)
-    dialect = property(lambda s:s.context.dialect)
-    rowcount = property(lambda s:s.context.get_rowcount())
-    
     def close(self):
         """Close this ResultProxy, and the underlying DBAPI cursor corresponding to the execution.
 
@@ -861,13 +864,12 @@ class ResultProxy(object):
         This method is also called automatically when all result rows
         are exhausted.
         """
-
         if not self.closed:
             self.closed = True
             self.cursor.close()
             if self.connection.should_close_with_result and self.dialect.supports_autoclose_results:
                 self.connection.close()
-
+            
     def _convert_key(self, key):
         """Convert and cache a key.
 
@@ -875,26 +877,32 @@ class ResultProxy(object):
         matches it to the appropriate key we got from the result set's
         metadata; then cache it locally for quick re-access.
         """
-
+        self.__init_metadata()
+            
         if key in self.__key_cache:
             return self.__key_cache[key]
         else:
-            if isinstance(key, int) and key in self.props:
-                rec = self.props[key]
-            elif isinstance(key, basestring) and key.lower() in self.props:
-                rec = self.props[key.lower()]
+            if isinstance(key, int) and key in self.__props:
+                rec = self.__props[key]
+            elif isinstance(key, basestring) and key.lower() in self.__props:
+                rec = self.__props[key.lower()]
             elif isinstance(key, sql.ColumnElement):
                 label = self.context.column_labels.get(key._label, key.name).lower()
-                if label in self.props:
-                    rec = self.props[label]
+                if label in self.__props:
+                    rec = self.__props[label]
                         
             if not "rec" in locals():
                 raise exceptions.NoSuchColumnError("Could not locate column in row for column '%s'" % (repr(key)))
 
             self.__key_cache[key] = rec
             return rec
-            
-
+    
+    def _get_keys(self):
+        self.__init_metadata()
+        return self.__keys
+        
+    keys = property(_get_keys)
+    
     def _has_key(self, row, key):
         try:
             self._convert_key(key)
@@ -979,7 +987,6 @@ class ResultProxy(object):
 
     def fetchone(self):
         """Fetch one row, just like DBAPI ``cursor.fetchone()``."""
-
         row = self.cursor.fetchone()
         if row is not None:
             return RowProxy(self, row)

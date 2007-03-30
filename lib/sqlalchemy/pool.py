@@ -250,7 +250,9 @@ class _ConnectionFairy(object):
 
     def cursor(self, *args, **kwargs):
         try:
-            return _CursorFairy(self, self.connection.cursor(*args, **kwargs))
+            c = self.connection.cursor(*args, **kwargs)
+            self.__pool.log("Cursor %s" % repr(c))
+            return _CursorFairy(self, c)
         except Exception, e:
             self.invalidate()
             raise
@@ -309,7 +311,7 @@ class _CursorFairy(object):
 
     def invalidate(self):
         self.__parent.invalidate()
-
+    
     def close(self):
         if self in self.__parent._cursors:
             del self.__parent._cursors[self]

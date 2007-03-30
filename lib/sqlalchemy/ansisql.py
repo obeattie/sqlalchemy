@@ -789,8 +789,8 @@ class ANSISchemaBase(engine.SchemaIterator):
         return alterables
 
 class ANSISchemaGenerator(ANSISchemaBase):
-    def __init__(self, dialect, executor, checkfirst=False, tables=None, **kwargs):
-        super(ANSISchemaGenerator, self).__init__(executor, **kwargs)
+    def __init__(self, dialect, connection, checkfirst=False, tables=None, **kwargs):
+        super(ANSISchemaGenerator, self).__init__(connection, **kwargs)
         self.checkfirst = checkfirst
         self.tables = tables and util.Set(tables) or None
         self.preparer = dialect.preparer()
@@ -923,8 +923,8 @@ class ANSISchemaGenerator(ANSISchemaBase):
         self.execute()
 
 class ANSISchemaDropper(ANSISchemaBase):
-    def __init__(self, dialect, executor, checkfirst=False, tables=None, **kwargs):
-        super(ANSISchemaDropper, self).__init__(executor, **kwargs)
+    def __init__(self, dialect, connection, checkfirst=False, tables=None, **kwargs):
+        super(ANSISchemaDropper, self).__init__(connection, **kwargs)
         self.checkfirst = checkfirst
         self.tables = tables
         self.preparer = dialect.preparer()

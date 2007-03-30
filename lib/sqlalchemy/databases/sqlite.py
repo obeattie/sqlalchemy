@@ -155,7 +155,8 @@ class SQLiteExecutionContext(default.DefaultExecutionContext):
     def post_exec(self):
         if getattr(self.compiled, "isinsert", False):
             self._last_inserted_ids = [self.cursor.lastrowid]
-
+        super(SQLiteExecutionContext, self).post_exec()
+        
 class SQLiteDialect(ansisql.ANSIDialect):
     def __init__(self, **kwargs):
         def vers(num):
