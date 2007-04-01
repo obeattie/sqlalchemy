@@ -54,11 +54,6 @@ import sqlalchemy.exceptions as exceptions
 
 def dbapi(module_name=None):
     if module_name:
-        dialect_mapping = {
-            'pymssql':  MSSQLDialect_pymssql,
-            'pyodbc':   MSSQLDialect_pyodbc,
-            'adodbapi': MSSQLDialect_adodbapi
-            }
         try:
             dialect_cls = dialect_mapping[module_name]
             return dialect_cls.import_dbapi()
@@ -680,7 +675,11 @@ class MSSQLDialect_adodbapi(MSSQLDialect):
             connectors.append("Integrated Security=SSPI")
         return [[";".join (connectors)], {}]
 
-
+dialect_mapping = {
+    'pymssql':  MSSQLDialect_pymssql,
+    'pyodbc':   MSSQLDialect_pyodbc,
+    'adodbapi': MSSQLDialect_adodbapi
+    }
 
 
 class MSSQLCompiler(ansisql.ANSICompiler):

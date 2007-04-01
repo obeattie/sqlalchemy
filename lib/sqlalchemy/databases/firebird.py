@@ -277,9 +277,6 @@ class FBDialect(ansisql.ANSIDialect):
         for name,value in fks.iteritems():
             table.append_constraint(schema.ForeignKeyConstraint(value[0], value[1], name=name))
 
-    def last_inserted_ids(self):
-        return self.context.last_inserted_ids
-
     def do_execute(self, cursor, statement, parameters, **kwargs):
         cursor.execute(statement, parameters or [])
 
@@ -288,12 +285,6 @@ class FBDialect(ansisql.ANSIDialect):
 
     def do_commit(self, connection):
         connection.commit(True)
-
-    def connection(self):
-        """Returns a managed DBAPI connection from this SQLEngine's connection pool."""
-        c = self._pool.connect()
-        c.supportsTransactions = 0
-        return c
 
 
 class FBCompiler(ansisql.ANSICompiler):
