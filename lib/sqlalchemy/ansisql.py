@@ -97,6 +97,9 @@ class ANSICompiler(sql.Compiled):
         
         sql.Compiled.__init__(self, dialect, statement, parameters, **kwargs)
 
+        # if we are insert/update.  set to true when we visit an INSERT or UPDATE
+        self.isinsert = self.isupdate = False
+        
         # a dictionary of bind parameter keys to _BindParamClause instances.
         self.binds = {}
         

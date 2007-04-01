@@ -98,9 +98,6 @@ class DefaultDialect(base.Dialect):
     def defaultrunner(self, connection):
         return base.DefaultRunner(connection)
 
-    def create_cursor(self, connection):
-        return connection.cursor()
-
     def _set_paramstyle(self, style):
         self._paramstyle = style
         self._figure_paramstyle(style)
@@ -171,14 +168,19 @@ class DefaultExecutionContext(base.ExecutionContext):
         if not dialect.supports_unicode_statements():
             self.statement = self.statement.encode('ascii')
         
-        self.cursor = self.dialect.create_cursor(self.connection.connection)
+        self.cursor = self.create_cursor()
         
     engine = property(lambda s:s.connection.engine)
     
+    def is_select(self):
+        return re.match(r'SELECT', self.statement.lstrip(), re.I)
+
+    def create_cursor(self):
+        return self.connection.connection.cursor()
+        
     def pre_exec(self):
-        if self.compiled is not None:
-            self._process_defaults()
-            self.parameters = self.dialect.convert_compiled_params(self.compiled_parameters)
+        self._process_defaults()
+        self.parameters = self.dialect.convert_compiled_params(self.compiled_parameters)
 
     def post_exec(self):
         pass
@@ -254,7 +256,7 @@ class DefaultExecutionContext(base.ExecutionContext):
         statement.
         """
 
-        if getattr(self.compiled, "isinsert", False):
+        if self.compiled.isinsert:
             if isinstance(self.compiled_parameters, list):
                 plist = self.compiled_parameters
             else:
@@ -296,7 +298,7 @@ class DefaultExecutionContext(base.ExecutionContext):
                 else:
                     self._last_inserted_ids = last_inserted_ids
                 self._last_inserted_params = param
-        elif getattr(self.compiled, 'isupdate', False):
+        elif self.compiled.isupdate:
             if isinstance(self.compiled_parameters, list):
                 plist = self.compiled_parameters
             else:

@@ -245,10 +245,6 @@ class Dialect(sql.AbstractDialect):
 
         raise NotImplementedError()
 
-    def create_cursor(self, connection):
-        """Return a new cursor generated from the given connection."""
-
-        raise NotImplementedError()
 
     def compile(self, clauseelement, parameters=None):
         """Compile the given ClauseElement using this Dialect.
@@ -298,6 +294,11 @@ class ExecutionContext(object):
     methods will be called for compiled statements.
     
     """
+
+    def create_cursor(self):
+        """Return a new cursor generated this ExecutionContext's connection."""
+
+        raise NotImplementedError()
 
     def pre_exec(self):
         """Called before an execution of a compiled statement.
@@ -397,6 +398,7 @@ class Connectable(sql.Executor):
         raise NotImplementedError()
 
     engine = property(_not_impl, doc="The Engine which this Connectable is associated with.")
+    dialect = property(_not_impl, doc="Dialect which this Connectable is associated with.")
 
 class Connection(Connectable):
     """Represent a single DBAPI connection returned from the underlying connection pool.
@@ -465,7 +467,7 @@ class Connection(Connectable):
         """When no Transaction is present, this is called after executions to provide "autocommit" behavior."""
         # TODO: have the dialect determine if autocommit can be set on the connection directly without this
         # extra step
-        if not self.in_transaction() and re.match(r'UPDATE|INSERT|CREATE|DELETE|DROP|ALTER', statement.lstrip().upper()):
+        if not self.in_transaction() and re.match(r'UPDATE|INSERT|CREATE|DELETE|DROP|ALTER', statement.lstrip(), re.I):
             self._commit_impl()
 
     def _autorollback(self):
@@ -652,12 +654,13 @@ class Engine(Connectable):
 
     def __init__(self, connection_provider, dialect, echo=None):
         self.connection_provider = connection_provider
-        self.dialect=dialect
+        self._dialect=dialect
         self.echo = echo
         self.logger = logging.instance_logger(self)
 
     name = property(lambda s:sys.modules[s.dialect.__module__].descriptor()['name'])
     engine = property(lambda s:s)
+    dialect = property(lambda s:s._dialect)
     echo = logging.echo_property()
 
     def dispose(self):
@@ -827,12 +830,13 @@ class ResultProxy(object):
         self.closed = False
         self.cursor = context.cursor
         self.__echo = logging.is_debug_enabled(context.engine.logger)
-
+        self._init_metadata()
+        
     dialect = property(lambda s:s.context.dialect)
     rowcount = property(lambda s:s.context.get_rowcount())
     connection = property(lambda s:s.context.connection)
     
-    def __init_metadata(self):
+    def _init_metadata(self):
         if hasattr(self, '_ResultProxy__props'):
             return
         self.__key_cache = {}
@@ -877,8 +881,7 @@ class ResultProxy(object):
         matches it to the appropriate key we got from the result set's
         metadata; then cache it locally for quick re-access.
         """
-        self.__init_metadata()
-            
+
         if key in self.__key_cache:
             return self.__key_cache[key]
         else:
@@ -898,7 +901,6 @@ class ResultProxy(object):
             return rec
     
     def _get_keys(self):
-        self.__init_metadata()
         return self.__keys
         
     keys = property(_get_keys)
@@ -909,10 +911,6 @@ class ResultProxy(object):
             return True
         except KeyError:
             return False
-
-    def _get_col(self, row, key):
-        rec = self._convert_key(key)
-        return rec[0].dialect_impl(self.dialect).convert_result_value(row[rec[1]], self.dialect)
 
     def __iter__(self):
         while True:
@@ -962,94 +960,120 @@ class ResultProxy(object):
 
         return self.context.supports_sane_rowcount()
 
+    def _get_col(self, row, key):
+        rec = self._convert_key(key)
+        return rec[0].dialect_impl(self.dialect).convert_result_value(row[rec[1]], self.dialect)
+    
+    def _fetchone_impl(self):
+        return self.cursor.fetchone()
+    def _fetchmany_impl(self, size=None):
+        return self.cursor.fetchmany(size)
+    def _fetchall_impl(self):
+        return self.cursor.fetchall()
+        
+    def _process_row(self, row):
+        return RowProxy(self, row)
+            
     def fetchall(self):
         """Fetch all rows, just like DBAPI ``cursor.fetchall()``."""
 
-        l = []
-        for row in self.cursor.fetchall():
-            l.append(RowProxy(self, row))
+        l = [self._process_row(row) for row in self._fetchall_impl()]
         self.close()
         return l
 
     def fetchmany(self, size=None):
         """Fetch many rows, just like DBAPI ``cursor.fetchmany(size=cursor.arraysize)``."""
 
-        if size is None:
-            rows = self.cursor.fetchmany()
-        else:
-            rows = self.cursor.fetchmany(size)
-        l = []
-        for row in rows:
-            l.append(RowProxy(self, row))
+        l = [self._process_row(row) for row in self._fetchmany_impl(size)]
         if len(l) == 0:
             self.close()
         return l
 
     def fetchone(self):
         """Fetch one row, just like DBAPI ``cursor.fetchone()``."""
-        row = self.cursor.fetchone()
+        row = self._fetchone_impl()
         if row is not None:
-            return RowProxy(self, row)
+            return self._process_row(row)
         else:
             self.close()
             return None
 
     def scalar(self):
         """Fetch the first column of the first row, and close the result set."""
-
-        row = self.cursor.fetchone()
+        row = self._fetchone_impl()
         try:
             if row is not None:
-                return RowProxy(self, row)[0]
+                return self._process_row(row)[0]
             else:
                 return None
         finally:
             self.close()
 
-class PrefetchingResultProxy(ResultProxy):
+class BufferedRowResultProxy(ResultProxy):
+    def _init_metadata(self):
+        self.__buffer_rows()
+        super(BufferedRowResultProxy, self)._init_metadata()
+    
+    # this is a "growth chart" for the buffering of rows.
+    # each successive __buffer_rows call will use the next
+    # value in the list for the buffer size until the max
+    # is reached
+    size_growth = {
+        1 : 5,
+        5 : 10,
+        10 : 20,
+        20 : 50,
+        50 : 100
+    }
+    
+    def __buffer_rows(self):
+        size = getattr(self, '_bufsize', 1)
+        self.__rowbuffer = self.cursor.fetchmany(size)
+        #self.context.engine.logger.debug("Buffered %d rows" % size)
+        self._bufsize = self.size_growth.get(size, size)
+    
+    def _fetchone_impl(self):
+        if self.closed:
+            return None
+        if len(self.__rowbuffer) == 0:
+            self.__buffer_rows()
+            if len(self.__rowbuffer) == 0:
+                return None
+        return self.__rowbuffer.pop(0)
+
+    def _fetchmany_impl(self, size=None):
+        result = []
+        for x in range(0, size):
+            row = self._fetchone_impl()
+            if row is None:
+                break
+            result.append(row)
+        return result
+        
+    def _fetchall_impl(self):
+        return self.__rowbuffer + list(self.cursor.fetchall())
+        
+
+class BufferedColumnResultProxy(ResultProxy):
     """ResultProxy that loads all columns into memory each time fetchone() is
     called.  If fetchmany() or fetchall() are called, the full grid of results
     is fetched.
     """
+    def _get_col(self, row, key):
+        rec = self._convert_key(key)
+        return row[rec[1]]
+    
+    def _process_row(self, row):
+        sup = super(PrefetchingResultProxy, self)
+        row = [sup._get_col(row, i) for i in xrange(len(row))]
+        return RowProxy(self, row)
 
     def _get_col(self, row, key):
         rec = self._convert_key(key)
         return row[rec[1]]
 
-    def fetchall(self):
-        l = []
-        while True:
-            row = self.fetchone()
-            if row is not None:
-                l.append(row)
-            else:
-                break
-        return l
-
-    def fetchmany(self, size=None):
-        if size is None:
-            return self.fetchall()
-        l = []
-        for i in xrange(size):
-            row = self.fetchone()
-            if row is not None:
-                l.append(row)
-            else:
-                break
-        return l
-
-    def fetchone(self):
-        sup = super(PrefetchingResultProxy, self)
-        row = self.cursor.fetchone()
-        if row is not None:
-            row = [sup._get_col(row, i) for i in xrange(len(row))]
-            return RowProxy(self, row)
-        else:
-            self.close()
-            return None
-
 class RowProxy(object):
-    """Proxie a single cursor row for a parent ResultProxy.
+    """Proxy a single cursor row for a parent ResultProxy.
 
     Mostly follows "ordered dictionary" behavior, mapping result
     values to the string-based column name, the integer position of
@@ -1147,7 +1171,8 @@ class DefaultRunner(schema.SchemaVisitor):
 
     def __init__(self, connection):
         self.connection = connection
-
+        self.dialect = connection.dialect
+        
     def get_column_default(self, column):
         if column.default is not None:
             return column.default.accept_visitor(self)

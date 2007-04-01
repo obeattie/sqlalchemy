@@ -260,9 +260,11 @@ class TestData(object):
     
 class ExecutionContextWrapper(object):
     def __init__(self, ctx):
-        self.ctx = ctx
+        self.__dict__['ctx'] = ctx
     def __getattr__(self, key):
         return getattr(self.ctx, key)
+    def __setattr__(self, key, value):
+        setattr(self.ctx, key, value)
         
     def post_exec(self):
         ctx = self.ctx

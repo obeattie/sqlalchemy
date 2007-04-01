@@ -166,10 +166,11 @@ class MockEngineStrategy(EngineStrategy):
 
     class MockConnection(base.Connectable):
         def __init__(self, dialect, execute):
-            self.dialect = dialect
+            self._dialect = dialect
             self.execute = execute
 
         engine = property(lambda s: s)
+        dialect = property(lambda s:s._dialect)
         
         def contextual_connect(self):
             return self
