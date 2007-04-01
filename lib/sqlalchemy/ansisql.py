@@ -49,9 +49,6 @@ class ANSIDialect(default.DefaultDialect):
     def create_connect_args(self):
         return ([],{})
 
-    def dbapi(self):
-        return None
-
     def schemagenerator(self, *args, **kwargs):
         return ANSISchemaGenerator(self, *args, **kwargs)
 

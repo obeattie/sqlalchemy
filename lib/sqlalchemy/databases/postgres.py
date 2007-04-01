@@ -16,15 +16,16 @@ try:
 except:
     mxDateTime = None
 
-try:
-    import psycopg2 as psycopg
-    #import psycopg2.psycopg1 as psycopg
-except:
+def dbapi():
     try:
-        import psycopg
-    except:
-        psycopg = None
-
+        import psycopg2 as psycopg
+    except ImportError, e:
+        try:
+            import psycopg
+        except ImportError, e2:
+            raise e
+    return psycopg
+    
 class PGInet(sqltypes.TypeEngine):
     def get_col_spec(self):
         return "INET"
@@ -68,8 +69,8 @@ class PG1DateTime(sqltypes.DateTime):
                 mx_datetime = mxDateTime(value.year, value.month, value.day,
                                          value.hour, value.minute,
                                          seconds)
-                return psycopg.TimestampFromMx(mx_datetime)
-            return psycopg.TimestampFromMx(value)
+                return dialect.dbapi.TimestampFromMx(mx_datetime)
+            return dialect.dbapi.TimestampFromMx(value)
         else:
             return None
 
@@ -95,7 +96,7 @@ class PG1Date(sqltypes.Date):
         # TODO: perform appropriate postgres1 conversion between Python DateTime/MXDateTime
         # this one doesnt seem to work with the "emulation" mode
         if value is not None:
-            return psycopg.DateFromMx(value)
+            return dialect.dbapi.DateFromMx(value)
         else:
             return None
 
@@ -246,28 +247,16 @@ class PGExecutionContext(default.DefaultExecutionContext):
         super(PGExecutionContext, self).post_exec()
         
 class PGDialect(ansisql.ANSIDialect):
-    def __init__(self, module=None, use_oids=False, use_information_schema=False, server_side_cursors=False, **kwargs):
+    def __init__(self, use_oids=False, use_information_schema=False, server_side_cursors=False, **kwargs):
+        ansisql.ANSIDialect.__init__(self, default_paramstyle='pyformat', **kwargs)
         self.use_oids = use_oids
         self.server_side_cursors = server_side_cursors
-        if module is None:
-            #if psycopg is None:
-            #    raise exceptions.ArgumentError("Couldnt locate psycopg1 or psycopg2: specify postgres module argument")
-            self.module = psycopg
+        if self.dbapi is None or self.dbapi.__version__.startswith('2'):
+            self.version = 2
         else:
-            self.module = module
-        # figure psycopg version 1 or 2
-        try:
-            if self.module.__version__.startswith('2'):
-                self.version = 2
-            else:
-                self.version = 1
-        except:
             self.version = 1
-        ansisql.ANSIDialect.__init__(self, **kwargs)
         self.use_information_schema = use_information_schema
-        # produce consistent paramstyle even if psycopg2 module not present
-        if self.module is None:
-            self.paramstyle = 'pyformat'
+        self.paramstyle = 'pyformat'
 
     def create_connect_args(self, url):
         opts = url.translate_connect_args(['host', 'database', 'user', 'password', 'port'])
@@ -336,9 +325,6 @@ class PGDialect(ansisql.ANSIDialect):
             rowcount += c.rowcount
         if context is not None:
             context._rowcount = rowcount
-
-    def dbapi(self):
-        return self.module
 
     def has_table(self, connection, table_name, schema=None):
         # seems like case gets folded in pg_class...

@@ -50,6 +50,16 @@ class DefaultEngineStrategy(EngineStrategy):
             if k in kwargs:
                 dialect_args[k] = kwargs.pop(k)
 
+        dbapi = kwargs.get('module', None)
+        if dbapi is None:
+            dbapi_args = {}
+            for k in util.get_func_kwargs(module.dbapi):
+                if k in kwargs:
+                    dbapi_args[k] = kwargs.pop(k)
+            dbapi = module.dbapi(**dbapi_args)
+        
+        dialect_args['dbapi'] = dbapi
+        
         # create dialect
         dialect = module.dialect(**dialect_args)
 
@@ -60,10 +70,6 @@ class DefaultEngineStrategy(EngineStrategy):
         # look for existing pool or create
         pool = kwargs.pop('pool', None)
         if pool is None:
-            dbapi = kwargs.pop('module', dialect.dbapi())
-            if dbapi is None:
-                raise exceptions.InvalidRequestError("Cant get DBAPI module for dialect '%s'" % dialect)
-
             def connect():
                 try:
                     return dbapi.connect(*cargs, **cparams)
@@ -143,6 +149,8 @@ ThreadLocalEngineStrategy()
 
 
 class MockEngineStrategy(EngineStrategy):
+    """Produces a single Connection object which dispatches statement executions
+    to a passed-in function"""
     def __init__(self):
         EngineStrategy.__init__(self, 'mock')
         

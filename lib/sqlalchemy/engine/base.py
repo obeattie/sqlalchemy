@@ -202,15 +202,6 @@ class Dialect(sql.AbstractDialect):
 
         raise NotImplementedError()
 
-    def dbapi(self):
-        """Establish a connection to the database.
-
-        Subclasses override this method to provide the DBAPI module
-        used to establish connections.
-        """
-
-        raise NotImplementedError()
-
     def get_default_schema_name(self, connection):
         """Return the currently selected schema given a connection"""
 
@@ -900,10 +891,7 @@ class ResultProxy(object):
             self.__key_cache[key] = rec
             return rec
     
-    def _get_keys(self):
-        return self.__keys
-        
-    keys = property(_get_keys)
+    keys = property(lambda s:s.__keys)
     
     def _has_key(self, row, key):
         try:
@@ -1052,7 +1040,6 @@ class BufferedRowResultProxy(ResultProxy):
         
     def _fetchall_impl(self):
         return self.__rowbuffer + list(self.cursor.fetchall())
-        
 
 class BufferedColumnResultProxy(ResultProxy):
     """ResultProxy that loads all columns into memory each time fetchone() is

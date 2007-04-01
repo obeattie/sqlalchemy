@@ -310,7 +310,7 @@ class Binary(TypeEngine):
 
     def convert_bind_param(self, value, dialect):
         if value is not None:
-            return dialect.dbapi().Binary(value)
+            return dialect.dbapi.Binary(value)
         else:
             return None
 
