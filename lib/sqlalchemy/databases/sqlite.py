@@ -12,8 +12,6 @@ import sqlalchemy.engine.default as default
 import sqlalchemy.types as sqltypes
 import datetime,time
 
-pysqlite2_timesupport = False   # Change this if the init.d guys ever get around to supporting time cols
-
 def dbapi():
     try:
         from pysqlite2 import dbapi2 as sqlite
@@ -141,10 +139,6 @@ pragma_names = {
     'DATE' : SLDate,
     'BLOB' : SLBinary,
 }
-
-if pysqlite2_timesupport:
-    colspecs.update({sqltypes.Time : SLTime})
-    pragma_names.update({'TIME' : SLTime})
 
 def descriptor():
     return {'name':'sqlite',

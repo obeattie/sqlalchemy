@@ -52,11 +52,26 @@ import sqlalchemy.ansisql as ansisql
 import sqlalchemy.types as sqltypes
 import sqlalchemy.exceptions as exceptions
 
-def dbapi():
-    for dialect in dialect_preference:
-        if hasattr(dialect, 'module'):
-            return dialect(*args, **kwargs)
-    raise ImportError('No DBAPI module detected for MSSQL - please install adodbapi, pymssql or pyodbc')
+def dbapi(module_name=None):
+    if module_name:
+        dialect_mapping = {
+            'pymssql':  MSSQLDialect_pymssql,
+            'pyodbc':   MSSQLDialect_pyodbc,
+            'adodbapi': MSSQLDialect_adodbapi
+            }
+        try:
+            dialect_cls = dialect_mapping[module_name]
+            return dialect_cls.import_dbapi()
+        except KeyError:
+            raise exceptions.InvalidRequestError("Unsupported MSSQL module '%s' requested (must be adodbpi, pymssql or pyodbc)" % module_name)
+    else:
+        for dialect_cls in [MSSQLDialect_adodbapi, MSSQLDialect_pymssql, MSSQLDialect_pyodbc]:
+            try:
+                return dialect_cls.import_dbapi()
+            except ImportError, e:
+                pass
+        else:
+            raise ImportError('No DBAPI module detected for MSSQL - please install adodbapi, pymssql or pyodbc')
     
 class MSNumeric(sqltypes.Numeric):
     def convert_result_value(self, value, dialect):
@@ -545,13 +560,14 @@ class MSSQLDialect(ansisql.ANSIDialect):
             table.append_constraint(schema.ForeignKeyConstraint(scols, ['%s.%s' % (t,c) for (s,t,c) in rcols], fknm))
 
 class MSSQLDialect_pymssql(MSSQLDialect):
-    try:
+    def import_dbapi(cls):
         import pymssql as module
         # pymmsql doesn't have a Binary method.  we use string
+        # TODO: monkeypatching here is less than ideal
         module.Binary = lambda st: str(st)
-    except ImportError, e:
-        saved_import_error = e
-
+        return module
+    import_dbapi = classmethod(import_dbapi)
+    
     def supports_sane_rowcount(self):
         return True
 
@@ -608,11 +624,12 @@ class MSSQLDialect_pymssql(MSSQLDialect):
 ##        r.fetch_array()
 
 class MSSQLDialect_pyodbc(MSSQLDialect):
-    try:
+    
+    def import_dbapi(cls):
         import pyodbc as module
-    except ImportError, e:
-        saved_import_error = e
-
+        return module
+    import_dbapi = classmethod(import_dbapi)
+    
     colspecs = MSSQLDialect.colspecs.copy()
     colspecs[sqltypes.Unicode] = AdoMSUnicode
     ischema_names = MSSQLDialect.ischema_names.copy()
@@ -635,10 +652,10 @@ class MSSQLDialect_pyodbc(MSSQLDialect):
 
 
 class MSSQLDialect_adodbapi(MSSQLDialect):
-    try:
+    def import_dbapi(cls):
         import adodbapi as module
-    except ImportError, e:
-        saved_import_error = e
+        return module
+    import_dbapi = classmethod(import_dbapi)
 
     colspecs = MSSQLDialect.colspecs.copy()
     colspecs[sqltypes.Unicode] = AdoMSUnicode
@@ -664,12 +681,6 @@ class MSSQLDialect_adodbapi(MSSQLDialect):
         return [[";".join (connectors)], {}]
 
 
-dialect_mapping = {
-    'pymssql':  MSSQLDialect_pymssql,
-    'pyodbc':   MSSQLDialect_pyodbc,
-    'adodbapi': MSSQLDialect_adodbapi
-    }
-dialect_preference = [MSSQLDialect_adodbapi, MSSQLDialect_pymssql, MSSQLDialect_pyodbc]
 
 
 class MSSQLCompiler(ansisql.ANSICompiler):
@@ -757,7 +768,7 @@ class MSSQLCompiler(ansisql.ANSICompiler):
 
 class MSSQLSchemaGenerator(ansisql.ANSISchemaGenerator):
     def get_column_specification(self, column, **kwargs):
-        colspec = self.preparer.format_column(column) + " " + column.type.engine_impl(self.engine).get_col_spec()
+        colspec = self.preparer.format_column(column) + " " + column.type.dialect_impl(self.dialect).get_col_spec()
         
         # install a IDENTITY Sequence if we have an implicit IDENTITY column
         if (not getattr(column.table, 'has_sequence', False)) and column.primary_key and \
@@ -784,6 +795,7 @@ class MSSQLSchemaDropper(ansisql.ANSISchemaDropper):
         self.execute()
 
 class MSSQLDefaultRunner(ansisql.ANSIDefaultRunner):
+    # TODO: does ms-sql have standalone sequences ?
     pass
 
 class MSSQLIdentifierPreparer(ansisql.ANSIIdentifierPreparer):

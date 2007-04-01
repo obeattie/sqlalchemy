@@ -523,7 +523,7 @@ class Connection(Connectable):
             param = multiparams[0]
         else:
             param = params
-        return self.execute_compiled(elem.compile(engine=self.__engine, parameters=param), *multiparams, **params)
+        return self.execute_compiled(elem.compile(dialect=self.dialect, parameters=param), *multiparams, **params)
 
     def execute_compiled(self, compiled, *multiparams, **params):
         """Execute a sql.Compiled object."""
@@ -1051,13 +1051,29 @@ class BufferedColumnResultProxy(ResultProxy):
         return row[rec[1]]
     
     def _process_row(self, row):
-        sup = super(PrefetchingResultProxy, self)
+        sup = super(BufferedColumnResultProxy, self)
         row = [sup._get_col(row, i) for i in xrange(len(row))]
         return RowProxy(self, row)
 
-    def _get_col(self, row, key):
-        rec = self._convert_key(key)
-        return row[rec[1]]
+    def fetchall(self):
+        l = []
+        while True:
+            row = self.fetchone()
+            if row is None:
+                break
+            l.append(row)
+        return l
+
+    def fetchmany(self, size=None):
+        if size is None:
+            return self.fetchall()
+        l = []
+        for i in xrange(size):
+            row = self.fetchone()
+            if row is None:
+                break
+            l.append(row)
+        return l
 
 class RowProxy(object):
     """Proxy a single cursor row for a parent ResultProxy.
@@ -1190,8 +1206,8 @@ class DefaultRunner(schema.SchemaVisitor):
         return None
 
     def exec_default_sql(self, default):
-        c = sql.select([default.arg], engine=self.connection).compile()
-        return self.connection.execute_compiled(c, c.get_params()).scalar()
+        c = sql.select([default.arg]).compile(engine=self.connection)
+        return self.connection.execute_compiled(c).scalar()
 
     def visit_column_onupdate(self, onupdate):
         if isinstance(onupdate.arg, sql.ClauseElement):

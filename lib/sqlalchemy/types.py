@@ -53,11 +53,6 @@ class TypeEngine(AbstractType):
     def __init__(self, *args, **params):
         pass
 
-    def engine_impl(self, engine):
-        """Deprecated; call dialect_impl with a dialect directly."""
-
-        return self.dialect_impl(engine.dialect)
-
     def dialect_impl(self, dialect):
         try:
             return self.impl_dict[dialect]
@@ -92,9 +87,6 @@ class TypeDecorator(AbstractType):
         if not hasattr(self.__class__, 'impl'):
             raise exceptions.AssertionError("TypeDecorator implementations require a class-level variable 'impl' which refers to the class of type being decorated")
         self.impl = self.__class__.impl(*args, **kwargs)
-
-    def engine_impl(self, engine):
-        return self.dialect_impl(engine.dialect)
 
     def dialect_impl(self, dialect):
         try:
