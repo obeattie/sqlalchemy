@@ -54,7 +54,6 @@ class AdaptTest(PersistTest):
         assert t3 != t1
     
     def testmsnvarchar(self):
-        """test that a a Dialect can provide a dialect-specific subclass of a TypeDecorator subclass."""
         import sqlalchemy.databases.mssql as mssql
         dialect = mssql.MSSQLDialect()
         # run the test twice to insure the caching step works too
