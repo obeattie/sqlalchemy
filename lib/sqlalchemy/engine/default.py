@@ -215,16 +215,16 @@ class DefaultExecutionContext(base.ExecutionContext):
         from the bind parameter's ``TypeEngine`` objects.
         """
 
-        if isinstance(self.parameters, list):
-            plist = self.parameters
+        if isinstance(self.compiled_parameters, list):
+            plist = self.compiled_parameters
         else:
-            plist = [self.parameters]
+            plist = [self.compiled_parameters]
         if self.dialect.positional:
             inputsizes = []
             for params in plist[0:1]:
                 for key in params.positional:
                     typeengine = params.binds[key].type
-                    dbtype = typeengine.dialect_impl(self.dialect).get_dbapi_type(self.dialect.module)
+                    dbtype = typeengine.dialect_impl(self.dialect).get_dbapi_type(self.dialect.dbapi)
                     if dbtype is not None:
                         inputsizes.append(dbtype)
             self.cursor.setinputsizes(*inputsizes)
@@ -233,7 +233,7 @@ class DefaultExecutionContext(base.ExecutionContext):
             for params in plist[0:1]:
                 for key in params.keys():
                     typeengine = params.binds[key].type
-                    dbtype = typeengine.dialect_impl(self.dialect).get_dbapi_type(self.dialect.module)
+                    dbtype = typeengine.dialect_impl(self.dialect).get_dbapi_type(self.dialect.dbapi)
                     if dbtype is not None:
                         inputsizes[key] = dbtype
             self.cursor.setinputsizes(**inputsizes)

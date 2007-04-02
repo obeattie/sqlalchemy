@@ -8,7 +8,7 @@
 import sys, StringIO, string, re
 
 from sqlalchemy import util, sql, engine, schema, ansisql, exceptions, logging
-import sqlalchemy.engine.default as default
+from sqlalchemy.engine import default, base
 import sqlalchemy.types as sqltypes
 
 def dbapi():
@@ -150,15 +150,16 @@ class OracleExecutionContext(default.DefaultExecutionContext):
     def pre_exec(self):
         super(OracleExecutionContext, self).pre_exec()
         if self.dialect.auto_setinputsizes:
-            self.dialect.set_input_sizes(self.cursor, parameters)
+            self.set_input_sizes()
 
     def get_result_proxy(self):
-        for column in self.cursor.description:
-            type_code = column[1]
-            if type_code in self.dialect.ORACLE_BINARY_TYPES:
-                return base.BufferedColumnResultProxy(self)
-        else:
-            return base.ResultProxy(self)
+        if self.cursor.description is not None:
+            for column in self.cursor.description:
+                type_code = column[1]
+                if type_code in self.dialect.ORACLE_BINARY_TYPES:
+                    return base.BufferedColumnResultProxy(self)
+        
+        return base.ResultProxy(self)
 
 class OracleDialect(ansisql.ANSIDialect):
     def __init__(self, use_ansi=True, auto_setinputsizes=True, threaded=True, **kwargs):
@@ -573,22 +574,22 @@ class OracleSchemaGenerator(ansisql.ANSISchemaGenerator):
         return colspec
 
     def visit_sequence(self, sequence):
-        if not self.engine.dialect.has_sequence(self.connection, sequence.name):
+        if not self.dialect.has_sequence(self.connection, sequence.name):
             self.append("CREATE SEQUENCE %s" % self.preparer.format_sequence(sequence))
             self.execute()
 
 class OracleSchemaDropper(ansisql.ANSISchemaDropper):
     def visit_sequence(self, sequence):
-        if self.engine.dialect.has_sequence(self.connection, sequence.name):
+        if self.dialect.has_sequence(self.connection, sequence.name):
             self.append("DROP SEQUENCE %s" % sequence.name)
             self.execute()
 
 class OracleDefaultRunner(ansisql.ANSIDefaultRunner):
     def exec_default_sql(self, default):
         c = sql.select([default.arg], from_obj=["DUAL"], engine=self.engine).compile()
-        return self.proxy(str(c), c.get_params()).fetchone()[0]
+        return self.connection.execute_compiled(c).scalar()
 
     def visit_sequence(self, seq):
-        return self.proxy("SELECT " + seq.name + ".nextval FROM DUAL").fetchone()[0]
+        return self.connection.execute_text("SELECT " + seq.name + ".nextval FROM DUAL").scalar()
 
 dialect = OracleDialect
