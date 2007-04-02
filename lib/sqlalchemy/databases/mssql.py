@@ -244,10 +244,10 @@ class MSSQLExecutionContext(default.DefaultExecutionContext):
 
             self.HASIDENT = bool(tbl.has_sequence)
             if self.dialect.auto_identity_insert and self.HASIDENT:
-                if isinstance(parameters, list):
-                    self.IINSERT = tbl.has_sequence.key in parameters[0]
+                if isinstance(self.compiled_parameters, list):
+                    self.IINSERT = tbl.has_sequence.key in self.compiled_parameters[0]
                 else:
-                    self.IINSERT = tbl.has_sequence.key in parameters
+                    self.IINSERT = tbl.has_sequence.key in self.compiled_parameters
             else:
                 self.IINSERT = False
 
@@ -263,7 +263,7 @@ class MSSQLExecutionContext(default.DefaultExecutionContext):
         one column).
         """
         
-        if compiled.isinsert:
+        if self.compiled.isinsert:
             if self.IINSERT:
                 # TODO: quoting rules for table name here ?
                 self.cursor.execute("SET IDENTITY_INSERT %s OFF" % self.compiled.statement.table.name)
@@ -341,8 +341,8 @@ class MSSQLDialect(ansisql.ANSIDialect):
             self.text_as_varchar = bool(opts.pop('text_as_varchar'))
         return self.make_connect_string(opts)
 
-    def create_execution_context(self):
-        return MSSQLExecutionContext(self)
+    def create_execution_context(self, *args, **kwargs):
+        return MSSQLExecutionContext(self, *args, **kwargs)
 
     def type_descriptor(self, typeobj):
         newobj = sqltypes.adapt_type(typeobj, self.colspecs)
