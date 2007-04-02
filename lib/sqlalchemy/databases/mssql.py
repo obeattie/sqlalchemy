@@ -157,9 +157,6 @@ class MSString(sqltypes.String):
         return "VARCHAR(%(length)s)" % {'length' : self.length}
 
 class MSNVarchar(MSString):
-    """NVARCHAR string, does Unicode conversion if `dialect.convert_encoding` is True.  """
-    impl = sqltypes.Unicode
-
     def get_col_spec(self):
         if self.length:
             return "NVARCHAR(%(length)s)" % {'length' : self.length}
@@ -169,19 +166,7 @@ class MSNVarchar(MSString):
             return "NTEXT"
 
 class AdoMSNVarchar(MSNVarchar):
-    def convert_bind_param(self, value, dialect):
-        return value
-
-    def convert_result_value(self, value, dialect):
-        return value        
-
-class MSUnicode(sqltypes.Unicode):
-    """Unicode subclass, does Unicode conversion in all cases, uses NVARCHAR impl."""
-    impl = MSNVarchar
-
-class AdoMSUnicode(MSUnicode):
-    impl = AdoMSNVarchar
-
+    """overrides bindparam/result processing to not convert any unicode strings"""
     def convert_bind_param(self, value, dialect):
         return value
 
@@ -294,6 +279,7 @@ class MSSQLExecutionContext(default.DefaultExecutionContext):
 
 class MSSQLDialect(ansisql.ANSIDialect):
     colspecs = {
+        sqltypes.Unicode : MSNVarchar,
         sqltypes.Integer : MSInteger,
         sqltypes.Smallinteger: MSSmallInteger,
         sqltypes.Numeric : MSNumeric,
@@ -301,7 +287,6 @@ class MSSQLDialect(ansisql.ANSIDialect):
         sqltypes.DateTime : MSDateTime,
         sqltypes.Date : MSDate,
         sqltypes.String : MSString,
-        sqltypes.Unicode : MSUnicode,
         sqltypes.Binary : MSBinary,
         sqltypes.Boolean : MSBoolean,
         sqltypes.TEXT : MSText,
@@ -314,7 +299,7 @@ class MSSQLDialect(ansisql.ANSIDialect):
         'smallint' : MSSmallInteger,
         'tinyint' : MSTinyInteger,
         'varchar' : MSString,
-        'nvarchar' : MSUnicode,
+        'nvarchar' : MSNVarchar,
         'char' : MSChar,
         'nchar' : MSNChar,
         'text' : MSText,
@@ -626,9 +611,9 @@ class MSSQLDialect_pyodbc(MSSQLDialect):
     import_dbapi = classmethod(import_dbapi)
     
     colspecs = MSSQLDialect.colspecs.copy()
-    colspecs[sqltypes.Unicode] = AdoMSUnicode
+    colspecs[sqltypes.Unicode] = AdoMSNVarchar
     ischema_names = MSSQLDialect.ischema_names.copy()
-    ischema_names['nvarchar'] = AdoMSUnicode
+    ischema_names['nvarchar'] = AdoMSNVarchar
 
     def supports_sane_rowcount(self):
         return False
@@ -653,9 +638,9 @@ class MSSQLDialect_adodbapi(MSSQLDialect):
     import_dbapi = classmethod(import_dbapi)
 
     colspecs = MSSQLDialect.colspecs.copy()
-    colspecs[sqltypes.Unicode] = AdoMSUnicode
+    colspecs[sqltypes.Unicode] = AdoMSNVarchar
     ischema_names = MSSQLDialect.ischema_names.copy()
-    ischema_names['nvarchar'] = AdoMSUnicode
+    ischema_names['nvarchar'] = AdoMSNVarchar
 
     def supports_sane_rowcount(self):
         return True

@@ -29,7 +29,8 @@ class MyDecoratedType(types.TypeDecorator):
     def copy(self):
         return MyDecoratedType()
         
-class MyUnicodeType(types.Unicode):
+class MyUnicodeType(types.TypeDecorator):
+    impl = Unicode
     def convert_bind_param(self, value, engine):
         return "UNI_BIND_IN"+ value
     def convert_result_value(self, value, engine):
@@ -52,17 +53,7 @@ class AdaptTest(PersistTest):
         assert t2 != t3
         assert t3 != t1
     
-    def testdecorator(self):
-        t1 = Unicode(20)
-        t2 = Unicode()
-        assert isinstance(t1.impl, String)
-        assert not isinstance(t1.impl, TEXT)
-        assert (t1.impl.length == 20)
-        assert isinstance(t2.impl, TEXT)
-        assert t2.impl.length is None
-
-
-    def testdialecttypedecorators(self):
+    def testmsnvarchar(self):
         """test that a a Dialect can provide a dialect-specific subclass of a TypeDecorator subclass."""
         import sqlalchemy.databases.mssql as mssql
         dialect = mssql.MSSQLDialect()
@@ -70,13 +61,17 @@ class AdaptTest(PersistTest):
         for x in range(0, 1):
             col = Column('', Unicode(length=10))
             dialect_type = col.type.dialect_impl(dialect)
-            assert isinstance(dialect_type, mssql.MSUnicode)
+            assert isinstance(dialect_type, mssql.MSNVarchar)
             assert dialect_type.get_col_spec() == 'NVARCHAR(10)'
-            assert isinstance(dialect_type.impl, mssql.MSString)
             
 class OverrideTest(PersistTest):
     """tests user-defined types, including a full type as well as a TypeDecorator"""
 
+    def testbasic(self):
+        print users.c.goofy4.type
+        print users.c.goofy4.type.dialect_impl(testbase.db.dialect)
+        print users.c.goofy4.type.dialect_impl(testbase.db.dialect).get_col_spec()
+        
     def testprocessing(self):
 
         global users
