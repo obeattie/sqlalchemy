@@ -468,6 +468,7 @@ class BiDirectionalOneToManyTest2(AssertMixin):
         [sess.save(x) for x in [a,b,c,d,e,f]]
         sess.flush()
 
+        print "D", d, d._instance_key
         sess.delete(d)
         sess.delete(c)
         sess.flush()

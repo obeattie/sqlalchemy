@@ -3,7 +3,12 @@
 from sqlalchemy import *
 from sqlalchemy.util import OrderedDict
 
-metadata = BoundMetaData('sqlite:///', echo=True)
+import logging
+logging.basicConfig()
+logging.getLogger('sqlalchemy.orm').setLevel(logging.INFO)
+logging.getLogger('sqlalchemy.engine').setLevel(logging.DEBUG)
+
+metadata = BoundMetaData('sqlite:///')
 
 trees = Table('treenodes', metadata,
     Column('node_id', Integer, Sequence('treenode_id_seq',optional=False), primary_key=True),

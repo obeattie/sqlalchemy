@@ -23,13 +23,8 @@ class UOWDumper(unitofwork.UOWExecutor):
             if len(i):
                 i += "-"
                 #i = i[0:-1] + "-"
-            if task.circular is not None:
-                self.buf.write(self._indent() + "\n")
-                self.buf.write(i + " " + self._repr_task(task))
-                self.buf.write(" (contains cyclical sub-tasks)")
-            else:
-                self.buf.write(self._indent() + "\n")
-                self.buf.write(i + " " + self._repr_task(task))
+            self.buf.write(self._indent() + "\n")
+            self.buf.write(i + " " + self._repr_task(task))
             self.buf.write(" (" + (isdelete and "delete " or "save/update ") + "phase) \n")
             self.indent += 1
             super(UOWDumper, self).execute(trans, task, isdelete)
@@ -61,7 +56,7 @@ class UOWDumper(unitofwork.UOWExecutor):
                 y = b.obj._sa_insert_order
             return cmp(x, y)
 
-        l = list(task.polymorphic_tosave_elements)
+        l = list(task.tosave_elements)
         l.sort(comparator)
         for rec in l:
             if rec.listonly:
@@ -71,7 +66,7 @@ class UOWDumper(unitofwork.UOWExecutor):
             self.closeheader()
 
     def delete_objects(self, trans, task):
-        for rec in task.polymorphic_todelete_elements:
+        for rec in task.todelete_elements:
             if rec.listonly:
                 continue
             self.header("Delete elements"+ self._inheritance_tag(task))
@@ -134,9 +129,9 @@ class UOWDumper(unitofwork.UOWExecutor):
 
     def _dump_processor(self, proc, deletes):
         if deletes:
-            val = proc.targettask.polymorphic_todelete_elements
+            val = proc.targettask.todelete_elements
         else:
-            val = proc.targettask.polymorphic_tosave_elements
+            val = proc.targettask.tosave_elements
 
         if self.verbose:
             self.buf.write(self._indent() + "   |- %s attribute on %s (UOWDependencyProcessor(%d) processing %s)\n" % (
@@ -181,10 +176,7 @@ class UOWDumper(unitofwork.UOWExecutor):
                 name = repr(task.mapper)
         else:
             name = '(none)'
-        if task.circular_parent:
-            return ("UOWTask(%s->%s, %s)" % (hex(id(task.circular_parent)), hex(id(task)), name))
-        else:
-            return ("UOWTask(%s, %s)" % (hex(id(task)), name))
+        return ("UOWTask(%s, %s)" % (hex(id(task)), name))
 
     def _repr_task_class(self, task):
         if task.mapper is not None and task.mapper.__class__.__name__ == 'Mapper':
