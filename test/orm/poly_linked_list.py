@@ -89,7 +89,7 @@ class PolymorphicCircularTest(testbase.ORMTest):
                                properties={
                                'next': relation(Table1, 
                                    backref=backref('prev', primaryjoin=table1.c.id==table1.c.related_id, remote_side=table1.c.id, uselist=False), 
-                                   uselist=False, primaryjoin=table1.c.id==table1.c.related_id),
+                                   uselist=False, primaryjoin=table1.c.id==table1.c.related_id, lazy=False),
                                'data':relation(mapper(Data, data), lazy=False)
                                 }
                         )

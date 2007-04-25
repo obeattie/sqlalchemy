@@ -134,7 +134,7 @@ class DeferredOption(StrategizedOption):
 class AbstractRelationLoader(LoaderStrategy):
     def init(self):
         super(AbstractRelationLoader, self).init()
-        for attr in ['primaryjoin', 'secondaryjoin', 'secondary', 'foreign_keys', 'mapper', 'select_mapper', 'target', 'select_table', 'loads_polymorphic', 'uselist', 'cascade', 'attributeext', 'order_by', 'remote_side', 'polymorphic_primaryjoin', 'polymorphic_secondaryjoin', 'direction']:
+        for attr in ['primaryjoin', 'secondaryjoin', 'secondary', 'foreign_keys', 'mapper', 'select_mapper', 'target', 'select_table', 'loads_polymorphic', 'uselist', 'cascade', 'attributeext', 'order_by', 'remote_side', 'polymorphic_primaryjoin', 'polymorphic_secondaryjoin', 'direction', 'eager_depth']:
             setattr(self, attr, getattr(self.parent_property, attr))
         self._should_log_debug = logging.is_debug_enabled(self.logger)
         
@@ -311,11 +311,12 @@ class EagerLoader(AbstractRelationLoader):
     
     def init(self):
         super(EagerLoader, self).init()
-        if self.parent.isa(self.mapper):
+        self.self_referential = self.parent.isa(self.mapper)
+        if self.self_referential and not self.eager_depth:
             raise exceptions.ArgumentError(
                 "Error creating eager relationship '%s' on parent class '%s' "
-                "to child class '%s': Cant use eager loading on a self "
-                "referential relationship." %
+                "to child class '%s': Eager loading on self "
+                "referential relationship requires nonzero 'eager_depth' setting." %
                 (self.key, repr(self.parent.class_), repr(self.mapper.class_)))
         if self.is_default:
             self.parent._eager_loaders.add(self.parent_property)
@@ -364,24 +365,27 @@ class EagerLoader(AbstractRelationLoader):
             
             if eagerloader.secondary:
                 self.eagersecondary = eagerloader.secondary.alias(self._aliashash("/secondary"))
-                self.aliasizer = sql_util.Aliasizer(eagerloader.target, eagerloader.secondary, aliases={
-                        eagerloader.target:self.eagertarget,
-                        eagerloader.secondary:self.eagersecondary
-                        })
+                if parentclauses is not None:
+                    aliasizer = sql_util.ClauseAdapter(self.eagertarget, include=eagerloader.parent_property.remote_side).\
+                            chain(sql_util.ClauseAdapter(self.eagersecondary)).\
+                            chain(sql_util.ClauseAdapter(parentclauses.eagertarget, exclude=eagerloader.parent_property.remote_side))
+                else:
+                    aliasizer = sql_util.ClauseAdapter(self.eagertarget, include=eagerloader.parent_property.remote_side).chain(sql_util.ClauseAdapter(self.eagersecondary))
                 self.eagersecondaryjoin = eagerloader.polymorphic_secondaryjoin.copy_container()
-                self.aliasizer.traverse(self.eagersecondaryjoin)
+                aliasizer.traverse(self.eagersecondaryjoin)
                 self.eagerprimary = eagerloader.polymorphic_primaryjoin.copy_container()
-                self.aliasizer.traverse(self.eagerprimary)
+                aliasizer.traverse(self.eagerprimary)
             else:
                 self.eagerprimary = eagerloader.polymorphic_primaryjoin.copy_container()
-                self.aliasizer = sql_util.Aliasizer(self.target, aliases={self.target:self.eagertarget})
-                self.aliasizer.traverse(self.eagerprimary)
-
-            if parentclauses is not None:
-                parentclauses.aliasizer.traverse(self.eagerprimary)
+                if parentclauses is not None: 
+                    aliasizer = sql_util.ClauseAdapter(self.eagertarget, include=eagerloader.parent_property.remote_side)
+                    aliasizer.chain(sql_util.ClauseAdapter(parentclauses.eagertarget, exclude=eagerloader.parent_property.remote_side))
+                else:
+                    aliasizer = sql_util.ClauseAdapter(self.eagertarget, include=eagerloader.parent_property.remote_side)
+                aliasizer.traverse(self.eagerprimary)
 
             if eagerloader.order_by:
-                self.eager_order_by = self._aliasize_orderby(eagerloader.order_by)
+                self.eager_order_by = sql_util.ClauseAdapter(self.eagertarget).copy_and_process(util.to_list(eagerloader.order_by))
             else:
                 self.eager_order_by = None
 
@@ -392,14 +396,6 @@ class EagerLoader(AbstractRelationLoader):
             # use the first 4 digits of an MD5 hash
             return "anon_" + util.hash(self.id + extra)[0:4]
             
-        def _aliasize_orderby(self, orderby, copy=True):
-            if copy:
-                return self.aliasizer.copy_and_process(util.to_list(orderby))
-            else:
-                orderby = util.to_list(orderby)
-                self.aliasizer.process_list(orderby)
-                return orderby
-
         def _create_decorator_row(self):
             class EagerRowAdapter(object):
                 def __init__(self, row):
@@ -438,7 +434,14 @@ class EagerLoader(AbstractRelationLoader):
             localparent = parentmapper
         
         if self.mapper in context.recursion_stack:
-            return
+            if self.self_referential:
+                level = context.attributes.setdefault(('level', self), 1)
+                if (level >= self.eager_depth):
+                    return
+                else:
+                    context.attributes[('level', self)] = level + 1
+            else:
+                return
         else:
             context.recursion_stack.add(self.parent)
 
@@ -533,15 +536,23 @@ class EagerLoader(AbstractRelationLoader):
         """
         
         if self in selectcontext.recursion_stack:
-            return
+            if self.self_referential:
+                level = selectcontext.attributes[('level', self)]
+                print "LEVEL", level, "DEPTH", self.eager_depth
+                if (level >= self.eager_depth):
+                    return
+            else:
+                return
+        else:
+            level = 1
         
         try:
             # check for row processor
-            row_processor = selectcontext.attributes[id(self)]
+            row_processor = selectcontext.attributes[id(self), level]
         except KeyError:
             # create a row processor function and cache it in the context
             row_processor = self._create_row_processor(selectcontext, row)
-            selectcontext.attributes[id(self)] = row_processor
+            selectcontext.attributes[id(self), level] = row_processor
             
         if row_processor is not None:
             decorated_row = row_processor(row)
@@ -554,7 +565,10 @@ class EagerLoader(AbstractRelationLoader):
             
         # TODO: recursion check a speed hit...?  try to get a "termination point" into the AliasedClauses
         # or EagerRowAdapter ?
-        selectcontext.recursion_stack.add(self)
+        if level == 1:
+            selectcontext.recursion_stack.add(self)
+        if self.self_referential:
+            selectcontext.attributes[('level', self)] = level + 1
         try:
             if not self.uselist:
                 if self._should_log_debug:
@@ -584,7 +598,11 @@ class EagerLoader(AbstractRelationLoader):
                     self.logger.debug("eagerload list instance on %s" % mapperutil.attribute_str(instance, self.key))
                 self.mapper._instance(selectcontext, decorated_row, result_list)
         finally:
-            selectcontext.recursion_stack.remove(self)
+            if self.self_referential:
+                selectcontext.attributes[('level', self)] = level
+                
+            if level == 1:
+                selectcontext.recursion_stack.remove(self)
 
 EagerLoader.logger = logging.class_logger(EagerLoader)
 
