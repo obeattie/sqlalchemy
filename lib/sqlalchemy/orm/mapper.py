@@ -728,12 +728,10 @@ class Mapper(object):
         To iterate through an entire hierarchy, use
         ``mapper.base_mapper().polymorphic_iterator()``."""
 
-        def iterate(m):
-            yield m
-            for mapper in m._inheriting_mappers:
-                for x in iterate(mapper):
-                    yield x
-        return iterate(self)
+        yield self
+        for mapper in self._inheriting_mappers:
+            for m in mapper.polymorphic_iterator():
+                yield m
 
     def _get_inherited_column_equivalents(self):
         """Return a map of all *equivalent* columns, based on
