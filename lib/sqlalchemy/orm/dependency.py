@@ -428,7 +428,7 @@ class MapperStub(object):
         self._inheriting_mappers = []
 
     def polymorphic_iterator(self):
-        return iter([])
+        return iter([self])
         
     def register_dependencies(self, uowcommit):
         pass

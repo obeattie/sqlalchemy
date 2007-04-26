@@ -268,12 +268,6 @@ class UOWTransaction(object):
             task.append_postupdate(obj, post_update_cols)
             return
 
-        # for a cyclical task, things need to be sorted out already,
-        # so this object should have already been added to the appropriate sub-task
-        # can put an assertion here to make sure....
-        if task.circular:
-            return
-
         task.append(obj, listonly, isdelete=isdelete, **kwargs)
 
 
@@ -463,22 +457,19 @@ class UOWTask(object):
         # are to be executed after this UOWTask performs saves and post-save
         # dependency processing, and before pre-delete processing and deletes
         self.childtasks = []
-
         
         # a list of UOWDependencyProcessors are derived from the main
         # set of dependencies, referencing sub-UOWTasks attached to this
         # one which represent portions of the total list of objects.
         # this is used for the row-based "circular sort"
-        self.cyclical_dependencies = util.Set()
+        self._cyclical_dependencies = util.Set()
 
-        self.circular = False
-    
     def polymorphic_tasks(self):
-        for mapper in self.base_task.mapper.polymorphic_iterator():
+        for mapper in self.mapper.polymorphic_iterator():
             t = self.base_task._inheriting_tasks.get(mapper, None)
             if t is not None:
                 yield t
-
+            
     def is_empty(self):
         return len(self._objects) == 0 and len(self._dependencies) == 0 and len(self.childtasks) == 0
 
@@ -584,9 +575,11 @@ class UOWTask(object):
                                           if rec.obj is not None and not rec.listonly and rec.isdelete is True])
 
     dependencies = property(lambda self:self._dependencies)
+    cyclical_dependencies = property(lambda self:self._cyclical_dependencies)
     polymorphic_dependencies = _polymorphic_collection(lambda task:task.dependencies)
     polymorphic_childtasks = _polymorphic_collection(lambda task:task.childtasks)
-
+    polymorphic_cyclical_dependencies = _polymorphic_collection(lambda task:task.cyclical_dependencies)
+    
     def _sort_circular_dependencies(self, trans, cycles):
         """For a single task, create a hierarchical tree of *subtasks*
         which associate specific dependency actions with individual
@@ -627,13 +620,12 @@ class UOWTask(object):
             except KeyError:
                 l = UOWTask(self.uowtransaction, depprocessor.targettask.mapper)
                 dp[depprocessor] = l
-            print "GDT", dp
             return l
 
         def dependency_in_cycles(dep):
             # TODO: make a simpler way to get at the "root inheritance" mapper
-            proctask = trans.get_task_by_mapper(dep.processor.mapper, True)
-            targettask = trans.get_task_by_mapper(dep.targettask.mapper, True)
+            proctask = trans.get_task_by_mapper(dep.processor.mapper.base_mapper(), True)
+            targettask = trans.get_task_by_mapper(dep.targettask.mapper.base_mapper(), True)
             return targettask in cycles and (proctask is not None and proctask in cycles)
 
         # organize all original UOWDependencyProcessors by their target task
@@ -647,7 +639,6 @@ class UOWTask(object):
 
         object_to_original_task = {}
 
-        print "CYCLES", cycles
         for task in cycles:
             for subtask in task.polymorphic_tasks():
                 for taskelement in subtask.elements:
@@ -670,7 +661,6 @@ class UOWTask(object):
                         childlist = childlist.added_items() + childlist.unchanged_items() + childlist.deleted_items()
 
                         for o in childlist:
-                            print "DEPENDENT", o
                             # other object is None.  this can occur if the relationship is many-to-one
                             # or one-to-one, and None was set.  the "removed" object will be picked
                             # up in this iteration via the deleted_items() part of the collection.
@@ -736,7 +726,7 @@ class UOWTask(object):
         # to be saved/deleted.
         if head is not None:
             make_task_tree(head, t, {})
-            
+
         for t2 in cycles:
             # tasks that were in the cycle but did not get assembled
             # into the tree, add them as child tasks.  these tasks
@@ -947,11 +937,11 @@ class UOWExecutor(object):
             self.execute(trans, child, isdelete)
 
     def execute_cyclical_dependencies(self, trans, task, isdelete):
-        for dep in task.cyclical_dependencies:
+        for dep in task.polymorphic_cyclical_dependencies:
             self.execute_dependency(trans, dep, isdelete)
 
     def execute_per_element_childtasks(self, trans, task, isdelete):
-        for element in task.tosave_elements + task.todelete_elements:
+        for element in task.polymorphic_tosave_elements + task.polymorphic_todelete_elements:
             self.execute_element_childtasks(trans, element, isdelete)
 
     def execute_element_childtasks(self, trans, element, isdelete):
