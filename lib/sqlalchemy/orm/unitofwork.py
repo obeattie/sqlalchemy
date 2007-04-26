@@ -270,6 +270,11 @@ class UOWTransaction(object):
 
         task.append(obj, listonly, isdelete=isdelete, **kwargs)
 
+    def unregister_object(self, obj):
+        mapper = object_mapper(obj)
+        task = self.get_task_by_mapper(mapper)
+        if obj in task._objects:
+            task.delete(obj)
 
     def is_deleted(self, obj):
         mapper = object_mapper(obj)
@@ -378,14 +383,12 @@ class UOWTransaction(object):
         """
 
         for task in self.tasks.values():
-            print "TASK", task
             for elem in task.elements:
                 if elem.obj is None:
                     continue
                 if elem.isdelete:
                     self.uow._remove_deleted(elem.obj)
                 else:
-                    print "REGISTER CLEAN", elem.obj
                     self.uow.register_clean(elem.obj)
 
     def _sort_dependencies(self):
@@ -631,11 +634,12 @@ class UOWTask(object):
         # organize all original UOWDependencyProcessors by their target task
         deps_by_targettask = {}
         for task in cycles:
-            for dep in task.dependencies:
+            for dep in task.polymorphic_dependencies:
                 if not dependency_in_cycles(dep):
                     extradeplist.append(dep)
-                l = deps_by_targettask.setdefault(dep.targettask, [])
-                l.append(dep)
+                for t in dep.targettask.polymorphic_tasks():
+                    l = deps_by_targettask.setdefault(t, [])
+                    l.append(dep)
 
         object_to_original_task = {}
 

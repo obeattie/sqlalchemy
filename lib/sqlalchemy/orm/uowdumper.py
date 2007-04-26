@@ -56,7 +56,7 @@ class UOWDumper(unitofwork.UOWExecutor):
                 y = b.obj._sa_insert_order
             return cmp(x, y)
 
-        l = list(task.tosave_elements)
+        l = list(task.polymorphic_tosave_elements)
         l.sort(comparator)
         for rec in l:
             if rec.listonly:
@@ -66,7 +66,7 @@ class UOWDumper(unitofwork.UOWExecutor):
             self.closeheader()
 
     def delete_objects(self, trans, task):
-        for rec in task.todelete_elements:
+        for rec in task.polymorphic_todelete_elements:
             if rec.listonly:
                 continue
             self.header("Delete elements"+ self._inheritance_tag(task))

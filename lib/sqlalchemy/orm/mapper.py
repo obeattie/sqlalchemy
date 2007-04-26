@@ -1284,6 +1284,7 @@ class Mapper(object):
                     params[mapper.version_id_col.key] = mapper.get_attr_by_column(obj, mapper.version_id_col)
                 deleted_objects.add(obj)
             if len(delete):
+                mapper = table_to_mapper[table]
                 def comparator(a, b):
                     for col in mapper.pks_by_table[table]:
                         x = cmp(a[col.key],b[col.key])
