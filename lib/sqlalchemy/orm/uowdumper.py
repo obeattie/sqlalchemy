@@ -1,7 +1,13 @@
-from sqlalchemy.orm import unitofwork
-from sqlalchemy.orm import util as mapperutil
+# orm/uowdumper.py
+# Copyright (C) 2005, 2006, 2007 Michael Bayer mike_mp@zzzcomputing.com
+#
+# This module is part of SQLAlchemy and is released under
+# the MIT License: http://www.opensource.org/licenses/mit-license.php
 
 """Dumps out a string representation of a UOWTask structure"""
+
+from sqlalchemy.orm import unitofwork
+from sqlalchemy.orm import util as mapperutil
 
 class UOWDumper(unitofwork.UOWExecutor):
     def __init__(self, task, buf, verbose=False):
