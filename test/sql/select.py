@@ -636,7 +636,7 @@ FROM myothertable ORDER BY myid \
         
         query = select(
                 [table1, table2],
-                and_(
+                or_(
                     table1.c.name == 'fred',
                     table1.c.myid == 10,
                     table2.c.othername != 'jack',
@@ -644,21 +644,22 @@ FROM myothertable ORDER BY myid \
                 ),
                 from_obj = [ outerjoin(table1, table2, table1.c.myid == table2.c.otherid) ]
                 )
-                
-        self.runtest(query, 
-            "SELECT mytable.myid, mytable.name, mytable.description, myothertable.otherid, myothertable.othername \
-FROM mytable LEFT OUTER JOIN myothertable ON mytable.myid = myothertable.otherid \
-WHERE mytable.name = %(mytable_name)s AND mytable.myid = %(mytable_myid)s AND \
-myothertable.othername != %(myothertable_othername)s AND \
-EXISTS (select yay from foo where boo = lar)",
-            dialect=postgres.dialect()
-            )
+        if False:
+            self.runtest(query, 
+                "SELECT mytable.myid, mytable.name, mytable.description, myothertable.otherid, myothertable.othername \
+    FROM mytable LEFT OUTER JOIN myothertable ON mytable.myid = myothertable.otherid \
+    WHERE mytable.name = %(mytable_name)s OR mytable.myid = %(mytable_myid)s OR \
+    myothertable.othername != %(myothertable_othername)s OR \
+    EXISTS (select yay from foo where boo = lar)",
+                dialect=postgres.dialect()
+                )
 
+        print "-------------------------------------------------"
         self.runtest(query, 
             "SELECT mytable.myid, mytable.name, mytable.description, myothertable.otherid, myothertable.othername \
 FROM mytable, myothertable WHERE mytable.myid = myothertable.otherid(+) AND \
-mytable.name = :mytable_name AND mytable.myid = :mytable_myid AND \
-myothertable.othername != :myothertable_othername AND EXISTS (select yay from foo where boo = lar)",
+(mytable.name = :mytable_name OR mytable.myid = :mytable_myid OR \
+myothertable.othername != :myothertable_othername OR EXISTS (select yay from foo where boo = lar))",
             dialect=oracle.OracleDialect(use_ansi = False))
 
         query = table1.outerjoin(table2, table1.c.myid==table2.c.otherid).outerjoin(table3, table3.c.userid==table2.c.otherid)

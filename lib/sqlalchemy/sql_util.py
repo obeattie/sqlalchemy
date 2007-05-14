@@ -133,7 +133,12 @@ class AbstractClauseProcessor(sql.NoColumnVisitor):
                 list_[i] = elem
             else:
                 self.traverse(list_[i])
-
+    
+    def visit_grouping(self, grouping):
+        elem = self.convert_element(grouping.elem)
+        if elem is not None:
+            grouping.elem = elem
+            
     def visit_clauselist(self, clist):
         for i in range(0, len(clist.clauses)):
             n = self.convert_element(clist.clauses[i])

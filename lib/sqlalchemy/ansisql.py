@@ -476,6 +476,7 @@ class ANSICompiler(sql.Compiled):
         for f in select.froms:
 
             if self.parameters is not None:
+                # TODO: whack this feature in 0.4
                 # look at our own parameters, see if they
                 # are all present in the form of BindParamClauses.  if
                 # not, then append to the above whereclause column conditions
@@ -486,16 +487,17 @@ class ANSICompiler(sql.Compiled):
                     else:
                         continue
                     clause = c==value
-                    self.traverse(clause)
                     whereclause = sql.and_(clause, whereclause)
-                    whereclause.accept_visitor(self)
+                    self.traverse(whereclause)
 
             # special thingy used by oracle to redefine a join
             w = self.get_whereclause(f)
             if w is not None:
                 # TODO: move this more into the oracle module
-                whereclause = sql.and_(w, whereclause)
-                whereclause.accept_visitor(self)
+                if whereclause is not None:
+                    whereclause = self.traverse(sql.and_(w, whereclause), stop_on=util.Set([whereclause, w]))
+                else:
+                    whereclause = w
 
             t = self.get_from_text(f)
             if t is not None:

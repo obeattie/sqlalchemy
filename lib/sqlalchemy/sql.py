@@ -351,7 +351,8 @@ def and_(*clauses):
     The ``&`` operator is also overloaded on all [sqlalchemy.sql#_CompareMixin]
     subclasses to produce the same result.
     """
-
+    if len(clauses) == 1:
+        return clauses[0]
     return ClauseList(operator='AND', *clauses)
 
 def or_(*clauses):
@@ -361,6 +362,8 @@ def or_(*clauses):
     subclasses to produce the same result.
     """
 
+    if len(clauses) == 1:
+        return clauses[0]
     return ClauseList(operator='OR', *clauses)
 
 def not_(clause):
@@ -849,14 +852,23 @@ class ClauseVisitor(object):
     (column_collections=False) or to return Schema-level items
     (schema_visitor=True)."""
     __traverse_options__ = {}
-    def traverse(self, obj):
-        q = obj.get_children(**self.__traverse_options__)
-        for n in obj.get_children(**self.__traverse_options__):
-            self.traverse(n)
-        v = self
-        while v is not None:
-            obj.accept_visitor(v)
-            v = getattr(v, '_next', None)
+    def traverse(self, obj, stop_on=None, echo=False):
+        stack = [obj]
+        traversal = []
+        while len(stack) > 0:
+            t = stack.pop()
+            if stop_on is None or t not in stop_on:
+                traversal.insert(0, t)
+                for c in t.get_children(**self.__traverse_options__):
+                    stack.append(c)
+        for target in traversal:
+            v = self
+            if echo:
+                print "VISITING", repr(target), "STOP ON", stop_on
+            while v is not None:
+                target.accept_visitor(v)
+                v = getattr(v, '_next', None)
+        return obj
         
     def chain(self, visitor):
         """'chain' an additional ClauseVisitor onto this ClauseVisitor.
@@ -1890,7 +1902,9 @@ class ClauseList(ClauseElement):
 
     def __iter__(self):
         return iter(self.clauses)
-
+    def __len__(self):
+        return len(self.clauses)
+        
     def copy_container(self):
         clauses = [clause.copy_container() for clause in self.clauses]
         return ClauseList(*clauses)
@@ -1998,7 +2012,7 @@ class _Function(_CalculatedClause, FromClause):
         for c in clauses:
             self.append(c)
 
-    key = property(lambda self:self.__name)
+    key = property(lambda self:self.name)
 
     def append(self, clause):
         if _is_literal(clause):
@@ -2050,7 +2064,7 @@ class _UnaryExpression(ColumnElement):
         self.negate = negate
         
     def copy_container(self):
-        return self.__class__(self.operator, self.element.copy_container())
+        return self.__class__(self.element.copy_container(), operator=self.operator, modifier=self.modifier, type=self.type, negate=self.negate)
 
     def _get_from_objects(self):
         return self.element._get_from_objects()
@@ -2105,6 +2119,7 @@ class _BinaryExpression(ColumnElement):
             isinstance(other, _BinaryExpression) and self.operator == other.operator and
             self.left.compare(other.left) and self.right.compare(other.right)
         )
+        
     def self_group(self, against=None):
         if PRECEDENCE.get(self.operator, 0) <= PRECEDENCE.get(against, 0):
             return _Grouping(self)
@@ -2345,6 +2360,7 @@ class Alias(FromClause):
 class _Grouping(ClauseElement):
     def __init__(self, elem):
         self.elem = elem
+        self.type = getattr(elem, 'type', None)
     def accept_visitor(self, visitor):
         visitor.visit_grouping(self)
     def get_children(self, **kwargs):
@@ -2354,13 +2370,6 @@ class _Grouping(ClauseElement):
     def _get_from_objects(self):
         return self.elem._get_from_objects()
         
-class _ColumnLevelGrouping(_Grouping, ColumnElement):
-    def _make_proxy(self, selectable, name = None):
-        if isinstance(self.obj, Selectable):
-            return self.obj._make_proxy(selectable, name=self.name)
-        else:
-            return column(self.name)._make_proxy(selectable=selectable)
-    
 class _Label(ColumnElement):
     """represent a label, as typically applied to any column-level element
     using the ``AS`` sql keyword.
@@ -2375,7 +2384,7 @@ class _Label(ColumnElement):
         self.name = name
         while isinstance(obj, _Label):
             obj = obj.obj
-        self.obj = obj
+        self.obj = obj.self_group(against='AS')
         self.case_sensitive = getattr(obj, "case_sensitive", True)
         self.type = sqltypes.to_instance(type or getattr(obj, 'type', None))
 
