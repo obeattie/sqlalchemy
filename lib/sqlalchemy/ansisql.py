@@ -339,7 +339,7 @@ class ANSICompiler(sql.Compiled):
             self.froms[func] = self.strings[func]
         else:
 #            self.strings[func] = ".".join(func.packagenames + [func.name]) + "(" + self.get_str(func.clauses) + ")"
-            self.strings[func] = ".".join(func.packagenames + [func.name]) + self.get_str(func.clauses)
+            self.strings[func] = ".".join(func.packagenames + [func.name]) + self.get_str(func.clause_expr)
             self.froms[func] = self.strings[func]
 
     def visit_compound_select(self, cs):

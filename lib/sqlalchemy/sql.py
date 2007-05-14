@@ -42,6 +42,8 @@ __all__ = ['AbstractDialect', 'Alias', 'ClauseElement', 'ClauseParameters',
 # precedence ordering for common operators.  if an operator is not present in this list,
 # its precedence is assumed to be '0' which will cause it to be parenthesized when grouped against other operators
 PRECEDENCE = {
+    'FROM':15,
+    'AS':15,
     'NOT':10,
     'AND':3,
     'OR':3,
@@ -1936,8 +1938,9 @@ class _CalculatedClause(ColumnElement):
         self.name = name
         self.type = sqltypes.to_instance(kwargs.get('type', None))
         self._engine = kwargs.get('engine', None)
-        self.clauses = ClauseList(separator=' ', *clauses).self_group()
-
+        self.clauses = ClauseList(separator=' ', *clauses)
+        self.clause_expr = self.clauses.self_group()
+        
     key = property(lambda self:self.name or "_calc_")
 
     def copy_container(self):
@@ -1945,9 +1948,12 @@ class _CalculatedClause(ColumnElement):
         return _CalculatedClause(type=self.type, engine=self._engine, *clauses)
 
     def get_children(self, **kwargs):
-        return self.clauses
+        return self.clause_expr,
+        
     def accept_visitor(self, visitor):
         visitor.visit_calculatedclause(self)
+    def _get_from_objects(self):
+        return self.clauses._get_from_objects()
 
     def _bind_param(self, obj):
         return _BindParamClause(self.name, obj, type=self.type, unique=True)
@@ -1975,7 +1981,9 @@ class _Function(_CalculatedClause, FromClause):
         self.type = sqltypes.to_instance(kwargs.get('type', None))
         self.packagenames = kwargs.get('packagenames', None) or []
         self._engine = kwargs.get('engine', None)
-        _CalculatedClause.__init__(self, name, *[c is None and _Null() or c for c in clauses])
+        _CalculatedClause.__init__(self, name)
+        for c in clauses:
+            self.append(c)
 
     key = property(lambda self:self.__name)
 
@@ -1990,9 +1998,7 @@ class _Function(_CalculatedClause, FromClause):
     def copy_container(self):
         clauses = [clause.copy_container() for clause in self.clauses]
         return _Function(self.name, type=self.type, packagenames=self.packagenames, engine=self._engine, *clauses)
-
-    def get_children(self, **kwargs):
-        return self.clauses,
+        
     def accept_visitor(self, visitor):
         visitor.visit_function(self)
 
@@ -2116,7 +2122,7 @@ class _Exists(_UnaryExpression):
     def __init__(self, *args, **kwargs):
         kwargs['correlate'] = True
         s = select(*args, **kwargs).self_group()
-        _UnaryExpression.__init__(self, "EXISTS", s)
+        _UnaryExpression.__init__(self, s, operator="EXISTS")
 
     def _hide_froms(self):
         return self._get_from_objects()
