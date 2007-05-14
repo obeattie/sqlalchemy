@@ -322,8 +322,8 @@ class ANSICompiler(sql.Compiled):
     def apply_function_parens(self, func):
         return func.name.upper() not in ANSI_FUNCS or len(func.clauses) > 0
 
-    def visit_calculatedclause(self, list):
-        pass
+    def visit_calculatedclause(self, clause):
+        self.strings[clause] = self.get_str(clause.clause_expr)
 
     def visit_cast(self, cast):
         if len(self.select_stack):
@@ -430,10 +430,6 @@ class ANSICompiler(sql.Compiled):
 
         self.select_stack.append(select)
         for c in select._raw_columns:
-#            if isinstance(c, sql.Select) and c.is_scalar:
-#                self.traverse(c)
-#                inner_columns[self.get_str(c)] = c
-#                continue
             if hasattr(c, '_selectable'):
                 s = c._selectable()
             else:
@@ -487,8 +483,11 @@ class ANSICompiler(sql.Compiled):
                     else:
                         continue
                     clause = c==value
-                    whereclause = sql.and_(clause, whereclause)
-                    self.traverse(whereclause)
+                    if whereclause is not None:
+                        whereclause = self.traverse(sql.and_(clause, whereclause), stop_on=util.Set([whereclause]))
+                    else:
+                        whereclause = clause
+                        self.traverse(whereclause)
 
             # special thingy used by oracle to redefine a join
             w = self.get_whereclause(f)

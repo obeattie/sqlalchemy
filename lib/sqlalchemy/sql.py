@@ -384,7 +384,7 @@ def between(ctest, cleft, cright):
     provides similar functionality.
     """
 
-    return _BinaryExpression(ctest, and_(_check_literal(cleft, ctest.type), _check_literal(cright, ctest.type)), 'BETWEEN')
+    return _BinaryExpression(ctest, and_(_literals_as_binds(cleft, type=ctest.type), _literals_as_binds(cright, type=ctest.type)), 'BETWEEN')
 
 def between_(*args, **kwargs):
     """synonym for [sqlalchemy.sql#between()] (deprecated)."""
@@ -412,7 +412,7 @@ def case(whens, value=None, else_=None):
         type = list(whenlist[-1])[-1].type
     else:
         type = None
-    cc = _CalculatedClause(None, 'CASE', value, type=type, *whenlist + ['END'])
+    cc = _CalculatedClause(None, 'CASE', value, type=type, operator=None, group_contents=False, *whenlist + ['END'])
     return cc
 
 def cast(clause, totype, **kwargs):
@@ -563,11 +563,6 @@ def alias(selectable, alias=None):
         
     return Alias(selectable, alias=alias)
 
-def _check_literal(value, type):
-    if _is_literal(value):
-        return literal(value, type)
-    else:
-        return value
 
 def literal(value, type=None):
     """Return a literal clause, bound to a bind parameter.
@@ -762,6 +757,21 @@ def _compound_select(keyword, *selects, **kwargs):
 def _is_literal(element):
     return not isinstance(element, ClauseElement)
 
+def _literals_as_text(element):
+    if _is_literal(element):
+        return _TextClause(unicode(element))
+    else:
+        return element
+
+def _literals_as_binds(element, name='literal', type=None):
+    if _is_literal(element):
+        if element is None:
+            return null()
+        else:
+            return _BindParamClause(name, element, shortname=name, type=type, unique=True)
+    else:
+        return element
+        
 def is_column(col):
     return isinstance(col, ColumnElement)
 
@@ -1896,6 +1906,8 @@ class ClauseList(ClauseElement):
     def __init__(self, *clauses, **kwargs):
         self.clauses = []
         self.operator = kwargs.pop('operator', ',')
+        self.group = kwargs.pop('group', True)
+        self.group_contents = kwargs.pop('group_contents', True)
         for c in clauses:
             if c is None: continue
             self.append(c)
@@ -1907,15 +1919,21 @@ class ClauseList(ClauseElement):
         
     def copy_container(self):
         clauses = [clause.copy_container() for clause in self.clauses]
-        return ClauseList(*clauses)
+        return ClauseList(operator=self.operator, *clauses)
 
     def self_group(self, against=None):
-        return _Grouping(self)
+        if self.group:
+            return _Grouping(self)
+        else:
+            return self
 
     def append(self, clause):
-        if _is_literal(clause):
-            clause = _TextClause(unicode(clause))
-        self.clauses.append(clause.self_group(against=self.operator))
+        # TODO: not sure if i like the 'group_contents' flag.  need to define the difference between
+        # a ClauseList of ClauseLists, and a "flattened" ClauseList of ClauseLists.  flatten() method ?
+        if self.group_contents:
+            self.clauses.append(_literals_as_text(clause).self_group(against=self.operator))
+        else:
+            self.clauses.append(_literals_as_text(clause))
 
     def get_children(self, **kwargs):
         return self.clauses
@@ -1960,8 +1978,8 @@ class _CalculatedClause(ColumnElement):
         self.name = name
         self.type = sqltypes.to_instance(kwargs.get('type', None))
         self._engine = kwargs.get('engine', None)
-        self.clauses = ClauseList(separator=kwargs.get('separator', None), *clauses)
         self.group = kwargs.pop('group', True)
+        self.clauses = ClauseList(operator=kwargs.get('operator', None), group_contents=kwargs.get('group_contents', True), *clauses)
         if self.group:
             self.clause_expr = self.clauses.self_group()
         else:
@@ -2006,7 +2024,7 @@ class _Function(_CalculatedClause, FromClause):
     def __init__(self, name, *clauses, **kwargs):
         self.type = sqltypes.to_instance(kwargs.get('type', None))
         self.packagenames = kwargs.get('packagenames', None) or []
-        kwargs['separator'] = ','
+        kwargs['operator'] = ','
         self._engine = kwargs.get('engine', None)
         _CalculatedClause.__init__(self, name, **kwargs)
         for c in clauses:
@@ -2014,13 +2032,9 @@ class _Function(_CalculatedClause, FromClause):
 
     key = property(lambda self:self.name)
 
+
     def append(self, clause):
-        if _is_literal(clause):
-            if clause is None:
-                clause = null()
-            else:
-                clause = _BindParamClause(self.name, clause, shortname=self.name, type=None, unique=True)
-        self.clauses.append(clause)
+        self.clauses.append(_literals_as_binds(clause, self.name))
 
     def copy_container(self):
         clauses = [clause.copy_container() for clause in self.clauses]
@@ -2059,7 +2073,8 @@ class _UnaryExpression(ColumnElement):
     def __init__(self, element, operator=None, modifier=None, type=None, negate=None):
         self.operator = operator
         self.modifier = modifier
-        self.element = element.self_group(against=self.operator or self.modifier)
+        
+        self.element = _literals_as_text(element).self_group(against=self.operator or self.modifier)
         self.type = sqltypes.to_instance(type)
         self.negate = negate
         
@@ -2094,8 +2109,8 @@ class _BinaryExpression(ColumnElement):
     """Represent an expression that is ``LEFT <operator> RIGHT``."""
     
     def __init__(self, left, right, operator, type=None, negate=None):
-        self.left = left.self_group(against=operator)
-        self.right = right.self_group(against=operator)
+        self.left = _literals_as_text(left).self_group(against=operator)
+        self.right = _literals_as_text(right).self_group(against=operator)
         self.operator = operator
         self.type = sqltypes.to_instance(type)
         self.negate = negate
@@ -2357,10 +2372,18 @@ class Alias(FromClause):
 
     engine = property(lambda s: s.selectable.engine)
 
-class _Grouping(ClauseElement):
+class _Grouping(ColumnElement):
     def __init__(self, elem):
         self.elem = elem
         self.type = getattr(elem, 'type', None)
+
+    key = property(lambda s: s.elem.key)
+    _label = property(lambda s: s.elem._label)
+    orig_set = property(lambda s:s.elem.orig_set)
+    
+    def copy_container(self):
+        return _Grouping(self.elem.copy_container())
+        
     def accept_visitor(self, visitor):
         visitor.visit_grouping(self)
     def get_children(self, **kwargs):

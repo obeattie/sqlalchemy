@@ -144,7 +144,12 @@ class AbstractClauseProcessor(sql.NoColumnVisitor):
             n = self.convert_element(clist.clauses[i])
             if n is not None:
                 clist.clauses[i] = n
-
+    
+    def visit_unary(self, unary):
+        elem = self.convert_element(unary.element)
+        if elem is not None:
+            unary.element = elem
+            
     def visit_binary(self, binary):
         elem = self.convert_element(binary.left)
         if elem is not None:
