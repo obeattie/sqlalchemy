@@ -139,7 +139,7 @@ sq.myothertable_othername AS sq_myothertable_othername FROM (" + sqstring + ") A
 
         self.runtest(select([table1, exists([1], from_obj=[table2])]), "SELECT mytable.myid, mytable.name, mytable.description, EXISTS (SELECT 1 FROM myothertable) FROM mytable", params={})
 
-        self.runtest(select([table1, exists([1], from_obj=[table2]).label('foo')]), "SELECT mytable.myid, mytable.name, mytable.description, (EXISTS (SELECT 1 FROM myothertable)) AS foo FROM mytable", params={})
+        self.runtest(select([table1, exists([1], from_obj=[table2]).label('foo')]), "SELECT mytable.myid, mytable.name, mytable.description, EXISTS (SELECT 1 FROM myothertable) AS foo FROM mytable", params={})
         
     def testwheresubquery(self):
         # TODO: this tests that you dont get a "SELECT column" without a FROM but its not working yet.
@@ -426,6 +426,9 @@ WHERE mytable.myid = myothertable.otherid) AS t2view WHERE t2view.mytable_myid =
             "SELECT column1 AS foobar, column2 AS hoho, mytable.myid AS mytable_myid FROM mytable"
         )
         
+        print "---------------------------------------------"
+        s1 = select(["column1 AS foobar", "column2 AS hoho", table1.c.myid], from_obj=[table1])
+        print "---------------------------------------------"
         # test that "auto-labeling of subquery columns" doesnt interfere with literal columns,
         # exported columns dont get quoted
         self.runtest(

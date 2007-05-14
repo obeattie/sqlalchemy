@@ -134,9 +134,6 @@ class AbstractClauseProcessor(sql.NoColumnVisitor):
             else:
                 self.traverse(list_[i])
 
-    def visit_compound(self, compound):
-        self.visit_clauselist(compound)
-
     def visit_clauselist(self, clist):
         for i in range(0, len(clist.clauses)):
             n = self.convert_element(clist.clauses[i])

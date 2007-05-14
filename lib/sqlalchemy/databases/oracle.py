@@ -454,7 +454,7 @@ class OracleCompiler(ansisql.ANSICompiler):
 
             self._outertable = None
 
-        self.visit_compound(self.wheres[join])
+        self.wheres[join].accept_visitor(self)
 
     def visit_insert_sequence(self, column, sequence, parameters):
         """This is the `sequence` equivalent to ``ANSICompiler``'s
