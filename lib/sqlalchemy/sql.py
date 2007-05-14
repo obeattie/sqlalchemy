@@ -34,7 +34,7 @@ __all__ = ['AbstractDialect', 'Alias', 'ClauseElement', 'ClauseParameters',
            'Compiled', 'CompoundSelect', 'Executor', 'FromClause', 'Join',
            'Select', 'Selectable', 'TableClause', 'alias', 'and_', 'asc',
            'between_', 'bindparam', 'case', 'cast', 'column', 'delete',
-           'desc', 'except_', 'except_all', 'exists', 'extract', 'func',
+           'desc', 'except_', 'except_all', 'exists', 'extract', 'func', 'modifier',
            'insert', 'intersect', 'intersect_all', 'join', 'literal',
            'literal_column', 'not_', 'null', 'or_', 'outerjoin', 'select',
            'subquery', 'table', 'text', 'union', 'union_all', 'update',]
@@ -731,17 +731,27 @@ def null():
 
     return _Null()
 
-class _FunctionGateway(object):
-    """Return a callable based on an attribute name, which then
-    returns a ``_Function`` object with that name.
-    """
+class _FunctionGenerator(object):
+    """Generate ``_Function`` objects based on getattr calls."""
+
+    def __init__(self, **opts):
+        self.__names = []
+        self.opts = opts
 
     def __getattr__(self, name):
         if name[-1] == '_':
             name = name[0:-1]
-        return getattr(_FunctionGenerator(), name)
+        f = _FunctionGenerator(**self.opts)
+        f.__names = list(self.__names) + [name]
+        return f
 
-func = _FunctionGateway()
+    def __call__(self, *c, **kwargs):
+        o = self.opts.copy()
+        o.update(kwargs)
+        return _Function(self.__names[-1], packagenames=self.__names[0:-1], *c, **o)
+
+func = _FunctionGenerator()
+modifier = _FunctionGenerator(group=False)
 
 def _compound_select(keyword, *selects, **kwargs):
     return CompoundSelect(keyword, *selects, **kwargs)
@@ -841,7 +851,6 @@ class ClauseVisitor(object):
     __traverse_options__ = {}
     def traverse(self, obj):
         q = obj.get_children(**self.__traverse_options__)
-        print "OBJ IS A ", repr(obj), "Q IS A", repr(q)
         for n in obj.get_children(**self.__traverse_options__):
             self.traverse(n)
         v = self
@@ -1895,7 +1904,6 @@ class ClauseList(ClauseElement):
         self.clauses.append(clause.self_group(against=self.operator))
 
     def get_children(self, **kwargs):
-        print "GETCHILDREN RETURNING", repr(self.clauses)
         return self.clauses
 
     def accept_visitor(self, visitor):
@@ -1938,9 +1946,13 @@ class _CalculatedClause(ColumnElement):
         self.name = name
         self.type = sqltypes.to_instance(kwargs.get('type', None))
         self._engine = kwargs.get('engine', None)
-        self.clauses = ClauseList(separator=' ', *clauses)
-        self.clause_expr = self.clauses.self_group()
-        
+        self.clauses = ClauseList(separator=kwargs.get('separator', None), *clauses)
+        self.group = kwargs.pop('group', True)
+        if self.group:
+            self.clause_expr = self.clauses.self_group()
+        else:
+            self.clause_expr = self.clauses
+            
     key = property(lambda self:self.name or "_calc_")
 
     def copy_container(self):
@@ -1980,8 +1992,9 @@ class _Function(_CalculatedClause, FromClause):
     def __init__(self, name, *clauses, **kwargs):
         self.type = sqltypes.to_instance(kwargs.get('type', None))
         self.packagenames = kwargs.get('packagenames', None) or []
+        kwargs['separator'] = ','
         self._engine = kwargs.get('engine', None)
-        _CalculatedClause.__init__(self, name)
+        _CalculatedClause.__init__(self, name, **kwargs)
         for c in clauses:
             self.append(c)
 
@@ -2027,20 +2040,6 @@ class _Cast(ColumnElement):
         else:
             return self
 
-class _FunctionGenerator(object):
-    """Generate ``_Function`` objects based on getattr calls."""
-
-    def __init__(self, engine=None):
-        self.__engine = engine
-        self.__names = []
-
-    def __getattr__(self, name):
-        self.__names.append(name)
-        return self
-
-    def __call__(self, *c, **kwargs):
-        kwargs.setdefault('engine', self.__engine)
-        return _Function(self.__names[-1], packagenames=self.__names[0:-1], *c, **kwargs)
 
 class _UnaryExpression(ColumnElement):
     def __init__(self, element, operator=None, modifier=None, type=None, negate=None):
