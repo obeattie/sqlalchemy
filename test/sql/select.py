@@ -410,7 +410,7 @@ WHERE mytable.myid = myothertable.otherid) AS t2view WHERE t2view.mytable_myid =
         s.append_column("column2")
         s.append_whereclause("column1=12")
         s.append_whereclause("column2=19")
-        s.order_by("column1")
+        s = s.order_by("column1")
         s.append_from("table1")
         self.runtest(s, "SELECT column1, column2 FROM table1 WHERE column1=12 AND column2=19 ORDER BY column1")
 

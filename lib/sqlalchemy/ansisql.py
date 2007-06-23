@@ -72,7 +72,7 @@ class ANSICompiler(sql.Compiled):
     Compiles ClauseElements into ANSI-compliant SQL strings.
     """
 
-    __traverse_options__ = {'column_collections':False}
+    __traverse_options__ = {'column_collections':False, 'entry':True}
 
     def __init__(self, dialect, statement, parameters=None, **kwargs):
         """Construct a new ``ANSICompiler`` object.
@@ -158,7 +158,14 @@ class ANSICompiler(sql.Compiled):
 
         # an ANSIIdentifierPreparer that formats the quoting of identifiers
         self.preparer = dialect.identifier_preparer
-
+        
+        # a dictionary containing attributes about all select()
+        # elements located within the clause, regarding which are subqueries, which are
+        # selected from, and which elements should be correlated to an enclosing select.
+        # used mostly to determine the list of FROM elements for each select statement, as well
+        # as some dialect-specific rules regarding subqueries.
+        self.correlate_state = {}
+        
         # for UPDATE and INSERT statements, a set of columns whos values are being set
         # from a SQL expression (i.e., not one of the bind parameter values).  if present,
         # default-value logic in the Dialect knows not to fire off column defaults
@@ -192,7 +199,7 @@ class ANSICompiler(sql.Compiled):
         return self.froms.get(obj, None)
 
     def get_str(self, obj):
-        return self.strings[obj]
+        return self.strings.get(obj, None)
 
     def get_whereclause(self, obj):
         return self.wheres.get(obj, None)
@@ -424,11 +431,19 @@ class ANSICompiler(sql.Compiled):
         self.froms[alias] = self.get_from_text(alias.original) + " AS " + self.preparer.format_alias(alias)
         self.strings[alias] = self.get_str(alias.original)
 
+    def enter_select(self, select):
+        select.calculate_correlations(self.correlate_state)
+        self.select_stack.append(select)
+            
     def visit_select(self, select):
         # the actual list of columns to print in the SELECT column list.
         inner_columns = util.OrderedDict()
-
-        self.select_stack.append(select)
+        
+        froms = select.get_display_froms(self.correlate_state)
+        for f in froms:
+            if f not in self.strings:
+                self.traverse(f)
+                
         for c in select._raw_columns:
             if hasattr(c, '_selectable'):
                 s = c._selectable()
@@ -448,7 +463,7 @@ class ANSICompiler(sql.Compiled):
                         inner_columns[self.get_str(co)] = co
                 # TODO: figure this out, a ColumnClause with a select as a parent
                 # is different from any other kind of parent
-                elif select.is_selected_from and isinstance(co, sql._ColumnClause) and not co.is_literal and co.table is not None and not isinstance(co.table, sql.Select):
+                elif self.correlate_state[select].get('is_selected_from', False) and isinstance(co, sql._ColumnClause) and not co.is_literal and co.table is not None and not isinstance(co.table, sql.Select):
                     # SQLite doesnt like selecting from a subquery where the column
                     # names look like table.colname, so add a label synonomous with
                     # the column name
@@ -458,6 +473,7 @@ class ANSICompiler(sql.Compiled):
                 else:
                     self.traverse(co)
                     inner_columns[self.get_str(co)] = co
+                    
         self.select_stack.pop(-1)
 
         collist = string.join([self.get_str(v) for v in inner_columns.values()], ', ')
@@ -468,27 +484,8 @@ class ANSICompiler(sql.Compiled):
 
         whereclause = select.whereclause
 
-        froms = []
-        for f in select.froms:
-
-            if self.parameters is not None:
-                # TODO: whack this feature in 0.4
-                # look at our own parameters, see if they
-                # are all present in the form of BindParamClauses.  if
-                # not, then append to the above whereclause column conditions
-                # matching those keys
-                for c in f.columns:
-                    if sql.is_column(c) and self.parameters.has_key(c.key) and not self.binds.has_key(c.key):
-                        value = self.parameters[c.key]
-                    else:
-                        continue
-                    clause = c==value
-                    if whereclause is not None:
-                        whereclause = self.traverse(sql.and_(clause, whereclause), stop_on=util.Set([whereclause]))
-                    else:
-                        whereclause = clause
-                        self.traverse(whereclause)
-
+        from_strings = []
+        for f in froms:
             # special thingy used by oracle to redefine a join
             w = self.get_whereclause(f)
             if w is not None:
@@ -500,11 +497,11 @@ class ANSICompiler(sql.Compiled):
 
             t = self.get_from_text(f)
             if t is not None:
-                froms.append(t)
+                from_strings.append(t)
 
         if len(froms):
             text += " \nFROM "
-            text += string.join(froms, ', ')
+            text += string.join(from_strings, ', ')
         else:
             text += self.default_from()
 

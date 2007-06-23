@@ -35,6 +35,10 @@
     - added undefer_group() MapperOption, sets a set of "deferred"
       columns joined by a "group" to load as "undeferred".
 - sql
+  - select() and union()'s now have "generative" behavior.  methods like
+    order_by() and group_by() return a *new* instance - the original instance
+    is unchanged.
+  - "columns" argument to select() is now required.
   - result sets from CRUD operations close their underlying cursor immediately.
     will also autoclose the connection if defined for the operation; this 
     allows more efficient usage of connections for successive CRUD operations

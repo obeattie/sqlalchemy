@@ -28,6 +28,8 @@ __all__ = ['SchemaItem', 'Table', 'Column', 'ForeignKey', 'Sequence', 'Index', '
 class SchemaItem(object):
     """Base class for items that define a database schema."""
 
+    __metaclass__ = sql._FigureVisitName
+
     def _init_items(self, *args):
         """Initialize the list of child items for this SchemaItem."""
 
@@ -128,7 +130,7 @@ def _get_table_key(name, schema):
     else:
         return schema + "." + name
 
-class _TableSingleton(type):
+class _TableSingleton(sql._FigureVisitName):
     """A metaclass used by the ``Table`` object to provide singleton behavior."""
 
     def __call__(self, name, metadata, *args, **kwargs):
@@ -1245,61 +1247,3 @@ class SchemaVisitor(sql.ClauseVisitor):
     """Define the visiting for ``SchemaItem`` objects."""
 
     __traverse_options__ = {'schema_visitor':True}
-
-    def visit_schema(self, schema):
-        """Visit a generic ``SchemaItem``."""
-        pass
-
-    def visit_table(self, table):
-        """Visit a ``Table``."""
-        pass
-
-    def visit_column(self, column):
-        """Visit a ``Column``."""
-        pass
-
-    def visit_foreign_key(self, join):
-        """Visit a ``ForeignKey``."""
-        pass
-
-    def visit_index(self, index):
-        """Visit an ``Index``."""
-        pass
-
-    def visit_passive_default(self, default):
-        """Visit a passive default."""
-        pass
-
-    def visit_column_default(self, default):
-        """Visit a ``ColumnDefault``."""
-        pass
-
-    def visit_column_onupdate(self, onupdate):
-        """Visit a ``ColumnDefault`` with the `for_update` flag set."""
-        pass
-
-    def visit_sequence(self, sequence):
-        """Visit a ``Sequence``."""
-        pass
-
-    def visit_primary_key_constraint(self, constraint):
-        """Visit a ``PrimaryKeyConstraint``."""
-        pass
-
-    def visit_foreign_key_constraint(self, constraint):
-        """Visit a ``ForeignKeyConstraint``."""
-        pass
-
-    def visit_unique_constraint(self, constraint):
-        """Visit a ``UniqueConstraint``."""
-        pass
-
-    def visit_check_constraint(self, constraint):
-        """Visit a ``CheckConstraint``."""
-        pass
-
-    def visit_column_check_constraint(self, constraint):
-        """Visit a ``CheckConstraint`` on a ``Column``."""
-        pass
-
-

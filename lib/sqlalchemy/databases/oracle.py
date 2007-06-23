@@ -472,7 +472,7 @@ class OracleCompiler(ansisql.ANSICompiler):
 
             self._outertable = None
 
-        self.wheres[join].accept_visitor(self)
+        self.traverse_single(self.wheres[join])
 
     def visit_insert_sequence(self, column, sequence, parameters):
         """This is the `sequence` equivalent to ``ANSICompiler``'s
