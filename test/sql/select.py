@@ -850,16 +850,6 @@ UNION SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE 
         )
         
     
-    def testlateargs(self):
-        """tests that a SELECT clause will have extra "WHERE" clauses added to it at compile time if extra arguments
-        are sent"""
-        
-        self.runtest(table1.select(), "SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE mytable.name = :mytable_name AND mytable.myid = :mytable_myid", params={'myid':'3', 'name':'jack'})
-
-        self.runtest(table1.select(table1.c.name=='jack'), "SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE mytable.myid = :mytable_myid AND mytable.name = :mytable_name", params={'myid':'3'})
-
-        self.runtest(table1.select(table1.c.name=='jack'), "SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE mytable.myid = :mytable_myid AND mytable.name = :mytable_name", params={'myid':'3', 'name':'fred'})
-        
     def testcast(self):
         tbl = table('casttest',
                     column('id', Integer),
@@ -969,7 +959,18 @@ class CRUDTest(SQLTest):
         
     def testdelete(self):
         self.runtest(delete(table1, table1.c.myid == 7), "DELETE FROM mytable WHERE mytable.myid = :mytable_myid")
-        
+    
+    def testcorrelateddelete(self):
+        # test a non-correlated WHERE clause
+        s = select([table2.c.othername], table2.c.otherid == 7)
+        u = delete(table1, table1.c.name==s)
+        self.runtest(u, "DELETE FROM mytable WHERE mytable.name = (SELECT myothertable.othername FROM myothertable WHERE myothertable.otherid = :myothertable_otherid)")
+
+        # test one that is actually correlated...
+        s = select([table2.c.othername], table2.c.otherid == table1.c.myid)
+        u = table1.delete(table1.c.name==s)
+        self.runtest(u, "DELETE FROM mytable WHERE mytable.name = (SELECT myothertable.othername FROM myothertable WHERE myothertable.otherid = mytable.myid)")
+            
 class SchemaTest(SQLTest):
     def testselect(self):
         # these tests will fail with the MS-SQL compiler since it will alias schema-qualified tables

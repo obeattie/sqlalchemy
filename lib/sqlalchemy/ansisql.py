@@ -199,8 +199,11 @@ class ANSICompiler(sql.Compiled):
         return self.froms.get(obj, None)
 
     def get_str(self, obj):
-        return self.strings.get(obj, None)
-
+        return self.strings[obj]
+    
+    def is_subquery(self, select):
+        return self.correlate_state[select].get('is_subquery', False)
+        
     def get_whereclause(self, obj):
         return self.wheres.get(obj, None)
 
@@ -434,7 +437,13 @@ class ANSICompiler(sql.Compiled):
     def enter_select(self, select):
         select.calculate_correlations(self.correlate_state)
         self.select_stack.append(select)
-            
+    
+    def enter_update(self, update):
+        update.calculate_correlations(self.correlate_state)
+
+    def enter_delete(self, delete):
+        delete.calculate_correlations(self.correlate_state)
+        
     def visit_select(self, select):
         # the actual list of columns to print in the SELECT column list.
         inner_columns = util.OrderedDict()

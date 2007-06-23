@@ -884,6 +884,7 @@ class ClauseVisitor(object):
             v = getattr(v, '_next', None)
 
         def _trav(obj):
+#            print "TRAVERSE", repr(obj)
             if stop_on is not None and obj in stop_on:
                 return
             if entry:
@@ -1600,7 +1601,9 @@ class FromClause(Selectable):
 
     def _get_oid_column(self):
         if not hasattr(self, '_oid_column'):
+            print "LOCATING OID COL ON", repr(self)
             self._oid_column = self._locate_oid_column()
+            print "GOT", repr(self._oid_column)
         return self._oid_column
 
     def _get_all_embedded_columns(self):
@@ -1809,6 +1812,8 @@ class _TypeClause(ClauseElement):
     Used by the ``Case`` statement.
     """
 
+    __visit_name__ = 'typeclause'
+    
     def __init__(self, type):
         self.type = type
 
@@ -2016,6 +2021,7 @@ class _Function(_CalculatedClause, FromClause):
         self.clauses.append(_literals_as_binds(clause, self.name))
 
 class _Cast(ColumnElement):
+
     def __init__(self, clause, totype, **kwargs):
         if not hasattr(clause, 'label'):
             clause = literal(clause)
@@ -2616,7 +2622,6 @@ class _SelectBaseMixin(object):
 
     def __init__(self, kwargs):
         self.use_labels = kwargs.pop('use_labels', False)
-        self.should_correlate = kwargs.pop('correlate', True)
         self.for_update = kwargs.pop('for_update', False)
         self.limit = kwargs.pop('limit', None)
         self.offset = kwargs.pop('offset', None)
@@ -2630,18 +2635,8 @@ class _SelectBaseMixin(object):
             # allow corresponding_column to return None
             self.orig_set = util.Set()
 
-        # indicates if this select statement is a subquery inside another query
-        self.is_subquery = False
-
-        # indicates if this select statement is in the from clause of another query
-        self.is_selected_from = False
-
-        # indicates if this select statement is a subquery as a criterion
-        # inside of a WHERE clause
-        self.is_where = False
-
-        self.order_by_clause = kwargs.pop('order_by', None)
-        self.group_by_clause = kwargs.pop('group_by', None)
+        self.order_by_clause = ClauseList(*kwargs.pop('order_by', []))
+        self.group_by_clause = ClauseList(*kwargs.pop('group_by', []))
         
     def supports_execution(self):
         return True
@@ -2679,6 +2674,7 @@ class CompoundSelect(_SelectBaseMixin, FromClause):
         _SelectBaseMixin.__init__(self, kwargs)
         self.keyword = keyword
         self.is_compound = True
+        self.should_correlate = kwargs.pop('correlate', False)
 
         self.selects = []
 
@@ -2747,6 +2743,7 @@ class Select(_SelectBaseMixin, FromClause):
         """
         
         _SelectBaseMixin.__init__(self, kwargs)
+        self.should_correlate = kwargs.pop('correlate', True)
         self.whereclause = None
         self.having = None
 
@@ -2793,7 +2790,6 @@ class Select(_SelectBaseMixin, FromClause):
             for f in self.whereclause._get_from_objects(is_where=True):
                 froms.add(f)
         
-        print "HI FROMS ARE", self.__froms
         for elem in self.__froms:
             froms.add(elem)
             for f in elem._get_from_objects():
@@ -2803,8 +2799,28 @@ class Select(_SelectBaseMixin, FromClause):
             for f in elem._hide_froms():
                 hide_froms.add(f)
 
-        corr = correlation_state[self].get('correlate', util.Set())
-        return froms.difference(hide_froms).difference(corr)
+        froms = froms.difference(hide_froms)
+        if len(froms) > 1:
+            corr = correlation_state[self].get('correlate', util.Set())
+            return froms.difference(corr)
+        else:
+            return froms
+    
+    def locate_all_froms(self):
+        froms = util.Set()
+        for col in self._raw_columns:
+            for f in col._get_from_objects():
+                froms.add(f)
+
+        if self.whereclause is not None:
+            for f in self.whereclause._get_from_objects(is_where=True):
+                froms.add(f)
+        
+        for elem in self.__froms:
+            froms.add(elem)
+            for f in elem._get_from_objects():
+                froms.add(f)
+        return froms
         
     def calculate_correlations(self, correlation_state):
         is_where = is_column = is_from = False
@@ -2835,7 +2851,6 @@ class Select(_SelectBaseMixin, FromClause):
                         corr.add(f)
         
         vis = CorrelatedVisitor()
-
         
         # TODO: clean up this flag thing
         is_column=True
@@ -2846,17 +2861,24 @@ class Select(_SelectBaseMixin, FromClause):
                 if f is not self:
                     vis.traverse(f)
             is_from=False
+
+        for col in list(self.order_by_clause) + list(self.group_by_clause):
+            vis.traverse(col)
             
         is_column=False
         is_where=True
         if self.whereclause is not None:
             vis.traverse(self.whereclause)
+            is_from=True
+            for f in self.whereclause._get_from_objects(is_where=True):
+                if f is not self:
+                    vis.traverse(f)
+            is_from=False
                 
         is_where=False
         is_from=True
         for elem in self.__froms:
             vis.traverse(elem)
-            
 
     def get_children(self, clone=False, column_collections=True, **kwargs):
         if clone:
@@ -2923,19 +2945,8 @@ class Select(_SelectBaseMixin, FromClause):
     def append_having(self, having):
         self._append_condition('having', having)
 
-
-    def _correlate(self, from_obj):
-        """Given a ``FROM`` object, correlate this ``SELECT`` statement to it.
-
-        This basically means the given from object will not come out
-        in this select statement's ``FROM`` clause when printed.
-        """
-
-        self.__correlated[from_obj] = from_obj
-
-
     def _locate_oid_column(self):
-        for f in self.__froms:
+        for f in self.locate_all_froms():
             if f is self:
                 # we might be in our own _froms list if a column with us as the parent is attached,
                 # which includes textual columns.
@@ -2984,21 +2995,24 @@ class _UpdateBase(ClauseElement):
     def supports_execution(self):
         return True
 
-
-    class _SelectCorrelator(NoColumnVisitor):
-        def __init__(self, table):
-            NoColumnVisitor.__init__(self)
-            self.table = table
-            
-        def visit_select(self, select):
-            if select.should_correlate:
-                select.correlate(self.table)
-    
-    def _process_whereclause(self, whereclause):
-        if whereclause is not None:
-            _UpdateBase._SelectCorrelator(self.table).traverse(whereclause)
-        return whereclause
+    def calculate_correlations(self, correlate_state):
+        class SelectCorrelator(NoColumnVisitor):
+            def visit_select(s, select):
+                if select.should_correlate:
+                    select_state = correlate_state.setdefault(select, {})
+                    corr = select_state.setdefault('correlate', util.Set())
+                    corr.add(self.table)
+                    
+        vis = SelectCorrelator()
         
+        if self.whereclause is not None:
+            vis.traverse(self.whereclause)
+        
+        if getattr(self, 'parameters', None) is not None:
+            for key, value in self.parameters.items():
+                if isinstance(value, ClauseElement):
+                    vis.traverse(value)
+                
     def _process_colparams(self, parameters):
         """Receive the *values* of an ``INSERT`` or ``UPDATE``
         statement and construct appropriate bind parameters.
@@ -3015,12 +3029,9 @@ class _UpdateBase(ClauseElement):
                 i +=1
             parameters = pp
 
-        correlator = _UpdateBase._SelectCorrelator(self.table)
         for key in parameters.keys():
             value = parameters[key]
-            if isinstance(value, ClauseElement):
-                correlator.traverse(value)
-            elif _is_literal(value):
+            if _is_literal(value):
                 if _is_literal(key):
                     col = self.table.c[key]
                 else:
@@ -3049,7 +3060,7 @@ class _Insert(_UpdateBase):
 class _Update(_UpdateBase):
     def __init__(self, table, whereclause, values=None):
         self.table = table
-        self.whereclause = self._process_whereclause(whereclause)
+        self.whereclause = whereclause
         self.parameters = self._process_colparams(values)
 
     def get_children(self, **kwargs):
@@ -3061,7 +3072,7 @@ class _Update(_UpdateBase):
 class _Delete(_UpdateBase):
     def __init__(self, table, whereclause):
         self.table = table
-        self.whereclause = self._process_whereclause(whereclause)
+        self.whereclause = whereclause
 
     def get_children(self, **kwargs):
         if self.whereclause is not None:

@@ -70,12 +70,12 @@ class TraversalTest(testbase.AssertMixin):
         struct2 = B(a1, A("expr2"), B(A("expr1b"), A("expr2b")), A("expr3"))
         struct3 = B(a1, A("expr2"), B(A("expr1b"), A("expr2bmodified")), A("expr3"))
 
-        assert a1 is a1
-        assert struct is struct
+        assert a1.is_other(a1)
+        assert struct.is_other(struct)
         assert struct == struct2
         assert struct != struct3
-        assert struct is not struct2
-        assert struct is not struct3
+        assert not struct.is_other(struct2)
+        assert not struct.is_other(struct3)
         
     def test_clone(self):    
         struct = B(A("expr1"), A("expr2"), B(A("expr1b"), A("expr2b")), A("expr3"))
@@ -89,7 +89,7 @@ class TraversalTest(testbase.AssertMixin):
         vis = Vis()
         s2 = vis.traverse(struct, clone=True)
         assert struct == s2
-        assert struct is not s2
+        assert not struct.is_other(s2)
 
     def test_no_clone(self):    
         struct = B(A("expr1"), A("expr2"), B(A("expr1b"), A("expr2b")), A("expr3"))
@@ -103,7 +103,7 @@ class TraversalTest(testbase.AssertMixin):
         vis = Vis()
         s2 = vis.traverse(struct, clone=False)
         assert struct == s2
-        assert struct is s2
+        assert struct.is_other(s2)
         
     def test_change_in_place(self):
         struct = B(A("expr1"), A("expr2"), B(A("expr1b"), A("expr2b")), A("expr3"))

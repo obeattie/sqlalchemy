@@ -561,6 +561,8 @@ class OracleCompiler(ansisql.ANSICompiler):
             orderby = self.strings[select.order_by_clause]
             if not orderby:
                 orderby = select.oid_column
+                if orderby is None:
+                    raise "its none"
                 self.traverse(orderby)
                 orderby = self.strings[orderby]
             if not hasattr(select, '_oracle_visit'):
