@@ -143,6 +143,11 @@ sq.myothertable_othername AS sq_myothertable_othername FROM (" + sqstring + ") A
         self.runtest(select([table1, exists([1], from_obj=[table2]).label('foo')]), "SELECT mytable.myid, mytable.name, mytable.description, EXISTS (SELECT 1 FROM myothertable) AS foo FROM mytable", params={})
         
     def testwheresubquery(self):
+        s = select([addresses.c.street], addresses.c.user_id==users.c.user_id, correlate=True).alias('s')
+        self.runtest(
+            select([users, s.c.street], from_obj=[s]),
+            """SELECT users.user_id, users.user_name, users.password, s.street FROM users, (SELECT addresses.street AS street FROM addresses WHERE addresses.user_id = users.user_id) AS s""")
+
         # TODO: this tests that you dont get a "SELECT column" without a FROM but its not working yet.
         #self.runtest(
         #    table1.select(table1.c.myid == select([table1.c.myid], table1.c.name=='jack')), ""

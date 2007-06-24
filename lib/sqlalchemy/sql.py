@@ -31,7 +31,7 @@ import string, re, random, sets
 
 __all__ = ['AbstractDialect', 'Alias', 'ClauseElement', 'ClauseParameters',
            'ClauseVisitor', 'ColumnCollection', 'ColumnElement',
-           'Compiled', 'CompoundSelect', 'Executor', 'FromClause', 'Join',
+           'CompoundSelect', 'FromClause', 'Join',
            'Select', 'Selectable', 'TableClause', 'alias', 'and_', 'asc',
            'between_', 'bindparam', 'case', 'cast', 'column', 'delete',
            'desc', 'except_', 'except_all', 'exists', 'extract', 'func', 'modifier',
@@ -929,103 +929,6 @@ class NoColumnVisitor(ClauseVisitor):
     
     __traverse_options__ = {'column_collections':False}
 
-# TODO: move this to sqlalchemy.engine and/or remove    
-class Executor(object):
-    """Interface representing a "thing that can produce Compiled objects 
-    and execute them"."""
-
-    def execute_compiled(self, compiled, parameters, echo=None, **kwargs):
-        """Execute a Compiled object."""
-
-        raise NotImplementedError()
-
-    def compiler(self, statement, parameters, **kwargs):
-        """Return a Compiled object for the given statement and parameters."""
-
-        raise NotImplementedError()
-
-# TODO: move this to sqlalchemy.engine
-class Compiled(ClauseVisitor):
-    """Represent a compiled SQL expression.
-
-    The ``__str__`` method of the ``Compiled`` object should produce
-    the actual text of the statement.  ``Compiled`` objects are
-    specific to their underlying database dialect, and also may
-    or may not be specific to the columns referenced within a
-    particular set of bind parameters.  In no case should the
-    ``Compiled`` object be dependent on the actual values of those
-    bind parameters, even though it may reference those values as
-    defaults.
-    """
-
-    def __init__(self, dialect, statement, parameters, engine=None):
-        """Construct a new ``Compiled`` object.
-
-        statement
-          ``ClauseElement`` to be compiled.
-
-        parameters
-          Optional dictionary indicating a set of bind parameters
-          specified with this ``Compiled`` object.  These parameters
-          are the *default* values corresponding to the
-          ``ClauseElement``'s ``_BindParamClauses`` when the
-          ``Compiled`` is executed.  In the case of an ``INSERT`` or
-          ``UPDATE`` statement, these parameters will also result in
-          the creation of new ``_BindParamClause`` objects for each
-          key and will also affect the generated column list in an
-          ``INSERT`` statement and the ``SET`` clauses of an
-          ``UPDATE`` statement.  The keys of the parameter dictionary
-          can either be the string names of columns or
-          ``_ColumnClause`` objects.
-
-        engine
-          Optional Engine to compile this statement against.
-        """
-        self.dialect = dialect
-        self.statement = statement
-        self.parameters = parameters
-        self.engine = engine
-        self.can_execute = statement.supports_execution()
-
-    def compile(self):
-        self.traverse(self.statement)
-        self.after_compile()
-
-    def __str__(self):
-        """Return the string text of the generated SQL statement."""
-
-        raise NotImplementedError()
-
-    def get_params(self, **params):
-        """Deprecated.  use construct_params().  (supports unicode names)
-        """
-
-        return self.construct_params(params)
-
-    def construct_params(self, params):
-        """Return the bind params for this compiled object.
-
-        Will start with the default parameters specified when this
-        ``Compiled`` object was first constructed, and will override
-        those values with those sent via `**params`, which are
-        key/value pairs.  Each key should match one of the
-        ``_BindParamClause`` objects compiled into this object; either
-        the `key` or `shortname` property of the ``_BindParamClause``.
-        """
-        raise NotImplementedError()
-        
-    def execute(self, *multiparams, **params):
-        """Execute this compiled object."""
-
-        e = self.engine
-        if e is None:
-            raise exceptions.InvalidRequestError("This Compiled object is not bound to any engine.")
-        return e.execute_compiled(self, *multiparams, **params)
-
-    def scalar(self, *multiparams, **params):
-        """Execute this compiled object and return the result's scalar value."""
-
-        return self.execute(*multiparams, **params).scalar()
 
 class _FigureVisitName(type):
     def __init__(cls, clsname, bases, dict):
@@ -2791,6 +2694,7 @@ class Select(_SelectBaseMixin, FromClause):
 
         froms = froms.difference(hide_froms)
         
+        print correlation_state
         if len(froms) > 1 and correlation_state is not None:
             corr = correlation_state[self].get('correlate', util.Set())
             return froms.difference(corr)
@@ -2839,7 +2743,9 @@ class Select(_SelectBaseMixin, FromClause):
                 if s.is_where:
                     select_state['is_where'] = True
                 select_state['is_subquery'] = True
-                if select.should_correlate and (s.is_where or s.is_column):
+                # the 0.3 equivalent of this fails a few eager loading tests when you correlate inside the FROM clause
+                # for some reason
+                if select.should_correlate: # and (s.is_where or s.is_column):
                     corr = select_state.setdefault('correlate', util.Set())
                     for f in display_froms:
                         corr.add(f)
@@ -2847,7 +2753,7 @@ class Select(_SelectBaseMixin, FromClause):
         col_vis = CorrelatedVisitor(is_column=True)
         where_vis = CorrelatedVisitor(is_where=True)
         from_vis = CorrelatedVisitor(is_from=True)
-        
+    
         for col in self._raw_columns:
             col_vis.traverse(col)
             for f in col._get_from_objects():

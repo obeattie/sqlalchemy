@@ -66,7 +66,7 @@ class ANSIDialect(default.DefaultDialect):
         """
         return ANSIIdentifierPreparer(self)
 
-class ANSICompiler(sql.Compiled):
+class ANSICompiler(engine.Compiled):
     """Default implementation of Compiled.
 
     Compiles ClauseElements into ANSI-compliant SQL strings.
@@ -92,7 +92,7 @@ class ANSICompiler(sql.Compiled):
           correspond to the keys present in the parameters.
         """
         
-        sql.Compiled.__init__(self, dialect, statement, parameters, **kwargs)
+        super(ANSICompiler, self).__init__(dialect, statement, parameters, **kwargs)
 
         # if we are insert/update.  set to true when we visit an INSERT or UPDATE
         self.isinsert = self.isupdate = False
