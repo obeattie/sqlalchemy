@@ -2629,7 +2629,15 @@ class CompoundSelect(_SelectBaseMixin, FromClause):
         col.orig_set = colset
         return col
 
-    def get_children(self, column_collections=True, **kwargs):
+    def get_children(self, clone=False, column_collections=True, **kwargs):
+        if clone:
+            self._clone_from_clause()
+            self._col_map = {}
+            self.selects = [s._clone() for s in self.selects]
+            for attr in ('_order_by_clause', '_group_by_clause'):
+                if getattr(self, attr) is not None:
+                    setattr(self, attr, getattr(self, attr)._clone())
+
         return (column_collections and list(self.c) or []) + \
             [self._order_by_clause, self._group_by_clause] + list(self.selects)
             
