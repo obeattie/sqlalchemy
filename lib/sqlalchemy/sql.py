@@ -2623,8 +2623,10 @@ class _SelectBaseMixin(object):
             # allow corresponding_column to return None
             self.orig_set = util.Set()
 
-        self.order_by_clause = ClauseList(*kwargs.pop('order_by', []))
-        self.group_by_clause = ClauseList(*kwargs.pop('group_by', []))
+        order_by = util.to_list(kwargs.pop('order_by', [])) or []
+        group_by = util.to_list(kwargs.pop('group_by', [])) or []
+        self.order_by_clause = ClauseList(*order_by)
+        self.group_by_clause = ClauseList(*group_by)
         
     def supports_execution(self):
         return True

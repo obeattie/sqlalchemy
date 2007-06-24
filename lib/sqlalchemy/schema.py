@@ -723,11 +723,6 @@ class ForeignKey(SchemaItem):
 
     column = property(lambda s: s._init_column())
 
-    def accept_visitor(self, visitor):
-        """Call the `visit_foreign_key` method on the given visitor."""
-
-        visitor.visit_foreign_key(self)
-
     def _get_parent(self):
         return self.parent
 
@@ -778,9 +773,6 @@ class PassiveDefault(DefaultGenerator):
     def __init__(self, arg, **kwargs):
         super(PassiveDefault, self).__init__(**kwargs)
         self.arg = arg
-
-    def accept_visitor(self, visitor):
-        return visitor.visit_passive_default(self)
 
     def __repr__(self):
         return "PassiveDefault(%s)" % repr(self.arg)
@@ -835,10 +827,6 @@ class Sequence(DefaultGenerator):
     def drop(self, connectable=None, checkfirst=True):
        self.get_engine(connectable=connectable).drop(self, checkfirst=checkfirst)
 
-    def accept_visitor(self, visitor):
-        """Call the visit_seauence method on the given visitor."""
-
-        return visitor.visit_sequence(self)
 
 class Constraint(SchemaItem):
     """Represent a table-level ``Constraint`` such as a composite primary key, foreign key, or unique constraint.
@@ -877,11 +865,12 @@ class CheckConstraint(Constraint):
         super(CheckConstraint, self).__init__(name)
         self.sqltext = sqltext
 
-    def accept_visitor(self, visitor):
+    def _visit_name(self):
         if isinstance(self.parent, Table):
-            visitor.visit_check_constraint(self)
+            return "check_constraint"
         else:
-            visitor.visit_column_check_constraint(self)
+            return "column_check_constraint"
+    __visit_name__ = property(_visit_name)
 
     def _set_parent(self, parent):
         self.parent = parent
@@ -910,9 +899,6 @@ class ForeignKeyConstraint(Constraint):
         for (c, r) in zip(self.__colnames, self.__refcolnames):
             self.append_element(c,r)
 
-    def accept_visitor(self, visitor):
-        visitor.visit_foreign_key_constraint(self)
-
     def append_element(self, col, refcol):
         fk = ForeignKey(refcol, constraint=self, name=self.name, onupdate=self.onupdate, ondelete=self.ondelete, use_alter=self.use_alter)
         fk._set_parent(self.table.c[col])
@@ -935,9 +921,6 @@ class PrimaryKeyConstraint(Constraint):
         table.primary_key = self
         for c in self.__colnames:
             self.append_column(table.c[c])
-
-    def accept_visitor(self, visitor):
-        visitor.visit_primary_key_constraint(self)
 
     def add(self, col):
         self.append_column(col)
@@ -969,9 +952,6 @@ class UniqueConstraint(Constraint):
 
     def append_column(self, col):
         self.columns.add(col)
-
-    def accept_visitor(self, visitor):
-        visitor.visit_unique_constraint(self)
 
     def copy(self):
         return UniqueConstraint(name=self.name, *self.__colnames)
@@ -1048,9 +1028,6 @@ class Index(SchemaItem):
             connectable.drop(self)
         else:
             self.get_engine().drop(self)
-
-    def accept_visitor(self, visitor):
-        visitor.visit_index(self)
 
     def __str__(self):
         return repr(self)
