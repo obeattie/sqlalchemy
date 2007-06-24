@@ -134,6 +134,42 @@ class TraversalTest(testbase.AssertMixin):
         s3 = vis2.traverse(struct, clone=True)
         assert struct != s3
         assert struct3 == s3
-        
+
+class ClauseTest(testbase.AssertMixin):
+    def setUpAll(self):
+        global t1, t2
+        t1 = table("table1", 
+            column("col1"),
+            column("col2"),
+            column("col3"),
+            )
+        t2 = table("table2", 
+            column("col1"),
+            column("col2"),
+            column("col3"),
+            )
+            
+    def test_binary(self):
+        clause = t1.c.col2 == t2.c.col2
+        assert str(clause) == ClauseVisitor().traverse(clause, clone=True)
+    
+    def test_join(self):
+        clause = t1.join(t2, t1.c.col2==t2.c.col2)
+        c1 = str(clause)
+        assert str(clause) == str(ClauseVisitor().traverse(clause, clone=True))
+    
+        class Vis(ClauseVisitor):
+            def visit_binary(self, binary):
+                binary.right = t2.c.col3
+                
+        clause2 = Vis().traverse(clause, clone=True)
+        assert c1 == str(clause)
+        assert str(clause2) == str(t1.join(t2, t1.c.col2==t2.c.col3))
+    
+    def test_select(self):
+        s = t1.select()
+        clause = select([s])
+    
+    
 if __name__ == '__main__':
     testbase.main()        

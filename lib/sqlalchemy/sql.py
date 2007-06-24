@@ -1048,6 +1048,9 @@ class ClauseElement(object):
         c.__dict__ = self.__dict__.copy()
         return c
 
+    def copy_container(self):
+        return ClauseVisitor().traverse(self, clone=True)
+        
     def _get_from_objects(self, **modifiers):
         """Return objects represented in this ``ClauseElement`` that
         should be added to the ``FROM`` list of a query, when this
@@ -2051,7 +2054,7 @@ class _UnaryExpression(ColumnElement):
 
     def get_children(self, clone=False, **kwargs):
         if clone:
-            self.element = self.element.clone_()
+            self.element = self.element._clone()
         return self.element,
 
     def compare(self, other):
@@ -2085,8 +2088,8 @@ class _BinaryExpression(ColumnElement):
 
     def get_children(self, clone=False, **kwargs):
         if clone:
-            self.left = self.left.clone_()
-            self.right = self.right.clone_()
+            self.left = self.left._clone()
+            self.right = self.right._clone()
             
         return self.left, self.right
 
@@ -2170,9 +2173,9 @@ class Join(FromClause):
     def get_children(self, clone=False, **kwargs):
         if clone:
             self._clone_from_clause()
-            self.left = self.left.clone_()
-            self.right = self.right.clone_()
-            self.onclause = self.onclause.clone_()
+            self.left = self.left._clone()
+            self.right = self.right._clone()
+            self.onclause = self.onclause._clone()
             self.__folded_equivalents = None
             self._init_primary_key()
         return self.left, self.right, self.onclause
@@ -2328,7 +2331,7 @@ class Alias(FromClause):
     def get_children(self, clone=False, **kwargs):
         if clone:
             self._clone_from_clause()
-            self.selectable = self.selectable.clone_()
+            self.selectable = self.selectable._clone()
             baseselectable = self.selectable
             while isinstance(baseselectable, Alias):
                 baseselectable = baseselectable.selectable
@@ -2623,10 +2626,8 @@ class _SelectBaseMixin(object):
             # allow corresponding_column to return None
             self.orig_set = util.Set()
 
-        order_by = util.to_list(kwargs.pop('order_by', [])) or []
-        group_by = util.to_list(kwargs.pop('group_by', [])) or []
-        self.order_by_clause = ClauseList(*order_by)
-        self.group_by_clause = ClauseList(*group_by)
+        self.order_by_clause = ClauseList(*[o for o in util.to_list(kwargs.pop('order_by', [])) if o])
+        self.group_by_clause = ClauseList(*[o for o in util.to_list(kwargs.pop('group_by', [])) if o])
         
     def supports_execution(self):
         return True
@@ -2635,18 +2636,18 @@ class _SelectBaseMixin(object):
         s = self._clone()
         s._clone_from_clause()
         return s
-            
+    
     def order_by(self, *clauses):
         s = self._generate()
         if self.order_by_clause:
-            clauses = list(self.order_by_clause) + clauses
+            clauses = list(self.order_by_clause) + list(clauses)
         s.order_by_clause = ClauseList(*clauses)
         return s
 
     def group_by(self, *clauses):
         s = self._generate()
         if self.group_by_clause:
-            clauses = list(self.group_by_clause) + clauses
+            clauses = list(self.group_by_clause) + list(clauses)
         s.order_by_clause = ClauseList(*clauses)
         return s
 

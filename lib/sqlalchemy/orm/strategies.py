@@ -561,7 +561,7 @@ class EagerLoader(AbstractRelationLoader):
             # this will locate the selectable inside of any containers it may be a part of (such
             # as a join).  if its inside of a join, we want to outer join on that join, not the 
             # selectable.
-            for fromclause in statement.froms:
+            for fromclause in statement.locate_all_froms():
                 if fromclause is localparent.mapped_table:
                     towrap = fromclause
                     break

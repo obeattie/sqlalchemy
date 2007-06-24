@@ -823,18 +823,18 @@ class Query(object):
 
             s2 = sql.select(self.table.primary_key + list(cf), whereclause, use_labels=True, from_obj=from_obj, **context.select_args())
             if order_by:
-                s2.order_by(*util.to_list(order_by))
+                s2 = s2.order_by(*util.to_list(order_by))
             s3 = s2.alias('tbl_row_count')
             crit = s3.primary_key==self.table.primary_key
             statement = sql.select([], crit, use_labels=True, for_update=for_update)
             # now for the order by, convert the columns to their corresponding columns
             # in the "rowcount" query, and tack that new order by onto the "rowcount" query
             if order_by:
-                statement.order_by(*sql_util.ClauseAdapter(s3).copy_and_process(order_by))
+                statement = statement.order_by(*sql_util.ClauseAdapter(s3).copy_and_process(order_by))
         else:
             statement = sql.select([], whereclause, from_obj=from_obj, use_labels=True, for_update=for_update, **context.select_args())
             if order_by:
-                statement.order_by(*util.to_list(order_by))
+                statement = statement.order_by(*util.to_list(order_by))
                 
             # for a DISTINCT query, you need the columns explicitly specified in order
             # to use it in "order_by".  ensure they are in the column criterion (particularly oid).
