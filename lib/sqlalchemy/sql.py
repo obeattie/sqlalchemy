@@ -1498,6 +1498,13 @@ class FromClause(Selectable):
         FindCols().traverse(self)
         return ret
 
+    def is_derived_from(self, fromclause):
+        """return True if this FromClause is 'derived' from the given FromClause.
+        
+        An example would be an Alias of a Table is derived from that Table."""
+        
+        return False
+        
     def corresponding_column(self, column, raiseerr=True, keys_ok=False, require_embedded=False):
         """Given a ``ColumnElement``, return the exported
         ``ColumnElement`` object from this ``Selectable`` which
@@ -2205,6 +2212,14 @@ class Alias(FromClause):
         self.encodedname = alias.encode('ascii', 'backslashreplace')
         self.case_sensitive = getattr(baseselectable, "case_sensitive", True)
 
+    def is_derived_from(self, fromclause):
+        x = self.selectable
+        while isinstance(x, Alias):
+            x = x.selectable
+            if x is fromclause:
+                return True
+        return False
+
     def supports_execution(self):
         return self.original.supports_execution()
 
@@ -2642,9 +2657,9 @@ class Select(_SelectBaseMixin, FromClause):
         self._should_correlate = correlate
         self._distinct = distinct
 
-        self.__raw_columns = []
+        self._raw_columns = []
         self.__correlate = util.Set()
-        self.__froms = util.OrderedSet()
+        self._froms = util.OrderedSet()
         self._whereclause = None
         self._having = None
         
@@ -2668,7 +2683,7 @@ class Select(_SelectBaseMixin, FromClause):
         froms = util.Set()
         hide_froms = util.Set()
         
-        for col in self.__raw_columns:
+        for col in self._raw_columns:
             for f in col._hide_froms():
                 hide_froms.add(f)
             for f in col._get_from_objects():
@@ -2678,7 +2693,7 @@ class Select(_SelectBaseMixin, FromClause):
             for f in self._whereclause._get_from_objects(is_where=True):
                 froms.add(f)
         
-        for elem in self.__froms:
+        for elem in self._froms:
             froms.add(elem)
             for f in elem._get_from_objects():
                 froms.add(f)
@@ -2699,7 +2714,7 @@ class Select(_SelectBaseMixin, FromClause):
     
     def locate_all_froms(self):
         froms = util.Set()
-        for col in self.__raw_columns:
+        for col in self._raw_columns:
             for f in col._get_from_objects():
                 froms.add(f)
 
@@ -2707,7 +2722,7 @@ class Select(_SelectBaseMixin, FromClause):
             for f in self._whereclause._get_from_objects(is_where=True):
                 froms.add(f)
         
-        for elem in self.__froms:
+        for elem in self._froms:
             froms.add(elem)
             for f in elem._get_from_objects():
                 froms.add(f)
@@ -2731,26 +2746,31 @@ class Select(_SelectBaseMixin, FromClause):
             def visit_select(s, select):
                 if select not in correlation_state:
                     correlation_state[select] = {}
+                    
                 if select is self:
                     return
+                    
                 select_state = correlation_state[select]
                 if s.is_from:
                     select_state['is_selected_from'] = True
                 if s.is_where:
                     select_state['is_where'] = True
                 select_state['is_subquery'] = True
-                # the 0.3 equivalent of this fails a few eager loading tests when you correlate inside the FROM clause
-                # for some reason
-                if select._should_correlate: # and (s.is_where or s.is_column):
+
+                if select._should_correlate:
                     corr = select_state.setdefault('correlate', util.Set())
+                    # not crazy about this part.  need to be clearer on what elements in the
+                    # subquery correspond to elements in the enclosing query.
                     for f in display_froms:
                         corr.add(f)
+                        for f2 in f._get_from_objects():
+                            corr.add(f2)
         
         col_vis = CorrelatedVisitor(is_column=True)
         where_vis = CorrelatedVisitor(is_where=True)
         from_vis = CorrelatedVisitor(is_from=True)
     
-        for col in self.__raw_columns:
+        for col in self._raw_columns:
             col_vis.traverse(col)
             for f in col._get_from_objects():
                 if f is not self:
@@ -2765,11 +2785,11 @@ class Select(_SelectBaseMixin, FromClause):
                 if f is not self:
                     from_vis.traverse(f)
                 
-        for elem in self.__froms:
+        for elem in self._froms:
             from_vis.traverse(elem)
 
     def _get_inner_columns(self):
-        for c in self.__raw_columns:
+        for c in self._raw_columns:
             if hasattr(c, '_selectable'):
                 for co in c._selectable().columns:
                     yield co
@@ -2781,27 +2801,25 @@ class Select(_SelectBaseMixin, FromClause):
     def get_children(self, clone=False, column_collections=True, **kwargs):
         if clone:
             self._clone_from_clause()
-            self.__raw_columns = [c._clone() for c in self.__raw_columns]
-            
-            newfroms = util.OrderedSet()
-            newcorrelate = util.Set()
-            for f in self.__froms:
-                cl = f._clone()
-                newfroms.add(cl)
-                if f in self.__correlate:
-                    newcorrelate.add(cl)
-                    self.__correlate.remove(f)
-            self.__correlate = self.__correlate.union(newcorrelate)
-            self.__froms = newfroms
-
+            self._raw_columns = [c._clone() for c in self._raw_columns]
+            self._recorrelate_froms([f._clone() for f in self._froms])
             for attr in ('_whereclause', '_having', '_order_by_clause', '_group_by_clause'):
                 if getattr(self, attr) is not None:
                     setattr(self, attr, getattr(self, attr)._clone())
         
         return (column_collections and list(self.columns) or []) + \
-            list(self.__froms) + \
+            list(self._froms) + \
             [x for x in (self._whereclause, self._having, self._order_by_clause, self._group_by_clause) if x is not None]
-    
+
+    def _recorrelate_froms(self, froms):
+        newcorrelate = util.Set()
+        for f in froms:
+            if f in self.__correlate:
+                newcorrelate.add(cl)
+                self.__correlate.remove(f)
+        self.__correlate = self.__correlate.union(newcorrelate)
+        self._froms = froms
+        
     def column(self, column):
         s = self._generate()
         s.append_column(column)
@@ -2829,9 +2847,12 @@ class Select(_SelectBaseMixin, FromClause):
     
     def correlate_to(self, fromclause):
         s = self._generate()
-        s.__correlate.add(fromclause)
+        s.append_correlation(fromclause)
         return s
-        
+    
+    def append_correlation(self, fromclause):
+        self.__correlate.add(fromclause)
+            
     def append_column(self, column):
         if _is_literal(column):
             column = literal_column(str(column))
@@ -2839,7 +2860,7 @@ class Select(_SelectBaseMixin, FromClause):
         if isinstance(column, Select) and column.is_scalar:
             column = column.self_group(against=',')
 
-        self.__raw_columns.append(column)
+        self._raw_columns.append(column)
 
     def append_whereclause(self, whereclause):
         if self._whereclause  is not None:
@@ -2856,7 +2877,7 @@ class Select(_SelectBaseMixin, FromClause):
     def append_from(self, fromclause):
         if _is_literal(fromclause):
             fromclause = FromClause(fromclause)
-        self.__froms.add(fromclause)
+        self._froms.add(fromclause)
 
     def _make_proxy(self, selectable, name):
         if self.is_scalar:
@@ -2878,7 +2899,7 @@ class Select(_SelectBaseMixin, FromClause):
     type = property(_get_type)
 
     def _exportable_columns(self):
-        return [c for c in self.__raw_columns if isinstance(c, Selectable)]
+        return [c for c in self._raw_columns if isinstance(c, Selectable)]
         
     def _proxy_column(self, column):
         if self.use_labels:
@@ -2914,7 +2935,7 @@ class Select(_SelectBaseMixin, FromClause):
 
         if self._engine is not None:
             return self._engine
-        for f in self.__froms:
+        for f in self._froms:
             if f is self:
                 continue
             e = f.engine

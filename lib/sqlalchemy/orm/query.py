@@ -401,7 +401,7 @@ class Query(object):
         For performance, only use subselect if `order_by` attribute is set.
         """
 
-        ops = {'distinct':self._distinct, 'order_by':self._order_by, 'from_obj':self._from_obj}
+        ops = {'distinct':self._distinct, 'order_by':self._order_by or None, 'from_obj':self._from_obj}
 
         if self._order_by is not False:
             s1 = sql.select([col], self._criterion, **ops).alias('u')
@@ -817,7 +817,7 @@ class Query(object):
             else:
                 cf = []
 
-            s2 = sql.select(self.primary_key_columns + list(cf), whereclause, use_labels=True, from_obj=from_obj, **context.select_args())
+            s2 = sql.select(self.primary_key_columns + list(cf), whereclause, use_labels=True, from_obj=from_obj, correlate=False, **context.select_args())
             if order_by:
                 s2 = s2.order_by(*util.to_list(order_by))
             s3 = s2.alias('tbl_row_count')

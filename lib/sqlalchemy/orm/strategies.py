@@ -501,7 +501,14 @@ class EagerLoader(AbstractRelationLoader):
                 return self.extra_cols[column]
             
             aliased_column = column
-            aliased_column = sql_util.ClauseAdapter(self.eagertarget).traverse(aliased_column, clone=True)
+            # for column-level subqueries, swap out its selectable with our
+            # eager version as appropriate, and manually build the 
+            # "correlation" list of the subquery.  
+            class ModifySubquery(sql.ClauseVisitor):
+                def visit_select(s, select):
+                    select._should_correlate = False
+                    select.append_correlation(self.eagertarget)
+            aliased_column = sql_util.ClauseAdapter(self.eagertarget).chain(ModifySubquery()).traverse(aliased_column, clone=True)
             alias = self._aliashash(column.name)
             aliased_column = aliased_column.label(alias)
             self._row_decorator.map[column] = alias
