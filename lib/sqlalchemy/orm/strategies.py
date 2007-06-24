@@ -469,18 +469,18 @@ class EagerLoader(AbstractRelationLoader):
                 else:
                     aliasizer = sql_util.ClauseAdapter(self.eagertarget).\
                         chain(sql_util.ClauseAdapter(self.eagersecondary))
-                self.eagersecondaryjoin = eagerloader.polymorphic_secondaryjoin.copy_container()
-                aliasizer.traverse(self.eagersecondaryjoin)
-                self.eagerprimary = eagerloader.polymorphic_primaryjoin.copy_container()
-                aliasizer.traverse(self.eagerprimary)
+                self.eagersecondaryjoin = eagerloader.polymorphic_secondaryjoin
+                self.eagersecondaryjoin = aliasizer.traverse(self.eagersecondaryjoin, clone=True)
+                self.eagerprimary = eagerloader.polymorphic_primaryjoin
+                self.eagerprimary = aliasizer.traverse(self.eagerprimary, clone=True)
             else:
-                self.eagerprimary = eagerloader.polymorphic_primaryjoin.copy_container()
+                self.eagerprimary = eagerloader.polymorphic_primaryjoin
                 if parentclauses is not None: 
                     aliasizer = sql_util.ClauseAdapter(self.eagertarget)
                     aliasizer.chain(sql_util.ClauseAdapter(parentclauses.eagertarget, exclude=eagerloader.parent_property.remote_side))
                 else:
                     aliasizer = sql_util.ClauseAdapter(self.eagertarget)
-                aliasizer.traverse(self.eagerprimary)
+                self.eagerprimary = aliasizer.traverse(self.eagerprimary, clone=True)
 
             if eagerloader.order_by:
                 self.eager_order_by = sql_util.ClauseAdapter(self.eagertarget).copy_and_process(util.to_list(eagerloader.order_by))
@@ -500,8 +500,8 @@ class EagerLoader(AbstractRelationLoader):
             if column in self.extra_cols:
                 return self.extra_cols[column]
             
-            aliased_column = column.copy_container()
-            sql_util.ClauseAdapter(self.eagertarget).traverse(aliased_column)
+            aliased_column = column
+            aliased_column = sql_util.ClauseAdapter(self.eagertarget).traverse(aliased_column, clone=True)
             alias = self._aliashash(column.name)
             aliased_column = aliased_column.label(alias)
             self._row_decorator.map[column] = alias
@@ -592,14 +592,14 @@ class EagerLoader(AbstractRelationLoader):
         if self.secondaryjoin is not None:
             statement._outerjoin = sql.outerjoin(towrap, clauses.eagersecondary, clauses.eagerprimary).outerjoin(clauses.eagertarget, clauses.eagersecondaryjoin)
             if self.order_by is False and self.secondary.default_order_by() is not None:
-                statement.order_by(*clauses.eagersecondary.default_order_by())
+                statement.append_order_by(*clauses.eagersecondary.default_order_by())
         else:
             statement._outerjoin = towrap.outerjoin(clauses.eagertarget, clauses.eagerprimary)
             if self.order_by is False and clauses.eagertarget.default_order_by() is not None:
-                statement.order_by(*clauses.eagertarget.default_order_by())
+                statement.append_order_by(*clauses.eagertarget.default_order_by())
 
         if clauses.eager_order_by:
-            statement.order_by(*util.to_list(clauses.eager_order_by))
+            statement.append_order_by(*util.to_list(clauses.eager_order_by))
         
         statement.append_from(statement._outerjoin)
 

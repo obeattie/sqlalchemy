@@ -168,8 +168,45 @@ class ClauseTest(testbase.AssertMixin):
     
     def test_select(self):
         s = t1.select()
-        clause = select([s])
-    
-    
+        s2 = select([s])
+        s2_assert = str(s2)
+        s3_assert = str(select([t1.select()], t1.c.col2==7))
+        class Vis(ClauseVisitor):
+            def visit_select(self, select):
+                select.append_whereclause(t1.c.col2==7)
+        s3 = Vis().traverse(s2, clone=True)
+        assert str(s3) == s3_assert
+        assert str(s2) == s2_assert
+        print str(s2)
+        print str(s3)
+        Vis().traverse(s2)
+        assert str(s2) == s3_assert
+
+        print "------------------"
+        
+        s4_assert = str(select([t1.select()], and_(t1.c.col2==7, t1.c.col3==9)))
+        class Vis(ClauseVisitor):
+            def visit_select(self, select):
+                select.append_whereclause(t1.c.col3==9)
+        s4 = Vis().traverse(s3, clone=True)
+        print str(s3)
+        print str(s4)
+        assert str(s4) == s4_assert
+        assert str(s3) == s3_assert
+        
+        print "------------------"
+        s5_assert = str(select([t1.select()], and_(t1.c.col2==7, t1.c.col1==9)))
+        class Vis(ClauseVisitor):
+            def visit_binary(self, binary):
+                if binary.left is t1.c.col3:
+                    binary.left = t1.c.col1
+                    binary.right = bindparam("table1_col1")
+        s5 = Vis().traverse(s4, clone=True)
+        print str(s4)
+        print str(s5)
+        assert str(s5) == s5_assert
+        assert str(s4) == s4_assert
+        
+        
 if __name__ == '__main__':
     testbase.main()        
