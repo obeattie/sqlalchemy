@@ -821,11 +821,11 @@ class Query(object):
             else:
                 cf = []
 
-            s2 = sql.select(self.table.primary_key + list(cf), whereclause, use_labels=True, from_obj=from_obj, **context.select_args())
+            s2 = sql.select(self.primary_key_columns + list(cf), whereclause, use_labels=True, from_obj=from_obj, **context.select_args())
             if order_by:
                 s2 = s2.order_by(*util.to_list(order_by))
             s3 = s2.alias('tbl_row_count')
-            crit = s3.primary_key==self.table.primary_key
+            crit = s3.primary_key==self.primary_key_columns
             statement = sql.select([], crit, use_labels=True, for_update=for_update)
             # now for the order by, convert the columns to their corresponding columns
             # in the "rowcount" query, and tack that new order by onto the "rowcount" query

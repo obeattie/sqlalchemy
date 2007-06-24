@@ -1044,6 +1044,7 @@ class ClauseElement(object):
     
     def _clone(self):
         # shallow copy
+        print "CLONING", repr(self)
         c = self.__class__.__new__(self.__class__)
         c.__dict__ = self.__dict__.copy()
         return c
@@ -1592,9 +1593,7 @@ class FromClause(Selectable):
 
     def _get_oid_column(self):
         if not hasattr(self, '_oid_column'):
-            print "LOCATING OID COL ON", repr(self)
             self._oid_column = self._locate_oid_column()
-            print "GOT", repr(self._oid_column)
         return self._oid_column
 
     def _get_all_embedded_columns(self):
@@ -2767,7 +2766,7 @@ class Select(_SelectBaseMixin, FromClause):
         if len(kwargs):
             raise exceptions.ArgumentError("invalid keyword argument(s) for Select: %s" % repr(kwargs.keys()))
 
-    def get_display_froms(self, correlation_state):
+    def get_display_froms(self, correlation_state=None):
         froms = util.Set()
         hide_froms = util.Set()
         
@@ -2791,7 +2790,8 @@ class Select(_SelectBaseMixin, FromClause):
                 hide_froms.add(f)
 
         froms = froms.difference(hide_froms)
-        if len(froms) > 1:
+        
+        if len(froms) > 1 and correlation_state is not None:
             corr = correlation_state[self].get('correlate', util.Set())
             return froms.difference(corr)
         else:
@@ -2814,14 +2814,17 @@ class Select(_SelectBaseMixin, FromClause):
         return froms
         
     def calculate_correlations(self, correlation_state):
-        is_where = is_column = is_from = False
-
         if self not in correlation_state:
             correlation_state[self] = {}
 
         display_froms = self.get_display_froms(correlation_state)
         
         class CorrelatedVisitor(NoColumnVisitor):
+            def __init__(self, is_where=False, is_column=False, is_from=False):
+                self.is_where = is_where
+                self.is_column = is_column
+                self.is_from = is_from
+                
             def visit_compound_select(self, cs):
                 self.visit_select(cs)
 
@@ -2831,49 +2834,41 @@ class Select(_SelectBaseMixin, FromClause):
                 if select is self:
                     return
                 select_state = correlation_state[select]
-                if is_from:
+                if s.is_from:
                     select_state['is_selected_from'] = True
-                if is_where:
+                if s.is_where:
                     select_state['is_where'] = True
                 select_state['is_subquery'] = True
-                if select.should_correlate and (is_where or is_column):
+                if select.should_correlate and (s.is_where or s.is_column):
                     corr = select_state.setdefault('correlate', util.Set())
                     for f in display_froms:
                         corr.add(f)
         
-        vis = CorrelatedVisitor()
+        col_vis = CorrelatedVisitor(is_column=True)
+        where_vis = CorrelatedVisitor(is_where=True)
+        from_vis = CorrelatedVisitor(is_from=True)
         
-        # TODO: clean up this flag thing
-        is_column=True
         for col in self._raw_columns:
-            vis.traverse(col)
-            is_from=True
+            col_vis.traverse(col)
             for f in col._get_from_objects():
                 if f is not self:
-                    vis.traverse(f)
-            is_from=False
+                    from_vis.traverse(f)
 
         for col in list(self.order_by_clause) + list(self.group_by_clause):
-            vis.traverse(col)
+            col_vis.traverse(col)
             
-        is_column=False
-        is_where=True
         if self.whereclause is not None:
-            vis.traverse(self.whereclause)
-            is_from=True
+            where_vis.traverse(self.whereclause)
             for f in self.whereclause._get_from_objects(is_where=True):
                 if f is not self:
-                    vis.traverse(f)
-            is_from=False
+                    from_vis.traverse(f)
                 
-        is_where=False
-        is_from=True
         for elem in self.__froms:
-            vis.traverse(elem)
+            from_vis.traverse(elem)
 
     def get_children(self, clone=False, column_collections=True, **kwargs):
         if clone:
-            pass
+            self._clone_from_clause()
         
         return (column_collections and list(self.columns) or []) + \
             list(self.__froms) + \

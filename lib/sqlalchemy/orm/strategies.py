@@ -290,7 +290,7 @@ class LazyLoader(AbstractRelationLoader):
                 # based polymorphic loads on a per-query basis, this code needs to switch between "mapper" and "select_mapper",
                 # probably via the query's own "mapper" property, and also use one of two "lazy" clauses,
                 # one against the "union" the other not
-                for primary_key in self.select_mapper.pks_by_table[self.select_mapper.mapped_table]:
+                for primary_key in self.select_mapper.primary_key: 
                     bind = self.lazyreverse[primary_key]
                     ident.append(params[bind.key])
                 return q.get(ident)
@@ -303,6 +303,15 @@ class LazyLoader(AbstractRelationLoader):
                 q = q.options(*options)
             q = q.filter(self.lazywhere).params(**params)
 
+            result = q.all()
+            if self.uselist:
+                return result
+            else:
+                if len(result):
+                    return result[0]
+                else:
+                    return None
+            
             if self.uselist:
                 return q.all()
             else:
@@ -378,16 +387,15 @@ class LazyLoader(AbstractRelationLoader):
                         sql.bindparam(bind_label(), None, shortname=rightcol.name, type=binary.left.type, unique=True))
                 reverse[leftcol] = binds[col]
 
-        lazywhere = primaryjoin.copy_container()
+        lazywhere = primaryjoin
         li = mapperutil.BinaryVisitor(visit_binary)
         
         if not secondaryjoin or not reverse_direction:
-            li.traverse(lazywhere)
+            lazywhere = li.traverse(lazywhere, clone=True)
         
         if secondaryjoin is not None:
-            secondaryjoin = secondaryjoin.copy_container()
             if reverse_direction:
-                li.traverse(secondaryjoin)
+                secondaryjoin = li.traverse(secondaryjoin, clone=True)
             lazywhere = sql.and_(lazywhere, secondaryjoin)
         return (lazywhere, binds, reverse)
     _create_lazy_clause = classmethod(_create_lazy_clause)
@@ -561,7 +569,7 @@ class EagerLoader(AbstractRelationLoader):
             # this will locate the selectable inside of any containers it may be a part of (such
             # as a join).  if its inside of a join, we want to outer join on that join, not the 
             # selectable.
-            for fromclause in statement.locate_all_froms():
+            for fromclause in statement.get_display_froms():
                 if fromclause is localparent.mapped_table:
                     towrap = fromclause
                     break
@@ -571,7 +579,7 @@ class EagerLoader(AbstractRelationLoader):
                         break
             else:
                 raise exceptions.InvalidRequestError("EagerLoader cannot locate a clause with which to outer join to, in query '%s' %s" % (str(statement), localparent.mapped_table))
-        
+
         try:
             clauses = self.clauses[parentclauses]
         except KeyError:
@@ -592,8 +600,9 @@ class EagerLoader(AbstractRelationLoader):
 
         if clauses.eager_order_by:
             statement.order_by(*util.to_list(clauses.eager_order_by))
-                
+        
         statement.append_from(statement._outerjoin)
+
         for value in self.select_mapper.props.values():
             value.setup(context, eagertable=clauses.eagertarget, parentclauses=clauses, parentmapper=self.select_mapper)
 

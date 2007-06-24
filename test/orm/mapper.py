@@ -1114,6 +1114,7 @@ class EagerTest(MapperSuperTest):
         """test eager loading of a mapper which is against a select"""
         
         s = select([orders], orders.c.isopen==1).alias('openorders')
+        print "SELECT:", id(s), str(s)
         mapper(Order, s, properties={
             'user':relation(User, lazy=False)
         })

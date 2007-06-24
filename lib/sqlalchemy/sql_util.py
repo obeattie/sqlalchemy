@@ -125,8 +125,11 @@ class AbstractClauseProcessor(sql.NoColumnVisitor):
         process the new list.
         """
 
-        list_ = [o.copy_container() for o in list_]
+        print "C AND P", str(list_[0])
+        print self.selectable
+        list_ = list(list_)
         self.process_list(list_)
+        print "NOW:", str(list_[0])
         return list_
 
     def process_list(self, list_):
@@ -137,7 +140,7 @@ class AbstractClauseProcessor(sql.NoColumnVisitor):
             if elem is not None:
                 list_[i] = elem
             else:
-                self.traverse(list_[i])
+                list_[i] = self.traverse(list_[i], clone=True)
     
     def visit_grouping(self, grouping):
         elem = self.convert_element(grouping.elem)
@@ -151,7 +154,9 @@ class AbstractClauseProcessor(sql.NoColumnVisitor):
                 clist.clauses[i] = n
     
     def visit_unary(self, unary):
+        print "UNARY", unary.element
         elem = self.convert_element(unary.element)
+        print "IS NOW", elem
         if elem is not None:
             unary.element = elem
             
@@ -209,6 +214,7 @@ class ClauseAdapter(AbstractClauseProcessor):
             if col in self.exclude:
                 return None
         newcol = self.selectable.corresponding_column(col, raiseerr=False, require_embedded=True, keys_ok=False)
+        print "NEWCOL", newcol
         if newcol is None and self.equivalents is not None and col in self.equivalents:
             for equiv in self.equivalents[col]:
                 newcol = self.selectable.corresponding_column(equiv, raiseerr=False, require_embedded=True, keys_ok=False)
