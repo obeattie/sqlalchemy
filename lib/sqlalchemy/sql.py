@@ -868,8 +868,8 @@ class ClauseVisitor(object):
     def traverse_single(self, obj):
         meth = getattr(self, "visit_%s" % obj.__visit_name__, None)
         if meth:
-            meth(obj)
-        
+            return meth(obj)
+            
     def traverse(self, obj, stop_on=None, clone=False):
         if clone:
             obj = obj._clone()
@@ -1099,18 +1099,6 @@ class ClauseElement(object):
         """
 
         return False
-
-    def copy_container(self):
-        """Return a copy of this ``ClauseElement``, if this
-        ``ClauseElement`` contains other ``ClauseElements``.
-
-        If this ``ClauseElement`` is not a container, it should return
-        self.  This is used to create copies of expression trees that
-        still reference the same *leaf nodes*.  The new structure can
-        then be restructured without affecting the original.
-        """
-
-        return self
 
     def _find_engine(self):
         """Default strategy for locating an engine within the clause element.
@@ -3031,7 +3019,9 @@ class _UpdateBase(ClauseElement):
 
         for key in parameters.keys():
             value = parameters[key]
-            if _is_literal(value):
+            if isinstance(value, ClauseElement):
+                pass
+            elif _is_literal(value):
                 if _is_literal(key):
                     col = self.table.c[key]
                 else:

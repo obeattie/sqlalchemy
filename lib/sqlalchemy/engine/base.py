@@ -522,7 +522,7 @@ class Connection(Connectable):
             raise exceptions.InvalidRequestError("Unexecuteable object type: " + str(type(object)))
 
     def execute_default(self, default, **kwargs):
-        return default.accept_visitor(self.__engine.dialect.defaultrunner(self))
+        return self.__engine.dialect.defaultrunner(self).traverse_single(default)
 
     def execute_text(self, statement, *multiparams, **params):
         if len(multiparams) == 0:
@@ -729,7 +729,7 @@ class Engine(Connectable):
         else:
             conn = connection
         try:
-            element.accept_visitor(visitorcallable(conn, **kwargs))
+            visitorcallable(conn, **kwargs).traverse(element)
         finally:
             if connection is None:
                 conn.close()
@@ -1248,13 +1248,13 @@ class DefaultRunner(schema.SchemaVisitor):
         
     def get_column_default(self, column):
         if column.default is not None:
-            return column.default.accept_visitor(self)
+            return self.traverse_single(column.default)
         else:
             return None
 
     def get_column_onupdate(self, column):
         if column.onupdate is not None:
-            return column.onupdate.accept_visitor(self)
+            return self.traverse_single(column.onupdate)
         else:
             return None
 

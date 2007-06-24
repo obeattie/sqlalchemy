@@ -761,6 +761,7 @@ class ANSICompiler(sql.Compiled):
                 if sql._is_literal(value):
                     value = sql.bindparam(c.key, value, type=c.type, unique=True)
                 values.append((c, value))
+
         return values
 
     def visit_delete(self, delete_stmt):
@@ -801,7 +802,7 @@ class ANSISchemaGenerator(ANSISchemaBase):
     def visit_metadata(self, metadata):
         collection = [t for t in metadata.table_iterator(reverse=False, tables=self.tables) if (not self.checkfirst or not self.dialect.has_table(self.connection, t.name, schema=t.schema))]
         for table in collection:
-            table.accept_visitor(self)
+            self.traverse_single(table)
         if self.dialect.supports_alter():
             for alterable in self.find_alterables(collection):
                 self.add_foreignkey(alterable)
@@ -809,7 +810,7 @@ class ANSISchemaGenerator(ANSISchemaBase):
     def visit_table(self, table):
         for column in table.columns:
             if column.default is not None:
-                column.default.accept_visitor(self)
+                self.traverse_single(column.default)
             #if column.onupdate is not None:
             #    column.onupdate.accept_visitor(visitor)
 
@@ -826,20 +827,20 @@ class ANSISchemaGenerator(ANSISchemaBase):
             if column.primary_key:
                 first_pk = True
             for constraint in column.constraints:
-                constraint.accept_visitor(self)
+                self.traverse_single(constraint)
 
         # On some DB order is significant: visit PK first, then the
         # other constraints (engine.ReflectionTest.testbasic failed on FB2)
         if len(table.primary_key):
-            table.primary_key.accept_visitor(self)
+            self.traverse_single(table.primary_key)
         for constraint in [c for c in table.constraints if c is not table.primary_key]:
-            constraint.accept_visitor(self)
+            self.traverse_single(constraint)
 
         self.append("\n)%s\n\n" % self.post_create_table(table))
         self.execute()
         if hasattr(table, 'indexes'):
             for index in table.indexes:
-                index.accept_visitor(self)
+                self.traverse_single(index)
 
     def post_create_table(self, table):
         return ''
@@ -935,7 +936,7 @@ class ANSISchemaDropper(ANSISchemaBase):
             for alterable in self.find_alterables(collection):
                 self.drop_foreignkey(alterable)
         for table in collection:
-            table.accept_visitor(self)
+            self.traverse_single(table)
 
     def visit_index(self, index):
         self.append("\nDROP INDEX " + index.name)
@@ -948,7 +949,7 @@ class ANSISchemaDropper(ANSISchemaBase):
     def visit_table(self, table):
         for column in table.columns:
             if column.default is not None:
-                column.default.accept_visitor(self)
+                self.traverse_single(column.default)
 
         self.append("\nDROP TABLE " + self.preparer.format_table(table))
         self.execute()

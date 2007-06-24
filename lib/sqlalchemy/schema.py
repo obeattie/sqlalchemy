@@ -796,13 +796,12 @@ class ColumnDefault(DefaultGenerator):
         super(ColumnDefault, self).__init__(**kwargs)
         self.arg = arg
 
-    def accept_visitor(self, visitor):
-        """Call the visit_column_default method on the given visitor."""
-
+    def _visit_name(self):
         if self.for_update:
-            return visitor.visit_column_onupdate(self)
+            return "column_onupdate"
         else:
-            return visitor.visit_column_default(self)
+            return "column_default"
+    __visit_name__ = property(_visit_name)
 
     def __repr__(self):
         return "ColumnDefault(%s)" % repr(self.arg)
@@ -1065,6 +1064,8 @@ class Index(SchemaItem):
 class MetaData(SchemaItem):
     """Represent a collection of Tables and their associated schema constructs."""
 
+    __visit_name__ = 'metadata'
+    
     def __init__(self, url=None, engine=None, **kwargs):
         """create a new MetaData object.
         
@@ -1176,9 +1177,6 @@ class MetaData(SchemaItem):
             connectable = self.get_engine()
         connectable.drop(self, checkfirst=checkfirst, tables=tables)
 
-    def accept_visitor(self, visitor):
-        visitor.visit_metadata(self)
-
     def _derived_metadata(self):
         return self
 
@@ -1187,6 +1185,8 @@ class BoundMetaData(MetaData):
     """``MetaData`` for which the first argument is a required Engine, url string, or URL instance.
     
     """
+
+    __visit_name__ = 'metadata'
 
     def __init__(self, engine_or_url, **kwargs):
         from sqlalchemy.engine.url import URL
@@ -1201,6 +1201,8 @@ class DynamicMetaData(MetaData):
 multiple ``Engine`` implementations on a dynamically alterable,
 thread-local basis.
     """
+
+    __visit_name__ = 'metadata'
 
     def __init__(self, threadlocal=True, **kwargs):
         if threadlocal:
