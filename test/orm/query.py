@@ -503,7 +503,6 @@ class InstancesTest(QueryTest):
         l = q.add_column("count").from_statement(s).all()
         assert l == expected
 
-    @testbase.unsupported('mysql') # only because of "+" operator requiring "concat" in mysql (fix #475)
     def test_two_columns(self):
         sess = create_session()
         (user7, user8, user9, user10) = sess.query(User).all()

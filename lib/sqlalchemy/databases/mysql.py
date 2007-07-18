@@ -1284,6 +1284,13 @@ class _MySQLPythonRowProxy(object):
 
 
 class MySQLCompiler(ansisql.ANSICompiler):
+    operators = ansisql.ANSICompiler.operators.copy()
+    operators.update(
+        {
+            sql.ColumnOperators.concat_op : lambda x, y:"concat(%s, %s)" % (x, y)
+        }
+    )
+
     def visit_cast(self, cast):
         if isinstance(cast.type, (sqltypes.Date, sqltypes.Time, sqltypes.DateTime)):
             return super(MySQLCompiler, self).visit_cast(cast)

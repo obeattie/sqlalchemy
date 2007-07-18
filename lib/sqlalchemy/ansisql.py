@@ -12,7 +12,7 @@ module.
 
 from sqlalchemy import schema, sql, engine, util, sql_util, exceptions
 from  sqlalchemy.engine import default
-import string, re, sets, weakref, random
+import string, re, sets, random, operator
 
 ANSI_FUNCS = sets.ImmutableSet(['CURRENT_DATE', 'CURRENT_TIME', 'CURRENT_TIMESTAMP',
                                 'CURRENT_USER', 'LOCALTIME', 'LOCALTIMESTAMP',
@@ -42,6 +42,31 @@ ILLEGAL_INITIAL_CHARACTERS = util.Set(string.digits + '$')
 
 BIND_PARAMS = re.compile(r'(?<![:\w\x5c]):(\w+)(?!:)', re.UNICODE)
 BIND_PARAMS_ESC = re.compile(r'\x5c(:\w+)(?!:)', re.UNICODE)
+
+OPERATORS =  {
+    operator.and_ : 'AND',
+    operator.or_ : 'OR',
+    operator.inv : 'NOT',
+    operator.add : '+',
+    operator.mul : '*',
+    operator.sub : '-',
+    operator.div : '/',
+    operator.mod : '%',
+    operator.truediv : '/',
+    operator.lt : '<',
+    operator.le : '<=',
+    operator.ne : '!=',
+    operator.gt : '>',
+    operator.ge : '>=',
+    operator.eq : '=',
+    sql.ColumnOperators.concat_op : '||',
+    sql.ColumnOperators.like_op : 'LIKE',
+    sql.ColumnOperators.notlike_op : 'NOT LIKE',
+    sql.ColumnOperators.between_op : 'BETWEEN',
+    sql.ColumnOperators.in_op : 'IN',
+    sql.ColumnOperators.notin_op : 'NOT IN',
+    sql.ColumnOperators.comma_op : ', ',
+}
 
 class ANSIDialect(default.DefaultDialect):
     def __init__(self, cache_identifiers=True, **kwargs):
@@ -77,6 +102,8 @@ class ANSICompiler(engine.Compiled):
 
     __traverse_options__ = {'column_collections':False, 'entry':True}
 
+    operators = OPERATORS
+    
     def __init__(self, dialect, statement, parameters=None, **kwargs):
         """Construct a new ``ANSICompiler`` object.
 
@@ -317,15 +344,15 @@ class ANSICompiler(engine.Compiled):
     def visit_null(self, null):
         self.strings[null] = 'NULL'
 
-    def visit_clauselist(self, list):
-        sep = list.operator
-        if sep == ',':
-            sep = ', '
-        elif sep is None or sep == " ":
+    def visit_clauselist(self, clauselist):
+        sep = clauselist.operator
+        if sep is None:
             sep = " "
+        elif sep == sql.ColumnOperators.comma_op:
+            sep = ', '
         else:
-            sep = " " + sep + " "
-        self.strings[list] = string.join([s for s in [self.strings[c] for c in list.clauses] if s is not None], sep)
+            sep = " " + self.operator_string(clauselist.operator) + " "
+        self.strings[clauselist] = string.join([s for s in [self.strings[c] for c in clauselist.clauses] if s is not None], sep)
 
     def apply_function_parens(self, func):
         return func.name.upper() not in ANSI_FUNCS or len(func.clauses) > 0
@@ -362,20 +389,20 @@ class ANSICompiler(engine.Compiled):
     def visit_unary(self, unary):
         s = self.strings[unary.element]
         if unary.operator:
-            s = unary.operator + " " + s
+            s = self.operator_string(unary.operator) + " " + s
         if unary.modifier:
             s = s + " " + unary.modifier
         self.strings[unary] = s
         
     def visit_binary(self, binary):
-        result = self.strings[binary.left]
-        if binary.operator is not None:
-            result += " " + self.binary_operator_string(binary)
-        result += " " + self.strings[binary.right]
-        self.strings[binary] = result
-
-    def binary_operator_string(self, binary):
-        return binary.operator
+        op = self.operator_string(binary.operator)
+        if callable(op):
+            self.strings[binary] = op(binary.left, binary.right)
+        else:
+            self.strings[binary] = self.strings[binary.left] + " " + op + " " + self.strings[binary.right]
+        
+    def operator_string(self, operator):
+        return self.operators.get(operator, str(operator))
 
     def visit_bindparam(self, bindparam):
         # apply truncation to the ultimate generated name
@@ -754,7 +781,7 @@ class ANSICompiler(engine.Compiled):
         # no parameters in the statement, no parameters in the
         # compiled params - return binds for all columns
         if self.parameters is None and stmt.parameters is None:
-            return [(c, sql.bindparam(c.key, type=c.type)) for c in stmt.table.columns]
+            return [(c, sql.bindparam(c.key, type_=c.type)) for c in stmt.table.columns]
 
         def to_col(key):
             if not isinstance(key, sql._ColumnClause):
@@ -782,7 +809,7 @@ class ANSICompiler(engine.Compiled):
             if parameters.has_key(c):
                 value = parameters[c]
                 if sql._is_literal(value):
-                    value = sql.bindparam(c.key, value, type=c.type, unique=True)
+                    value = sql.bindparam(c.key, value, type_=c.type, unique=True)
                 values.append((c, value))
 
         return values
