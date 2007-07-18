@@ -51,7 +51,7 @@ OPERATORS =  {
     operator.mul : '*',
     operator.sub : '-',
     operator.div : '/',
-    operator.mod : '%',
+    operator.mod : '%%',
     operator.truediv : '/',
     operator.lt : '<',
     operator.le : '<=',
@@ -62,10 +62,17 @@ OPERATORS =  {
     sql.ColumnOperators.concat_op : '||',
     sql.ColumnOperators.like_op : 'LIKE',
     sql.ColumnOperators.notlike_op : 'NOT LIKE',
+    sql.ColumnOperators.ilike_op : 'ILIKE',
+    sql.ColumnOperators.notilike_op : 'NOT ILIKE',
     sql.ColumnOperators.between_op : 'BETWEEN',
     sql.ColumnOperators.in_op : 'IN',
     sql.ColumnOperators.notin_op : 'NOT IN',
     sql.ColumnOperators.comma_op : ', ',
+    sql.Operators.from_ : 'FROM',
+    sql.Operators.as_ : 'AS',
+    sql.Operators.exists : 'EXISTS',
+    sql.Operators.is_ : 'IS',
+    sql.Operators.isnot : 'IS NOT'
 }
 
 class ANSIDialect(default.DefaultDialect):

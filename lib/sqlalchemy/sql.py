@@ -417,7 +417,7 @@ def cast(clause, totype, **kwargs):
 def extract(field, expr):
     """Return the clause ``extract(field FROM expr)``."""
 
-    expr = _BinaryExpression(text(field), expr, "FROM")
+    expr = _BinaryExpression(text(field), expr, Operators.from_)
     return func.extract(expr)
 
 def exists(*args, **kwargs):
@@ -1100,6 +1100,26 @@ class ClauseElement(object):
             return _UnaryExpression(self.self_group(against=operator.inv), operator=operator.inv, negate=None)
 
 class Operators(object):
+    def from_():
+        raise NotImplementedError()
+    from_ = staticmethod(from_)
+    
+    def as_():
+        raise NotImplementedError()
+    as_ = staticmethod(as_)
+    
+    def exists():
+        raise NotImplementedError()
+    exists = staticmethod(exists)
+
+    def is_():
+        raise NotImplementedError()
+    is_ = staticmethod(is_)
+    
+    def isnot():
+        raise NotImplementedError()
+    isnot = staticmethod(isnot)
+    
     def __and__(self, other):
         return self.operate(operator.and_, other)
 
@@ -1129,6 +1149,14 @@ class ColumnOperators(Operators):
     def notlike_op(a, b):
         raise NotImplementedError()
     notlike_op = staticmethod(notlike_op)
+
+    def ilike_op(a, b):
+        return a.ilike(b)
+    ilike_op = staticmethod(ilike_op)
+    
+    def notilike_op(a, b):
+        raise NotImplementedError()
+    notilike_op = staticmethod(notilike_op)
     
     def between_op(a, b):
         return a.between(b)
@@ -1226,22 +1254,25 @@ class ColumnOperators(Operators):
 
 # precedence ordering for common operators.  if an operator is not present in this list,
 # it will be parenthesized when grouped against other operators
+_smallest = object()
+_largest = object()
+
 PRECEDENCE = {
-    'FROM':15,
+    Operators.from_:15,
     operator.mul:7,
     operator.div:7,
     operator.mod:7,
     operator.add:6,
     operator.sub:6,
     ColumnOperators.concat_op:6,
-    'ILIKE':5,
-    'NOT ILIKE':5,
+    ColumnOperators.ilike_op:5,
+    ColumnOperators.notilike_op:5,
     ColumnOperators.like_op:5,
     ColumnOperators.notlike_op:5,
     ColumnOperators.in_op:5,
     ColumnOperators.notin_op:5,
-    'IS':5,
-    'IS NOT':5,
+    Operators.is_:5,
+    Operators.isnot:5,
     operator.eq:5,
     operator.ne:5,
     operator.gt:5,
@@ -1253,10 +1284,10 @@ PRECEDENCE = {
     operator.and_:3,
     operator.or_:2,
     ColumnOperators.comma_op:-1,
-    'AS':-1,
-    'EXISTS':0,
-    '_smallest': -1000,
-    '_largest': 1000
+    Operators.as_:-1,
+    Operators.exists:0,
+    _smallest: -1000,
+    _largest: 1000
 }
 
 class _CompareMixin(ColumnOperators):
@@ -1332,16 +1363,15 @@ class _CompareMixin(ColumnOperators):
             args.append(o)
         return self.__compare(op, ClauseList(*args).self_group(against=op), negate=negate_op)
 
-    def notin(self, *other):
-        return self._in_impl(operator.notin_op, operator.in_op, *other)
-        
     def startswith(self, other):
         """produce the clause ``LIKE '<other>%'``"""
+        
         perc = isinstance(other,(str,unicode)) and '%' or literal('%',type_= sqltypes.String)
         return self.__compare('LIKE', other + perc)
 
     def endswith(self, other):
         """produce the clause ``LIKE '%<other>'``"""
+        
         if isinstance(other,(str,unicode)): po = '%' + other
         else:
             po = literal('%', type_=sqltypes.String) + other
@@ -2000,7 +2030,7 @@ class ClauseList(ClauseElement):
         return f
 
     def self_group(self, against=None):
-        if self.group and self.operator != against and PRECEDENCE.get(self.operator, PRECEDENCE['_smallest']) <= PRECEDENCE.get(against, PRECEDENCE['_largest']):
+        if self.group and self.operator != against and PRECEDENCE.get(self.operator, PRECEDENCE[_smallest]) <= PRECEDENCE.get(against, PRECEDENCE[_largest]):
             return _Grouping(self)
         else:
             return self
@@ -2158,7 +2188,7 @@ class _UnaryExpression(ColumnElement):
             return super(_UnaryExpression, self)._negate()
     
     def self_group(self, against):
-        if self.operator and PRECEDENCE.get(self.operator, PRECEDENCE['_smallest']) <= PRECEDENCE.get(against, PRECEDENCE['_largest']):
+        if self.operator and PRECEDENCE.get(self.operator, PRECEDENCE[_smallest]) <= PRECEDENCE.get(against, PRECEDENCE[_largest]):
             return _Grouping(self)
         else:
             return self
@@ -2200,7 +2230,7 @@ class _BinaryExpression(ColumnElement):
         
     def self_group(self, against=None):
         # use small/large defaults for comparison so that unknown operators are always parenthesized
-        if self.operator != against and (PRECEDENCE.get(self.operator, PRECEDENCE['_smallest']) <= PRECEDENCE.get(against, PRECEDENCE['_largest'])):
+        if self.operator != against and (PRECEDENCE.get(self.operator, PRECEDENCE[_smallest]) <= PRECEDENCE.get(against, PRECEDENCE[_largest])):
             return _Grouping(self)
         else:
             return self
@@ -2217,7 +2247,7 @@ class _Exists(_UnaryExpression):
     def __init__(self, *args, **kwargs):
         kwargs['correlate'] = True
         s = select(*args, **kwargs).self_group()
-        _UnaryExpression.__init__(self, s, operator="EXISTS")
+        _UnaryExpression.__init__(self, s, operator=Operators.exists)
 
     def _hide_froms(self, **modifiers):
         return self._get_from_objects(**modifiers)
@@ -2518,7 +2548,7 @@ class _Label(ColumnElement):
             obj = obj.obj
         self.name = name or "{ANON %d %s}" % (id(self), getattr(obj, 'name', 'anon'))
 
-        self.obj = obj.self_group(against='AS')
+        self.obj = obj.self_group(against=Operators.as_)
         self.case_sensitive = getattr(obj, "case_sensitive", True)
         self.type = sqltypes.to_instance(type_ or getattr(obj, 'type', None))
 
