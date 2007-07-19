@@ -709,22 +709,9 @@ class ANSICompiler(engine.Compiled):
         colparams = self._get_colparams(insert_stmt, default_params)
 
         self.inline_params = util.Set()
-        def create_param(col, p):
-            if isinstance(p, sql._BindParamClause):
-                self.binds[p.key] = p
-                if p.shortname is not None:
-                    self.binds[p.shortname] = p
-                return self.bindparam_string(self._truncate_bindparam(p))
-            else:
-                self.inline_params.add(col)
-                self.traverse(p)
-                if isinstance(p, sql.ClauseElement) and not isinstance(p, sql.ColumnElement):
-                    return "(" + self.strings[p] + ")"
-                else:
-                    return self.strings[p]
 
         text = ("INSERT INTO " + self.preparer.format_table(insert_stmt.table) + " (" + string.join([self.preparer.format_column(c[0]) for c in colparams], ', ') + ")" +
-         " VALUES (" + string.join([create_param(*c) for c in colparams], ', ') + ")")
+         " VALUES (" + string.join([self._create_param(*c) for c in colparams], ', ') + ")")
 
         self.strings[insert_stmt] = text
 
@@ -744,25 +731,26 @@ class ANSICompiler(engine.Compiled):
         colparams = self._get_colparams(update_stmt, default_params)
 
         self.inline_params = util.Set()
-        def create_param(col, p):
-            if isinstance(p, sql._BindParamClause):
-                self.binds[p.key] = p
-                self.binds[p.shortname] = p
-                return self.bindparam_string(self._truncate_bindparam(p))
-            else:
-                self.traverse(p)
-                self.inline_params.add(col)
-                if isinstance(p, sql.ClauseElement) and not isinstance(p, sql.ColumnElement):
-                    return "(" + self.strings[p] + ")"
-                else:
-                    return self.strings[p]
 
-        text = "UPDATE " + self.preparer.format_table(update_stmt.table) + " SET " + string.join(["%s=%s" % (self.preparer.format_column(c[0]), create_param(*c)) for c in colparams], ', ')
+        text = "UPDATE " + self.preparer.format_table(update_stmt.table) + " SET " + string.join(["%s=%s" % (self.preparer.format_column(c[0]), self._create_param(*c)) for c in colparams], ', ')
 
         if update_stmt._whereclause:
             text += " WHERE " + self.strings[update_stmt._whereclause]
 
         self.strings[update_stmt] = text
+
+    def _create_param(self, col, p):
+        if isinstance(p, sql._BindParamClause):
+            self.binds[p.key] = p
+            self.binds[p.shortname] = p
+            return self.bindparam_string(self._truncate_bindparam(p))
+        else:
+            self.traverse(p)
+            self.inline_params.add(col)
+            if isinstance(p, sql.ClauseElement) and not isinstance(p, sql.ColumnElement):
+                return "(" + self.strings[p] + ")"
+            else:
+                return self.strings[p]
 
 
     def _get_colparams(self, stmt, default_params):
