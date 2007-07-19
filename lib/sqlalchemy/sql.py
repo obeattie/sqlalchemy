@@ -1311,7 +1311,7 @@ class _CompareMixin(ColumnOperators):
         obj = self._check_literal(obj)
 
         type_ = self._compare_type(obj)
-        if op == operator.add and isinstance(type_, (sqltypes.String)):
+        if op == operator.add and isinstance(type_, (sqltypes.Concatenable)):
             op = ColumnOperators.concat_op
         
         return _BinaryExpression(self.clause_element(), obj, op, type_=type_)

@@ -4,7 +4,7 @@
 # This module is part of SQLAlchemy and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
-import datetime, string, types, re, random, warnings
+import datetime, string, types, re, random, warnings, operator
 
 from sqlalchemy import util, sql, schema, ansisql, exceptions
 from sqlalchemy.engine import base, default
@@ -83,7 +83,7 @@ class PGBoolean(sqltypes.Boolean):
     def get_col_spec(self):
         return "BOOLEAN"
 
-class PGArray(sqltypes.TypeEngine):
+class PGArray(sqltypes.TypeEngine, sqltypes.Concatenable):
     def __init__(self, item_type):
         if isinstance(item_type, type):
             item_type = item_type()
@@ -355,7 +355,7 @@ class PGDialect(ansisql.ANSIDialect):
                 ORDER BY a.attnum
             """ % schema_where_clause
 
-            s = sql.text(SQL_COLS, bindparams=[sql.bindparam('table_name', type=sqltypes.Unicode), sql.bindparam('schema', type=sqltypes.Unicode)], typemap={'attname':sqltypes.Unicode})
+            s = sql.text(SQL_COLS, bindparams=[sql.bindparam('table_name', type_=sqltypes.Unicode), sql.bindparam('schema', type_=sqltypes.Unicode)], typemap={'attname':sqltypes.Unicode})
             c = connection.execute(s, table_name=table.name,
                                       schema=table.schema)
             rows = c.fetchall()
@@ -525,6 +525,13 @@ class PGDialect(ansisql.ANSIDialect):
         
         
 class PGCompiler(ansisql.ANSICompiler):
+    operators = ansisql.ANSICompiler.operators.copy()
+    operators.update(
+        {
+            operator.mod : '%%'
+        }
+    )
+
     def visit_insert_column(self, column, parameters):
         # all column primary key inserts must be explicitly present
         if column.primary_key:
@@ -564,14 +571,6 @@ class PGCompiler(ansisql.ANSICompiler):
             return " FOR UPDATE NOWAIT"
         else:
             return super(PGCompiler, self).for_update_clause(select)
-
-    def binary_operator_string(self, binary):
-        if isinstance(binary.type, (sqltypes.String, PGArray)) and binary.operator == '+':
-            return '||'
-        elif binary.operator == '%':
-            return '%%'
-        else:
-            return ansisql.ANSICompiler.binary_operator_string(self, binary)
 
 class PGSchemaGenerator(ansisql.ANSISchemaGenerator):
     def get_column_specification(self, column, **kwargs):

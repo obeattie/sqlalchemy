@@ -51,7 +51,7 @@ OPERATORS =  {
     operator.mul : '*',
     operator.sub : '-',
     operator.div : '/',
-    operator.mod : '%%',
+    operator.mod : '%',
     operator.truediv : '/',
     operator.lt : '<',
     operator.le : '<=',
@@ -298,7 +298,7 @@ class ANSICompiler(engine.Compiled):
             if isinstance(label.obj, sql._ColumnClause):
                 self.column_labels[label.obj._label] = labelname
             self.column_labels[label.name] = labelname
-        self.strings[label] = self.strings[label.obj] + " AS "  + self.preparer.format_label(label, labelname)
+        self.strings[label] = " ".join([self.strings[label.obj], self.operator_string(sql.ColumnOperators.as_), self.preparer.format_label(label, labelname)])
         
     def visit_column(self, column):
         # there is actually somewhat of a ruleset when you would *not* necessarily
