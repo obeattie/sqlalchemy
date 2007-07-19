@@ -1040,12 +1040,16 @@ class CRUDTest(SQLTest):
             values = {
             table1.c.name : table1.c.name + "lala",
             table1.c.myid : func.do_stuff(table1.c.myid, literal('hoho'))
-            }), "UPDATE mytable SET myid=do_stuff(mytable.myid, :literal_2), name=mytable.name || :mytable_name WHERE mytable.myid = hoho(:hoho) AND mytable.name = :literal || mytable.name || :literal_1")
+            }), "UPDATE mytable SET myid=do_stuff(mytable.myid, :literal_2), name=(mytable.name || :mytable_name) WHERE mytable.myid = hoho(:hoho) AND mytable.name = :literal || mytable.name || :literal_1")
         
     def testcorrelatedupdate(self):
         # test against a straight text subquery
-        u = update(table1, values = {table1.c.name : text("select name from mytable where id=mytable.id")})
+        u = update(table1, values = {table1.c.name : text("(select name from mytable where id=mytable.id)")})
         self.runtest(u, "UPDATE mytable SET name=(select name from mytable where id=mytable.id)")
+
+        mt = table1.alias()
+        u = update(table1, values = {table1.c.name : select([mt.c.name], mt.c.myid==table1.c.myid)})
+        self.runtest(u, "UPDATE mytable SET name=(SELECT mytable_1.name FROM mytable AS mytable_1 WHERE mytable_1.myid = mytable.myid)")
         
         # test against a regular constructed subquery
         s = select([table2], table2.c.otherid == table1.c.myid)

@@ -3269,7 +3269,7 @@ class _UpdateBase(ClauseElement):
         for key in parameters.keys():
             value = parameters[key]
             if isinstance(value, ClauseElement):
-                pass
+                parameters[key] = value.self_group()
             elif _is_literal(value):
                 if _is_literal(key):
                     col = self.table.c[key]

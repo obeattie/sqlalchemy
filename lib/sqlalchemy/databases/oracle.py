@@ -503,13 +503,8 @@ class OracleCompiler(ansisql.ANSICompiler):
 
         self.traverse_single(self.wheres[join])
 
-    def visit_insert_sequence(self, column, sequence, parameters):
-        """This is the `sequence` equivalent to ``ANSICompiler``'s
-        `visit_insert_column_default` which ensures that the column is
-        present in the generated column list.
-        """
-
-        parameters.setdefault(column.key, None)
+    def uses_sequences_for_inserts(self):
+        return True
 
     def visit_alias(self, alias):
         """Oracle doesn't like ``FROM table AS alias``.  Is the AS standard SQL??"""

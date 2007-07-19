@@ -532,15 +532,8 @@ class PGCompiler(ansisql.ANSICompiler):
         }
     )
 
-    def visit_insert_column(self, column, parameters):
-        # all column primary key inserts must be explicitly present
-        if column.primary_key:
-            parameters[column.key] = None
-
-    def visit_insert_sequence(self, column, sequence, parameters):
-        """this is the 'sequence' equivalent to ANSICompiler's 'visit_insert_column_default' which ensures
-        that the column is present in the generated column list"""
-        parameters.setdefault(column.key, None)
+    def uses_sequences_for_inserts(self):
+        return True
 
     def limit_clause(self, select):
         text = ""

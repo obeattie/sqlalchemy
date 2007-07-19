@@ -644,139 +644,86 @@ class ANSICompiler(engine.Compiled):
             " ON " + self.strings[join.onclause])
         self.strings[join] = self.froms[join]
 
-    def visit_insert_column_default(self, column, default, parameters):
-        """Called when visiting an ``Insert`` statement.
-
-        For each column in the table that contains a ``ColumnDefault``
-        object, add a blank *placeholder* parameter so the ``Insert``
-        gets compiled with this column's name in its column and
-        ``VALUES`` clauses.
-        """
-
-        parameters.setdefault(column.key, None)
-
-    def visit_update_column_default(self, column, default, parameters):
-        """Called when visiting an ``Update`` statement.
-
-        For each column in the table that contains a ``ColumnDefault``
-        object as an onupdate, add a blank *placeholder* parameter so
-        the ``Update`` gets compiled with this column's name as one of
-        its ``SET`` clauses.
-        """
-
-        parameters.setdefault(column.key, None)
-
-    def visit_insert_sequence(self, column, sequence, parameters):
-        """Called when visiting an ``Insert`` statement.
-
-        This may be overridden compilers that support sequences to
-        place a blank *placeholder* parameter for each column in the
-        table that contains a Sequence object, so the Insert gets
-        compiled with this column's name in its column and ``VALUES``
-        clauses.
-        """
-
-        pass
-
-    def visit_insert_column(self, column, parameters):
-        """Called when visiting an ``Insert`` statement.
-
-        This may be overridden by compilers who disallow NULL columns
-        being set in an ``Insert`` where there is a default value on
-        the column (i.e. postgres), to remove the column for which
-        there is a NULL insert from the parameter list.
-        """
-
-        pass
-
+    def uses_sequences_for_inserts(self):
+        return False
+        
     def visit_insert(self, insert_stmt):
-        # scan the table's columns for defaults that have to be pre-set for an INSERT
-        # add these columns to the parameter list via visit_insert_XXX methods
-        default_params = {}
+
+        # search for columns who will be required to have an explicit bound value.
+        # for inserts, this includes Python-side defaults, columns with sequences for dialects
+        # that support sequences, and primary key columns for dialects that explicitly insert
+        # pre-generated primary key values
+        required_cols = util.Set()
         class DefaultVisitor(schema.SchemaVisitor):
-            def visit_column(s, c):
-                self.visit_insert_column(c, default_params)
+            def visit_column(s, cd):
+                if c.primary_key and self.uses_sequences_for_inserts():
+                    required_cols.add(c)
             def visit_column_default(s, cd):
-                self.visit_insert_column_default(c, cd, default_params)
+                required_cols.add(c)
             def visit_sequence(s, seq):
-                self.visit_insert_sequence(c, seq, default_params)
+                if self.uses_sequences_for_inserts():
+                    required_cols.add(c)
         vis = DefaultVisitor()
         for c in insert_stmt.table.c:
             if (isinstance(c, schema.SchemaItem) and (self.parameters is None or self.parameters.get(c.key, None) is None)):
                 vis.traverse(c)
 
         self.isinsert = True
-        colparams = self._get_colparams(insert_stmt, default_params)
-
-        self.inline_params = util.Set()
+        colparams = self._get_colparams(insert_stmt, required_cols)
 
         text = ("INSERT INTO " + self.preparer.format_table(insert_stmt.table) + " (" + string.join([self.preparer.format_column(c[0]) for c in colparams], ', ') + ")" +
-         " VALUES (" + string.join([self._create_param(*c) for c in colparams], ', ') + ")")
+         " VALUES (" + string.join([c[1] for c in colparams], ', ') + ")")
 
         self.strings[insert_stmt] = text
 
     def visit_update(self, update_stmt):
-        # scan the table's columns for onupdates that have to be pre-set for an UPDATE
-        # add these columns to the parameter list via visit_update_XXX methods
-        default_params = {}
+        
+        # search for columns who will be required to have an explicit bound value.
+        # for updates, this includes Python-side "onupdate" defaults.
+        required_cols = util.Set()
         class OnUpdateVisitor(schema.SchemaVisitor):
             def visit_column_onupdate(s, cd):
-                self.visit_update_column_default(c, cd, default_params)
+                required_cols.add(c)
         vis = OnUpdateVisitor()
         for c in update_stmt.table.c:
             if (isinstance(c, schema.SchemaItem) and (self.parameters is None or self.parameters.get(c.key, None) is None)):
                 vis.traverse(c)
 
         self.isupdate = True
-        colparams = self._get_colparams(update_stmt, default_params)
+        colparams = self._get_colparams(update_stmt, required_cols)
 
-        self.inline_params = util.Set()
-
-        text = "UPDATE " + self.preparer.format_table(update_stmt.table) + " SET " + string.join(["%s=%s" % (self.preparer.format_column(c[0]), self._create_param(*c)) for c in colparams], ', ')
+        text = "UPDATE " + self.preparer.format_table(update_stmt.table) + " SET " + string.join(["%s=%s" % (self.preparer.format_column(c[0]), c[1]) for c in colparams], ', ')
 
         if update_stmt._whereclause:
             text += " WHERE " + self.strings[update_stmt._whereclause]
 
         self.strings[update_stmt] = text
 
-    def _create_param(self, col, p):
-        if isinstance(p, sql._BindParamClause):
-            self.binds[p.key] = p
-            self.binds[p.shortname] = p
-            return self.bindparam_string(self._truncate_bindparam(p))
-        else:
-            self.traverse(p)
-            self.inline_params.add(col)
-            if isinstance(p, sql.ClauseElement) and not isinstance(p, sql.ColumnElement):
-                return "(" + self.strings[p] + ")"
-            else:
-                return self.strings[p]
-
-
-    def _get_colparams(self, stmt, default_params):
-        """Organize ``UPDATE``/``INSERT`` ``SET``/``VALUES`` parameters into a list of tuples.
-
-        Each tuple will contain the ``Column`` and a ``ClauseElement``
-        representing the value to be set (usually a ``_BindParamClause``,
-        but could also be other SQL expressions.)
-
-        The list of tuples will determine the columns that are
-        actually rendered into the ``SET``/``VALUES`` clause of the
-        rendered ``UPDATE``/``INSERT`` statement.  It will also
-        determine how to generate the list/dictionary of bind
-        parameters at execution time (i.e. ``get_params()``).
-
-        This list takes into account the `values` keyword specified
-        to the statement, the parameters sent to this Compiled
-        instance, and the default bind parameter values corresponding
-        to the dialect's behavior for otherwise unspecified primary
-        key columns.
+    def _get_colparams(self, stmt, required_cols):
+        """create a set of tuples representing column/string pairs for use 
+        in an INSERT or UPDATE statement.
+        
+        This method may generate new bind params within this compiled
+        based on the given set of "required columns", which are required
+        to have a value set in the statement.
         """
+
+        def create_bind_param(col, value):
+            bindparam = sql.bindparam(col.key, value, type_=col.type, unique=True)
+            self.binds[col.key] = bindparam
+            return self.bindparam_string(self._truncate_bindparam(bindparam))
 
         # no parameters in the statement, no parameters in the
         # compiled params - return binds for all columns
         if self.parameters is None and stmt.parameters is None:
-            return [(c, sql.bindparam(c.key, type_=c.type)) for c in stmt.table.columns]
+            return [(c, create_bind_param(c, None)) for c in stmt.table.columns]
+
+        def create_clause_param(col, value):
+            self.traverse(value)
+            self.inline_params.add(col)
+            return self.strings[value]
+
+        self.inline_params = util.Set()
 
         def to_col(key):
             if not isinstance(key, sql._ColumnClause):
@@ -795,18 +742,20 @@ class ANSICompiler(engine.Compiled):
             for k, v in stmt.parameters.iteritems():
                 parameters.setdefault(to_col(k), v)
 
-        for k, v in default_params.iteritems():
-            parameters.setdefault(to_col(k), v)
+        for col in required_cols:
+            parameters.setdefault(col, None)
 
         # create a list of column assignment clauses as tuples
         values = []
         for c in stmt.table.columns:
-            if parameters.has_key(c):
+            if c in parameters:
                 value = parameters[c]
                 if sql._is_literal(value):
-                    value = sql.bindparam(c.key, value, type_=c.type, unique=True)
+                    value = create_bind_param(c, value)
+                else:
+                    value = create_clause_param(c, value)
                 values.append((c, value))
-
+        
         return values
 
     def visit_delete(self, delete_stmt):
@@ -868,8 +817,6 @@ class ANSISchemaGenerator(ANSISchemaBase):
         for column in table.columns:
             if column.default is not None:
                 self.traverse_single(column.default)
-            #if column.onupdate is not None:
-            #    column.onupdate.accept_visitor(visitor)
 
         self.append("\nCREATE TABLE " + self.preparer.format_table(table) + " (")
 

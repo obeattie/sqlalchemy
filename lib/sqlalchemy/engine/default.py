@@ -296,6 +296,9 @@ class DefaultExecutionContext(base.ExecutionContext):
         statement.
         """
 
+        # TODO: this calculation of defaults is one of the places SA slows down inserts.
+        # look into optimizing this for a list of params where theres no defaults defined
+        # (i.e. analyze the first batch of params).
         if self.compiled.isinsert:
             if isinstance(self.compiled_parameters, list):
                 plist = self.compiled_parameters
