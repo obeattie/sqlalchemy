@@ -1296,9 +1296,9 @@ class _CompareMixin(ColumnOperators):
     def __compare(self, op, obj, negate=None):
         if obj is None or isinstance(obj, _Null):
             if op == operator.eq:
-                return _BinaryExpression(self.clause_element(), null(), 'IS', negate='IS NOT')
+                return _BinaryExpression(self.clause_element(), null(), Operators.is_, negate=Operators.isnot)
             elif op == operator.ne:
-                return _BinaryExpression(self.clause_element(), null(), 'IS NOT', negate='IS')
+                return _BinaryExpression(self.clause_element(), null(), Operators.isnot, negate=Operators.is_)
             else:
                 raise exceptions.ArgumentError("Only '='/'!=' operators can be used with NULL")
         else:
