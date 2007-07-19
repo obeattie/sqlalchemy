@@ -2061,7 +2061,7 @@ class _CalculatedClause(ColumnElement):
     
     def __init__(self, name, *clauses, **kwargs):
         self.name = name
-        self.type = sqltypes.to_instance(kwargs.get('type', None))
+        self.type = sqltypes.to_instance(kwargs.get('type_', None))
         self._bind = kwargs.get('bind', None)
         self.group = kwargs.pop('group', True)
         self.clauses = ClauseList(operator=kwargs.get('operator', None), group_contents=kwargs.get('group_contents', True), *clauses)
@@ -2104,10 +2104,8 @@ class _Function(_CalculatedClause, FromClause):
     """
 
     def __init__(self, name, *clauses, **kwargs):
-        self.type = sqltypes.to_instance(kwargs.get('type', None))
         self.packagenames = kwargs.get('packagenames', None) or []
         kwargs['operator'] = ColumnOperators.comma_op
-        self._bind = kwargs.get('bind', None)
         _CalculatedClause.__init__(self, name, **kwargs)
         for c in clauses:
             self.append(c)

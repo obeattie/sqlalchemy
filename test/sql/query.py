@@ -281,6 +281,10 @@ class QueryTest(PersistTest):
         y = testbase.db.func.current_date().select().execute().scalar()
         z = testbase.db.func.current_date().scalar()
         assert x == y == z
+        
+        x = testbase.db.func.current_date(type_=Date)
+        assert isinstance(x.type, Date)
+        assert isinstance(x.execute().scalar(), datetime.date)
 
     def test_conn_functions(self):
         conn = testbase.db.connect()
