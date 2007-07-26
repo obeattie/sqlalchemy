@@ -220,8 +220,6 @@ class ANSICompiler(engine.Compiled):
 
     def compile(self):
         self.string = self.process(self.statement)
-        if self.string is None:
-            raise "its none..."
         self.after_compile()
     
     def process(self, obj, **kwargs):
@@ -231,6 +229,13 @@ class ANSICompiler(engine.Compiled):
         return self.correlate_state[select].get('is_subquery', False)
         
     def get_whereclause(self, obj):
+        """given a FROM clause, return an additional WHERE condition that should be 
+        applied to a SELECT. 
+        
+        Currently used by Oracle to provide WHERE criterion for JOIN and OUTER JOIN
+        constructs in non-ansi mode.
+        """
+        
         return None
 
     def construct_params(self, params):
