@@ -312,7 +312,7 @@ class ANSICompiler(engine.Compiled):
                     pkname = (pk.is_literal and name or self._truncated_identifier("colident", pk.name))
                     return self.preparer.format_column_with_table(list(column.table.primary_key)[0], column_name=pkname, table_name=self._anonymize(column.table.name))
                 else:
-                    return ""
+                    return None
             else:
                 return self.preparer.format_column_with_table(column, column_name=name, table_name=self._anonymize(column.table.name))
 
@@ -534,7 +534,6 @@ class ANSICompiler(engine.Compiled):
 
             w = self.get_whereclause(f)
             if w is not None:
-                # TODO: move this more into the oracle module
                 if whereclause is not None:
                     whereclause = sql.and_(w, whereclause)
                 else:
