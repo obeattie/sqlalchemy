@@ -393,8 +393,8 @@ class Interval(TypeDecorator):
 
         Converting is very simple - just use epoch(zero timestamp, 01.01.1970) as
         base, so if we need to store timedelta = 1 day (24 hours) in database it
-        will be stored as DateTime = '2nd Jan 1970 00:00', see convert_bind_param
-        and convert_result_value to actual conversion code
+        will be stored as DateTime = '2nd Jan 1970 00:00', see bind_processor
+        and result_processor to actual conversion code
     """
     #Empty useless type, because at the moment of creation of instance we don't
     #know what type will be decorated - it depends on used dialect.
