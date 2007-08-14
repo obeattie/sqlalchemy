@@ -212,16 +212,21 @@ class DefaultExecutionContext(base.ExecutionContext):
         # that object (or similar).  so convert it to a clean
         # dictionary/list/tuple of dictionary/tuple of list
         if parameters is not None:
-           if self.dialect.positional:
+            if executemany:
+                processors = parameters[0].get_processors()
+            else:
+                processors = parameters.get_processors()
+
+            if self.dialect.positional:
                 if executemany:
-                    parameters = [p.get_raw_list() for p in parameters]
+                    parameters = [p.get_raw_list(processors) for p in parameters]
                 else:
-                    parameters = parameters.get_raw_list()
-           else:
+                    parameters = parameters.get_raw_list(processors)
+            else:
                 if executemany:
-                    parameters = [p.get_raw_dict(encode_keys=encode) for p in parameters]
+                    parameters = [p.get_raw_dict(processors, encode_keys=encode) for p in parameters]
                 else:
-                    parameters = parameters.get_raw_dict(encode_keys=encode)
+                    parameters = parameters.get_raw_dict(processors, encode_keys=encode)
         return parameters
                 
     def is_select(self):
@@ -318,6 +323,7 @@ class DefaultExecutionContext(base.ExecutionContext):
             else:
                 plist = [self.compiled_parameters]
             drunner = self.dialect.defaultrunner(self)
+            processors = plist[0].get_processors()
             for param in plist:
                 last_inserted_ids = []
                 # check the "default" status of each column in the table
@@ -340,13 +346,13 @@ class DefaultExecutionContext(base.ExecutionContext):
                         if newid is not None:
                             param.set_value(c.key, newid)
                             if c.primary_key:
-                                last_inserted_ids.append(param.get_processed(c.key))
+                                last_inserted_ids.append(param.get_processed(c.key, processors))
                         elif c.primary_key:
                             last_inserted_ids.append(None)
                     # its an explicitly passed pk value - add it to
                     # our last_inserted_ids list.
                     elif c.primary_key:
-                        last_inserted_ids.append(param.get_processed(c.key))
+                        last_inserted_ids.append(param.get_processed(c.key, processors))
                 # TODO: we arent accounting for executemany() situations
                 # here (hard to do since lastrowid doesnt support it either)
                 self._last_inserted_ids = last_inserted_ids
