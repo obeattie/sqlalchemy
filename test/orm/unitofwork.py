@@ -461,7 +461,7 @@ class ClauseAttributesTest(UnitOfWorkTest):
         global metadata, users_table
         metadata = MetaData(testbase.db)
         users_table = Table('users', metadata,
-            Column('id', Integer, primary_key=True),
+            Column('id', Integer, Sequence('users_id_seq', optional=True), primary_key=True),
             Column('name', String(30)),
             Column('counter', Integer, default=1))
         metadata.create_all()
@@ -996,7 +996,10 @@ class SaveTest(UnitOfWorkTest):
         u = User()
         u.user_id=42
         Session.commit()
-    
+  
+    # why no support on oracle ?  because oracle doesn't save
+    # "blank" strings; it saves a single space character. 
+    @testbase.unsupported('oracle') 
     def test_dont_update_blanks(self):
         mapper(User, users)
         u = User()
