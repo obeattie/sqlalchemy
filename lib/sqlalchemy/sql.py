@@ -812,7 +812,6 @@ class ClauseParameters(object):
     """
 
     def __init__(self, dialect, positional=None):
-        super(ClauseParameters, self).__init__()
         self.dialect = dialect
         self.__binds = {}
         self.positional = positional or []

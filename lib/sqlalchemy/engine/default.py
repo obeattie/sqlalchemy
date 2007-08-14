@@ -320,7 +320,6 @@ class DefaultExecutionContext(base.ExecutionContext):
         """generate default values for compiled insert/update statements,
         and generate last_inserted_ids() collection."""
 
-        # TODO: cleanup
         if self.isinsert:
             drunner = self.dialect.defaultrunner(self)
             if self.executemany:
