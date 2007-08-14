@@ -162,7 +162,7 @@ def descriptor():
 
 class SQLiteExecutionContext(default.DefaultExecutionContext):
     def post_exec(self):
-        if self.compiled.isinsert:
+        if self.compiled.isinsert and not self.executemany:
             if not len(self._last_inserted_ids) or self._last_inserted_ids[0] is None:
                 self._last_inserted_ids = [self.cursor.lastrowid] + self._last_inserted_ids[1:]
 
