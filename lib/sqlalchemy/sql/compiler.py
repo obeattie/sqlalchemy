@@ -90,7 +90,7 @@ class DefaultCompiler(engine.Compiled, visitors.ClauseVisitor):
 
     operators = OPERATORS
     
-    def __init__(self, dialect, statement, parameters=None, inline=False):
+    def __init__(self, dialect, statement, parameters=None, inline=False, **kwargs):
         """Construct a new ``DefaultCompiler`` object.
 
         dialect
@@ -622,41 +622,10 @@ class DefaultCompiler(engine.Compiled, visitors.ClauseVisitor):
     def visit_sequence(self, seq):
         raise NotImplementedError()
 
-    def visit_column_onupdate(self, onupdate):
-        if isinstance(onupdate.arg, expression.ClauseElement):
-            return self.exec_default_sql(onupdate)
-        elif callable(onupdate.arg):
-            return onupdate.arg(self.context)
-        else:
-            return onupdate.arg
-
-    def visit_column_default(self, default):
-        if isinstance(default.arg, expression.ClauseElement):
-            return self.exec_default_sql(default)
-        elif callable(default.arg):
-            return default.arg(self.context)
-        else:
-            return default.arg
-        
     def visit_insert(self, insert_stmt):
 
-        # search for columns who will be required to have an explicit bound value.
-        # for inserts, this includes Python-side defaults, columns with sequences for dialects
-        # that support sequences, and primary key columns for dialects that explicitly insert
-        # pre-generated primary key values
-        required_cols = [
-            c for c in insert_stmt.table.c
-            if \
-                isinstance(c, schema.SchemaItem) and \
-                (self.parameters is None or self.parameters.get(c.key, None) is None) and \
-                (
-                    ((c.primary_key or isinstance(c.default, schema.Sequence)) and self.uses_sequences_for_inserts()) or 
-                    isinstance(c.default, schema.ColumnDefault)
-                )
-        ]
-
         self.isinsert = True
-        colparams = self._get_colparams(insert_stmt, required_cols)
+        colparams = self._get_colparams(insert_stmt)
 
         return ("INSERT INTO " + self.preparer.format_table(insert_stmt.table) + " (" + string.join([self.preparer.format_column(c[0]) for c in colparams], ', ') + ")" +
          " VALUES (" + string.join([c[1] for c in colparams], ', ') + ")")
@@ -664,17 +633,8 @@ class DefaultCompiler(engine.Compiled, visitors.ClauseVisitor):
     def visit_update(self, update_stmt):
         self.stack.append({'from':util.Set([update_stmt.table])})
         
-        # search for columns who will be required to have an explicit bound value.
-        # for updates, this includes Python-side "onupdate" defaults.
-        required_cols = [c for c in update_stmt.table.c 
-            if
-            isinstance(c, schema.SchemaItem) and \
-            (self.parameters is None or self.parameters.get(c.key, None) is None) and
-            isinstance(c.onupdate, schema.ColumnDefault)
-        ]
-
         self.isupdate = True
-        colparams = self._get_colparams(update_stmt, required_cols)
+        colparams = self._get_colparams(update_stmt)
 
         text = "UPDATE " + self.preparer.format_table(update_stmt.table) + " SET " + string.join(["%s=%s" % (self.preparer.format_column(c[0]), c[1]) for c in colparams], ', ')
 
@@ -685,7 +645,7 @@ class DefaultCompiler(engine.Compiled, visitors.ClauseVisitor):
         
         return text
 
-    def _get_colparams(self, stmt, required_cols):
+    def _get_colparams(self, stmt):
         """create a set of tuples representing column/string pairs for use 
         in an INSERT or UPDATE statement.
         
@@ -723,23 +683,35 @@ class DefaultCompiler(engine.Compiled, visitors.ClauseVisitor):
             for k, v in stmt.parameters.iteritems():
                 parameters.setdefault(getattr(k, 'key', k), v)
 
-        for col in required_cols:
-            parameters.setdefault(col.key, None)
-
         # create a list of column assignment clauses as tuples
         values = []
         for c in stmt.table.columns:
             if c.key in parameters:
                 value = parameters[c.key]
+                if sql._is_literal(value):
+                    value = create_bind_param(c, value)
+                else:
+                    self.inline_params.add(c)
+                    value = self.process(value.self_group())
+                values.append((c, value))
             else:
-                continue
-            if sql._is_literal(value):
-                value = create_bind_param(c, value)
-            else:
-                self.inline_params.add(c)
-                value = self.process(value.self_group())
-            values.append((c, value))
-        
+                if self.isinsert:
+                    if (c.primary_key or isinstance(c.default, schema.Sequence)) and self.uses_sequences_for_inserts():
+                        if self.inline:
+                            values.append((c, self.process(c.default)))
+                        else:
+                            values.append((c, create_bind_param(c, None)))
+                    elif isinstance(c.default, schema.ColumnDefault) and isinstance(c.default.arg, sql.ClauseElement):
+                        if self.inline:
+                            values.append((c, self.process(c.default.arg)))
+                        else:
+                            values.append((c, create_bind_param(c, None)))    
+                elif self.isupdate:
+                    if isinstance(c.onupdate, schema.ColumnDefault) and isinstance(c.onupdate.arg, sql.ClauseElement):
+                        if self.inline:
+                            values.append((c, self.process(c.onupdate.arg)))
+                        else:
+                            values.append((c, create_bind_param(c, None)))    
         return values
 
     def visit_delete(self, delete_stmt):

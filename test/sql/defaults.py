@@ -180,7 +180,6 @@ class DefaultTest(PersistTest):
         pk = r.last_inserted_ids()[0]
         t.update(t.c.col1==pk).execute(col4=None, col5=None)
         ctexec = currenttime.scalar()
-        print "Currenttime "+ repr(ctexec)
         l = t.select(t.c.col1==pk).execute()
         l = l.fetchone()
         self.assert_(l == (pk, 'im the update', f2, None, None, ctexec, True, False, 13, datetime.date.today()))
@@ -253,6 +252,8 @@ class AutoIncrementTest(PersistTest):
         try:
             table.insert().execute(data='row 1')
             table.insert().execute(data='row 2')
+            table.insert().execute({'data':'row 3'}, {'data':'row 4'})
+            assert table.select().fetchall() == [(1, "row 1"), (2, "row 2"), (3, "row 3"), (4, "row 4")]
         finally:
             table.drop()    
 
