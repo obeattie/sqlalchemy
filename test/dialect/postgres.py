@@ -4,7 +4,30 @@ from sqlalchemy import *
 from sqlalchemy.databases import postgres
 from testlib import *
 
-
+class PreExecuteTest(AssertMixin):
+    """PG is the only database that combines explicitly available sequences with auto-increment columns.  test
+    consistent behavior there."""
+    
+    @testing.supported('postgres')
+    def setUpAll(self):
+        global table, metadata
+        metadata = MetaData(testbase.db)
+        table = Table('testtable', metadata, 
+            Column('id', Integer, primary_key=True),
+            Column('data', String(30)))
+        metadata.create_all()
+        
+    @testing.supported('postgres')
+    def tearDownAll(self):
+        metadata.drop_all()
+        
+    @testing.supported('postgres')
+    def test_compiled_insert(self):
+        ins = table.insert(values={'data':bindparam('x')}).compile()
+        ins.execute({'x':"five"}, {'x':"seven"})
+    
+    
+    
 class DomainReflectionTest(AssertMixin):
     "Test PostgreSQL domains"
 

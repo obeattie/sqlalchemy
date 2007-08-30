@@ -1102,6 +1102,8 @@ class Mapper(object):
                             if value is NO_ATTRIBUTE:
                                 continue
                             if col.default is None or value is not None:
+                                # TODO: clauseelments as bind params should 
+                                # be handled by Insert/Update expression upon execute()
                                 if isinstance(value, sql.ClauseElement):
                                     value_params[col] = value
                                 else:

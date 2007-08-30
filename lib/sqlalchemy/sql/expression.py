@@ -966,7 +966,7 @@ class ClauseElement(object):
 
         return self.execute(*multiparams, **params).scalar()
 
-    def compile(self, bind=None, parameters=None, compiler=None, dialect=None):
+    def compile(self, bind=None, parameters=None, compiler=None, dialect=None, inline=False):
         """Compile this SQL expression.
 
         Uses the given ``Compiler``, or the given ``AbstractDialect``
@@ -995,16 +995,16 @@ class ClauseElement(object):
 
         if compiler is None:
             if dialect is not None:
-                compiler = dialect.statement_compiler(dialect, self, parameters)
+                compiler = dialect.statement_compiler(dialect, self, parameters, inline=inline)
             elif bind is not None:
-                compiler = bind.statement_compiler(self, parameters)
+                compiler = bind.statement_compiler(self, parameters, inline=inline)
             elif self.bind is not None:
-                compiler = self.bind.statement_compiler(self, parameters)
+                compiler = self.bind.statement_compiler(self, parameters, inline=inline)
 
         if compiler is None:
             from sqlalchemy.engine.default import DefaultDialect
             dialect = DefaultDialect()
-            compiler = dialect.statement_compiler(dialect, self, parameters=parameters)
+            compiler = dialect.statement_compiler(dialect, self, parameters=parameters, inilne=inline)
         compiler.compile()
         return compiler
     
@@ -3213,34 +3213,18 @@ class _UpdateBase(ClauseElement):
         return iter([self.table])
 
     def _process_colparams(self, parameters):
-        """Receive the *values* of an ``INSERT`` or ``UPDATE`` statement and construct appropriate bind parameters."""
 
         if parameters is None:
             return None
 
         if isinstance(parameters, (list, tuple)):
             pp = {}
-            i = 0
-            for c in self.table.c:
+            for i, c in enumerate(self.table.c):
                 pp[c.key] = parameters[i]
-                i +=1
-            parameters = pp
-
-        for key in parameters.keys():
-            value = parameters[key]
-            if isinstance(value, ClauseElement):
-                parameters[key] = value.self_group()
-            elif _is_literal(value):
-                if _is_literal(key):
-                    col = self.table.c[key]
-                else:
-                    col = key
-                try:
-                    parameters[key] = bindparam(col, value, unique=True)
-                except KeyError:
-                    del parameters[key]
-        return parameters
-
+            return pp
+        else:
+            return parameters
+            
     def _find_engine(self):
         return self.table.bind
 

@@ -90,7 +90,7 @@ class DefaultCompiler(engine.Compiled, visitors.ClauseVisitor):
 
     operators = OPERATORS
     
-    def __init__(self, dialect, statement, parameters=None, **kwargs):
+    def __init__(self, dialect, statement, parameters=None, inline=False):
         """Construct a new ``DefaultCompiler`` object.
 
         dialect
@@ -112,6 +112,9 @@ class DefaultCompiler(engine.Compiled, visitors.ClauseVisitor):
 
         # if we are insert/update.  set to true when we visit an INSERT or UPDATE
         self.isinsert = self.isupdate = False
+        
+        # compile INSERT/UPDATE defaults/sequences inlined (no pre-execute)
+        self.inline = getattr(statement, 'inline', inline)
         
         # a dictionary of bind parameter keys to _BindParamClause instances.
         self.binds = {}
@@ -615,6 +618,25 @@ class DefaultCompiler(engine.Compiled, visitors.ClauseVisitor):
 
     def uses_sequences_for_inserts(self):
         return False
+
+    def visit_sequence(self, seq):
+        raise NotImplementedError()
+
+    def visit_column_onupdate(self, onupdate):
+        if isinstance(onupdate.arg, expression.ClauseElement):
+            return self.exec_default_sql(onupdate)
+        elif callable(onupdate.arg):
+            return onupdate.arg(self.context)
+        else:
+            return onupdate.arg
+
+    def visit_column_default(self, default):
+        if isinstance(default.arg, expression.ClauseElement):
+            return self.exec_default_sql(default)
+        elif callable(default.arg):
+            return default.arg(self.context)
+        else:
+            return default.arg
         
     def visit_insert(self, insert_stmt):
 
@@ -715,7 +737,7 @@ class DefaultCompiler(engine.Compiled, visitors.ClauseVisitor):
                 value = create_bind_param(c, value)
             else:
                 self.inline_params.add(c)
-                value = self.process(value)
+                value = self.process(value.self_group())
             values.append((c, value))
         
         return values

@@ -812,7 +812,7 @@ class Connection(Connectable):
             param = multiparams[0]
         else:
             param = params
-        return self._execute_compiled(elem.compile(dialect=self.dialect, parameters=param), multiparams, params)
+        return self._execute_compiled(elem.compile(dialect=self.dialect, parameters=param, inline=executemany), multiparams, params)
 
     def _execute_compiled(self, compiled, multiparams=None, params=None):
         """Execute a sql.Compiled object."""

@@ -606,6 +606,9 @@ class OracleCompiler(compiler.DefaultCompiler):
     def uses_sequences_for_inserts(self):
         return True
 
+    def visit_sequence(self, seq):
+        return self.dialect.identifier_preparer.format_sequence(seq) + ".nextval"
+        
     def visit_alias(self, alias, asfrom=False, **kwargs):
         """Oracle doesn't like ``FROM table AS alias``.  Is the AS standard SQL??"""
         
