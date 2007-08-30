@@ -114,7 +114,7 @@ class DefaultCompiler(engine.Compiled, visitors.ClauseVisitor):
         self.isinsert = self.isupdate = False
         
         # compile INSERT/UPDATE defaults/sequences inlined (no pre-execute)
-        self.inline = getattr(statement, 'inline', inline)
+        self.inline = inline or getattr(statement, 'inline', False)
         
         # a dictionary of bind parameter keys to _BindParamClause instances.
         self.binds = {}
@@ -154,12 +154,6 @@ class DefaultCompiler(engine.Compiled, visitors.ClauseVisitor):
         # an IdentifierPreparer that formats the quoting of identifiers
         self.preparer = self.dialect.identifier_preparer
         
-        # for UPDATE and INSERT statements, a set of columns whos values are being set
-        # from a SQL expression (i.e., not one of the bind parameter values).  if present,
-        # default-value logic in the Dialect knows not to fire off column defaults
-        # and also knows postfetching will be needed to get the values represented by these
-        # parameters.
-        self.inline_params = None
         
     def after_compile(self):
         # this re will search for params like :param
@@ -659,8 +653,9 @@ class DefaultCompiler(engine.Compiled, visitors.ClauseVisitor):
             self.binds[col.key] = bindparam
             return self.bindparam_string(self._truncate_bindparam(bindparam))
 
-        self.inline_params = util.Set()
-
+        self.postfetch = util.Set()
+        self.prefetch = util.Set()
+        
         def to_col(key):
             if not isinstance(key, sql._ColumnClause):
                 return stmt.table.columns.get(unicode(key), key)
@@ -691,27 +686,39 @@ class DefaultCompiler(engine.Compiled, visitors.ClauseVisitor):
                 if sql._is_literal(value):
                     value = create_bind_param(c, value)
                 else:
-                    self.inline_params.add(c)
+                    self.postfetch.add(c)
                     value = self.process(value.self_group())
                 values.append((c, value))
             else:
                 if self.isinsert:
-                    if (c.primary_key or isinstance(c.default, schema.Sequence)) and self.uses_sequences_for_inserts():
-                        if self.inline:
-                            values.append((c, self.process(c.default)))
+                    if isinstance(c.default, schema.ColumnDefault):
+                        if self.inline and isinstance(c.default.arg, sql.ClauseElement):
+                            values.append((c, self.process(c.default.arg)))
+                            self.postfetch.add(c)
                         else:
                             values.append((c, create_bind_param(c, None)))
-                    elif isinstance(c.default, schema.ColumnDefault) and isinstance(c.default.arg, sql.ClauseElement):
+                            self.prefetch.add(c)
+                    elif isinstance(c.default, schema.PassiveDefault):
+                        self.postfetch.add(c)
+                    elif (c.primary_key or isinstance(c.default, schema.Sequence)) and self.uses_sequences_for_inserts():
                         if self.inline:
-                            values.append((c, self.process(c.default.arg)))
+                            proc = self.process(c.default)
+                            if proc is not None:
+                                values.append((c, proc))
+                                self.postfetch.add(c)
                         else:
-                            values.append((c, create_bind_param(c, None)))    
+                            values.append((c, create_bind_param(c, None)))
+                            self.prefetch.add(c)
                 elif self.isupdate:
-                    if isinstance(c.onupdate, schema.ColumnDefault) and isinstance(c.onupdate.arg, sql.ClauseElement):
-                        if self.inline:
+                    if isinstance(c.onupdate, schema.ColumnDefault):
+                        if self.inline and isinstance(c.onupdate.arg, sql.ClauseElement):
                             values.append((c, self.process(c.onupdate.arg)))
+                            self.postfetch.add(c)
                         else:
-                            values.append((c, create_bind_param(c, None)))    
+                            values.append((c, create_bind_param(c, None)))
+                            self.prefetch.add(c)
+                    elif isinstance(c.onupdate, schema.PassiveDefault):
+                        self.postfetch.add(c)
         return values
 
     def visit_delete(self, delete_stmt):

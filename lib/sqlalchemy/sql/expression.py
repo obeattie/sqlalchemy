@@ -968,7 +968,7 @@ class ClauseElement(object):
             compile_params = multiparams[0]
         else:
             compile_params = params
-        return self.compile(bind=self.bind, parameters=compile_params).execute(*multiparams, **params)
+        return self.compile(bind=self.bind, parameters=compile_params, inline=(multiparams and True)).execute(*multiparams, **params)
 
     def scalar(self, *multiparams, **params):
         """Compile and execute this ``ClauseElement``, returning the result's scalar representation."""

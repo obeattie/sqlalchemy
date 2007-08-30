@@ -555,6 +555,12 @@ class PGCompiler(compiler.DefaultCompiler):
     def uses_sequences_for_inserts(self):
         return True
 
+    def visit_sequence(self, seq):
+        if seq.optional:
+            return None
+        else:
+            return "nextval(%s)" % self.preparer.format_sequence(seq)
+        
     def limit_clause(self, select):
         text = ""
         if select._limit is not None:
