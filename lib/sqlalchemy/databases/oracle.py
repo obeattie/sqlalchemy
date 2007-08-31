@@ -236,6 +236,7 @@ class OracleDialect(default.DefaultDialect):
     supports_unicode_statements = False
     max_identifier_length = 30
     supports_sane_rowcount = True
+    supports_sane_multi_rowcount = False
 
     def __init__(self, use_ansi=True, auto_setinputsizes=True, auto_convert_lobs=True, threaded=True, allow_twophase=True, **kwargs):
         default.DefaultDialect.__init__(self, default_paramstyle='named', **kwargs)
@@ -528,14 +529,6 @@ class OracleDialect(default.DefaultDialect):
 
         for name, value in fks.iteritems():
             table.append_constraint(schema.ForeignKeyConstraint(value[0], value[1], name=name))
-
-    def do_executemany(self, c, statement, parameters, context=None):
-        rowcount = 0
-        for param in parameters:
-            c.execute(statement, param)
-            rowcount += c.rowcount
-        if context is not None:
-            context._rowcount = rowcount
 
 
 OracleDialect.logger = logging.class_logger(OracleDialect)

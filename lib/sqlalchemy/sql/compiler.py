@@ -689,7 +689,7 @@ class DefaultCompiler(engine.Compiled, visitors.ClauseVisitor):
                     self.postfetch.add(c)
                     value = self.process(value.self_group())
                 values.append((c, value))
-            else:
+            elif isinstance(c, schema.Column):
                 if self.isinsert:
                     if isinstance(c.default, schema.ColumnDefault):
                         if self.inline and isinstance(c.default.arg, sql.ClauseElement):
@@ -699,13 +699,18 @@ class DefaultCompiler(engine.Compiled, visitors.ClauseVisitor):
                             values.append((c, create_bind_param(c, None)))
                             self.prefetch.add(c)
                     elif isinstance(c.default, schema.PassiveDefault):
-                        self.postfetch.add(c)
+                        if c.primary_key and self.uses_sequences_for_inserts() and not self.inline:
+                            values.append((c, create_bind_param(c, None)))
+                            self.prefetch.add(c)
+                        else:
+                            self.postfetch.add(c)
                     elif (c.primary_key or isinstance(c.default, schema.Sequence)) and self.uses_sequences_for_inserts():
                         if self.inline:
-                            proc = self.process(c.default)
-                            if proc is not None:
-                                values.append((c, proc))
-                                self.postfetch.add(c)
+                            if c.default is not None:
+                                proc = self.process(c.default)
+                                if proc is not None:
+                                    values.append((c, proc))
+                                    self.postfetch.add(c)
                         else:
                             values.append((c, create_bind_param(c, None)))
                             self.prefetch.add(c)

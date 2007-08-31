@@ -1154,6 +1154,7 @@ class Mapper(object):
                     (obj, params, mapper, connection, value_params) = rec
                     c = connection.execute(statement.values(value_params), params)
                     primary_key = c.last_inserted_ids()
+
                     if primary_key is not None:
                         i = 0
                         for col in mapper.pks_by_table[table]:
@@ -1270,8 +1271,8 @@ class Mapper(object):
                     clause.clauses.append(mapper.version_id_col == sql.bindparam(mapper.version_id_col.key, type_=mapper.version_id_col.type, unique=True))
                 statement = table.delete(clause)
                 c = connection.execute(statement, del_objects)
-                if c.supports_sane_rowcount() and c.rowcount != len(del_objects):
-                    raise exceptions.ConcurrentModificationError("Updated rowcount %d does not match number of objects updated %d" % (c.rowcount, len(delete)))
+                if c.supports_sane_multi_rowcount() and c.rowcount != len(del_objects):
+                    raise exceptions.ConcurrentModificationError("Deleted rowcount %d does not match number of objects deleted %d" % (c.rowcount, len(del_objects)))
 
         for obj, connection in deleted_objects:
             for mapper in object_mapper(obj).iterate_to_root():

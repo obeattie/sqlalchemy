@@ -30,6 +30,7 @@ class DefaultDialect(base.Dialect):
     supports_unicode_statements = False
     max_identifier_length = 9999
     supports_sane_rowcount = True
+    supports_sane_multi_rowcount = True
 
     def __init__(self, convert_unicode=False, encoding='utf-8', default_paramstyle='named', paramstyle=None, dbapi=None, **kwargs):
         self.convert_unicode = convert_unicode
@@ -248,6 +249,9 @@ class DefaultExecutionContext(base.ExecutionContext):
 
     def supports_sane_rowcount(self):
         return self.dialect.supports_sane_rowcount
+
+    def supports_sane_multi_rowcount(self):
+        return self.dialect.supports_sane_multi_rowcount
 
     def last_inserted_ids(self):
         return self._last_inserted_ids
