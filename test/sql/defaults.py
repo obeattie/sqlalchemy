@@ -129,8 +129,7 @@ class DefaultTest(PersistTest):
         self.assert_(50 <= x <= 57)
         self.assert_(y == 'imthedefault')
         self.assert_(z == f)
-        # mysql/other db's return 0 or 1 for count(1)
-        self.assert_(5 <= z <= 6)
+        self.assert_(f2==11)
         
     def testinsert(self):
         r = t.insert().execute()
@@ -195,8 +194,7 @@ class DefaultTest(PersistTest):
         l = t.select(t.c.col1==pk).execute()
         l = l.fetchone()
         self.assert_(l == (pk, 'im the update', f2, None, None, ctexec, True, False, 13, datetime.date.today()))
-        # mysql/other db's return 0 or 1 for count(1)
-        self.assert_(14 <= f2 <= 15)
+        self.assert_(f2==11)
             
     def testupdatevalues(self):
         r = t.insert().execute()

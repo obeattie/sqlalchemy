@@ -96,9 +96,6 @@ class DBAPIError(SQLAlchemyError):
     instance = classmethod(instance)
     
     def __init__(self, statement, params, orig):
-        if self.__class__.__name__ == 'DBAPIError':
-            raise SQLAlchemyError("Can't instantiate DBAPIError directly; use DBAPIError.instance()")
-            
         SQLAlchemyError.__init__(self, "(%s) %s" %
                                  (orig.__class__.__name__, str(orig)))
         self.statement = statement

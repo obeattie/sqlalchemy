@@ -302,23 +302,23 @@ class DefaultExecutionContext(base.ExecutionContext):
         and generate last_inserted_ids() collection."""
 
         if self.isinsert or self.isupdate:
-            drunner = self.dialect.defaultrunner(self)
             if self.executemany:
-                processors = self.compiled_parameters[0].get_processors()
-                params = self.compiled_parameters
-                for param in params:
-                    self.compiled_parameters = param
-                    for c in self.compiled.prefetch:
-                        if self.isinsert:
-                            val = drunner.get_column_default(c)
-                        else:
-                            val = drunner.get_column_onupdate(c)
-                        if val is not None:
-                            param.set_value(c.key, val)
-                self.compiled_parameters = params
+                if len(self.compiled.prefetch):
+                    drunner = self.dialect.defaultrunner(self)
+                    params = self.compiled_parameters
+                    for param in params:
+                        self.compiled_parameters = param
+                        for c in self.compiled.prefetch:
+                            if self.isinsert:
+                                val = drunner.get_column_default(c)
+                            else:
+                                val = drunner.get_column_onupdate(c)
+                            if val is not None:
+                                param.set_value(c.key, val)
+                    self.compiled_parameters = params
                     
             else:
-                processors = self.compiled_parameters.get_processors()
+                drunner = self.dialect.defaultrunner(self)
                 if self.isinsert:
                     self._last_inserted_ids = []
                 for c in self.compiled.prefetch:
@@ -328,12 +328,15 @@ class DefaultExecutionContext(base.ExecutionContext):
                         val = drunner.get_column_onupdate(c)
                     if val is not None:
                         self.compiled_parameters.set_value(c.key, val)
+
                 if self.isinsert:
+                    processors = self.compiled_parameters.get_processors()
                     for c in self.compiled.statement.table.primary_key:
                         if c.key in self.compiled_parameters:
                             self._last_inserted_ids.append(self.compiled_parameters.get_processed(c.key, processors))
                         else:
                             self._last_inserted_ids.append(None)
+                            
                 self._postfetch_cols = self.compiled.postfetch
                 if self.isinsert:
                     self._last_inserted_params = self.compiled_parameters

@@ -21,6 +21,8 @@ CHANGES
   insert/update statement also forces the same behavior with a single
   execute().
 
+- fixed PG executemany() behavior, [ticket:759]
+
 - postgres reflects tables with autoincrement=False for primary key
   columns which have no defaults.
     

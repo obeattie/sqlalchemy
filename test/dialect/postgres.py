@@ -26,7 +26,8 @@ class InsertTest(AssertMixin):
 
         ins = table.insert(values={'data':bindparam('x')}).compile()
         ins.execute({'x':"five"}, {'x':"seven"})
-    
+        assert table.select().execute().fetchall() == [(1, 'five'), (2, 'seven')]
+        
     @testing.supported('postgres')
     def test_sequence_insert(self):
         table = Table('testtable', metadata, 
@@ -62,7 +63,7 @@ class InsertTest(AssertMixin):
     def _assert_data_autoincrement(self, table):
         def go():
             # execute with explicit id
-            table.insert().execute({'id':30, 'data':'d1'})
+            r = table.insert().execute({'id':30, 'data':'d1'})
             assert r.last_inserted_ids() == [30]
             
             # execute with prefetch id

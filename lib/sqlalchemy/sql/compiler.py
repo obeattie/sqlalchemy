@@ -643,9 +643,6 @@ class DefaultCompiler(engine.Compiled, visitors.ClauseVisitor):
         """create a set of tuples representing column/string pairs for use 
         in an INSERT or UPDATE statement.
         
-        This method may generate new bind params within this compiled
-        based on the given set of "required columns", which are required
-        to have a value set in the statement.
         """
 
         def create_bind_param(col, value):
