@@ -19,15 +19,13 @@ class DefaultTest(PersistTest):
             return default_generator['x']
 
         def myupdate_with_ctx(ctx):
-            return len(ctx.compiled_parameters['col2'])
+            conn = ctx.connection
+            return conn.execute(select([text('13')])).scalar()
         
         def mydefault_using_connection(ctx):
             conn = ctx.connection
             try:
-                if db.engine.name == 'oracle':
-                    return conn.execute("select 12 from dual").scalar()
-                else:
-                    return conn.execute("select 12").scalar()
+                return conn.execute(select([text('12')])).scalar()
             finally:
                 # ensure a "close()" on this connection does nothing,
                 # since its a "branched" connection
