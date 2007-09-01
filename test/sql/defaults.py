@@ -317,9 +317,15 @@ class SequenceTest(PersistTest):
         """test sequences fire off as defaults on non-pk columns"""
         sometable.insert().execute(name="somename")
         sometable.insert().execute(name="someother")
+        sometable.insert().execute(
+            {'name':'name3'},
+            {'name':'name4'}
+        )
         assert sometable.select().execute().fetchall() == [
             (1, "somename", 1),
             (2, "someother", 2),
+            (3, "name3", 3),
+            (4, "name4", 4),
         ]
         
     @testing.supported('postgres', 'oracle')
