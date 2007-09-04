@@ -5,14 +5,12 @@ from sqlalchemy.orm.collections import collection
 from sqlalchemy import exceptions
 from testlib import *
 
-class MyTest(object):pass
-class MyTest2(object):pass
-    
 class AttributesTest(PersistTest):
     """tests for the attributes.py module, which deals with tracking attribute changes on an object."""
-    def testbasic(self):
+    def test_basic(self):
         class User(object):pass
         manager = attributes.AttributeManager()
+        manager.register_class(User)
         manager.register_attribute(User, 'user_id', uselist = False)
         manager.register_attribute(User, 'user_name', uselist = False)
         manager.register_attribute(User, 'email_address', uselist = False)
@@ -39,8 +37,13 @@ class AttributesTest(PersistTest):
         print repr(u.__dict__)
         self.assert_(u.user_id == 7 and u.user_name == 'john' and u.email_address == 'lala@123.com')
 
-    def testpickleness(self):
+    def test_pickleness(self):
+        class MyTest(object):pass
+        class MyTest2(object):pass
+
         manager = attributes.AttributeManager()
+        manager.register_class(MyTest)
+        manager.register_class(MyTest2)
         manager.register_attribute(MyTest, 'user_id', uselist = False)
         manager.register_attribute(MyTest, 'user_name', uselist = False)
         manager.register_attribute(MyTest, 'email_address', uselist = False)
@@ -97,10 +100,12 @@ class AttributesTest(PersistTest):
         self.assert_(o4.mt2[0].a == 'abcde')
         self.assert_(o4.mt2[0].b is None)
 
-    def testlist(self):
+    def test_list(self):
         class User(object):pass
         class Address(object):pass
         manager = attributes.AttributeManager()
+        manager.register_class(User)
+        manager.register_class(Address)
         manager.register_attribute(User, 'user_id', uselist = False)
         manager.register_attribute(User, 'user_name', uselist = False)
         manager.register_attribute(User, 'addresses', uselist = True)
@@ -138,10 +143,12 @@ class AttributesTest(PersistTest):
         self.assert_(u.user_id == 7 and u.user_name == 'john' and u.addresses[0].email_address == 'lala@123.com')
         self.assert_(len(manager.get_history(u, 'addresses').unchanged_items()) == 1)
 
-    def testbackref(self):
+    def test_backref(self):
         class Student(object):pass
         class Course(object):pass
         manager = attributes.AttributeManager()
+        manager.register_class(Student)
+        manager.register_class(Course)
         manager.register_attribute(Student, 'courses', uselist=True, extension=attributes.GenericBackrefExtension('students'))
         manager.register_attribute(Course, 'students', uselist=True, extension=attributes.GenericBackrefExtension('courses'))
         
@@ -190,6 +197,8 @@ class AttributesTest(PersistTest):
 
         class Port(object):pass
         class Jack(object):pass
+        manager.register_class(Port)
+        manager.register_class(Jack)
         manager.register_attribute(Port, 'jack', uselist=False, extension=attributes.GenericBackrefExtension('port'))
         manager.register_attribute(Jack, 'port', uselist=False, extension=attributes.GenericBackrefExtension('jack'))
         p = Port()
@@ -201,13 +210,15 @@ class AttributesTest(PersistTest):
         j.port = None
         self.assert_(p.jack is None)
 
-    def testlazytrackparent(self):
+    def test_lazytrackparent(self):
         """test that the "hasparent" flag works properly when lazy loaders and backrefs are used"""
         manager = attributes.AttributeManager()
 
         class Post(object):pass
         class Blog(object):pass
-
+        manager.register_class(Post)
+        manager.register_class(Blog)
+        
         # set up instrumented attributes with backrefs    
         manager.register_attribute(Post, 'blog', uselist=False, extension=attributes.GenericBackrefExtension('posts'), trackparent=True)
         manager.register_attribute(Blog, 'posts', uselist=True, extension=attributes.GenericBackrefExtension('blog'), trackparent=True)
@@ -234,12 +245,14 @@ class AttributesTest(PersistTest):
         assert getattr(Blog, 'posts').hasparent(p2)
         assert getattr(Post, 'blog').hasparent(b2)
         
-    def testinheritance(self):
+    def test_inheritance(self):
         """tests that attributes are polymorphic"""
         class Foo(object):pass
         class Bar(Foo):pass
         
         manager = attributes.AttributeManager()
+        manager.register_class(Foo)
+        manager.register_class(Bar)
         
         def func1():
             print "func1"
@@ -261,7 +274,7 @@ class AttributesTest(PersistTest):
         assert x.element2 == 'this is the shared attr'
         assert y.element2 == 'this is the shared attr'
 
-    def testinheritance2(self):
+    def test_inheritance2(self):
         """test that the attribute manager can properly traverse the managed attributes of an object,
         if the object is of a descendant class with managed attributes in the parent class"""
         class Foo(object):pass
@@ -277,7 +290,7 @@ class AttributesTest(PersistTest):
         assert hist.added_items() == []
         assert hist.unchanged_items() == ['this is the element']
 
-    def testlazyhistory(self):
+    def test_lazyhistory(self):
         """tests that history functions work with lazy-loading attributes"""
         class Foo(object):pass
         class Bar(object):
@@ -305,7 +318,7 @@ class AttributesTest(PersistTest):
         print h.unchanged_items()
 
         
-    def testparenttrack(self):    
+    def test_parenttrack(self):    
         class Foo(object):pass
         class Bar(object):pass
         
@@ -330,7 +343,7 @@ class AttributesTest(PersistTest):
         b2.element = None
         assert not getattr(Bar, 'element').hasparent(f2)
 
-    def testmutablescalars(self):
+    def test_mutablescalars(self):
         """test detection of changes on mutable scalar items"""
         class Foo(object):pass
         manager = attributes.AttributeManager()
@@ -350,7 +363,7 @@ class AttributesTest(PersistTest):
         x.element[1] = 'five'
         assert not manager.is_modified(x)
         
-    def testdescriptorattributes(self):
+    def test_descriptorattributes(self):
         """changeset: 1633 broke ability to use ORM to map classes with unusual
         descriptor attributes (for example, classes that inherit from ones
         implementing zope.interface.Interface).
@@ -365,9 +378,10 @@ class AttributesTest(PersistTest):
         manager = attributes.AttributeManager()
         manager.reset_class_managed(Foo)
     
-    def testcollectionclasses(self):
+    def test_collectionclasses(self):
         manager = attributes.AttributeManager()
         class Foo(object):pass
+        manager.register_class(Foo)
         manager.register_attribute(Foo, "collection", uselist=True, typecallable=set)
         assert isinstance(Foo().collection, set)
         

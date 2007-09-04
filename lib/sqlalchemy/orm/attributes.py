@@ -664,7 +664,7 @@ class AttributeManager(object):
                 del obj.__dict__[attr.key]
             except KeyError:
                 pass
-
+    
     def commit(self, *obj):
         """Create a ``CommittedState`` instance for each object in the given list, representing
         its *unchanged* state, and associates it with the instance.
@@ -774,16 +774,6 @@ class AttributeManager(object):
         attr = getattr(obj.__class__, key)
         attr.reset(obj)
 
-    def reset_class_managed(self, class_):
-        """Remove all ``InstrumentedAttribute`` property objects from
-        the given class.
-        """
-
-        for attr in self.noninherited_managed_attributes(class_):
-            delattr(class_, attr.key)
-        self._inherited_attribute_cache.pop(class_,None)
-        self._noninherited_attribute_cache.pop(class_,None)
-
     def is_class_managed(self, class_, key):
         """Return True if the given `key` correponds to an
         instrumented property on the given class.
@@ -827,6 +817,64 @@ class AttributeManager(object):
         else:
             return getattr(obj_or_cls.__class__, key)
 
+    def manage(self, obj):
+        """establish attribute management on the given instance"""
+        if not hasattr(obj, '_state'):
+            obj._state = {}
+        
+    def register_class(self, class_, extra_init=None, on_exception=None):
+        """decorate the constructor of the given class to establish attribute
+        management on new instances."""
+
+        oldinit = None
+        doinit = False
+            
+        def init(instance, *args, **kwargs):
+            self.manage(instance)
+
+            if extra_init:
+                extra_init(class_, oldinit, instance, args, kwargs)
+
+            if doinit:
+                try:
+                    oldinit(instance, *args, **kwargs)
+                except:
+                    if on_exception:
+                        on_exception(class_, oldinit, instance, args, kwargs)
+                    raise
+        
+        # override oldinit
+        oldinit = class_.__init__
+        if oldinit is None or not hasattr(oldinit, '_oldinit'):
+            init._oldinit = oldinit
+            class_.__init__ = init
+        # if oldinit is already one of our 'init' methods, replace it
+        elif hasattr(oldinit, '_oldinit'):
+            init._oldinit = oldinit._oldinit
+            class_.__init = init
+            oldinit = oldinit._oldinit
+            
+        if oldinit is not None:
+            doinit = oldinit is not object.__init__
+            try:
+                init.__name__ = oldinit.__name__
+                init.__doc__ = oldinit.__doc__
+            except:
+                # cant set __name__ in py 2.3 !
+                pass
+            
+    def unregister_class(self, class_):
+        if hasattr(class_, '__init__') and hasattr(class_.__init__, '_oldinit'):
+            if class_.__init__._oldinit is not None:
+                class_.__init__ = class_.__init__._oldinit
+            else:
+                delattr(class_, '__init__')
+                
+        for attr in self.noninherited_managed_attributes(class_):
+            delattr(class_, attr.key)
+        self._inherited_attribute_cache.pop(class_,None)
+        self._noninherited_attribute_cache.pop(class_,None)
+        
     def register_attribute(self, class_, key, uselist, callable_=None, **kwargs):
         """Register an attribute at the class level to be instrumented
         for all instances of the class.
@@ -836,13 +884,6 @@ class AttributeManager(object):
         # (will be reconstituted as needed, while getting managed attributes)
         self._inherited_attribute_cache.pop(class_, None)
         self._noninherited_attribute_cache.pop(class_, None)
-
-        if not hasattr(class_, '_state'):
-            def _get_state(self):
-                if not hasattr(self, '_sa_attr_state'):
-                    self._sa_attr_state = {}
-                return self._sa_attr_state
-            class_._state = property(_get_state)
 
         typecallable = kwargs.pop('typecallable', None)
         if isinstance(typecallable, InstrumentedAttribute):
