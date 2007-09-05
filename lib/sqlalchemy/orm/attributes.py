@@ -540,21 +540,17 @@ class InstanceState(object):
     
     def __init__(self, obj):
         self.committed_state = None
-        self.obj = weakref.ref(obj)
-        self.dict = obj.__dict__
         self.modified = False
         self.trigger = None
         self.callables = {}
         self.parents = {}
     
     def __getstate__(self):
-        return {'committed_state':self.committed_state, 'instance':self.obj(), 'parents':self.parents, 'modified':self.modified}
+        return {'committed_state':self.committed_state, 'parents':self.parents, 'modified':self.modified}
     
     def __setstate__(self, state):
         self.committed_state = state['committed_state']
-        self.obj = weakref.ref(state['instance'])
         self.parents = state['parents']
-        self.dict = self.obj().__dict__
         self.modified = state['modified']
         self.callables = {}
         self.trigger = None
@@ -564,15 +560,13 @@ class InstanceState(object):
         self.trigger = None
         trig()
         
-    def commit(self, manager):
+    def commit(self, manager, obj):
         self.committed_state = {}
-        obj = self.obj()
         self.modified = False
         for attr in manager.managed_attributes(obj.__class__):
             attr.commit_to_state(self, obj)
 
-    def rollback(self, manager):
-        obj = self.obj()
+    def rollback(self, manager, obj):
         if not self.committed_state:
             manager._clear(obj)
         else:
@@ -588,14 +582,6 @@ class InstanceState(object):
                 else:
                     if attr.key in obj.__dict__:
                         del obj.__dict__[attr.key]
-
-    def __repr__(self):
-        o = self.obj()
-        if o is None:
-            return "InstanceState: <None>"
-        else:
-            return "InstanceState: <%s %s>" % (o.__class__, hex(id(o)))
-    
 
 class AttributeHistory(object):
     """Calculate the *history* of a particular attribute on a
@@ -676,7 +662,7 @@ class AttributeManager(object):
         """
 
         for o in obj:
-            o._state.rollback(self)
+            o._state.rollback(self, o)
 
     def _clear(self, obj):
         for attr in self.managed_attributes(obj.__class__):
@@ -689,7 +675,7 @@ class AttributeManager(object):
         """Establish the "committed state" for each object in the given list."""
 
         for o in obj:
-            o._state.commit(self)
+            o._state.commit(self, o)
 
     def managed_attributes(self, class_):
         """Return a list of all ``InstrumentedAttribute`` objects
