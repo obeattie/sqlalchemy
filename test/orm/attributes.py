@@ -5,6 +5,11 @@ from sqlalchemy.orm.collections import collection
 from sqlalchemy import exceptions
 from testlib import *
 
+# these test classes defined at the module
+# level to support pickling
+class MyTest(object):pass
+class MyTest2(object):pass
+
 class AttributesTest(PersistTest):
     """tests for the attributes.py module, which deals with tracking attribute changes on an object."""
     def test_basic(self):
@@ -38,8 +43,6 @@ class AttributesTest(PersistTest):
         self.assert_(u.user_id == 7 and u.user_name == 'john' and u.email_address == 'lala@123.com')
 
     def test_pickleness(self):
-        class MyTest(object):pass
-        class MyTest2(object):pass
 
         manager = attributes.AttributeManager()
         manager.register_class(MyTest)
@@ -173,7 +176,9 @@ class AttributesTest(PersistTest):
         self.assert_(c.students == [s2,s3])        
         class Post(object):pass
         class Blog(object):pass
-        
+
+        manager.register_class(Post)
+        manager.register_class(Blog)
         manager.register_attribute(Post, 'blog', uselist=False, extension=attributes.GenericBackrefExtension('posts'), trackparent=True)
         manager.register_attribute(Blog, 'posts', uselist=True, extension=attributes.GenericBackrefExtension('blog'), trackparent=True)
         b = Blog()
@@ -280,6 +285,8 @@ class AttributesTest(PersistTest):
         class Foo(object):pass
         class Bar(Foo):pass
         manager = attributes.AttributeManager()
+        manager.register_class(Foo)
+        manager.register_class(Bar)
         manager.register_attribute(Foo, 'element', uselist=False)
         x = Bar()
         x.element = 'this is the element'
@@ -300,6 +307,8 @@ class AttributesTest(PersistTest):
                 return "Bar: id %d" % self.id
                 
         manager = attributes.AttributeManager()
+        manager.register_class(Foo)
+        manager.register_class(Bar)
 
         def func1():
             return "this is func 1"
@@ -323,6 +332,8 @@ class AttributesTest(PersistTest):
         class Bar(object):pass
         
         manager = attributes.AttributeManager()
+        manager.register_class(Foo)
+        manager.register_class(Bar)
         
         manager.register_attribute(Foo, 'element', uselist=False, trackparent=True)
         manager.register_attribute(Bar, 'element', uselist=False, trackparent=True)
@@ -347,6 +358,7 @@ class AttributesTest(PersistTest):
         """test detection of changes on mutable scalar items"""
         class Foo(object):pass
         manager = attributes.AttributeManager()
+        manager.register_class(Foo)
         manager.register_attribute(Foo, 'element', uselist=False, copy_function=lambda x:[y for y in x], mutable_scalars=True)
         x = Foo()
         x.element = ['one', 'two', 'three']    
@@ -354,8 +366,9 @@ class AttributesTest(PersistTest):
         x.element[1] = 'five'
         assert manager.is_modified(x)
         
-        manager.reset_class_managed(Foo)
+        manager.unregister_class(Foo)
         manager = attributes.AttributeManager()
+        manager.register_class(Foo)
         manager.register_attribute(Foo, 'element', uselist=False)
         x = Foo()
         x.element = ['one', 'two', 'three']    
@@ -376,7 +389,7 @@ class AttributesTest(PersistTest):
             A = des()
 
         manager = attributes.AttributeManager()
-        manager.reset_class_managed(Foo)
+        manager.unregister_class(Foo)
     
     def test_collectionclasses(self):
         manager = attributes.AttributeManager()

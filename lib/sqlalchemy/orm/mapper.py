@@ -1411,9 +1411,8 @@ class Mapper(object):
             # plugin point
             instance = extension.create_instance(self, context, row, self.class_)
             if instance is EXT_CONTINUE:
-                instance = self.class_.__new__(self.class_)
+                instance = attribute_manager.new_instance(self.class_)
             instance._entity_name = self.entity_name
-            attribute_manager.manage(instance)
             if self.__should_log_debug:
                 self.__log_debug("_instance(): created new instance %s identity %s" % (mapperutil.instance_str(instance), str(identitykey)))
             context.identity_map[identitykey] = instance

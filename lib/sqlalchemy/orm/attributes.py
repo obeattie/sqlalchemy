@@ -84,13 +84,13 @@ class InstrumentedAttribute(interfaces.PropComparator):
         return self.get(obj)
 
     def commit_to_state(self, state, obj, value=NO_VALUE):
-        """commit the a copy of thte value of 'obj' to the given CommittedState"""
-
+        """commit the object's current state to its 'committed' state."""
+        
         if value is NO_VALUE:
             if self.key in obj.__dict__:
                 value = obj.__dict__[self.key]
         if value is not NO_VALUE:
-            state.data[self.key] = self.copy(value)
+            state.committed_state[self.key] = self.copy(value)
 
     def clause_element(self):
         return self.comparator.clause_element()
@@ -119,7 +119,7 @@ class InstrumentedAttribute(interfaces.PropComparator):
         will also not have a `hasparent` flag.
         """
 
-        return item._state.get(('hasparent', id(self)), optimistic)
+        return item._state.parents.get(id(self), optimistic)
 
     def sethasparent(self, item, value):
         """Set a boolean flag on the given item corresponding to
@@ -127,7 +127,7 @@ class InstrumentedAttribute(interfaces.PropComparator):
         attribute represented by this ``InstrumentedAttribute``.
         """
 
-        item._state[('hasparent', id(self))] = value
+        item._state.parents[id(self)] = value
 
     def get_history(self, obj, passive=False):
         """Return a new ``AttributeHistory`` object for the given object/this attribute's key.
@@ -165,11 +165,11 @@ class InstrumentedAttribute(interfaces.PropComparator):
         if callable_ is None:
             self.initialize(obj)
         else:
-            obj._state[('callable', self)] = callable_
+            obj._state.callables[self] = callable_
 
     def _get_callable(self, obj):
-        if ('callable', self) in obj._state:
-            return obj._state[('callable', self)]
+        if self in obj._state.callables:
+            return obj._state.callables[self]
         elif self.callable_ is not None:
             return self.callable_(obj)
         else:
@@ -183,7 +183,7 @@ class InstrumentedAttribute(interfaces.PropComparator):
         """
 
         try:
-            del obj._state[('callable', self)]
+            del obj._state.callables[self]
         except KeyError:
             pass
         self.clear(obj)
@@ -223,10 +223,8 @@ class InstrumentedAttribute(interfaces.PropComparator):
             state = obj._state
             # if an instance-wide "trigger" was set, call that
             # and start again
-            if 'trigger' in state:
-                trig = state['trigger']
-                del state['trigger']
-                trig()
+            if state.trigger:
+                state.call_trigger()
                 return self.get(obj, passive=passive)
 
             callable_ = self._get_callable(obj)
@@ -265,11 +263,10 @@ class InstrumentedAttribute(interfaces.PropComparator):
         """
 
         state = obj._state
-        orig = state.get('original', None)
-        if orig is not None:
-            self.commit_to_state(orig, obj, value)
+        if state.committed_state is not None:
+            self.commit_to_state(state, obj, value)
         # remove per-instance callable, if any
-        state.pop(('callable', self), None)
+        state.callables.pop(self, None)
         obj.__dict__[self.key] = value
         return value
 
@@ -278,21 +275,21 @@ class InstrumentedAttribute(interfaces.PropComparator):
         return value
 
     def fire_append_event(self, obj, value, initiator):
-        obj._state['modified'] = True
+        obj._state.modified = True
         if self.trackparent and value is not None:
             self.sethasparent(value, True)
         for ext in self.extensions:
             ext.append(obj, value, initiator or self)
 
     def fire_remove_event(self, obj, value, initiator):
-        obj._state['modified'] = True
+        obj._state.modified = True
         if self.trackparent and value is not None:
             self.sethasparent(value, False)
         for ext in self.extensions:
             ext.remove(obj, value, initiator or self)
 
     def fire_replace_event(self, obj, value, previous, initiator):
-        obj._state['modified'] = True
+        obj._state.modified = True
         if self.trackparent:
             if value is not None:
                 self.sethasparent(value, True)
@@ -334,7 +331,7 @@ class InstrumentedScalarAttribute(InstrumentedAttribute):
         if self.mutable_scalars:
             h = self.get_history(obj, passive=True)
             if h is not None and h.is_modified():
-                obj._state['modified'] = True
+                obj._state.modified = True
                 return True
             else:
                 return False
@@ -354,10 +351,8 @@ class InstrumentedScalarAttribute(InstrumentedAttribute):
 
         state = obj._state
         # if an instance-wide "trigger" was set, call that
-        if 'trigger' in state:
-            trig = state['trigger']
-            del state['trigger']
-            trig()
+        if state.trigger:
+            state.call_trigger()
 
         old = self.get(obj)
         obj.__dict__[self.key] = value
@@ -415,7 +410,7 @@ class InstrumentedCollectionAttribute(InstrumentedAttribute):
         if self.key not in obj.__dict__:
             return
 
-        obj._state['modified'] = True
+        obj._state.modified = True
 
         collection = self.get_collection(obj)
         collection.clear_with_event()
@@ -453,10 +448,8 @@ class InstrumentedCollectionAttribute(InstrumentedAttribute):
 
         state = obj._state
         # if an instance-wide "trigger" was set, call that
-        if 'trigger' in state:
-            trig = state['trigger']
-            del state['trigger']
-            trig()
+        if state.trigger:
+            state.call_trigger()
 
         old = self.get(obj)
         old_collection = self.get_collection(obj, old)
@@ -466,7 +459,7 @@ class InstrumentedCollectionAttribute(InstrumentedAttribute):
                               collection=new_collection)
 
         obj.__dict__[self.key] = user_data
-        state['modified'] = True
+        state.modified = True
 
         # mark all the old elements as detached from the parent
         if old_collection:
@@ -477,17 +470,16 @@ class InstrumentedCollectionAttribute(InstrumentedAttribute):
         """Set an attribute value on the given instance and 'commit' it."""
         
         state = obj._state
-        orig = state.get('original', None)
 
         collection, user_data = self._build_collection(obj)
         self._load_collection(obj, value or [], emit_events=False,
                               collection=collection)
         value = user_data
 
-        if orig is not None:
-            self.commit_to_state(orig, obj, value)
+        if state.committed_state is not None:
+            self.commit_to_state(state, obj, value)
         # remove per-instance callable, if any
-        state.pop(('callable', self), None)
+        state.callables.pop(self, None)
         obj.__dict__[self.key] = value
         return value
 
@@ -543,38 +535,71 @@ class GenericBackrefExtension(interfaces.AttributeExtension):
     def remove(self, obj, child, initiator):
         getattr(child.__class__, self.key).remove(child, obj, initiator)
 
-class CommittedState(object):
-    """Store the original state of an object when the ``commit()`
-    method on the attribute manager is called.
-    """
-
-
-    def __init__(self, manager, obj):
-        self.data = {}
+class InstanceState(object):
+    """tracks state information at the instance level."""
+    
+    def __init__(self, obj):
+        self.committed_state = None
+        self.obj = weakref.ref(obj)
+        self.dict = obj.__dict__
+        self.modified = False
+        self.trigger = None
+        self.callables = {}
+        self.parents = {}
+    
+    def __getstate__(self):
+        return {'committed_state':self.committed_state, 'instance':self.obj(), 'parents':self.parents, 'modified':self.modified}
+    
+    def __setstate__(self, state):
+        self.committed_state = state['committed_state']
+        self.obj = weakref.ref(state['instance'])
+        self.parents = state['parents']
+        self.dict = self.obj().__dict__
+        self.modified = state['modified']
+        self.callables = {}
+        self.trigger = None
+        
+    def call_trigger(self):
+        trig = self.trigger
+        self.trigger = None
+        trig()
+        
+    def commit(self, manager):
+        self.committed_state = {}
+        obj = self.obj()
+        self.modified = False
         for attr in manager.managed_attributes(obj.__class__):
             attr.commit_to_state(self, obj)
 
-    def rollback(self, manager, obj):
-        for attr in manager.managed_attributes(obj.__class__):
-            if attr.key in self.data:
-                if not hasattr(attr, 'get_collection'):
-                    obj.__dict__[attr.key] = self.data[attr.key]
+    def rollback(self, manager):
+        obj = self.obj()
+        if not self.committed_state:
+            manager._clear(obj)
+        else:
+            for attr in manager.managed_attributes(obj.__class__):
+                if attr.key in self.committed_state:
+                    if not hasattr(attr, 'get_collection'):
+                        obj.__dict__[attr.key] = self.committed_state[attr.key]
+                    else:
+                        collection = attr.get_collection(obj)
+                        collection.clear_without_event()
+                        for item in self.committed_state[attr.key]:
+                            collection.append_without_event(item)
                 else:
-                    collection = attr.get_collection(obj)
-                    collection.clear_without_event()
-                    for item in self.data[attr.key]:
-                        collection.append_without_event(item)
-            else:
-                if attr.key in obj.__dict__:
-                    del obj.__dict__[attr.key]
+                    if attr.key in obj.__dict__:
+                        del obj.__dict__[attr.key]
 
     def __repr__(self):
-        return "CommittedState: %s" % repr(self.data)
+        o = self.obj()
+        if o is None:
+            return "InstanceState: <None>"
+        else:
+            return "InstanceState: <%s %s>" % (o.__class__, hex(id(o)))
+    
 
 class AttributeHistory(object):
     """Calculate the *history* of a particular attribute on a
-    particular instance, based on the ``CommittedState`` associated
-    with the instance, if any.
+    particular instance.
     """
 
     def __init__(self, attr, obj, current, passive=False):
@@ -583,9 +608,8 @@ class AttributeHistory(object):
         # get the "original" value.  if a lazy load was fired when we got
         # the 'current' value, this "original" was also populated just
         # now as well (therefore we have to get it second)
-        orig = obj._state.get('original', None)
-        if orig is not None:
-            original = orig.data.get(attr.key)
+        if obj._state.committed_state:
+            original = obj._state.committed_state.get(attr.key, None)
         else:
             original = None
 
@@ -652,11 +676,7 @@ class AttributeManager(object):
         """
 
         for o in obj:
-            orig = o._state.get('original')
-            if orig is not None:
-                orig.rollback(self, o)
-            else:
-                self._clear(o)
+            o._state.rollback(self)
 
     def _clear(self, obj):
         for attr in self.managed_attributes(obj.__class__):
@@ -666,17 +686,10 @@ class AttributeManager(object):
                 pass
     
     def commit(self, *obj):
-        """Create a ``CommittedState`` instance for each object in the given list, representing
-        its *unchanged* state, and associates it with the instance.
-
-        ``AttributeHistory`` objects will indicate the modified state of
-        instance attributes as compared to its value in this
-        ``CommittedState`` object.
-        """
+        """Establish the "committed state" for each object in the given list."""
 
         for o in obj:
-            o._state['original'] = CommittedState(self, o)
-            o._state['modified'] = False
+            o._state.commit(self)
 
     def managed_attributes(self, class_):
         """Return a list of all ``InstrumentedAttribute`` objects
@@ -706,7 +719,7 @@ class AttributeManager(object):
         for attr in self.managed_attributes(object.__class__):
             if attr.check_mutable_modified(object):
                 return True
-        return object._state.get('modified', False)
+        return object._state.modified
 
     def get_history(self, obj, key, **kwargs):
         """Return a new ``AttributeHistory`` object for the given
@@ -743,12 +756,10 @@ class AttributeManager(object):
         removed.
         """
 
+        s = obj._state
         self._clear(obj)
-        try:
-            del obj._state['original']
-        except KeyError:
-            pass
-        obj._state['trigger'] = callable
+        s.committed_state = None
+        s.trigger = callable
 
     def untrigger_history(self, obj):
         """Remove a trigger function set by trigger_history.
@@ -756,14 +767,14 @@ class AttributeManager(object):
         Does not restore the previous state of the object.
         """
 
-        del obj._state['trigger']
+        obj._state.trigger = None
 
     def has_trigger(self, obj):
         """Return True if the given object has a trigger function set
         by ``trigger_history()``.
         """
 
-        return 'trigger' in obj._state
+        return obj._state.trigger is not None
 
     def reset_instance_attribute(self, obj, key):
         """Remove any per-instance callable functions corresponding to
@@ -816,11 +827,17 @@ class AttributeManager(object):
             return getattr(obj_or_cls, key)
         else:
             return getattr(obj_or_cls.__class__, key)
-
+    
     def manage(self, obj):
-        """establish attribute management on the given instance"""
         if not hasattr(obj, '_state'):
-            obj._state = {}
+            obj._state = InstanceState(obj)
+            
+    def new_instance(self, class_):
+        """create a new instance of class_ without its __init__() method being called."""
+        
+        s = class_.__new__(class_)
+        s._state = InstanceState(s)
+        return s
         
     def register_class(self, class_, extra_init=None, on_exception=None):
         """decorate the constructor of the given class to establish attribute
@@ -830,7 +847,7 @@ class AttributeManager(object):
         doinit = False
             
         def init(instance, *args, **kwargs):
-            self.manage(instance)
+            instance._state = InstanceState(instance)
 
             if extra_init:
                 extra_init(class_, oldinit, instance, args, kwargs)
