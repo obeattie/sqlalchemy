@@ -208,7 +208,10 @@ class Mapper(object):
 
         if self.__props_init:
             return self
-        _COMPILE_MUTEX.acquire()
+        if not _COMPILE_MUTEX.acquire(False):
+            print "REENTRANT !"
+            import traceback
+            traceback.print_stack()
         try:
             # double-check inside mutex
             if self.__props_init:
