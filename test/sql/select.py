@@ -339,7 +339,6 @@ sq.myothertable_othername AS sq_myothertable_othername FROM (" + sqstring + ") A
         )
         
     def testoperators(self):
-
         # exercise arithmetic operators
         for (py_op, sql_op) in ((operator.add, '+'), (operator.mul, '*'),
                                 (operator.sub, '-'), (operator.div, '/'),
@@ -387,6 +386,11 @@ sq.myothertable_othername AS sq_myothertable_othername FROM (" + sqstring + ") A
         self.assert_compile(
          table1.select((table1.c.myid != 12) & ~(table1.c.name=='john')), 
          "SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE mytable.myid != :mytable_myid AND mytable.name != :mytable_name"
+        )
+
+        self.assert_compile(
+         table1.select((table1.c.myid != 12) & ~(table1.c.name.between('jack','john'))), 
+         "SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE mytable.myid != :mytable_myid AND NOT (mytable.name BETWEEN :mytable_name AND :mytable_name_1)"
         )
 
         self.assert_compile(
@@ -945,6 +949,9 @@ EXISTS (select yay from foo where boo = lar)",
         self.assert_compile(select([table1], table1.c.myid.in_('a')),
         "SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE mytable.myid = :mytable_myid")
 
+        self.assert_compile(select([table1], ~table1.c.myid.in_('a')),
+        "SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE mytable.myid != :mytable_myid")
+
         self.assert_compile(select([table1], table1.c.myid.in_('a', 'b')),
         "SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE mytable.myid IN (:mytable_myid, :mytable_myid_1)")
 
@@ -1080,6 +1087,10 @@ UNION SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE 
             "SELECT op.field FROM op WHERE :op_field + op.field IN (:literal, :literal_1)")
         self.assert_compile(table.select(not_(and_(table.c.field == 5, table.c.field == 7))),
             "SELECT op.field FROM op WHERE NOT (op.field = :op_field AND op.field = :op_field_1)")
+        self.assert_compile(table.select(not_(table.c.field == 5)),
+            "SELECT op.field FROM op WHERE op.field != :op_field")
+        self.assert_compile(table.select(not_(table.c.field.between(5, 6))),
+            "SELECT op.field FROM op WHERE NOT (op.field BETWEEN :op_field AND :op_field_1)")
         self.assert_compile(table.select(not_(table.c.field) == 5),
             "SELECT op.field FROM op WHERE (NOT op.field) = :literal")
         self.assert_compile(table.select((table.c.field == table.c.field).between(False, True)),
@@ -1187,7 +1198,33 @@ class CRUDTest(SQLCompileTest):
         s = select([table2.c.othername], table2.c.otherid == table1.c.myid)
         u = table1.delete(table1.c.name==s)
         self.assert_compile(u, "DELETE FROM mytable WHERE mytable.name = (SELECT myothertable.othername FROM myothertable WHERE myothertable.otherid = mytable.myid)")
+
+class InlineDefaultTest(SQLCompileTest):
+    def test_insert(self):
+        m = MetaData()
+        foo =  Table('foo', m,
+            Column('id', Integer))
             
+        t = Table('test', m,
+            Column('col1', Integer, default=func.foo(1)),
+            Column('col2', Integer, default=select([func.coalesce(func.max(foo.c.id))])),
+            )
+
+        self.assert_compile(t.insert(inline=True, values={}), "INSERT INTO test (col1, col2) VALUES (foo(:foo), (SELECT coalesce(max(foo.id)) FROM foo))")
+
+    def test_update(self):
+        m = MetaData()
+        foo =  Table('foo', m,
+            Column('id', Integer))
+
+        t = Table('test', m,
+            Column('col1', Integer, onupdate=func.foo(1)),
+            Column('col2', Integer, onupdate=select([func.coalesce(func.max(foo.c.id))])),
+            Column('col3', String(30))
+            )
+
+        self.assert_compile(t.update(inline=True, values={'col3':'foo'}), "UPDATE test SET col1=foo(:foo), col2=(SELECT coalesce(max(foo.id)) FROM foo), col3=:col3")
+        
 class SchemaTest(SQLCompileTest):
     def testselect(self):
         # these tests will fail with the MS-SQL compiler since it will alias schema-qualified tables

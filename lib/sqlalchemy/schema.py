@@ -507,7 +507,10 @@ class Column(SchemaItem, expression._ColumnClause):
         if getattr(self, 'table', None) is not None:
             raise exceptions.ArgumentError("this Column already has a table!")
         if not self._is_oid:
+            self._pre_existing_column = table._columns.get(self.key)
             table._columns.add(self)
+        else:
+            self._pre_existing_column = None
         if self.primary_key:
             table.primary_key.add(self)
         elif self.key in table.primary_key:
@@ -554,6 +557,7 @@ class Column(SchemaItem, expression._ColumnClause):
         c.orig_set = self.orig_set
         c.__originating_column = self.__originating_column
         c._distance = self._distance + 1
+        c._pre_existing_column = self._pre_existing_column
         if not c._is_oid:
             selectable.columns.add(c)
             if self.primary_key:
@@ -674,7 +678,14 @@ class ForeignKey(SchemaItem):
 
     def _set_parent(self, column):
         self.parent = column
-
+        
+        if self.parent._pre_existing_column is not None:
+            # remove existing FK which matches us
+            for fk in self.parent._pre_existing_column.foreign_keys:
+                if fk._colspec == self._colspec:
+                    self.parent.table.foreign_keys.remove(fk)
+                    self.parent.table.constraints.remove(fk.constraint)
+            
         if self.constraint is None and isinstance(self.parent.table, Table):
             self.constraint = ForeignKeyConstraint([],[], use_alter=self.use_alter, name=self.name, onupdate=self.onupdate, ondelete=self.ondelete)
             self.parent.table.append_constraint(self.constraint)

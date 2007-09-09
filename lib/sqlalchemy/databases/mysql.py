@@ -81,7 +81,7 @@ multi-column key for some storage engines::
         Column('gid', Integer, primary_key=True, autoincrement=False),
         Column('id', Integer, primary_key=True))
 
-MySQL SQL modes are supported.  Modes that enable ``ANSI_QUOTE`` (such as
+MySQL SQL modes are supported.  Modes that enable ``ANSI_QUOTES`` (such as
 ``ANSI``) require an engine option to modify SQLAlchemy's quoting style.
 When using an ANSI-quoting mode, supply ``use_ansiquotes=True`` when
 creating your ``Engine``::
@@ -310,7 +310,6 @@ class MSNumeric(sqltypes.Numeric, _NumericType):
             return process
         else:
             return None
-            
 
 
 class MSDecimal(MSNumeric):
@@ -404,16 +403,15 @@ class MSFloat(sqltypes.Float, _NumericType):
           underlying database API, which continue to be numeric.
         """
 
-        if length is not None:
-            self.length=length
+        self.length = length
         _NumericType.__init__(self, **kw)
         sqltypes.Float.__init__(self, precision, asdecimal=asdecimal)
 
     def get_col_spec(self):
         if hasattr(self, 'length') and self.length is not None:
-            return self._extend("FLOAT(%(precision)s, %(length)s)" % {'precision': self.precision, 'length' : self.length})
+            return self._extend("FLOAT(%s, %s)" % (self.precision, self.length))
         elif self.precision is not None:
-            return self._extend("FLOAT(%(precision)s)" % {'precision': self.precision})
+            return self._extend("FLOAT(%s)" % (self.precision,))
         else:
             return self._extend("FLOAT")
 
@@ -1064,7 +1062,10 @@ class MSEnum(MSString):
         
         enums
           The range of valid values for this ENUM.  Values will be used
-          exactly as they appear when generating schemas
+          exactly as they appear when generating schemas.  Strings must
+          be quoted, as in the example above.  Single-quotes are suggested
+          for ANSI compatability and are required for portability to servers
+          with ANSI_QUOTES enabled.
 
         strict
           Defaults to False: ensure that a given value is in this ENUM's
@@ -1101,12 +1102,13 @@ class MSEnum(MSString):
         strip_enums = []
         for a in enums:
             if a[0:1] == '"' or a[0:1] == "'":
-                a = a[1:-1]
+                # strip enclosing quotes and unquote interior
+                a = a[1:-1].replace(a[0] * 2, a[0])
             strip_enums.append(a)
             
         self.enums = strip_enums
         self.strict = kw.pop('strict', False)
-        length = max([len(v) for v in strip_enums])
+        length = max([len(v) for v in strip_enums] + [0])
         super(MSEnum, self).__init__(length, **kw)
 
     def bind_processor(self, dialect):
@@ -1139,7 +1141,10 @@ class MSSet(MSString):
         
         values
           The range of valid values for this SET.  Values will be used
-          exactly as they appear when generating schemas.
+          exactly as they appear when generating schemas.  Strings must
+          be quoted, as in the example above.  Single-quotes are suggested
+          for ANSI compatability and are required for portability to servers
+          with ANSI_QUOTES enabled.
 
         charset
           Optional, a column-level character set for this string
@@ -1169,7 +1174,8 @@ class MSSet(MSString):
         strip_values = []
         for a in values:
             if a[0:1] == '"' or a[0:1] == "'":
-                a = a[1:-1]
+                # strip enclosing quotes and unquote interior
+                a = a[1:-1].replace(a[0] * 2, a[0])
             strip_values.append(a)
             
         self.values = strip_values
@@ -2175,7 +2181,7 @@ class MySQLSchemaReflector(object):
             r'(?:\((\d+)\))?(?=\,|$))+' % quotes)
 
         # 'foo' or 'foo','bar' or 'fo,o','ba''a''r'
-        self._re_csv_str = _re_compile(r'\x27(?:\x27\x27|[^\x27])+\x27')
+        self._re_csv_str = _re_compile(r'\x27(?:\x27\x27|[^\x27])*\x27')
 
         # 123 or 123,456
         self._re_csv_int = _re_compile(r'\d+')
@@ -2192,7 +2198,7 @@ class MySQLSchemaReflector(object):
             r'%(iq)s(?P<name>(?:%(esc_fq)s|[^%(fq)s])+)%(fq)s +'
             r'(?P<coltype>\w+)'
             r'(?:\((?P<arg>(?:\d+|\d+,\d+|'
-              r'(?:\x27(?:\x27\x27|[^\x27])+\x27,?)+))\))?'
+              r'(?:\x27(?:\x27\x27|[^\x27])*\x27,?)+))\))?'
             r'(?: +(?P<unsigned>UNSIGNED))?'
             r'(?: +(?P<zerofill>ZEROFILL))?'
             r'(?: +CHARACTER SET +(?P<charset>\w+))?'

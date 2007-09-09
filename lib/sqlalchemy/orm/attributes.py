@@ -325,7 +325,7 @@ class ScalarAttributeImpl(AttributeImpl):
 
     def delete(self, state):
         old = self.get(state)
-        del obj.__dict__[self.key]
+        del state.dict[self.key]
         self.fire_remove_event(state, old, self)
 
     def check_mutable_modified(self, state):
@@ -839,10 +839,15 @@ class AttributeManager(object):
         """decorate the constructor of the given class to establish attribute
         management on new instances."""
 
+        # do a sweep first, this also helps some attribute extensions
+        # (like associationproxy) become aware of themselves at the 
+        # class level
+        self.unregister_class(class_)
+        
         oldinit = None
         doinit = False
         class_._sa_attr_manager = self
-        
+
         def init(instance, *args, **kwargs):
             instance._state = InstanceState(instance)
 
