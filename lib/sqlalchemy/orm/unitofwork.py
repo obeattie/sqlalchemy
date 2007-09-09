@@ -87,11 +87,8 @@ class UnitOfWork(object):
     operation.
     """
 
-    def __init__(self, session, weak_identity_map=False):
-        if weak_identity_map:
-            self.identity_map = weakref.WeakValueDictionary()
-        else:
-            self.identity_map = {}
+    def __init__(self, session):
+        self.identity_map = attributes.InstanceDict()
 
         self.new = util.Set() #OrderedSet()
         self.deleted = util.Set()
@@ -213,24 +210,6 @@ class UnitOfWork(object):
 
         if session.extension is not None:
             session.extension.after_flush_postexec(session, flush_context)
-
-    def prune_identity_map(self):
-        """Removes unreferenced instances cached in the identity map.
-
-        Removes any object in the identity map that is not referenced
-        in user code or scheduled for a unit of work operation.  Returns
-        the number of objects pruned.
-        """
-
-        if isinstance(self.identity_map, weakref.WeakValueDictionary):
-            return 0
-        ref_count = len(self.identity_map)
-        dirty = self.locate_dirty()
-        keepers = weakref.WeakValueDictionary(self.identity_map)
-        self.identity_map.clear()
-        gc.collect()
-        self.identity_map.update(keepers)
-        return ref_count - len(self.identity_map)
 
 class UOWTransaction(object):
     """Handles the details of organizing and executing transaction

@@ -5,7 +5,7 @@
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
 import weakref
-
+import UserDict
 from sqlalchemy import util
 from sqlalchemy.orm import util as orm_util, interfaces, collections
 from sqlalchemy.orm.mapper import class_mapper
@@ -532,21 +532,29 @@ class InstanceState(object):
     
     def __init__(self, obj):
         self.class_ = obj.__class__
-        self.obj = weakref.ref(obj, callback=self.__resurrect)
+        self.obj = weakref.ref(obj, self.__resurrect)
         self.dict = obj.__dict__
         self.committed_state = None
         self.modified = False
         self.trigger = None
         self.callables = {}
         self.parents = {}
-
-    def __resurrect(self, ref):
-        if not self.modified:
-            manager = self.class_._sa_attribute_manager
-            for attr in manager.managed_attributes(self.class_):
-                if attr.impl.check_mutable_modified(self):
-                    self.modified = True
+        self.instance_dict = None
         
+    def __resurrect(self, ref):
+        if self.instance_dict is None or self.instance_dict() is None:
+            return
+        self.class_._sa_attribute_manager._is_modified(self)
+        if self.modified:
+            # store strong ref'ed version of the object; will revert
+            # to weakref when changes are persisted
+            obj = self.class_._sa_attribute_manager.new_instance(self.class_, state=self)
+            self.obj = weakref.ref(obj, callback=self.__resurrect)
+            self.__strong_obj = obj
+            obj.__dict__.update(self.dict)
+            self.dict = obj.__dict__
+        else:
+            del self.instance_dict()[self.dict['_instance_key']]
         
     def __getstate__(self):
         return {'committed_state':self.committed_state, 'parents':self.parents, 'modified':self.modified, 'instance':self.obj()}
@@ -571,7 +579,9 @@ class InstanceState(object):
         self.modified = False
         for attr in manager.managed_attributes(obj.__class__):
             attr.impl.commit_to_state(self)
-
+        # remove strong ref
+        self.__strong_obj = None
+            
     def rollback(self, manager, obj):
         if not self.committed_state:
             manager._clear(obj)
@@ -589,6 +599,106 @@ class InstanceState(object):
                     if attr.impl.key in self.dict:
                         del self.dict[attr.impl.key]
 
+class InstanceDict(UserDict.UserDict):
+    """similar to WeakValueDictionary, but wired towards 'state' objects."""
+    
+    def __getitem__(self, key):
+        o = self.data[key].obj()
+        if o is None:
+            raise KeyError, key
+        else:
+            return o
+
+    def __contains__(self, key):
+        try:
+            o = self.data[key].obj()
+        except KeyError:
+            return False
+        return o is not None
+
+    def has_key(self, key):
+        try:
+            o = self.data[key].obj()
+        except KeyError:
+            return False
+        return o is not None
+
+    def __repr__(self):
+        return "<InstanceDict at %s>" % id(self)
+
+    def __setitem__(self, key, value):
+        self.data[key] = value._state
+        value._state.instance_dict = weakref.ref(self)
+
+    def __delitem__(self, key):
+        state = self.data[key]
+        state.instance_dict = None
+        del self.data[key]
+        
+    def get(self, key, default=None):
+        try:
+            state = self.data[key]
+        except KeyError:
+            return default
+        else:
+            o = state.obj()
+            if o is None:
+                # This should only happen
+                return default
+            else:
+                return o
+
+    def items(self):
+        L = []
+        for key, state in self.data.items():
+            o = state.obj()
+            if o is not None:
+                L.append((key, o))
+        return L
+
+    def iteritems(self):
+        for state in self.data.itervalues():
+            value = state.obj()
+            if value is not None:
+                yield value._instance_key, value
+
+    def iterkeys(self):
+        return self.data.iterkeys()
+
+    def __iter__(self):
+        return self.data.iterkeys()
+
+    def itervalues(self):
+        for state in self.data.itervalues():
+            obj = state.obj()
+            if obj is not None:
+                yield obj
+
+    def values(self):
+        L = []
+        for state in self.data.values():
+            o = state.obj()
+            if o is not None:
+                L.append(o)
+        return L
+
+    def popitem(self):
+        raise NotImplementedError()
+
+    def pop(self, key, *args):
+        raise NotImplementedError()
+
+    def setdefault(self, key, default=None):
+        raise NotImplementedError()
+
+    def update(self, dict=None, **kwargs):
+        raise NotImplementedError()
+
+    def copy(self):
+        raise NotImplementedError()
+
+    
+    
 class AttributeHistory(object):
     """Calculate the *history* of a particular attribute on a
     particular instance.
@@ -708,16 +818,18 @@ class AttributeManager(object):
             return noninherited
 
     def is_modified(self, obj):
-        state = obj._state
+        return self._is_modified(obj._state)
+    
+    def _is_modified(self, state):
         if state.modified:
             return True
         else:
-            for attr in self.managed_attributes(obj.__class__):
+            for attr in self.managed_attributes(state.class_):
                 if attr.impl.check_mutable_modified(state):
                     return True
             else:
                 return False
-
+        
     def get_history(self, obj, key, **kwargs):
         """Return a new ``AttributeHistory`` object for the given
         attribute on the given object.
@@ -735,21 +847,16 @@ class AttributeManager(object):
         callable, the callable will only be executed if the given
         `passive` flag is False.
         """
-        print "GAL", key, "PASSIVE", passive
         attr = getattr(obj.__class__, key).impl
         state = obj._state
         x = attr.get(state, passive=passive)
         if x is PASSIVE_NORESULT:
-            print "CHECK1"
             return []
         elif hasattr(attr, 'get_collection'):
-            print "CHECK2"
             return list(attr.get_collection(state, x))
         elif isinstance(x, list):
-            print "CHECK3"
             return x
         else:
-            print "CHECK4"
             return [x]
 
     def trigger_history(self, obj, callable):
@@ -828,11 +935,14 @@ class AttributeManager(object):
         if not hasattr(obj, '_state'):
             obj._state = InstanceState(obj)
             
-    def new_instance(self, class_):
+    def new_instance(self, class_, state=None):
         """create a new instance of class_ without its __init__() method being called."""
         
         s = class_.__new__(class_)
-        s._state = InstanceState(s)
+        if state:
+            s.state = state
+        else:
+            s._state = InstanceState(s)
         return s
         
     def register_class(self, class_, extra_init=None, on_exception=None):
@@ -846,7 +956,7 @@ class AttributeManager(object):
         
         oldinit = None
         doinit = False
-        class_._sa_attr_manager = self
+        class_._sa_attribute_manager = self
 
         def init(instance, *args, **kwargs):
             instance._state = InstanceState(instance)
