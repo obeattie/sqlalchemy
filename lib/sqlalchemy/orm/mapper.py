@@ -166,7 +166,7 @@ class Mapper(object):
     def _is_orphan(self, obj):
         optimistic = has_identity(obj)
         for (key,klass) in self.delete_orphans:
-            if getattr(klass, key).hasparent(obj, optimistic=optimistic):
+            if attribute_manager.has_parent(klass, obj, key, optimistic=optimistic):
                return False
         else:
             if self.delete_orphans:

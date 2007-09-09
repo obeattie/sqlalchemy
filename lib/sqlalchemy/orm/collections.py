@@ -509,7 +509,7 @@ class CollectionAdapter(object):
                  'data': self.data }
 
     def __setstate__(self, d):
-        self.attr = getattr(d['owner_state'].obj().__class__, d['key'])
+        self.attr = getattr(d['owner_state'].obj().__class__, d['key']).impl
         self.owner_state = d['owner_state']
         self._data = weakref.ref(d['data'])
 

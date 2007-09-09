@@ -69,12 +69,12 @@ class UOWAttributeManager(attributes.AttributeManager):
     instance for all ``InstrumentedAttributes``.
     """
 
-    def create_prop(self, class_, key, uselist, callable_, typecallable,
+    def _create_prop(self, class_, key, uselist, callable_, typecallable,
                     cascade=None, extension=None, **kwargs):
         extension = util.to_list(extension or [])
         extension.insert(0, UOWEventHandler(key, class_, cascade=cascade))
 
-        return super(UOWAttributeManager, self).create_prop(
+        return super(UOWAttributeManager, self)._create_prop(
             class_, key, uselist, callable_, typecallable,
             extension=extension, **kwargs)
 

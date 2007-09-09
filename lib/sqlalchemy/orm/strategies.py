@@ -201,7 +201,7 @@ class DeferredColumnLoader(LoaderStrategy):
             try:
                 row = result.fetchone()
                 for prop in group:
-                    sessionlib.attribute_manager.get_attribute(instance, prop.key).set_committed_value(instance, row[prop.columns[0]])
+                    sessionlib.attribute_manager.set_committed_value(instance, prop.key, row[prop.columns[0]])
                 return attributes.ATTR_WAS_SET
             finally:
                 result.close()
@@ -590,7 +590,7 @@ class EagerLoader(AbstractRelationLoader):
                         # event handlers.
                         #
                         # FIXME: instead of...
-                        sessionlib.attribute_manager.get_attribute(instance, self.key).set_raw_value(instance, self.select_mapper._instance(selectcontext, decorated_row, None))
+                        sessionlib.attribute_manager.set_raw_value(instance, self.key, self.select_mapper._instance(selectcontext, decorated_row, None))
                         # bypass and set directly:
                         #instance.__dict__[self.key] = self.select_mapper._instance(selectcontext, decorated_row, None)
                     else:

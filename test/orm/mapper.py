@@ -251,7 +251,7 @@ class MapperTest(MapperSuperTest):
         class Foo(User):pass
         mapper(User, users)
         mapper(Foo, addresses, inherits=User)
-        assert getattr(Foo().__class__, 'user_name').get is not None
+        assert getattr(Foo().__class__, 'user_name').impl is not None
         
     def testpropfilters(self):
         t = Table('person', MetaData(),
