@@ -544,8 +544,7 @@ class InstanceState(object):
     def __resurrect(self, ref):
         if self.instance_dict is None or self.instance_dict() is None:
             return
-        self.class_._sa_attribute_manager._is_modified(self)
-        if self.modified:
+        if self.modified or self.class_._sa_attribute_manager._is_modified(self):
             # store strong ref'ed version of the object; will revert
             # to weakref when changes are persisted
             obj = self.class_._sa_attribute_manager.new_instance(self.class_, state=self)
@@ -799,6 +798,7 @@ class AttributeManager(object):
         """
 
         try:
+            # TODO: move this collection onto the class itself?
             return self._inherited_attribute_cache[class_]
         except KeyError:
             if not isinstance(class_, type):
@@ -809,6 +809,7 @@ class AttributeManager(object):
 
     def noninherited_managed_attributes(self, class_):
         try:
+            # TODO: move this collection onto the class itself?
             return self._noninherited_attribute_cache[class_]
         except KeyError:
             if not isinstance(class_, type):

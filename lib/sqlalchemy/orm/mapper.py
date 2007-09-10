@@ -208,10 +208,7 @@ class Mapper(object):
 
         if self.__props_init:
             return self
-        if not _COMPILE_MUTEX.acquire(False):
-            print "REENTRANT !"
-            import traceback
-            traceback.print_stack()
+        _COMPILE_MUTEX.acquire()
         try:
             # double-check inside mutex
             if self.__props_init:
@@ -534,7 +531,9 @@ class Mapper(object):
             cls = object.__getattribute__(self, 'class_')
             clskey = object.__getattribute__(self, 'key')
 
-            # get the class' mapper; will compile all mappers
+            if key.startswith('__'):
+                return object.__getattribute__(self, key)
+
             class_mapper(cls)
             
             if cls.__dict__.get(clskey) is self:
