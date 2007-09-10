@@ -572,8 +572,7 @@ class EagerLoader(AbstractRelationLoader):
             return None
 
     def create_row_processor(self, selectcontext, mapper, row):
-        selectcontext.stack.push_property(self.key)
-        path = selectcontext.stack.snapshot()
+        path = selectcontext.stack.push_property(self.key)
 
         row_decorator = self._create_row_decorator(selectcontext, row, path)
         if row_decorator is not None:

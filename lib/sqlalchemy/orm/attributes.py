@@ -601,6 +601,10 @@ class InstanceState(object):
 class InstanceDict(UserDict.UserDict):
     """similar to WeakValueDictionary, but wired towards 'state' objects."""
     
+    def __init__(self, *args, **kw):
+        self._wr = weakref.ref(self)
+        UserDict.UserDict.__init__(self, *args, **kw)
+        
     def __getitem__(self, key):
         o = self.data[key].obj()
         if o is None:
@@ -627,7 +631,7 @@ class InstanceDict(UserDict.UserDict):
 
     def __setitem__(self, key, value):
         self.data[key] = value._state
-        value._state.instance_dict = weakref.ref(self)
+        value._state.instance_dict = self._wr
 
     def __delitem__(self, key):
         state = self.data[key]
