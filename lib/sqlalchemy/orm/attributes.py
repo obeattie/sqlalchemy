@@ -529,6 +529,8 @@ class GenericBackrefExtension(interfaces.AttributeExtension):
 
 class InstanceState(object):
     """tracks state information at the instance level."""
+
+    __slots__ = 'class_', 'obj', 'dict', 'committed_state', 'modified', 'trigger', 'callables', 'parents', 'instance_dict', '_strong_obj'
     
     def __init__(self, obj):
         self.class_ = obj.__class__
@@ -574,7 +576,7 @@ class InstanceState(object):
             # to weakref when changes are persisted
             obj = self.class_._sa_attribute_manager.new_instance(self.class_, state=self)
             self.obj = weakref.ref(obj, callback=self.__cleanup)
-            self.__strong_obj = obj
+            self._strong_obj = obj
             obj.__dict__.update(self.dict)
             self.dict = obj.__dict__
             return obj
@@ -606,7 +608,7 @@ class InstanceState(object):
         for attr in manager.managed_attributes(obj.__class__):
             attr.impl.commit_to_state(self)
         # remove strong ref
-        self.__strong_obj = None
+        self._strong_obj = None
             
     def rollback(self, manager, obj):
         if not self.committed_state:
