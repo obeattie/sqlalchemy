@@ -623,7 +623,9 @@ class InstanceDict(UserDict.UserDict):
     
     def __init__(self, *args, **kw):
         self._wr = weakref.ref(self)
-        self._mutex = threading.Lock()
+        # RLock because the mutex is used by a cleanup 
+        # handler, which can be called at any time (including within an already mutexed block)
+        self._mutex = threading.RLock()
         UserDict.UserDict.__init__(self, *args, **kw)
         
     def __getitem__(self, key):
