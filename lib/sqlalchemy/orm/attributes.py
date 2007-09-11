@@ -557,11 +557,18 @@ class InstanceState(object):
             if self.instance_dict is None or self.instance_dict() is None or self.obj() is not None:
                 return
                 
-            self._resurrect(instance_dict)
+            self.__resurrect(instance_dict)
         finally:
             instance_dict._mutex.release()
-            
-    def _resurrect(self, instance_dict):
+    
+    def _check_resurrect(self, instance_dict):
+        instance_dict._mutex.acquire()
+        try:
+            return self.obj() or self.__resurrect(instance_dict)
+        finally:
+            instance_dict._mutex.release()
+        
+    def __resurrect(self, instance_dict):
         if self.modified or self.class_._sa_attribute_manager._is_modified(self):
             # store strong ref'ed version of the object; will revert
             # to weakref when changes are persisted
@@ -630,27 +637,15 @@ class InstanceDict(UserDict.UserDict):
         
     def __getitem__(self, key):
         state = self.data[key]
-        o = state.obj()
+        o = state.obj() or state._check_resurrect(self)
         if o is None:
-            self._mutex.acquire()
-            try:
-                o = state._resurrect(self)
-            finally:
-                self._mutex.release()
-            if o is None:
-                raise KeyError, key
+            raise KeyError, key
         return o
                 
     def __contains__(self, key):
         try:
             state = self.data[key]
-            o = state.obj()
-            if o is None:
-                self._mutex.acquire()
-                try:
-                    o = state._resurrect(self)
-                finally:
-                    self._mutex.release()
+            o = state.obj() or state._check_resurrect(self)
         except KeyError:
             return False
         return o is not None
@@ -665,7 +660,8 @@ class InstanceDict(UserDict.UserDict):
         if key in self.data:
             self._mutex.acquire()
             try:
-                self.data[key].instance_dict = None
+                if key in self.data:
+                    self.data[key].instance_dict = None
             finally:
                 self._mutex.release()
         self.data[key] = value._state
