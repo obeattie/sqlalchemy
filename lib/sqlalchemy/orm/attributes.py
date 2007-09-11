@@ -4,7 +4,7 @@
 # This module is part of SQLAlchemy and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
-import weakref
+import weakref, threading
 import UserDict
 from sqlalchemy import util
 from sqlalchemy.orm import util as orm_util, interfaces, collections
@@ -532,7 +532,7 @@ class InstanceState(object):
     
     def __init__(self, obj):
         self.class_ = obj.__class__
-        self.obj = weakref.ref(obj, self.__resurrect)
+        self.obj = weakref.ref(obj, self.__cleanup)
         self.dict = obj.__dict__
         self.committed_state = None
         self.modified = False
@@ -541,20 +541,40 @@ class InstanceState(object):
         self.parents = {}
         self.instance_dict = None
         
-    def __resurrect(self, ref):
+    def __cleanup(self, ref):
         if self.instance_dict is None or self.instance_dict() is None:
             return
+        
+        instance_dict = self.instance_dict()
+        
+        # the mutexing here is based on the assumption that gc.collect()
+        # may be firing off cleanup handlers in a different thread than that
+        # which is normally operating upon the instance dict.
+        instance_dict._mutex.acquire()
+        try:
+            # if instance_dict de-refed us, or it called our
+            # _resurrect, return
+            if self.instance_dict is None or self.instance_dict() is None or self.obj() is not None:
+                return
+                
+            self._resurrect(instance_dict)
+        finally:
+            instance_dict._mutex.release()
+            
+    def _resurrect(self, instance_dict):
         if self.modified or self.class_._sa_attribute_manager._is_modified(self):
             # store strong ref'ed version of the object; will revert
             # to weakref when changes are persisted
             obj = self.class_._sa_attribute_manager.new_instance(self.class_, state=self)
-            self.obj = weakref.ref(obj, callback=self.__resurrect)
+            self.obj = weakref.ref(obj, callback=self.__cleanup)
             self.__strong_obj = obj
             obj.__dict__.update(self.dict)
             self.dict = obj.__dict__
+            return obj
         else:
-            del self.instance_dict()[self.dict['_instance_key']]
-        
+            del instance_dict[self.dict['_instance_key']]
+            return None
+            
     def __getstate__(self):
         return {'committed_state':self.committed_state, 'parents':self.parents, 'modified':self.modified, 'instance':self.obj()}
     
@@ -603,33 +623,49 @@ class InstanceDict(UserDict.UserDict):
     
     def __init__(self, *args, **kw):
         self._wr = weakref.ref(self)
+        self._mutex = threading.Lock()
         UserDict.UserDict.__init__(self, *args, **kw)
         
     def __getitem__(self, key):
-        o = self.data[key].obj()
+        state = self.data[key]
+        o = state.obj()
         if o is None:
-            raise KeyError, key
-        else:
-            return o
-
+            self._mutex.acquire()
+            try:
+                o = state._resurrect(self)
+            finally:
+                self._mutex.release()
+            if o is None:
+                raise KeyError, key
+        return o
+                
     def __contains__(self, key):
         try:
-            o = self.data[key].obj()
+            state = self.data[key]
+            o = state.obj()
+            if o is None:
+                self._mutex.acquire()
+                try:
+                    o = state._resurrect(self)
+                finally:
+                    self._mutex.release()
         except KeyError:
             return False
         return o is not None
 
     def has_key(self, key):
-        try:
-            o = self.data[key].obj()
-        except KeyError:
-            return False
-        return o is not None
+        return key in self
 
     def __repr__(self):
         return "<InstanceDict at %s>" % id(self)
 
     def __setitem__(self, key, value):
+        if key in self.data:
+            self._mutex.acquire()
+            try:
+                self.data[key].instance_dict = None
+            finally:
+                self._mutex.release()
         self.data[key] = value._state
         value._state.instance_dict = self._wr
 
