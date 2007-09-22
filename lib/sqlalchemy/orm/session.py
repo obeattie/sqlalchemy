@@ -318,7 +318,7 @@ class Session(object):
     a thread-managed Session adapter, provided by the [sqlalchemy.orm#scoped_session()] function.
     """
 
-    def __init__(self, bind=None, autoflush=True, transactional=False, twophase=False, echo_uow=False, binds=None, extension=None):
+    def __init__(self, bind=None, autoflush=True, transactional=False, twophase=False, echo_uow=False, weak_identity_map=True, binds=None, extension=None):
         """Construct a new Session.
 
             autoflush
@@ -384,6 +384,7 @@ class Session(object):
 
         """
         self.echo_uow = echo_uow
+        self.weak_identity_map = weak_identity_map
         self.uow = unitofwork.UnitOfWork(self)
         self.identity_map = self.uow.identity_map
 
@@ -724,6 +725,19 @@ class Session(object):
 
         for c in [obj] + list(_object_mapper(obj).cascade_iterator('refresh-expire', obj)):
             self._expire_impl(c)
+
+    def prune(self):
+        """Removes unreferenced instances cached in the identity map.
+
+        Note that this method is only meaningful if "weak_identity_map"
+        is set to False.
+        
+        Removes any object in this Session's identity map that is not
+        referenced in user code, modified, new or scheduled for deletion.
+        Returns the number of objects pruned.
+        """
+
+        return self.uow.prune_identity_map()
 
     def _expire_impl(self, obj):
         self._validate_persistent(obj)

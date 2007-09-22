@@ -546,7 +546,7 @@ class InstanceState(object):
     def __cleanup(self, ref):
         if self.instance_dict is None or self.instance_dict() is None:
             return
-        
+            
         instance_dict = self.instance_dict()
         
         # the mutexing here is based on the assumption that gc.collect()
@@ -575,7 +575,7 @@ class InstanceState(object):
             # store strong ref'ed version of the object; will revert
             # to weakref when changes are persisted
             obj = self.class_._sa_attribute_manager.new_instance(self.class_, state=self)
-            self.obj = weakref.ref(obj, callback=self.__cleanup)
+            self.obj = weakref.ref(obj, self.__cleanup)
             self._strong_obj = obj
             obj.__dict__.update(self.dict)
             self.dict = obj.__dict__
@@ -609,7 +609,7 @@ class InstanceState(object):
             attr.impl.commit_to_state(self)
         # remove strong ref
         self._strong_obj = None
-            
+        
     def rollback(self, manager, obj):
         if not self.committed_state:
             manager._clear(obj)
@@ -706,7 +706,10 @@ class InstanceDict(UserDict.UserDict):
 
     def __iter__(self):
         return self.data.iterkeys()
-
+    
+    def __len__(self):
+        return len(self.values())
+        
     def itervalues(self):
         for state in self.data.itervalues():
             obj = state.obj()
@@ -981,7 +984,7 @@ class AttributeManager(object):
         
         s = class_.__new__(class_)
         if state:
-            s.state = state
+            s._state = state
         else:
             s._state = InstanceState(s)
         return s
