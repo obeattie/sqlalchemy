@@ -891,6 +891,7 @@ class DeferredTest(MapperSuperTest):
         q2 = q.options(undefer('orders.items.item_name'))
         l = q2.select()
         item = l[0].orders[1].items[1]
+        print "CHECK-------------"
         def go():
             print item.item_name
         self.assert_sql_count(testbase.db, go, 0)

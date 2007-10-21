@@ -1516,14 +1516,16 @@ class Mapper(object):
             existing_populators = []
             post_processors = []
             for prop in self.__props.values():
+                selectcontext.stack.push_property(prop.key)
                 (newpop, existingpop, post_proc) = prop.create_row_processor(selectcontext, self, row)
                 if newpop is not None:
-                    new_populators.append(newpop)
+                    new_populators.append((prop.key, newpop))
                 if existingpop is not None:
-                    existing_populators.append(existingpop)
+                    existing_populators.append((prop.key, existingpop))
                 if post_proc is not None:
                     post_processors.append(post_proc)
-                    
+                selectcontext.stack.pop()
+                
             poly_select_loader = self._get_poly_select_loader(selectcontext, row)
             if poly_select_loader is not None:
                 post_processors.append(poly_select_loader)
@@ -1536,9 +1538,11 @@ class Mapper(object):
         else:
             populators = existing_populators
                 
-        for p in populators:
-            p(instance, row, ispostselect=ispostselect, isnew=isnew, **flags)
-        
+        for (key, populator) in populators:
+            selectcontext.stack.push_property(key)
+            populator(instance, row, ispostselect=ispostselect, isnew=isnew, **flags)
+            selectcontext.stack.pop()
+            
         selectcontext.stack.pop()
             
         if self.non_primary:

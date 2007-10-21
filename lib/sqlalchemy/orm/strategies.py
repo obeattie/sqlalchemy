@@ -313,7 +313,7 @@ class LazyLoader(AbstractRelationLoader):
                     bindparam.value = mapper.get_attr_by_column(instance, bind_to_col[bindparam.key])
         return Visitor().traverse(criterion, clone=True)
     
-    def setup_loader(self, instance, options=None):
+    def setup_loader(self, instance, options=None, path=None):
         if not mapper.has_mapper(instance):
             return None
         else:
@@ -342,6 +342,8 @@ class LazyLoader(AbstractRelationLoader):
             # if we have a simple straight-primary key load, use mapper.get()
             # to possibly save a DB round trip
             q = session.query(self.mapper).autoflush(False)
+            if path:
+                q = q._with_current_path(path)
             if self.use_get:
                 params = {}
                 for col, bind in self.lazybinds.iteritems():
@@ -387,7 +389,13 @@ class LazyLoader(AbstractRelationLoader):
                         self.logger.debug("set instance-level lazy loader on %s" % mapperutil.attribute_str(instance, self.key))
                     # we are not the primary manager for this attribute on this class - set up a per-instance lazyloader,
                     # which will override the class-level behavior
-                    self._init_instance_attribute(instance, callable_=self.setup_loader(instance, selectcontext.options))
+                    
+                    # TODO: calculate this outside
+                    if selectcontext.query._current_path:
+                        path = selectcontext.query._current_path + selectcontext.stack.snapshot()
+                    else:
+                        path = selectcontext.stack.snapshot()
+                    self._init_instance_attribute(instance, callable_=self.setup_loader(instance, selectcontext.options, path))
             return (new_execute, None, None)
         else:
             def new_execute(instance, row, ispostselect, **flags):
@@ -549,8 +557,12 @@ class EagerLoader(AbstractRelationLoader):
         
         statement.append_from(statement._outerjoin)
 
+        context.stack.push_mapper(self.select_mapper)
         for value in self.select_mapper.iterate_properties:
+            context.stack.push_property(value.key)
             value.setup(context, parentclauses=clauses, parentmapper=self.select_mapper)
+            context.stack.pop()
+        context.stack.pop()
         
     def _create_row_decorator(self, selectcontext, row, path):
         """Create a *row decorating* function that will apply eager
@@ -562,19 +574,10 @@ class EagerLoader(AbstractRelationLoader):
         
         #print "creating row decorator for path ", "->".join([str(s) for s in path])
         
-        # check for a user-defined decorator in the SelectContext (which was set up by the contains_eager() option)
-        if ("eager_row_processor", self.parent_property) in selectcontext.attributes:
-            # custom row decoration function, placed in the selectcontext by the 
-            # contains_eager() mapper option
-            decorator = selectcontext.attributes[("eager_row_processor", self.parent_property)]
-            # key was present, but no decorator; therefore just use the row as is
+        if ("eager_row_processor", path) in selectcontext.attributes:
+            decorator = selectcontext.attributes[("eager_row_processor", path)]
             if decorator is None:
                 decorator = lambda row: row
-        # check for an AliasedClauses row decorator that was set up by query._compile_context().
-        # a further refactoring (described in [ticket:777]) will simplify this so that the
-        # contains_eager() option generates the same key as this one
-        elif ("eager_row_processor", path) in selectcontext.attributes:
-            decorator = selectcontext.attributes[("eager_row_processor", path)]
         else:
             if self._should_log_debug:
                 self.logger.debug("Could not locate aliased clauses for key: " + str(path))
@@ -593,15 +596,12 @@ class EagerLoader(AbstractRelationLoader):
             return None
 
     def create_row_processor(self, selectcontext, mapper, row):
-        path = selectcontext.stack.push_property(self.key)
 
-        row_decorator = self._create_row_decorator(selectcontext, row, path)
+        row_decorator = self._create_row_decorator(selectcontext, row, selectcontext.stack.snapshot())
         if row_decorator is not None:
             def execute(instance, row, isnew, **flags):
                 decorated_row = row_decorator(row)
 
-                selectcontext.stack.push_property(self.key)
-                
                 if not self.uselist:
                     if self._should_log_debug:
                         self.logger.debug("eagerload scalar instance on %s" % mapperutil.attribute_str(instance, self.key))
@@ -633,9 +633,7 @@ class EagerLoader(AbstractRelationLoader):
                         self.logger.debug("eagerload list instance on %s" % mapperutil.attribute_str(instance, self.key))
                         
                     self.select_mapper._instance(selectcontext, decorated_row, result_list)
-                selectcontext.stack.pop()
 
-            selectcontext.stack.pop()
 
             if self._should_log_debug:
                 self.logger.debug("Returning eager instance loader for %s" % str(self))
@@ -644,7 +642,6 @@ class EagerLoader(AbstractRelationLoader):
         else:
             if self._should_log_debug:
                 self.logger.debug("eager loader %s degrading to lazy loader" % str(self))
-            selectcontext.stack.pop()
             return self.parent_property._get_strategy(LazyLoader).create_row_processor(selectcontext, mapper, row)
         
             
@@ -662,13 +659,13 @@ class EagerLazyOption(StrategizedOption):
     def is_chained(self):
         return not self.lazy and self.chained
         
-    def process_query_property(self, query, properties):
+    def process_query_property(self, query, paths):
         if self.lazy:
-            if properties[-1] in query._eager_loaders:
-                query._eager_loaders = query._eager_loaders.difference(util.Set([properties[-1]]))
+            if paths[-1] in query._eager_loaders:
+                query._eager_loaders = query._eager_loaders.difference(util.Set([paths[-1]]))
         else:
-            query._eager_loaders = query._eager_loaders.union(util.Set(properties))
-        super(EagerLazyOption, self).process_query_property(query, properties)
+            query._eager_loaders = query._eager_loaders.union(util.Set(paths))
+        super(EagerLazyOption, self).process_query_property(query, paths)
 
     def get_strategy_class(self):
         if self.lazy:

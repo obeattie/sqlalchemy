@@ -467,7 +467,11 @@ class StrategizedProperty(MapperProperty):
     """
 
     def _get_context_strategy(self, context):
-        return self._get_strategy(context.attributes.get(("loaderstrategy", self), self.strategy.__class__))
+        path = context.stack.snapshot()
+        print "PATH", path
+        x = self._get_strategy(context.attributes.get(("loaderstrategy", path), self.strategy.__class__))
+        print "STRATEGY IS A", repr(x)
+        return x
 
     def _get_strategy(self, cls):
         try:
@@ -582,26 +586,38 @@ class PropertyOption(MapperOption):
         self.key = key
 
     def process_query(self, query):
-        self.process_query_property(query, self._get_properties(query))
+        if self._should_log_debug:
+            self.logger.debug("applying option to Query, property key '%s'" % self.key)
+        self.process_query_property(query, self._get_paths(query))
 
-    def process_query_property(self, query, properties):
+    def process_query_property(self, query, paths):
         pass
 
-    def _get_properties(self, query):
-        try:
-            l = self.__prop
-        except AttributeError:
-            l = []
-            mapper = query.mapper
-            for token in self.key.split('.'):
-                prop = mapper.get_property(token, resolve_synonyms=True)
-                l.append(prop)
-                mapper = getattr(prop, 'mapper', None)
-            self.__prop = l
+    def _get_paths(self, query):
+        path = None
+        l = []
+        if query._current_path:
+            current_path = list(query._current_path)
+        else:
+            current_path = []
+        
+        print "KEY", self.key, "CURRENT", current_path
+        mapper = query.mapper
+        for token in self.key.split('.'):
+            print "CP", current_path, "TOKEN", token
+            if current_path and token == current_path[1]:
+                current_path = current_path[2:]
+                print "NEW CP", current_path
+                continue
+            prop = mapper.get_property(token, resolve_synonyms=True)
+            path = build_path(mapper, prop.key, path)
+            l.append(path)
+            mapper = getattr(prop, 'mapper', None)
+
         return l
 
 PropertyOption.logger = logging.class_logger(PropertyOption)
-
+PropertyOption._should_log_debug = logging.is_debug_enabled(PropertyOption.logger)
 
 class AttributeExtension(object):
     """An abstract class which specifies `append`, `delete`, and `set`
@@ -626,13 +642,12 @@ class StrategizedOption(PropertyOption):
     def is_chained(self):
         return False
         
-    def process_query_property(self, query, properties):
-        self.logger.debug("applying option to Query, property key '%s'" % self.key)
+    def process_query_property(self, query, paths):
         if self.is_chained():
-            for prop in properties:
-                query._attributes[("loaderstrategy", prop)] = self.get_strategy_class()
+            for path in paths:
+                query._attributes[("loaderstrategy", path)] = self.get_strategy_class()
         else:
-            query._attributes[("loaderstrategy", properties[-1])] = self.get_strategy_class()
+            query._attributes[("loaderstrategy", paths[-1])] = self.get_strategy_class()
 
     def get_strategy_class(self):
         raise NotImplementedError()

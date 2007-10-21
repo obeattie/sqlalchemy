@@ -48,6 +48,7 @@ class Query(object):
         self._autoflush = True
         self._eager_loaders = util.Set([x for x in self.mapper._eager_loaders])
         self._attributes = {}
+        self._current_path = None
         
     def _clone(self):
         q = Query.__new__(Query)
@@ -64,6 +65,11 @@ class Query(object):
     primary_key_columns = property(lambda s:s.select_mapper.primary_key)
     session = property(_get_session)
 
+    def _with_current_path(self, path):
+        q = self._clone()
+        q._current_path = path
+        return q
+        
     def get(self, ident, **kwargs):
         """Return an instance of the object based on the given
         identifier, or None if not found.
@@ -869,16 +875,24 @@ class Query(object):
         # give all the attached properties a chance to modify the query
         # TODO: doing this off the select_mapper.  if its the polymorphic mapper, then
         # it has no relations() on it.  should we compile those too into the query ?  (i.e. eagerloads)
+        context.stack.push_mapper(self.select_mapper)
         for value in self.select_mapper.iterate_properties:
+            context.stack.push_property(value.key)
             value.setup(context)
+            context.stack.pop()
+        context.stack.pop()
         
         # additional entities/columns, add those to selection criterion
         for tup in self._entities:
             (m, alias, alias_id) = tup
             clauses = self._get_entity_clauses(tup)
             if isinstance(m, mapper.Mapper):
+                context.stack.push_mapper(self.select_mapper)
                 for value in m.iterate_properties:
+                    context.stack.push_property(value.key)
                     value.setup(context, parentclauses=clauses)
+                    context.stack.pop()
+                context.stack.pop()
             elif isinstance(m, sql.ColumnElement):
                 if clauses is not None:
                     m = clauses.adapt_clause(m)
