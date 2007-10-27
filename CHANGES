@@ -4,6 +4,8 @@ CHANGES
 
 0.4.1
 -----
+- removed regular expression step from most statement compilations.
+  also fixes [ticket:833]
 
 - Added test coverage for unknown type reflection, fixed sqlite/mysql
   handling of type reflection for unknown types.
@@ -13,6 +15,22 @@ CHANGES
 
 - Added contains operator (which generate a "LIKE %<other>%" clause).
 
+- sqlite will reflect "DECIMAL" as a numeric column.
+
+- Renamed the Dialect attribute 'preexecute_sequences' to
+  'preexecute_pk_sequences'.  An attribute proxy is in place for out-of-tree
+  dialects using the old name.
+
+- de-cruftified backref configuration code, backrefs which step on existing
+  properties now raise an error [ticket:832]
+
+- improved behavior of add_property() etc., fixed [ticket:831] involving
+  synonym/deferred
+
+- fixed clear_mappers() behavior to better clean up after itself
+  
+- Made access dao dection more reliable [ticket:828]
+  
   
 0.4.0
 -----

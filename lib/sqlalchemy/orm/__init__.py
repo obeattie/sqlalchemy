@@ -546,7 +546,9 @@ def clear_mappers():
         for mapper in mapper_registry.values():
             mapper.dispose()
         mapper_registry.clear()
-        mapperlib.ClassKey.dispose()
+        mapperlib.ClassKey.dispose(mapperlib.ClassKey)
+        from sqlalchemy.orm import dependency
+        dependency.MapperStub.dispose(dependency.MapperStub)
     finally:
         mapperlib._COMPILE_MUTEX.release()
         

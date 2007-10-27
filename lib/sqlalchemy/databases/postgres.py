@@ -279,7 +279,8 @@ class PGDialect(default.DefaultDialect):
     max_identifier_length = 63
     supports_sane_rowcount = True
     supports_sane_multi_rowcount = False
-    preexecute_sequences = True
+    preexecute_pk_sequences = True
+    supports_pk_autoincrement = False
 
     def __init__(self, use_oids=False, server_side_cursors=False, **kwargs):
         default.DefaultDialect.__init__(self, default_paramstyle='pyformat', **kwargs)
@@ -309,7 +310,7 @@ class PGDialect(default.DefaultDialect):
         self.do_begin(connection.connection)
 
     def do_prepare_twophase(self, connection, xid):
-        connection.execute(sql.text("PREPARE TRANSACTION %(tid)s", bindparams=[sql.bindparam('tid', xid)]))
+        connection.execute(sql.text("PREPARE TRANSACTION :tid", bindparams=[sql.bindparam('tid', xid)]))
 
     def do_rollback_twophase(self, connection, xid, is_prepared=True, recover=False):
         if is_prepared:
@@ -317,7 +318,7 @@ class PGDialect(default.DefaultDialect):
                 #FIXME: ugly hack to get out of transaction context when commiting recoverable transactions
                 # Must find out a way how to make the dbapi not open a transaction.
                 connection.execute(sql.text("ROLLBACK"))
-            connection.execute(sql.text("ROLLBACK PREPARED %(tid)s", bindparams=[sql.bindparam('tid', xid)]))
+            connection.execute(sql.text("ROLLBACK PREPARED :tid", bindparams=[sql.bindparam('tid', xid)]))
             connection.execute(sql.text("BEGIN"))
             self.do_rollback(connection.connection)
         else:
@@ -327,7 +328,7 @@ class PGDialect(default.DefaultDialect):
         if is_prepared:
             if recover:
                 connection.execute(sql.text("ROLLBACK"))
-            connection.execute(sql.text("COMMIT PREPARED %(tid)s", bindparams=[sql.bindparam('tid', xid)]))
+            connection.execute(sql.text("COMMIT PREPARED :tid", bindparams=[sql.bindparam('tid', xid)]))
             connection.execute(sql.text("BEGIN"))
             self.do_rollback(connection.connection)
         else:
@@ -647,27 +648,31 @@ class PGCompiler(compiler.DefaultCompiler):
             return super(PGCompiler, self).for_update_clause(select)
 
     def _append_returning(self, text, stmt):
-        returning_cols = stmt.kwargs.get('postgres_returning', None)
-        if returning_cols:
-            def flatten_columnlist(collist):
-                for c in collist:
-                    if isinstance(c, expression.Selectable):
-                        for co in c.columns:
-                            yield co
-                    else:
-                        yield c
-            columns = [self.process(c) for c in flatten_columnlist(returning_cols)]
-            text += ' RETURNING ' + string.join(columns, ', ')
-        
+        returning_cols = stmt.kwargs['postgres_returning']
+        def flatten_columnlist(collist):
+            for c in collist:
+                if isinstance(c, expression.Selectable):
+                    for co in c.columns:
+                        yield co
+                else:
+                    yield c
+        columns = [self.process(c) for c in flatten_columnlist(returning_cols)]
+        text += ' RETURNING ' + string.join(columns, ', ')
         return text
 
     def visit_update(self, update_stmt):
         text = super(PGCompiler, self).visit_update(update_stmt)
-        return self._append_returning(text, update_stmt)
+        if 'postgres_returning' in update_stmt.kwargs:
+            return self._append_returning(text, update_stmt)
+        else:
+            return text
 
     def visit_insert(self, insert_stmt):
         text = super(PGCompiler, self).visit_insert(insert_stmt)
-        return self._append_returning(text, insert_stmt)
+        if 'postgres_returning' in insert_stmt.kwargs:
+            return self._append_returning(text, insert_stmt)
+        else:
+            return text
 
 class PGSchemaGenerator(compiler.SchemaGenerator):
     def get_column_specification(self, column, **kwargs):

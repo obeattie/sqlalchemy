@@ -12,9 +12,9 @@ higher-level statement-construction, connection-management, execution
 and result contexts.
 """
 
+import StringIO, sys
 from sqlalchemy import exceptions, schema, util, types, logging
 from sqlalchemy.sql import expression, visitors
-import StringIO, sys
 
 
 class Dialect(object):
@@ -79,9 +79,14 @@ class Dialect(object):
       Indicate whether the dialect properly implements rowcount for ``UPDATE`` and ``DELETE`` statements
       when executed via executemany.
 
-    preexecute_sequences
-      Indicate if the dialect should pre-execute sequences on primary key columns during an INSERT,
-      if it's desired that the new row's primary key be available after execution.
+    preexecute_pk_sequences
+      Indicate if the dialect should pre-execute sequences on primary key
+      columns during an INSERT, if it's desired that the new row's primary key
+      be available after execution.
+
+    supports_pk_autoincrement
+      Indicates if the dialect should allow the database to passively assign
+      a primary key column value.
     """
 
     def create_connect_args(self, url):
@@ -666,32 +671,30 @@ class Connection(Connectable):
         return self.__transaction is not None
 
     def _begin_impl(self):
-        if self.__connection.is_valid:
-            if self.__engine._should_log_info:
-                self.__engine.logger.info("BEGIN")
-            try:
-                self.__engine.dialect.do_begin(self.connection)
-            except Exception, e:
-                raise exceptions.DBAPIError.instance(None, None, e)
+        if self.__engine._should_log_info:
+            self.__engine.logger.info("BEGIN")
+        try:
+            self.__engine.dialect.do_begin(self.__connection)
+        except Exception, e:
+            raise exceptions.DBAPIError.instance(None, None, e)
 
     def _rollback_impl(self):
         if self.__connection.is_valid:
             if self.__engine._should_log_info:
                 self.__engine.logger.info("ROLLBACK")
             try:
-                self.__engine.dialect.do_rollback(self.connection)
+                self.__engine.dialect.do_rollback(self.__connection)
             except Exception, e:
                 raise exceptions.DBAPIError.instance(None, None, e)
         self.__transaction = None
 
     def _commit_impl(self):
-        if self.__connection.is_valid:
-            if self.__engine._should_log_info:
-                self.__engine.logger.info("COMMIT")
-            try:
-                self.__engine.dialect.do_commit(self.connection)
-            except Exception, e:
-                raise exceptions.DBAPIError.instance(None, None, e)
+        if self.__engine._should_log_info:
+            self.__engine.logger.info("COMMIT")
+        try:
+            self.__engine.dialect.do_commit(self.__connection)
+        except Exception, e:
+            raise exceptions.DBAPIError.instance(None, None, e)
         self.__transaction = None
 
     def _savepoint_impl(self, name=None):
@@ -787,6 +790,7 @@ class Connection(Connectable):
         parameters = self.__distill_params(multiparams, params)
         context = self.__create_execution_context(statement=statement, parameters=parameters)
         self.__execute_raw(context)
+        self._autocommit(context)
         return context.result()
 
     def __distill_params(self, multiparams, params):
@@ -840,6 +844,7 @@ class Connection(Connectable):
         context.pre_execution()
         self.__execute_raw(context)
         context.post_execution()
+        self._autocommit(context)
         return context.result()
 
     def __create_execution_context(self, **kwargs):
@@ -850,8 +855,7 @@ class Connection(Connectable):
             self._cursor_executemany(context.cursor, context.statement, context.parameters, context=context)
         else:
             self._cursor_execute(context.cursor, context.statement, context.parameters[0], context=context)
-        self._autocommit(context)
-
+        
     def _cursor_execute(self, cursor, statement, parameters, context=None):
         if self.__engine._should_log_info:
             self.__engine.logger.info(statement)
@@ -1301,6 +1305,7 @@ class ResultProxy(object):
         self.dialect = context.dialect
         self.closed = False
         self.cursor = context.cursor
+        self.connection = context.root_connection
         self.__echo = context.engine._should_log_info
         if context.is_select():
             self._init_metadata()
@@ -1308,8 +1313,6 @@ class ResultProxy(object):
         else:
             self._rowcount = context.get_rowcount()
             self.close()
-
-    connection = property(lambda self:self.context.root_connection)
 
     def _get_rowcount(self):
         if self._rowcount is not None:
