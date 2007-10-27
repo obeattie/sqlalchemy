@@ -699,17 +699,19 @@ class RowDecorateOption(PropertyOption):
         self.decorator = decorator
         self.alias = alias
 
-    def process_query_property(self, query, properties):
+    def process_query_property(self, query, paths):
         if self.alias is not None and self.decorator is None:
             if isinstance(self.alias, basestring):
-                self.alias = properties[-1].target.alias(self.alias)
+                (mapper, propname) = paths[-1]
+                prop = mapper.get_property(propname, resolve_synonyms=True)
+                self.alias = prop.target.alias(self.alias)
             def decorate(row):
                 d = {}
-                for c in properties[-1].target.columns:
+                for c in prop.target.columns:
                     d[c] = row[self.alias.corresponding_column(c)]
                 return d
             self.decorator = decorate
-        query._attributes[("eager_row_processor", properties[-1])] = self.decorator
+        query._attributes[("eager_row_processor", paths[-1])] = self.decorator
 
 RowDecorateOption.logger = logging.class_logger(RowDecorateOption)
         

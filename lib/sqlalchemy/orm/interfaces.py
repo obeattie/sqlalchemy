@@ -468,10 +468,7 @@ class StrategizedProperty(MapperProperty):
 
     def _get_context_strategy(self, context):
         path = context.stack.snapshot()
-        print "PATH", path
-        x = self._get_strategy(context.attributes.get(("loaderstrategy", path), self.strategy.__class__))
-        print "STRATEGY IS A", repr(x)
-        return x
+        return self._get_strategy(context.attributes.get(("loaderstrategy", path), self.strategy.__class__))
 
     def _get_strategy(self, cls):
         try:
@@ -588,7 +585,9 @@ class PropertyOption(MapperOption):
     def process_query(self, query):
         if self._should_log_debug:
             self.logger.debug("applying option to Query, property key '%s'" % self.key)
-        self.process_query_property(query, self._get_paths(query))
+        paths = self._get_paths(query)
+        if paths:
+            self.process_query_property(query, paths)
 
     def process_query_property(self, query, paths):
         pass
@@ -601,19 +600,15 @@ class PropertyOption(MapperOption):
         else:
             current_path = []
         
-        print "KEY", self.key, "CURRENT", current_path
         mapper = query.mapper
         for token in self.key.split('.'):
-            print "CP", current_path, "TOKEN", token
             if current_path and token == current_path[1]:
                 current_path = current_path[2:]
-                print "NEW CP", current_path
                 continue
             prop = mapper.get_property(token, resolve_synonyms=True)
             path = build_path(mapper, prop.key, path)
             l.append(path)
             mapper = getattr(prop, 'mapper', None)
-
         return l
 
 PropertyOption.logger = logging.class_logger(PropertyOption)
