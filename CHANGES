@@ -23,7 +23,8 @@ CHANGES
 
 - behavior of query.options() is now fully based on paths, i.e. an option
   such as eagerload_all('x.y.z.y.x') will apply eagerloading to only
-  those paths, i.e. and not 'x.y.x' [ticket:777]
+  those paths, i.e. and not 'x.y.x'; eagerload('children.children') applies
+  only to exactly two-levels deep, etc. [ticket:777]
   
 - de-cruftified backref configuration code, backrefs which step on existing
   properties now raise an error [ticket:832]
