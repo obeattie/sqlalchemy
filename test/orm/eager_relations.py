@@ -497,6 +497,38 @@ class SelfReferentialEagerTest(ORMTest):
             ]) == d
         self.assert_sql_count(testbase.db, go, 1)
 
+    def test_options(self):
+        class Node(Base):
+            def append(self, node):
+                self.children.append(node)
+
+        mapper(Node, nodes, properties={
+            'children':relation(Node, lazy=True)
+        })
+        sess = create_session()
+        n1 = Node(data='n1')
+        n1.append(Node(data='n11'))
+        n1.append(Node(data='n12'))
+        n1.append(Node(data='n13'))
+        n1.children[1].append(Node(data='n121'))
+        n1.children[1].append(Node(data='n122'))
+        n1.children[1].append(Node(data='n123'))
+        sess.save(n1)
+        sess.flush()
+        sess.clear()
+        def go():
+            d = sess.query(Node).filter_by(data='n1').options(eagerload('children.children')).first()
+            assert Node(data='n1', children=[
+                Node(data='n11'),
+                Node(data='n12', children=[
+                    Node(data='n121'),
+                    Node(data='n122'),
+                    Node(data='n123')
+                ]),
+                Node(data='n13')
+            ]) == d
+        self.assert_sql_count(testbase.db, go, 2)
+
     def test_no_depth(self):
         class Node(Base):
             def append(self, node):

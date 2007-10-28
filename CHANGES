@@ -21,6 +21,10 @@ CHANGES
   'preexecute_pk_sequences'.  An attribute proxy is in place for out-of-tree
   dialects using the old name.
 
+- behavior of query.options() is now fully based on paths, i.e. an option
+  such as eagerload_all('x.y.z.y.x') will apply eagerloading to only
+  those paths, i.e. and not 'x.y.x' [ticket:777]
+  
 - de-cruftified backref configuration code, backrefs which step on existing
   properties now raise an error [ticket:832]
 

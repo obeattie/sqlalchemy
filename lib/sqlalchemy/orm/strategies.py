@@ -484,12 +484,18 @@ class EagerLoader(AbstractRelationLoader):
         
         path = context.path
         
-        if self.join_depth:
-            if len(path) / 2 > self.join_depth:
-                return
-        else:
-            if self.mapper.base_mapper in path:
-                return
+        #print "EAGER LOADER BUILDING PATH:", path
+        
+        # check for join_depth or basic recursion,
+        # if the current path was not explicitly stated as 
+        # a desired "loaderstrategy" (i.e. via query.options())
+        if ("loaderstrategy", path) not in context.attributes:
+            if self.join_depth:
+                if len(path) / 2 > self.join_depth:
+                    return
+            else:
+                if self.mapper.base_mapper in path:
+                    return
 
         if parentmapper is None:
             localparent = context.mapper

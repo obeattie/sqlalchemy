@@ -573,7 +573,9 @@ class PropertyOption(MapperOption):
             if current_path and token == current_path[1]:
                 current_path = current_path[2:]
                 continue
-            prop = mapper.get_property(token, resolve_synonyms=True)
+            prop = mapper.get_property(token, resolve_synonyms=True, raiseerr=False)
+            if prop is None:
+                return []
             path = build_path(mapper, prop.key, path)
             l.append(path)
             mapper = getattr(prop, 'mapper', None)
