@@ -10,7 +10,7 @@ from sqlalchemy.sql import expression
 
 __all__ = ['EXT_CONTINUE', 'EXT_STOP', 'EXT_PASS', 'MapperExtension',
            'MapperProperty', 'PropComparator', 'StrategizedProperty', 
-           'LoaderStack', 'build_path', 'MapperOption', 
+           'build_path', 'MapperOption', 
            'ExtensionOption', 'SynonymProperty', 'PropertyOption', 
            'AttributeExtension', 'StrategizedOption', 'LoaderStrategy' ]
 
@@ -467,7 +467,7 @@ class StrategizedProperty(MapperProperty):
     """
 
     def _get_context_strategy(self, context):
-        path = context.stack.snapshot()
+        path = context.path
         return self._get_strategy(context.attributes.get(("loaderstrategy", path), self.strategy.__class__))
 
     def _get_strategy(self, cls):
@@ -500,35 +500,6 @@ def build_path(mapper, key, prev=None):
     else:
         return (mapper.base_mapper, key)
         
-class LoaderStack(object):
-    """a stack object used during load operations to track the 
-    current position among a chain of mappers to eager loaders."""
-    
-    def __init__(self):
-        self.__stack = []
-        
-    def push_property(self, key):
-        self.__stack.append(key)
-        return tuple(self.__stack)
-        
-    def push_mapper(self, mapper):
-        self.__stack.append(mapper.base_mapper)
-        return tuple(self.__stack)
-        
-    def pop(self):
-        self.__stack.pop()
-        
-    def snapshot(self):
-        """return an 'snapshot' of this stack.
-        
-        this is a tuple form of the stack which can be used as a hash key.
-        """
-        
-        return tuple(self.__stack)
-        
-    def __str__(self):
-        return "->".join([str(s) for s in self.__stack])
-
 
 class MapperOption(object):
     """Describe a modification to a Query."""
@@ -595,10 +566,7 @@ class PropertyOption(MapperOption):
     def _get_paths(self, query):
         path = None
         l = []
-        if query._current_path:
-            current_path = list(query._current_path)
-        else:
-            current_path = []
+        current_path = list(query._current_path)
         
         mapper = query.mapper
         for token in self.key.split('.'):

@@ -390,12 +390,7 @@ class LazyLoader(AbstractRelationLoader):
                     # we are not the primary manager for this attribute on this class - set up a per-instance lazyloader,
                     # which will override the class-level behavior
                     
-                    # TODO: calculate this outside
-                    if selectcontext.query._current_path:
-                        path = selectcontext.query._current_path + selectcontext.stack.snapshot()
-                    else:
-                        path = selectcontext.stack.snapshot()
-                    self._init_instance_attribute(instance, callable_=self.setup_loader(instance, selectcontext.options, path))
+                    self._init_instance_attribute(instance, callable_=self.setup_loader(instance, selectcontext.options, selectcontext.query._current_path + selectcontext.path))
             return (new_execute, None, None)
         else:
             def new_execute(instance, row, ispostselect, **flags):
@@ -487,14 +482,7 @@ class EagerLoader(AbstractRelationLoader):
     def setup_query(self, context, parentclauses=None, parentmapper=None, **kwargs):
         """Add a left outer join to the statement thats being constructed."""
         
-        # build a path as we setup the query.  the format of this path
-        # matches that of interfaces.LoaderStack, and will be used in the 
-        # row-loading phase to match up AliasedClause objects with the current
-        # LoaderStack position.
-        if parentclauses:
-            path = parentclauses.path + (self.parent.base_mapper, self.key)
-        else:
-            path = (self.parent.base_mapper, self.key)
+        path = context.path
         
         if self.join_depth:
             if len(path) / 2 > self.join_depth:
@@ -503,8 +491,6 @@ class EagerLoader(AbstractRelationLoader):
             if self.mapper.base_mapper in path:
                 return
 
-        #print "CREATING EAGER PATH FOR", "->".join([str(s) for s in path])
-        
         if parentmapper is None:
             localparent = context.mapper
         else:
@@ -557,12 +543,8 @@ class EagerLoader(AbstractRelationLoader):
         
         statement.append_from(statement._outerjoin)
 
-        context.stack.push_mapper(self.select_mapper)
         for value in self.select_mapper.iterate_properties:
-            context.stack.push_property(value.key)
-            value.setup(context, parentclauses=clauses, parentmapper=self.select_mapper)
-            context.stack.pop()
-        context.stack.pop()
+            context.exec_with_path(self.select_mapper, value.key, value.setup, context, parentclauses=clauses, parentmapper=self.select_mapper)
         
     def _create_row_decorator(self, selectcontext, row, path):
         """Create a *row decorating* function that will apply eager
@@ -597,7 +579,7 @@ class EagerLoader(AbstractRelationLoader):
 
     def create_row_processor(self, selectcontext, mapper, row):
 
-        row_decorator = self._create_row_decorator(selectcontext, row, selectcontext.stack.snapshot())
+        row_decorator = self._create_row_decorator(selectcontext, row, selectcontext.path)
         if row_decorator is not None:
             def execute(instance, row, isnew, **flags):
                 decorated_row = row_decorator(row)

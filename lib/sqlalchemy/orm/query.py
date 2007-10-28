@@ -9,7 +9,6 @@ from sqlalchemy.sql import util as sql_util
 from sqlalchemy.sql import expression, visitors
 from sqlalchemy.orm import mapper, object_mapper
 from sqlalchemy.orm import util as mapperutil
-from sqlalchemy.orm.interfaces import LoaderStack
 import operator
 
 __all__ = ['Query', 'QueryContext']
@@ -48,7 +47,7 @@ class Query(object):
         self._autoflush = True
         self._eager_loaders = util.Set([x for x in self.mapper._eager_loaders])
         self._attributes = {}
-        self._current_path = None
+        self._current_path = ()
         
     def _clone(self):
         q = Query.__new__(Query)
@@ -875,24 +874,16 @@ class Query(object):
         # give all the attached properties a chance to modify the query
         # TODO: doing this off the select_mapper.  if its the polymorphic mapper, then
         # it has no relations() on it.  should we compile those too into the query ?  (i.e. eagerloads)
-        context.stack.push_mapper(self.select_mapper)
         for value in self.select_mapper.iterate_properties:
-            context.stack.push_property(value.key)
-            value.setup(context)
-            context.stack.pop()
-        context.stack.pop()
+            context.exec_with_path(self.select_mapper, value.key, value.setup, context)
         
         # additional entities/columns, add those to selection criterion
         for tup in self._entities:
             (m, alias, alias_id) = tup
             clauses = self._get_entity_clauses(tup)
             if isinstance(m, mapper.Mapper):
-                context.stack.push_mapper(self.select_mapper)
                 for value in m.iterate_properties:
-                    context.stack.push_property(value.key)
-                    value.setup(context, parentclauses=clauses)
-                    context.stack.pop()
-                context.stack.pop()
+                    context.exec_with_path(self.select_mapper, value.key, value.setup, context, parentclauses=clauses)
             elif isinstance(m, sql.ColumnElement):
                 if clauses is not None:
                     m = clauses.adapt_clause(m)
@@ -1172,9 +1163,16 @@ class QueryContext(object):
         self.populate_existing = query._populate_existing
         self.version_check = query._version_check
         self.identity_map = {}
-        self.stack = LoaderStack()
+        self.path = ()
 
         self.options = query._with_options
         self.attributes = query._attributes.copy()
-        
+    
+    def exec_with_path(self, mapper, propkey, func, *args, **kwargs):
+        oldpath = self.path
+        self.path += (mapper.base_mapper, propkey)
+        try:
+            return func(*args, **kwargs)
+        finally:
+            self.path = oldpath
 
