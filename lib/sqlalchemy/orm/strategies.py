@@ -652,7 +652,13 @@ class EagerLazyOption(StrategizedOption):
             if paths[-1] in query._eager_loaders:
                 query._eager_loaders = query._eager_loaders.difference(util.Set([paths[-1]]))
         else:
-            query._eager_loaders = query._eager_loaders.union(util.Set(paths))
+            if not self.chained:
+                paths = [paths[-1]]
+            res = util.Set()
+            for path in paths:
+                if len(path) - len(query._current_path) == 2:
+                    res.add(path)
+            query._eager_loaders = query._eager_loaders.union(res)
         super(EagerLazyOption, self).process_query_property(query, paths)
 
     def get_strategy_class(self):
