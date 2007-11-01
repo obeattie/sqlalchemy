@@ -136,7 +136,6 @@ class DefaultExecutionContext(base.ExecutionContext):
         self.dialect = dialect
         self._connection = self.root_connection = connection
         self.compiled = compiled
-        self._postfetch_cols = util.Set()
         self.engine = connection.engine
         
         if compiled is not None:
@@ -154,6 +153,7 @@ class DefaultExecutionContext(base.ExecutionContext):
             
             self.typemap = compiled.typemap
             self.column_labels = compiled.column_labels
+
             if not dialect.supports_unicode_statements:
                 self.statement = unicode(compiled).encode(self.dialect.encoding)
             else:
@@ -214,6 +214,10 @@ class DefaultExecutionContext(base.ExecutionContext):
             return [proc(d) for d in params] or [{}]
 
     def __convert_compiled_params(self, compiled_parameters):
+        """convert the dictionary of bind parameter values into a dict or list
+        to be sent to the DBAPI's execute() or executemany() method.
+        """
+        
         processors = self.processors
         parameters = []
         if self.dialect.positional:
@@ -296,7 +300,7 @@ class DefaultExecutionContext(base.ExecutionContext):
         return self._last_updated_params
 
     def lastrow_has_defaults(self):
-        return len(self._postfetch_cols)
+        return hasattr(self, '_postfetch_cols') and len(self._postfetch_cols)
 
     def postfetch_cols(self):
         return self._postfetch_cols
@@ -337,6 +341,9 @@ class DefaultExecutionContext(base.ExecutionContext):
                     drunner = self.dialect.defaultrunner(self)
                     params = self.compiled_parameters
                     for param in params:
+                        # assign each dict of params to self.compiled_parameters; 
+                        # this allows user-defined default generators to access the full
+                        # set of bind params for the row
                         self.compiled_parameters = param
                         for c in self.compiled.prefetch:
                             if self.isinsert:
@@ -350,8 +357,6 @@ class DefaultExecutionContext(base.ExecutionContext):
             else:
                 compiled_parameters = self.compiled_parameters[0]
                 drunner = self.dialect.defaultrunner(self)
-                if self.isinsert:
-                    self._last_inserted_ids = []
                     
                 for c in self.compiled.prefetch:
                     if self.isinsert:
@@ -363,18 +368,9 @@ class DefaultExecutionContext(base.ExecutionContext):
                         compiled_parameters[c.key] = val
 
                 if self.isinsert:
-                    for c in self.compiled.statement.table.primary_key:
-                        if c.key in compiled_parameters:
-                            if c.key in self.processors:
-                                value = self.processors[c.key](compiled_parameters[c.key])
-                            else:
-                                value = compiled_parameters[c.key]
-                            self._last_inserted_ids.append(value)
-                        else:
-                            self._last_inserted_ids.append(None)
-                            
-                self._postfetch_cols = self.compiled.postfetch
-                if self.isinsert:
+                    self._last_inserted_ids = [compiled_parameters.get(c.key, None) for c in self.compiled.statement.table.primary_key]
                     self._last_inserted_params = compiled_parameters
                 else:
                     self._last_updated_params = compiled_parameters
+
+                self._postfetch_cols = self.compiled.postfetch
