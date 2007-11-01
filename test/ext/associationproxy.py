@@ -38,7 +38,7 @@ class _CollectionOperations(PersistTest):
         collection_class = self.collection_class
 
         metadata = MetaData(testbase.db)
-    
+
         parents_table = Table('Parent', metadata,
                               Column('id', Integer, primary_key=True),
                               Column('name', String))
@@ -51,7 +51,7 @@ class _CollectionOperations(PersistTest):
 
         class Parent(object):
             children = association_proxy('_children', 'name')
-        
+
             def __init__(self, name):
                 self.name = name
 
@@ -79,7 +79,8 @@ class _CollectionOperations(PersistTest):
         self.metadata.drop_all()
 
     def roundtrip(self, obj):
-        self.session.save(obj)
+        if obj not in self.session:
+            self.session.save(obj)
         self.session.flush()
         id, type_ = obj.id, type(obj)
         self.session.clear()
@@ -87,7 +88,7 @@ class _CollectionOperations(PersistTest):
 
     def _test_sequence_ops(self):
         Parent, Child = self.Parent, self.Child
-        
+
         p1 = Parent('P1')
 
         self.assert_(not p1._children)
@@ -113,7 +114,7 @@ class _CollectionOperations(PersistTest):
 
         self.assert_(p1._children[0].name == 'regular')
         self.assert_(p1._children[1].name == 'proxied')
-    
+
         del p1._children[1]
 
         self.assert_(len(p1._children) == 1)
@@ -124,7 +125,7 @@ class _CollectionOperations(PersistTest):
 
         self.assert_(len(p1._children) == 0)
         self.assert_(len(p1.children) == 0)
-    
+
         p1.children = ['a','b','c']
         self.assert_(len(p1._children) == 3)
         self.assert_(len(p1.children) == 3)
@@ -151,7 +152,7 @@ class _CollectionOperations(PersistTest):
 
         p1.children.append('changed-in-place')
         self.assert_(p1.children.count('changed-in-place') == 2)
-        
+
         p1.children.remove('changed-in-place')
         self.assert_(p1.children.count('changed-in-place') == 1)
 
@@ -185,7 +186,10 @@ class _CollectionOperations(PersistTest):
         after = ['a', 'b', 'O', 'z', 'O', 'z', 'O', 'h', 'O', 'j']
         self.assert_(p1.children == after)
         self.assert_([c.name for c in p1._children] == after)
-        
+
+        self.assertRaises(TypeError, set, [p1.children])
+
+
 class DefaultTest(_CollectionOperations):
     def __init__(self, *args, **kw):
         super(DefaultTest, self).__init__(*args, **kw)
@@ -193,6 +197,7 @@ class DefaultTest(_CollectionOperations):
 
     def test_sequence_ops(self):
         self._test_sequence_ops()
+
 
 class ListTest(_CollectionOperations):
     def __init__(self, *args, **kw):
@@ -247,7 +252,7 @@ class CustomDictTest(DictTest):
 
         self.assert_(p1._children['a'].name == 'regular')
         self.assert_(p1._children['b'].name == 'proxied')
-    
+
         del p1._children['b']
 
         self.assert_(len(p1._children) == 1)
@@ -279,7 +284,7 @@ class CustomDictTest(DictTest):
 
         p1._children = {}
         self.assert_(len(p1.children) == 0)
-    
+
         try:
             p1._children = []
             self.assert_(False)
@@ -291,6 +296,9 @@ class CustomDictTest(DictTest):
             self.assert_(False)
         except exceptions.ArgumentError:
             self.assert_(True)
+
+        self.assertRaises(TypeError, set, [p1.children])
+
 
 class SetTest(_CollectionOperations):
     def __init__(self, *args, **kw):
@@ -342,7 +350,7 @@ class SetTest(_CollectionOperations):
 
         self.assert_(len(p1._children) == 0)
         self.assert_(len(p1.children) == 0)
-    
+
         p1.children = ['a','b','c']
         self.assert_(len(p1._children) == 3)
         self.assert_(len(p1.children) == 3)
@@ -377,11 +385,11 @@ class SetTest(_CollectionOperations):
         p1 = self.roundtrip(p1)
         self.assert_(len(p1.children) == 2)
         self.assert_(popped not in p1.children)
-    
+
         p1.children = ['a','b','c']
         p1 = self.roundtrip(p1)
         self.assert_(p1.children == set(['a','b','c']))
-    
+
         p1.children.discard('b')
         p1 = self.roundtrip(p1)
         self.assert_(p1.children == set(['a', 'c']))
@@ -404,6 +412,8 @@ class SetTest(_CollectionOperations):
             self.assert_(False)
         except exceptions.ArgumentError:
             self.assert_(True)
+
+        self.assertRaises(TypeError, set, [p1.children])
 
 
     def test_set_comparisons(self):
@@ -432,7 +442,7 @@ class SetTest(_CollectionOperations):
                              control.issubset(other))
             self.assertEqual(p1.children.issuperset(other),
                              control.issuperset(other))
-            
+
             self.assert_((p1.children == other)  ==  (control == other))
             self.assert_((p1.children != other)  ==  (control != other))
             self.assert_((p1.children < other)   ==  (control < other))
@@ -509,7 +519,7 @@ class CustomObjectTest(_CollectionOperations):
 class ScalarTest(PersistTest):
     def test_scalar_proxy(self):
         metadata = MetaData(testbase.db)
-    
+
         parents_table = Table('Parent', metadata,
                               Column('id', Integer, primary_key=True),
                               Column('name', String))
@@ -527,7 +537,7 @@ class ScalarTest(PersistTest):
                                     creator=lambda v: Child(bar=v))
             baz = association_proxy('child', 'baz',
                                     creator=lambda v: Child(baz=v))
-        
+
             def __init__(self, name):
                 self.name = name
 
@@ -545,12 +555,13 @@ class ScalarTest(PersistTest):
         session = create_session()
 
         def roundtrip(obj):
-            session.save(obj)
+            if obj not in session:
+                session.save(obj)
             session.flush()
             id, type_ = obj.id, type(obj)
             session.clear()
             return session.query(type_).get(id)
-            
+
         p = Parent('p')
 
         # No child
@@ -570,7 +581,7 @@ class ScalarTest(PersistTest):
         self.assert_(p.foo == 'a')
         self.assert_(p.bar == 'x')
         self.assert_(p.baz == 'c')
-        
+
         p = roundtrip(p)
 
         self.assert_(p.foo == 'a')
@@ -620,12 +631,12 @@ class ScalarTest(PersistTest):
         # Ensure an immediate __set__ works.
         p2 = Parent('p2')
         p2.bar = 'quux'
-        
+
 
 class LazyLoadTest(PersistTest):
     def setUp(self):
         metadata = MetaData(testbase.db)
-    
+
         parents_table = Table('Parent', metadata,
                               Column('id', Integer, primary_key=True),
                               Column('name', String))
@@ -638,7 +649,7 @@ class LazyLoadTest(PersistTest):
 
         class Parent(object):
             children = association_proxy('_children', 'name')
-        
+
             def __init__(self, name):
                 self.name = name
 
@@ -727,7 +738,7 @@ class LazyLoadTest(PersistTest):
 
         self.assert_('_children' in p.__dict__)
         self.assert_(p._children is not None)
-    
+
 
 if __name__ == "__main__":
-    testbase.main()        
+    testbase.main()

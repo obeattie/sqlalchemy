@@ -73,7 +73,7 @@ def instrument(name):
     def do(self, *args, **kwargs):
         return getattr(self.registry(), name)(*args, **kwargs)
     return do
-for meth in ('get', 'load', 'close', 'save', 'commit', 'update', 'flush', 'query', 'delete', 'merge', 'clear', 'refresh', 'expire', 'expunge', 'rollback', 'begin', 'begin_nested', 'connection', 'execute', 'scalar', 'get_bind', 'is_modified'):
+for meth in ('get', 'load', 'close', 'save', 'commit', 'update', 'save_or_update', 'flush', 'query', 'delete', 'merge', 'clear', 'refresh', 'expire', 'expunge', 'rollback', 'begin', 'begin_nested', 'connection', 'execute', 'scalar', 'get_bind', 'is_modified', '__contains__', '__iter__'):
     setattr(ScopedSession, meth, instrument(meth))
 
 def makeprop(name):
@@ -118,7 +118,6 @@ class _ScopedExt(MapperExtension):
             class_.query = query()
         
     def init_instance(self, mapper, class_, oldinit, instance, args, kwargs):
-        session = kwargs.pop('_sa_session', self.context.registry())
         if not isinstance(oldinit, types.MethodType):
             for key, value in kwargs.items():
                 if self.validate:
@@ -126,6 +125,7 @@ class _ScopedExt(MapperExtension):
                         raise exceptions.ArgumentError("Invalid __init__ argument: '%s'" % key)
                 setattr(instance, key, value)
         if self.save_on_init:
+            session = kwargs.pop('_sa_session', self.context.registry())
             session._save_impl(instance, entity_name=kwargs.pop('_sa_entity_name', None))
         return EXT_CONTINUE
 

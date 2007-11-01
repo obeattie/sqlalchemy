@@ -140,6 +140,9 @@ class DefaultExecutionContext(base.ExecutionContext):
         self.engine = connection.engine
         
         if compiled is not None:
+            # compiled clauseelement.  process bind params, process table defaults,
+            # track collections used by ResultProxy to target and process results
+            
             self.processors = dict([
                 (key, value) for key, value in 
                 [(
@@ -171,6 +174,7 @@ class DefaultExecutionContext(base.ExecutionContext):
             self.parameters = self.__convert_compiled_params(self.compiled_parameters)
 
         elif statement is not None:
+            # plain text statement.  
             self.typemap = self.column_labels = None
             self.parameters = self.__encode_param_keys(parameters)
             self.executemany = len(parameters) > 1
@@ -181,10 +185,10 @@ class DefaultExecutionContext(base.ExecutionContext):
             self.isinsert = self.isupdate = False
             self.cursor = self.create_cursor()
         else:
+            # no statement. used for standalone ColumnDefault execution.
             self.statement = None
             self.isinsert = self.isupdate = self.executemany = False
             self.cursor = self.create_cursor()
-            
     
     connection = property(lambda s:s._connection._branch())
     

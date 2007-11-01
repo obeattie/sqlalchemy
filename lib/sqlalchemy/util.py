@@ -4,7 +4,7 @@
 # This module is part of SQLAlchemy and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
-import md5, sys, warnings, sets
+import itertools, sys, warnings, sets
 import __builtin__
 
 from sqlalchemy import exceptions, logging
@@ -62,10 +62,10 @@ except:
 if sys.version_info >= (2, 5):
     class PopulateDict(dict):
         """a dict which populates missing values via a creation function.
-        
+
         note the creation function takes a key, unlike collections.defaultdict.
         """
-        
+
         def __init__(self, creator):
             self.creator = creator
         def __missing__(self, key):
@@ -112,13 +112,6 @@ def flatten_iterator(x):
         else:
             yield elem
 
-def hash(string):
-    """return an md5 hash of the given string."""
-    h = md5.new()
-    h.update(string)
-    return h.hexdigest()
-    
-
 class ArgSingleton(type):
     instances = {}
 
@@ -164,7 +157,7 @@ def asbool(obj):
         else:
             raise ValueError("String is not true/false: %r" % obj)
     return bool(obj)
-    
+
 def coerce_kw_type(kw, key, type_, flexi_bool=True):
     """If 'key' is present in dict 'kw', coerce its value to type 'type_' if
     necessary.  If 'flexi_bool' is True, the string '0' is considered false
@@ -182,7 +175,7 @@ def duck_type_collection(specimen, default=None):
     the basic collection types: list, set and dict.  If the __emulates__
     property is present, return that preferentially.
     """
-    
+
     if hasattr(specimen, '__emulates__'):
         return specimen.__emulates__
 
@@ -215,7 +208,7 @@ def warn_exception(func, *args, **kwargs):
         return func(*args, **kwargs)
     except:
         warnings.warn(RuntimeWarning("%s('%s') ignored" % sys.exc_info()[0:2]))
-    
+
 class SimpleProperty(object):
     """A *default* property accessor."""
 
@@ -236,10 +229,10 @@ class SimpleProperty(object):
 
 class NotImplProperty(object):
   """a property that raises ``NotImplementedError``."""
-  
+
   def __init__(self, doc):
       self.__doc__ = doc
-      
+
   def __set__(self, obj, value):
       raise NotImplementedError()
 
@@ -251,7 +244,7 @@ class NotImplProperty(object):
           return self
       else:
           raise NotImplementedError()
-  
+
 class OrderedProperties(object):
     """An object that maintains the order in which attributes are set upon it.
 
@@ -289,7 +282,7 @@ class OrderedProperties(object):
 
     def __getstate__(self):
         return {'_data': self.__dict__['_data']}
-    
+
     def __setstate__(self, state):
         self.__dict__['_data'] = state['_data']
 
@@ -427,13 +420,13 @@ class DictDecorator(dict):
             return dict.__getitem__(self, key)
         except KeyError:
             return self.decorate[key]
-            
+
     def __contains__(self, key):
         return dict.__contains__(self, key) or key in self.decorate
-    
+
     def has_key(self, key):
         return key in self
-            
+
     def __repr__(self):
         return dict.__repr__(self) + repr(self.decorate)
 
@@ -471,16 +464,18 @@ class OrderedSet(Set):
     def __iter__(self):
         return iter(self._list)
 
+    def __repr__(self):
+      return '%s(%r)' % (self.__class__.__name__, self._list)
+
+    __str__ = __repr__
+
     def update(self, iterable):
       add = self.add
       for i in iterable:
           add(i)
       return self
 
-    def __repr__(self):
-      return '%s(%r)' % (self.__class__.__name__, self._list)
-
-    __str__ = __repr__
+    __ior__ = update
 
     def union(self, other):
       result = self.__class__(self)
@@ -506,8 +501,6 @@ class OrderedSet(Set):
 
     __sub__ = difference
 
-    __ior__ = update
-
     def intersection_update(self, other):
       Set.intersection_update(self, other)
       self._list = [ a for a in self._list if a in other]
@@ -530,10 +523,212 @@ class OrderedSet(Set):
 
     __isub__ = difference_update
 
+
+class IdentitySet(object):
+    """A set that considers only object id() for uniqueness.
+
+    This strategy has edge cases for builtin types- it's possible to have
+    two 'foo' strings in one of these sets, for example.  Use sparingly.
+    """
+
+    def __init__(self, iterable=None):
+        self._members = {}
+        if iterable:
+            for o in iterable:
+                self.add(o)
+
+    def add(self, value):
+        self._members[id(value)] = value
+
+    def __contains__(self, value):
+        return id(value) in self._members
+
+    def remove(self, value):
+        del self._members[id(value)]
+
+    def discard(self, value):
+        try:
+            self.remove(value)
+        except KeyError:
+            pass
+
+    def pop(self):
+        try:
+            pair = self._members.popitem()
+            return pair[1]
+        except KeyError:
+            raise KeyError('pop from an empty set')
+
+    def clear(self):
+        self._members.clear()
+
+    def __cmp__(self, other):
+        raise TypeError('cannot compare sets using cmp()')
+
+    def __eq__(self, other):
+        if isinstance(other, IdentitySet):
+            return self._members == other._members
+        else:
+            return False
+
+    def __ne__(self, other):
+        if isinstance(other, IdentitySet):
+            return self._members != other._members
+        else:
+            return True
+
+    def issubset(self, iterable):
+        other = type(self)(iterable)
+
+        if len(self) > len(other):
+            return False
+        for m in itertools.ifilterfalse(other._members.has_key,
+                                        self._members.iterkeys()):
+            return False
+        return True
+
+    def __le__(self, other):
+        if not isinstance(other, set_types + (IdentitySet,)):
+            return NotImplemented
+        return self.issubset(other)
+
+    def __lt__(self, other):
+        if not isinstance(other, set_types + (IdentitySet,)):
+            return NotImplemented
+        return len(self) < len(other) and self.issubset(other)
+
+    def issuperset(self, iterable):
+        other = type(self)(iterable)
+
+        if len(self) < len(other):
+            return False
+
+        for m in itertools.ifilterfalse(self._members.has_key,
+                                        other._members.iterkeys()):
+            return False
+        return True
+
+    def __ge__(self, other):
+        if not isinstance(other, set_types + (IdentitySet,)):
+            return NotImplemented
+        return self.issuperset(other)
+
+    def __gt__(self, other):
+        if not isinstance(other, set_types + (IdentitySet,)):
+            return NotImplemented
+        return len(self) > len(other) and self.issuperset(other)
+
+    def union(self, iterable):
+        result = type(self)()
+        result._members.update(
+            Set(self._members.iteritems()).union(_iter_id(iterable)))
+        return result
+
+    def __or__(self, other):
+        if not isinstance(other, set_types + (IdentitySet,)):
+            return NotImplemented
+        return self.union(other)
+    __ror__ = __or__
+
+    def update(self, iterable):
+        self._members = self.union(iterable)._members
+
+    def __ior__(self, other):
+        if not isinstance(other, set_types + (IdentitySet,)):
+            return NotImplemented
+        self.update(other)
+        return self
+
+    def difference(self, iterable):
+        result = type(self)()
+        result._members.update(
+            Set(self._members.iteritems()).difference(_iter_id(iterable)))
+        return result
+
+    def __sub__(self, other):
+        if not isinstance(other, set_types + (IdentitySet,)):
+            return NotImplemented
+        return self.difference(other)
+    __rsub__ = __sub__
+
+    def difference_update(self, iterable):
+        self._members = self.difference(iterable)._members
+
+    def __isub__(self, other):
+        if not isinstance(other, set_types + (IdentitySet,)):
+            return NotImplemented
+        self.difference_update(other)
+        return self
+
+    def intersection(self, iterable):
+        result = type(self)()
+        result._members.update(
+            Set(self._members.iteritems()).intersection(_iter_id(iterable)))
+        return result
+
+    def __and__(self, other):
+        if not isinstance(other, set_types + (IdentitySet,)):
+            return NotImplemented
+        return self.intersection(other)
+    __rand__ = __and__
+
+    def intersection_update(self, iterable):
+        self._members = self.intersection(iterable)._members
+
+    def __iand__(self, other):
+        if not isinstance(other, set_types + (IdentitySet,)):
+            return NotImplemented
+        self.intersection_update(other)
+        return self
+
+    def symmetric_difference(self, iterable):
+        result = type(self)()
+        result._members.update(
+            Set(self._members.iteritems()).symmetric_difference(_iter_id(iterable)))
+        return result
+
+    def __xor__(self, other):
+        if not isinstance(other, set_types + (IdentitySet,)):
+            return NotImplemented
+        return self.symmetric_difference(other)
+    __rxor__ = __xor__
+
+    def symmetric_difference_update(self, iterable):
+        self._members = self.symmetric_difference(iterable)._members
+
+    def __ixor__(self, other):
+        if not isinstance(other, set_types + (IdentitySet,)):
+            return NotImplemented
+        self.symmetric_difference(other)
+        return self
+
+    def copy(self):
+        return type(self)(self._members.itervalues())
+
+    __copy__ = copy
+
+    def __len__(self):
+        return len(self._members)
+
+    def __iter__(self):
+        return self._members.itervalues()
+
+    def __hash__(self):
+        raise TypeError('set objects are unhashable')
+
+    def __repr__(self):
+        return '%s(%r)' % (type(self).__name__, self._members.values())
+
+def _iter_id(iterable):
+    """Generator: ((id(o), o) for o in iterable)."""
+    for item in iterable:
+        yield id(item), item
+
+
 class UniqueAppender(object):
     """appends items to a collection such that only unique items
     are added."""
-    
+
     def __init__(self, data, via=None):
         self.data = data
         self._unique = Set()
@@ -544,15 +739,15 @@ class UniqueAppender(object):
         elif hasattr(data, 'add'):
             # TODO: we think its a set here.  bypass unneeded uniquing logic ?
             self._data_appender = data.add
-        
+
     def append(self, item):
         if item not in self._unique:
             self._data_appender(item)
             self._unique.add(item)
-    
+
     def __iter__(self):
         return iter(self.data)
-        
+
 class ScopedRegistry(object):
     """A Registry that can store one or multiple instances of a single
     class on a per-thread scoped basis, or on a customized scope.
@@ -580,10 +775,10 @@ class ScopedRegistry(object):
             return self.registry[key]
         except KeyError:
             return self.registry.setdefault(key, self.createfunc())
-    
+
     def has(self):
         return self._get_key() in self.registry
-        
+
     def set(self, obj):
         self.registry[self._get_key()] = obj
 

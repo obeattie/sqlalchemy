@@ -308,15 +308,11 @@ class AttributeImpl(object):
         for ext in self.extensions:
             ext.set(obj, value, previous, initiator or self)
 
-
-        
 class ScalarAttributeImpl(AttributeImpl):
-    """represents a scalar-holding InstrumentedAttribute."""
-    
-    def __init__(self, class_, manager, key, callable_, trackparent=False, extension=None, copy_function=None, compare_function=None, mutable_scalars=False, **kwargs):
+    """represents a scalar value-holding InstrumentedAttribute."""
+    def __init__(self, class_, manager, key, callable_, copy_function=None, compare_function=None, mutable_scalars=False, **kwargs):
         super(ScalarAttributeImpl, self).__init__(class_, manager, key,
-          callable_, trackparent=trackparent, extension=extension,
-          compare_function=compare_function, mutable_scalars=mutable_scalars, **kwargs)
+          callable_, compare_function=compare_function, mutable_scalars=mutable_scalars, **kwargs)
 
         if copy_function is None:
             copy_function = self.__copy
@@ -328,9 +324,8 @@ class ScalarAttributeImpl(AttributeImpl):
         return item
 
     def delete(self, state):
-        old = self.get(state)
         del state.dict[self.key]
-        self.fire_remove_event(state, old, self)
+        state.modified=True
 
     def check_mutable_modified(self, state):
         if self.mutable_scalars:
@@ -358,11 +353,46 @@ class ScalarAttributeImpl(AttributeImpl):
         if state.trigger:
             state.call_trigger()
 
+        state.dict[self.key] = value
+        state.modified=True
+
+    type = property(lambda self: self.property.columns[0].type)
+
+
+class ScalarObjectAttributeImpl(ScalarAttributeImpl):
+    """represents a scalar class-instance holding InstrumentedAttribute.
+    
+    Adds events to delete/set operations.
+    """
+    
+    def __init__(self, class_, manager, key, callable_, trackparent=False, extension=None, copy_function=None, compare_function=None, mutable_scalars=False, **kwargs):
+        super(ScalarObjectAttributeImpl, self).__init__(class_, manager, key,
+          callable_, trackparent=trackparent, extension=extension,
+          compare_function=compare_function, mutable_scalars=mutable_scalars, **kwargs)
+
+    def delete(self, state):
+        old = self.get(state)
+        del state.dict[self.key]
+        self.fire_remove_event(state, old, self)
+
+    def set(self, state, value, initiator):
+        """Set a value on the given object.
+
+        `initiator` is the ``InstrumentedAttribute`` that initiated the
+        ``set()` operation and is used to control the depth of a circular
+        setter operation.
+        """
+
+        if initiator is self:
+            return
+
+        # if an instance-wide "trigger" was set, call that
+        if state.trigger:
+            state.call_trigger()
+
         old = self.get(state)
         state.dict[self.key] = value
         self.fire_replace_event(state, value, old, initiator)
-
-    type = property(lambda self: self.property.columns[0].type)
 
         
 class CollectionAttributeImpl(AttributeImpl):
@@ -453,15 +483,25 @@ class CollectionAttributeImpl(AttributeImpl):
         old_collection = self.get_collection(state, old)
 
         new_collection, user_data = self._build_collection(state)
-        self._load_collection(state, value or [], emit_events=True,
-                              collection=new_collection)
+
+        idset = util.IdentitySet
+        constants = idset(old_collection or []).intersection(value or [])
+        additions = idset(value or []).difference(constants)
+        removals  = idset(old_collection or []).difference(constants)
+
+        for member in value or []:
+            if member in additions:
+                new_collection.append_with_event(member)
+            elif member in constants:
+                new_collection.append_without_event(member)
 
         state.dict[self.key] = user_data
         state.modified = True
 
-        # mark all the old elements as detached from the parent
+        # mark all the orphaned elements as detached from the parent
         if old_collection:
-            old_collection.clear_with_event()
+            for member in removals:
+                old_collection.remove_with_event(member)
             old_collection.unlink(old)
 
     def set_committed_value(self, state, value):
@@ -494,7 +534,7 @@ class CollectionAttributeImpl(AttributeImpl):
         else:
             for item in values:
                 collection.append_without_event(item)
-            
+
     def get_collection(self, state, user_data=None):
         if user_data is None:
             user_data = self.get(state)
@@ -756,6 +796,8 @@ class AttributeHistory(object):
     particular instance.
     """
 
+    NO_VALUE = object()
+    
     def __init__(self, attr, state, current, passive=False):
         self.attr = attr
 
@@ -763,13 +805,16 @@ class AttributeHistory(object):
         # the 'current' value, this "original" was also populated just
         # now as well (therefore we have to get it second)
         if state.committed_state:
-            original = state.committed_state.get(attr.key, None)
+            original = state.committed_state.get(attr.key, NO_VALUE)
         else:
-            original = None
+            original = NO_VALUE
 
         if hasattr(attr, 'get_collection'):
             self._current = current
-            s = util.Set(original or [])
+            if original is NO_VALUE:
+                s = util.Set([])
+            else:
+                s = util.Set(original)
             self._added_items = []
             self._unchanged_items = []
             self._deleted_items = []
@@ -791,7 +836,7 @@ class AttributeHistory(object):
                 self._deleted_items = []
             else:
                 self._added_items = [current]
-                if original is not None:
+                if original is not NO_VALUE and original is not None:
                     self._deleted_items = [original]
                 else:
                     self._deleted_items = []
@@ -969,7 +1014,7 @@ class AttributeManager(object):
 
         getattr(obj.__class__, key).impl.set_callable(obj._state, callable_, clear=clear)
 
-    def _create_prop(self, class_, key, uselist, callable_, typecallable, **kwargs):
+    def _create_prop(self, class_, key, uselist, callable_, typecallable, useobject, **kwargs):
         """Create a scalar property object, defaulting to
         ``InstrumentedAttribute``, which will communicate change
         events back to this ``AttributeManager``.
@@ -983,6 +1028,9 @@ class AttributeManager(object):
                                                    callable_,
                                                    typecallable,
                                                    **kwargs)
+        elif useobject:
+            return ScalarObjectAttributeImpl(class_, self, key, callable_,
+                                               **kwargs)
         else:
             return ScalarAttributeImpl(class_, self, key, callable_,
                                                **kwargs)
@@ -1060,7 +1108,7 @@ class AttributeManager(object):
         self._inherited_attribute_cache.pop(class_,None)
         self._noninherited_attribute_cache.pop(class_,None)
         
-    def register_attribute(self, class_, key, uselist, callable_=None, **kwargs):
+    def register_attribute(self, class_, key, uselist, useobject, callable_=None, **kwargs):
         """Register an attribute at the class level to be instrumented
         for all instances of the class.
         """
@@ -1074,7 +1122,7 @@ class AttributeManager(object):
         if isinstance(typecallable, InstrumentedAttribute):
             typecallable = None
         comparator = kwargs.pop('comparator', None)
-        setattr(class_, key, InstrumentedAttribute(self._create_prop(class_, key, uselist, callable_,
+        setattr(class_, key, InstrumentedAttribute(self._create_prop(class_, key, uselist, callable_, useobject=useobject,
                                            typecallable=typecallable, **kwargs), comparator=comparator))
 
     def set_raw_value(self, instance, key, value):
