@@ -184,9 +184,9 @@ class DefaultCompiler(engine.Compiled, visitors.ClauseVisitor):
     def construct_params(self, params=None):
         if params:
             pd = {}
-            for bindparam in self.binds.values():
+            for key, bindparam in self.binds.iteritems():
                 name = self.bind_names[bindparam]
-                pd[name] = params.get(bindparam.key, bindparam.value)
+                pd[name] = params.get(key, bindparam.value)
             return pd
         else:
             return dict([(self.bind_names[bindparam], bindparam.value) for bindparam in self.bind_names])

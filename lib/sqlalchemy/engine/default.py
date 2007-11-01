@@ -148,20 +148,25 @@ class DefaultExecutionContext(base.ExecutionContext):
                 ) for bindparam in compiled.bind_names]
                 if value is not None
             ])
+            
             self.typemap = compiled.typemap
             self.column_labels = compiled.column_labels
             if not dialect.supports_unicode_statements:
                 self.statement = unicode(compiled).encode(self.dialect.encoding)
             else:
                 self.statement = unicode(compiled)
+                
             self.isinsert = compiled.isinsert
             self.isupdate = compiled.isupdate
+            
             if not parameters:
                 self.compiled_parameters = [compiled.construct_params()]
                 self.executemany = False
             else:
                 self.compiled_parameters = [compiled.construct_params(m) for m in parameters]
                 self.executemany = len(parameters) > 1
+
+            self.cursor = self.create_cursor()
             self._process_defaults()
             self.parameters = self.__convert_compiled_params(self.compiled_parameters)
 
@@ -174,11 +179,12 @@ class DefaultExecutionContext(base.ExecutionContext):
             else:
                 self.statement = statement
             self.isinsert = self.isupdate = False
+            self.cursor = self.create_cursor()
         else:
             self.statement = None
             self.isinsert = self.isupdate = self.executemany = False
+            self.cursor = self.create_cursor()
             
-        self.cursor = self.create_cursor()
     
     connection = property(lambda s:s._connection._branch())
     
@@ -217,10 +223,10 @@ class DefaultExecutionContext(base.ExecutionContext):
                 parameters.append(param)
         else:
             encode = not self.dialect.supports_unicode_statements
-            encoding = self.dialect.encoding
             for compiled_params in compiled_parameters:
                 param = {}
                 if encode:
+                    encoding = self.dialect.encoding
                     for key in compiled_params:
                         if key in processors:
                             param[key.encode(encoding)] = processors[key](compiled_params[key])
