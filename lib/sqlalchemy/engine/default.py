@@ -170,7 +170,7 @@ class DefaultExecutionContext(base.ExecutionContext):
                 self.executemany = len(parameters) > 1
 
             self.cursor = self.create_cursor()
-            self._process_defaults()
+            self.__process_defaults()
             self.parameters = self.__convert_compiled_params(self.compiled_parameters)
 
         elif statement is not None:
@@ -331,7 +331,7 @@ class DefaultExecutionContext(base.ExecutionContext):
                         inputsizes[key.encode(self.dialect.encoding)] = dbtype
             self.cursor.setinputsizes(**inputsizes)
 
-    def _process_defaults(self):
+    def __process_defaults(self):
         """generate default values for compiled insert/update statements,
         and generate last_inserted_ids() collection."""
 
