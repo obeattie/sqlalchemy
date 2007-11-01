@@ -182,27 +182,16 @@ class DefaultCompiler(engine.Compiled, visitors.ClauseVisitor):
         return None
 
     def construct_params(self, params=None):
-        """Return a sql.util.ClauseParameters object.
-        
-        Combines the given bind parameter dictionary (string keys to object values)
-        with the _BindParamClause objects stored within this Compiled object
-        to produce a ClauseParameters structure, representing the bind arguments
-        for a single statement execution, or one element of an executemany execution.
-        """
+        if params:
+            pd = {}
+            for bindparam in self.binds.values():
+                name = self.bind_names[bindparam]
+                pd[name] = params.get(bindparam.key, bindparam.value)
+            return pd
+        else:
+            return dict([(self.bind_names[bindparam], bindparam.value) for bindparam in self.bind_names])
 
-        d = sql_util.ClauseParameters(self.dialect, self.positiontup)
-
-        pd = params or {}
-
-        bind_names = self.bind_names
-        for key, bind in self.binds.iteritems():
-            # the following is an inlined ClauseParameters.set_parameter()
-            name = bind_names[bind]
-            d._binds[name] = [bind, name, pd.get(key, bind.value)]
-        return d
-
-    params = property(lambda self:self.construct_params(), doc="""Return the `ClauseParameters` corresponding to this compiled object.  
-        A shortcut for `construct_params()`.""")
+    params = property(lambda self:self.construct_params(), doc="""""")
         
     def default_from(self):
         """Called when a SELECT statement has no froms, and no FROM clause is to be appended.

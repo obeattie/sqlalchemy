@@ -140,9 +140,20 @@ class DefaultExecutionContext(base.ExecutionContext):
         self.engine = connection.engine
         
         if compiled is not None:
+            self.processors = dict([
+                (key, value) for key, value in 
+                [(
+                    compiled.bind_names[bindparam],
+                    bindparam.bind_processor(self.dialect)
+                ) for bindparam in compiled.bind_names]
+                if value is not None
+            ])
             self.typemap = compiled.typemap
             self.column_labels = compiled.column_labels
-            self.statement = unicode(compiled)
+            if not dialect.supports_unicode_statements:
+                self.statement = unicode(compiled).encode(self.dialect.encoding)
+            else:
+                self.statement = unicode(compiled)
             self.isinsert = compiled.isinsert
             self.isupdate = compiled.isupdate
             if not parameters:
@@ -151,19 +162,21 @@ class DefaultExecutionContext(base.ExecutionContext):
             else:
                 self.compiled_parameters = [compiled.construct_params(m) for m in parameters]
                 self.executemany = len(parameters) > 1
+            self._process_defaults()
+            self.parameters = self.__convert_compiled_params(self.compiled_parameters)
 
         elif statement is not None:
             self.typemap = self.column_labels = None
             self.parameters = self.__encode_param_keys(parameters)
             self.executemany = len(parameters) > 1
-            self.statement = statement
+            if not dialect.supports_unicode_statements:
+                self.statement = statement.encode(self.dialect.encoding)
+            else:
+                self.statement = statement
             self.isinsert = self.isupdate = False
         else:
             self.statement = None
             self.isinsert = self.isupdate = self.executemany = False
-            
-        if self.statement is not None and not dialect.supports_unicode_statements:
-            self.statement = self.statement.encode(self.dialect.encoding)
             
         self.cursor = self.create_cursor()
     
@@ -190,13 +203,36 @@ class DefaultExecutionContext(base.ExecutionContext):
                 return dict([(k.encode(self.dialect.encoding), d[k]) for k in d])
             return [proc(d) for d in params] or [{}]
 
-    def __convert_compiled_params(self, parameters):
-        processors = parameters[0].get_processors()
+    def __convert_compiled_params(self, compiled_parameters):
+        processors = self.processors
+        parameters = []
         if self.dialect.positional:
-            parameters = [p.get_raw_list(processors) for p in parameters]
+            for compiled_params in compiled_parameters:
+                param = []
+                for key in self.compiled.positiontup:
+                    if key in processors:
+                        param.append(processors[key](compiled_params[key]))
+                    else:
+                        param.append(compiled_params[key])
+                parameters.append(param)
         else:
             encode = not self.dialect.supports_unicode_statements
-            parameters = [p.get_raw_dict(processors, encode_keys=encode) for p in parameters]
+            encoding = self.dialect.encoding
+            for compiled_params in compiled_parameters:
+                param = {}
+                if encode:
+                    for key in compiled_params:
+                        if key in processors:
+                            param[key.encode(encoding)] = processors[key](compiled_params[key])
+                        else:
+                            param[key.encode(encoding)] = compiled_params[key]
+                else:
+                    for key in compiled_params:
+                        if key in processors:
+                            param[key] = processors[key](compiled_params[key])
+                        else:
+                            param[key] = compiled_params[key]
+                parameters.append(param)
         return parameters
                 
     def is_select(self):
@@ -220,8 +256,7 @@ class DefaultExecutionContext(base.ExecutionContext):
         return AUTOCOMMIT_REGEXP.match(self.statement)
             
     def pre_exec(self):
-        self._process_defaults()
-        self.parameters = self.__convert_compiled_params(self.compiled_parameters)
+        pass
 
     def post_exec(self):
         pass
@@ -299,7 +334,7 @@ class DefaultExecutionContext(base.ExecutionContext):
                             else:
                                 val = drunner.get_column_onupdate(c)
                             if val is not None:
-                                param.set_value(c.key, val)
+                                param[c.key] = val
                     self.compiled_parameters = params
                     
             else:
@@ -307,19 +342,24 @@ class DefaultExecutionContext(base.ExecutionContext):
                 drunner = self.dialect.defaultrunner(self)
                 if self.isinsert:
                     self._last_inserted_ids = []
+                    
                 for c in self.compiled.prefetch:
                     if self.isinsert:
                         val = drunner.get_column_default(c)
                     else:
                         val = drunner.get_column_onupdate(c)
+                        
                     if val is not None:
-                        compiled_parameters.set_value(c.key, val)
+                        compiled_parameters[c.key] = val
 
                 if self.isinsert:
-                    processors = compiled_parameters.get_processors()
                     for c in self.compiled.statement.table.primary_key:
                         if c.key in compiled_parameters:
-                            self._last_inserted_ids.append(compiled_parameters.get_processed(c.key, processors))
+                            if c.key in self.processors:
+                                value = self.processors[c.key](compiled_parameters[c.key])
+                            else:
+                                value = compiled_parameters[c.key]
+                            self._last_inserted_ids.append(value)
                         else:
                             self._last_inserted_ids.append(None)
                             
