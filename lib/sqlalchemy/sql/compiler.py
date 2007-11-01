@@ -182,6 +182,8 @@ class DefaultCompiler(engine.Compiled, visitors.ClauseVisitor):
         return None
 
     def construct_params(self, params=None):
+        """return a dictionary of bind parameter keys and values"""
+        
         if params:
             pd = {}
             for key, bindparam in self.binds.iteritems():
@@ -191,7 +193,7 @@ class DefaultCompiler(engine.Compiled, visitors.ClauseVisitor):
         else:
             return dict([(self.bind_names[bindparam], bindparam.value) for bindparam in self.bind_names])
 
-    params = property(lambda self:self.construct_params(), doc="""""")
+    params = property(lambda self:self.construct_params(), doc="""return a dictionary of bind parameter keys and values""")
         
     def default_from(self):
         """Called when a SELECT statement has no froms, and no FROM clause is to be appended.
