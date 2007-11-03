@@ -3,9 +3,6 @@ from sqlalchemy.sql import expression, visitors
 
 """Utility functions that build upon SQL and Schema constructs."""
 
-import sys
-sys.setrecursionlimit(120)
-
 class TableCollection(object):
     def __init__(self, tables=None):
         self.tables = tables or []
@@ -113,7 +110,11 @@ class ColumnsInClause(visitors.ClauseVisitor):
             self.result = True
 
 class AbstractClauseProcessor(object):
-    """Traverse and copy a ClauseElement, replacing selected elements based on rules."""
+    """Traverse and copy a ClauseElement, replacing selected elements based on rules.
+    
+    This class implements its own visit-and-copy strategy but maintains the
+    same public interface as visitors.ClauseVisitor.
+    """
     
     __traverse_options__ = {'column_collections':False}
     
@@ -123,34 +124,29 @@ class AbstractClauseProcessor(object):
         raise NotImplementedError()
 
     def chain(self, visitor):
+        # chaining AbstractClauseProcessor and other ClauseVisitor
+        # objects separately.  All the ACP objects are chained on 
+        # their convert_element() method whereas regular visitors
+        # chain on their visit_XXX methods.
         if isinstance(visitor, AbstractClauseProcessor):
-            tail = self
-            while getattr(tail, '_next_acp', None) is not None:
-                tail = tail._next_acp
-            tail._next_acp = visitor
-            return self
+            attr = '_next_acp'
         else:
-            tail = self
-            while getattr(tail, '_next', None) is not None:
-                tail = tail._next
-            tail._next = visitor
-            return self
+            attr = '_next'
+        
+        tail = self
+        while getattr(tail, attr, None) is not None:
+            tail = getattr(tail, attr)
+        setattr(tail, attr, visitor)
+        return self
 
     def copy_and_process(self, list_, stop_on=None):
-        """Copy the container elements in the given list to a new list and
-        process the new list.
-        """
-
+        """Copy the given list to a new list, with each element traversed individually."""
+        
         list_ = list(list_)
-        self.process_list(list_)
-        return list_
-
-    def process_list(self, list_):
-        """Process all elements of the given list in-place."""
-
         stop_on = util.Set()
         for i in range(0, len(list_)):
             list_[i] = self.traverse(list_[i], stop_on=stop_on)
+        return list_
 
     def _convert_element(self, elem, stop_on):
         v = self
@@ -162,7 +158,10 @@ class AbstractClauseProcessor(object):
             v = getattr(v, '_next_acp', None)
         return elem._clone()
         
-    def traverse(self, elem, clone=False, stop_on=None, _clone_toplevel=True):
+    def traverse(self, elem, clone=True, stop_on=None, _clone_toplevel=True):
+        if not clone:
+            raise exceptions.ArgumentError("AbstractClauseProcessor 'clone' argument must be True")
+            
         if stop_on is None:
             stop_on = util.Set()
             
@@ -242,9 +241,6 @@ class ClauseAdapter(AbstractClauseProcessor):
                 newcol = self.selectable.corresponding_column(equiv, raiseerr=False, require_embedded=True, keys_ok=False)
                 if newcol:
                     return newcol
-        #if newcol is None:
-        #    self.traverse(col)
-        #    return col
         return newcol
 
 
