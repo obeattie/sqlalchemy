@@ -37,6 +37,12 @@ CHANGES
   dialects using the old name.
 
 - orm:
+    - eager loading with LIMIT/OFFSET applied no longer adds the primary 
+      table joined to a limited subquery of itself; the eager loads now
+      join directly to the subquery which also provides the primary table's
+      columns to the result set.  This eliminates a JOIN from all eager loads
+      with LIMIT/OFFSET.  [ticket:843]
+      
     - deferred column attributes no longer trigger a load operation when the
       attribute is assigned to.  in those cases, the newly assigned
       value will be present in the flushes' UPDATE statement unconditionally.

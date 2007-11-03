@@ -233,35 +233,7 @@ class AliasedClauses(object):
         of that table, in such a way that the row can be passed to logic which knows nothing about the aliased form
         of the table.
         """
-        # TODO: adapt create_row_adapter below to this
-        class AliasedRowAdapter(object):
-            def __init__(self, row):
-                self.row = row
-            def __contains__(self, key):
-                return key in map or key in self.row
-            def has_key(self, key):
-                return key in self
-            def __getitem__(self, key):
-                if key in map:
-                    key = map[key]
-                return self.row[key]
-            def keys(self):
-                return map.keys()
-        map = {}        
-        for c in self.alias.c:
-            parent = self.mapped_table.corresponding_column(c)
-            map[parent] = c
-            map[parent._label] = c
-            map[parent.name] = c
-        for c in self.extra_cols:
-            map[c] = self.extra_cols[c]
-            # TODO: this is a little hacky
-            for attr in ('name', '_label'):
-                if hasattr(c, attr):
-                    map[getattr(c, attr)] = self.extra_cols[c]
-                
-        AliasedRowAdapter.map = map
-        return AliasedRowAdapter
+        return create_row_adapter(self.alias, self.mapped_table)
 
 def create_row_adapter(from_, to):
     map = {}        

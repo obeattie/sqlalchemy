@@ -861,8 +861,14 @@ class Query(object):
                 context.secondary_columns.append(m)
             
         if self._eager_loaders and self._nestable(**self._select_args()):
-            # if theres an order by, add those columns to the column list
-            # of the "rowcount" query we're going to make
+            # eager loaders are present, and the SELECT has limiting criterion
+            # produce a "wrapped" selectable.
+            
+            # ensure all 'order by' elements are ClauseElement instances
+            # (since they will potentially be aliased)
+            # locate all embedded Column clauses so they can be added to the
+            # "inner" select statement where they'll be available to the enclosing
+            # statement's "order by"
             if order_by:
                 order_by = [expression._literal_as_text(o) for o in util.to_list(order_by) or []]
                 cf = sql_util.ColumnFinder()
@@ -876,25 +882,31 @@ class Query(object):
             if order_by:
                 s2.append_order_by(*util.to_list(order_by))
             
-            s3 = s2.alias('tbl_row_count')
+            s3 = s2.alias('primary_tbl_limited')
                 
             self._primary_adapter = mapperutil.create_row_adapter(s3, self.table)
 
-            # TODO: this is a hacky way to consolitate joins
-            secondary_from_clauses = list(sql.select([], from_obj=context.secondary_from_clauses).froms)
+            statement = sql.select([s3] + context.secondary_columns, for_update=for_update, use_labels=True)
 
-            secondary_from_clauses = sql_util.ClauseAdapter(s3).copy_and_process(secondary_from_clauses)
-            statement = sql.select([s3] + context.secondary_columns, from_obj=secondary_from_clauses, for_update=for_update, use_labels=True)
+            if context.eager_joins:
+                statement.append_from(sql_util.ClauseAdapter(s3).traverse(context.eager_joins), _copy_collection=False)
+
             if order_by:
                 statement.append_order_by(*sql_util.ClauseAdapter(s3).copy_and_process(util.to_list(order_by)))
-            statement.append_order_by(*context.order_by)
-            
+
+            statement.append_order_by(*context.eager_order_by)
         else:
-            statement = sql.select(context.primary_columns + context.secondary_columns, whereclause, from_obj=from_obj + context.secondary_from_clauses, use_labels=True, for_update=for_update, **self._select_args())
+            statement = sql.select(context.primary_columns + context.secondary_columns, whereclause, from_obj=from_obj, use_labels=True, for_update=for_update, **self._select_args())
+
+            if context.eager_joins:
+                statement.append_from(context.eager_joins, _copy_collection=False)
+
             if order_by:
                 statement.append_order_by(*util.to_list(order_by))
-            if context.order_by:
-                statement.append_order_by(*context.order_by)
+
+            if context.eager_order_by:
+                statement.append_order_by(*context.eager_order_by)
+                
             # for a DISTINCT query, you need the columns explicitly specified in order
             # to use it in "order_by".  ensure they are in the column criterion (particularly oid).
             # TODO: this should be done at the SQL level not the mapper level
@@ -1181,8 +1193,8 @@ class QueryContext(object):
         self.path = ()
         self.primary_columns = []
         self.secondary_columns = []
-        self.order_by = []
-        self.secondary_from_clauses = []
+        self.eager_order_by = []
+        self.eager_joins = None
         self.options = query._with_options
         self.attributes = query._attributes.copy()
     

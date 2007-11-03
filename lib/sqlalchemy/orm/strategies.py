@@ -498,8 +498,8 @@ class EagerLoader(AbstractRelationLoader):
         else:
             localparent = parentmapper
         
-        if hasattr(context, '_outerjoin'):
-            towrap = context._outerjoin
+        if context.eager_joins:
+            towrap = context.eager_joins
         elif isinstance(localparent.mapped_table, sql.Join):
             towrap = localparent.mapped_table
         else:
@@ -507,8 +507,8 @@ class EagerLoader(AbstractRelationLoader):
             # this will locate the selectable inside of any containers it may be a part of (such
             # as a join).  if its inside of a join, we want to outer join on that join, not the 
             # selectable.
-            # TODO: again, hacky way to get at all the froms
-            for fromclause in sql.select(from_obj=context.from_clauses + context.secondary_from_clauses).froms:
+            # TODO: slightly hacky way to get at all the froms
+            for fromclause in sql.select(from_obj=context.from_clauses).froms:
                 if fromclause is localparent.mapped_table:
                     towrap = fromclause
                     break
@@ -531,19 +531,17 @@ class EagerLoader(AbstractRelationLoader):
         context.attributes[("eager_row_processor", path)] = clauses.row_decorator
         
         if self.secondaryjoin is not None:
-            context._outerjoin = sql.outerjoin(towrap, clauses.secondary, clauses.primaryjoin).outerjoin(clauses.alias, clauses.secondaryjoin)
+            context.eager_joins = sql.outerjoin(towrap, clauses.secondary, clauses.primaryjoin).outerjoin(clauses.alias, clauses.secondaryjoin)
             if self.order_by is False and self.secondary.default_order_by() is not None:
-                context.order_by.append(*clauses.secondary.default_order_by())
+                context.eager_order_by.append(*clauses.secondary.default_order_by())
         else:
-            context._outerjoin = towrap.outerjoin(clauses.alias, clauses.primaryjoin)
+            context.eager_joins = towrap.outerjoin(clauses.alias, clauses.primaryjoin)
             if self.order_by is False and clauses.alias.default_order_by() is not None:
-                context.order_by.append(*clauses.alias.default_order_by())
+                context.eager_order_by.append(*clauses.alias.default_order_by())
 
         if clauses.order_by:
-            context.order_by.append(*util.to_list(clauses.order_by))
+            context.eager_order_by.append(*util.to_list(clauses.order_by))
         
-        context.secondary_from_clauses.append(context._outerjoin)
-
         for value in self.select_mapper.iterate_properties:
             context.exec_with_path(self.select_mapper, value.key, value.setup, context, parentclauses=clauses, parentmapper=self.select_mapper)
         
