@@ -143,9 +143,12 @@ class AbstractClauseProcessor(visitors.NoColumnVisitor):
             else:
                 list_[i] = self.traverse(list_[i], clone=True)
 
-    def traverse(self, elem, clone=False, _clone_internals=False, _stop_set=None):
+    def traverse(self, elem, clone=False, stop_on=None, _clone_internals=False, _stop_set=None):
         if _stop_set is None:
             _stop_set = util.Set()
+
+        if stop_on is None or elem in stop_on:
+            return elem
             
         if clone:
             elem = elem._clone()
@@ -157,7 +160,7 @@ class AbstractClauseProcessor(visitors.NoColumnVisitor):
         
         for e in elem.get_children(**self.__traverse_options__):
             if e not in _stop_set:
-                self.traverse(e, clone=False, _clone_internals=clone, _stop_set=_stop_set)
+                self.traverse(e, clone=False, stop_on=stop_on, _clone_internals=clone, _stop_set=_stop_set)
             
         return elem
 

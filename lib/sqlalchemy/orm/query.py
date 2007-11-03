@@ -863,36 +863,30 @@ class Query(object):
         if self._eager_loaders and self._nestable(**self._select_args()):
             # if theres an order by, add those columns to the column list
             # of the "rowcount" query we're going to make
-            #if order_by:
-            #    order_by = [expression._literal_as_text(o) for o in util.to_list(order_by) or []]
-            #    cf = sql_util.ColumnFinder()
-            #    for o in order_by:
-            #        cf.traverse(o)
-            #else:
-            #    cf = []
+            if order_by:
+                order_by = [expression._literal_as_text(o) for o in util.to_list(order_by) or []]
+                cf = sql_util.ColumnFinder()
+                for o in order_by:
+                    cf.traverse(o)
+            else:
+                cf = []
 
-            s2 = sql.select(context.primary_columns, whereclause, from_obj=context.from_clauses, use_labels=True, correlate=False, **self._select_args())
-            #s2 = sql.select(self.primary_key_columns + list(cf), whereclause, use_labels=True, from_obj=from_obj, correlate=False, **self._select_args())
+            s2 = sql.select(context.primary_columns + list(cf), whereclause, from_obj=context.from_clauses, use_labels=True, correlate=False, **self._select_args())
+
             if order_by:
                 s2.append_order_by(*util.to_list(order_by))
             
             s3 = s2.alias('tbl_row_count')
                 
             self._primary_adapter = mapperutil.create_row_adapter(s3, self.table)
-            
-            #crit = s3.primary_key==self.primary_key_columns
-            #statement = sql.select([], crit, use_labels=True, for_update=for_update)
-            # now for the order by, convert the columns to their corresponding columns
-            # in the "rowcount" query, and tack that new order by onto the "rowcount" query
-            #if order_by:
-            #    statement.append_order_by(*sql_util.ClauseAdapter(s3).copy_and_process(order_by))
-            #j  = context.secondary_from_clauses[0]
-            #print "READY !!!!!"
+
+            # TODO: this is a hacky way to consolitate joins
             secondary_from_clauses = list(sql.select([], from_obj=context.secondary_from_clauses).froms)
+
             secondary_from_clauses = sql_util.ClauseAdapter(s3).copy_and_process(secondary_from_clauses)
             statement = sql.select([s3] + context.secondary_columns, from_obj=secondary_from_clauses, for_update=for_update, use_labels=True)
-#            if order_by:
-#                statement.append_order_by(*sql_util.ClauseAdapter(s3).copy_and_process(util.to_list(order_by)))
+            if order_by:
+                statement.append_order_by(*sql_util.ClauseAdapter(s3).copy_and_process(util.to_list(order_by)))
             statement.append_order_by(*context.order_by)
             
         else:
