@@ -3,6 +3,8 @@ from sqlalchemy.sql import expression, visitors
 
 """Utility functions that build upon SQL and Schema constructs."""
 
+import sys
+sys.setrecursionlimit(120)
 
 class TableCollection(object):
     def __init__(self, tables=None):
@@ -116,13 +118,13 @@ class AbstractClauseProcessor(visitors.NoColumnVisitor):
 
     The conversion operation is defined by subclasses.
     """
-
+    
     def convert_element(self, elem):
         """Define the *conversion* method for this ``AbstractClauseProcessor``."""
 
         raise NotImplementedError()
 
-    def copy_and_process(self, list_):
+    def copy_and_process(self, list_, stop_on=None):
         """Copy the container elements in the given list to a new list and
         process the new list.
         """
@@ -140,46 +142,92 @@ class AbstractClauseProcessor(visitors.NoColumnVisitor):
                 list_[i] = elem
             else:
                 list_[i] = self.traverse(list_[i], clone=True)
-    
+
+    def traverse(self, elem, clone=False, _clone_internals=False, _stop_set=None):
+        if _stop_set is None:
+            _stop_set = util.Set()
+            
+        if clone:
+            elem = elem._clone()
+
+        self.traverse_chained(elem, _stop_set)
+
+        if clone or _clone_internals:
+            elem._copy_internals()
+        
+        for e in elem.get_children(**self.__traverse_options__):
+            if e not in _stop_set:
+                self.traverse(e, clone=False, _clone_internals=clone, _stop_set=_stop_set)
+            
+        return elem
+
+    def traverse_chained(self, obj, _stop_set):
+        v = self
+        while v is not None:
+            meth = getattr(v, "visit_%s" % obj.__visit_name__, None)
+            if meth:
+                for x in meth(obj):
+                    _stop_set.add(x)
+            v = getattr(v, '_next', None)
+        
     def visit_grouping(self, grouping):
         elem = self.convert_element(grouping.elem)
         if elem is not None:
             grouping.elem = elem
-            
+            return [elem]
+        else:
+            return []
+                
     def visit_clauselist(self, clist):
+        ret = []
         for i in range(0, len(clist.clauses)):
             n = self.convert_element(clist.clauses[i])
             if n is not None:
                 clist.clauses[i] = n
+                ret.append(n)
+        return ret
     
     def visit_unary(self, unary):
         elem = self.convert_element(unary.element)
         if elem is not None:
             unary.element = elem
-            
+            return [elem]
+        else:
+            return []
+                
     def visit_binary(self, binary):
+        ret = []
         elem = self.convert_element(binary.left)
         if elem is not None:
             binary.left = elem
+            ret.append(elem)
         elem = self.convert_element(binary.right)
         if elem is not None:
             binary.right = elem
-    
+            ret.append(elem)
+        return ret
+            
     def visit_join(self, join):
+        ret = []
         elem = self.convert_element(join.left)
         if elem is not None:
             join.left = elem
+            ret.append(elem)
         elem = self.convert_element(join.right)
         if elem is not None:
             join.right = elem
+            ret.append(elem)
         join._init_primary_key()
+        return ret
             
     def visit_select(self, select):
+        ret =[]
         fr = util.OrderedSet()
         for elem in select._froms:
             n = self.convert_element(elem)
             if n is not None:
                 fr.add((elem, n))
+                ret.append(n)
         select._recorrelate_froms(fr)
 
         col = []
@@ -189,8 +237,10 @@ class AbstractClauseProcessor(visitors.NoColumnVisitor):
                 col.append(elem)
             else:
                 col.append(n)
+                ret.append(n)
         select._raw_columns = col
-    
+        return ret
+        
 class ClauseAdapter(AbstractClauseProcessor):
     """Given a clause (like as in a WHERE criterion), locate columns
     which are embedded within a given selectable, and changes those

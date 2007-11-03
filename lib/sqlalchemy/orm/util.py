@@ -233,6 +233,7 @@ class AliasedClauses(object):
         of that table, in such a way that the row can be passed to logic which knows nothing about the aliased form
         of the table.
         """
+        # TODO: adapt create_row_adapter below to this
         class AliasedRowAdapter(object):
             def __init__(self, row):
                 self.row = row
@@ -262,7 +263,30 @@ class AliasedClauses(object):
         AliasedRowAdapter.map = map
         return AliasedRowAdapter
 
-    
+def create_row_adapter(from_, to):
+    map = {}        
+    for c in from_.c:
+        parent = to.corresponding_column(c)
+        map[parent] = c
+        map[parent._label] = c
+        map[parent.name] = c
+
+    class AliasedRow(object):
+        def __init__(self, row):
+            self.row = row
+        def __contains__(self, key):
+            return key in map or key in self.row
+        def has_key(self, key):
+            return key in self
+        def __getitem__(self, key):
+            if key in map:
+                key = map[key]
+            return self.row[key]
+        def keys(self):
+            return map.keys()
+    AliasedRow.map = map
+    return AliasedRow
+
 class PropertyAliasedClauses(AliasedClauses):
     """extends AliasedClauses to add support for primary/secondary joins on a relation()."""
     

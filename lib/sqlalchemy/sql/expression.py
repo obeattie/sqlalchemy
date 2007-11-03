@@ -1581,8 +1581,7 @@ class FromClause(Selectable):
 
         An example would be an Alias of a Table is derived from that Table.
         """
-
-        return False
+        return fromclause is self
 
     def replace_selectable(self, old, alias):
       """replace all occurences of FromClause 'old' with the given Alias object, returning a copy of this ``FromClause``."""
@@ -2412,15 +2411,7 @@ class Alias(FromClause):
             self.oid_column = None
 
     def is_derived_from(self, fromclause):
-        x = self.selectable
-        while True:
-            if x is fromclause:
-                return True
-            if isinstance(x, Alias):
-                x = x.selectable
-            else:
-                break
-        return False
+        return self.selectable.is_derived_from(fromclause)
 
     def supports_execution(self):
         return self.original.supports_execution()
@@ -2435,13 +2426,12 @@ class Alias(FromClause):
         #return self.selectable._exportable_columns()
         return self.selectable.columns
 
+    def _clone(self):
+        # Alias is immutable
+        return self
+
     def _copy_internals(self):
-        self._clone_from_clause()
-        self.selectable = self.selectable._clone()
-        baseselectable = self.selectable
-        while isinstance(baseselectable, Alias):
-            baseselectable = baseselectable.selectable
-        self.original = baseselectable
+        pass
 
     def get_children(self, **kwargs):
         for c in self.c:
@@ -3091,6 +3081,12 @@ class Select(_SelectBaseMixin, FromClause):
                 yield c
 
     inner_columns = property(_get_inner_columns, doc="""a collection of all ColumnElement expressions which would be rendered into the columns clause of the resulting SELECT statement.""")
+
+    def is_derived_from(self, fromclause):
+        for f in self.locate_all_froms():
+            if f.is_derived_from(fromclause):
+                return True
+        return False
 
     def _copy_internals(self):
         self._clone_from_clause()
