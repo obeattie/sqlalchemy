@@ -112,17 +112,29 @@ class ColumnsInClause(visitors.ClauseVisitor):
         if self.selectable.c.get(column.key) is column:
             self.result = True
 
-class AbstractClauseProcessor(visitors.NoColumnVisitor):
-    """Traverse a clause and attempt to convert the contents of container elements
-    to a converted element.
-
-    The conversion operation is defined by subclasses.
-    """
+class AbstractClauseProcessor(object):
+    """Traverse and copy a ClauseElement, replacing selected elements based on rules."""
+    
+    __traverse_options__ = {'column_collections':False}
     
     def convert_element(self, elem):
         """Define the *conversion* method for this ``AbstractClauseProcessor``."""
 
         raise NotImplementedError()
+
+    def chain(self, visitor):
+        if isinstance(visitor, AbstractClauseProcessor):
+            tail = self
+            while getattr(tail, '_next_acp', None) is not None:
+                tail = tail._next_acp
+            tail._next_acp = visitor
+            return self
+        else:
+            tail = self
+            while getattr(tail, '_next', None) is not None:
+                tail = tail._next
+            tail._next = visitor
+            return self
 
     def copy_and_process(self, list_, stop_on=None):
         """Copy the container elements in the given list to a new list and
@@ -136,113 +148,47 @@ class AbstractClauseProcessor(visitors.NoColumnVisitor):
     def process_list(self, list_):
         """Process all elements of the given list in-place."""
 
+        stop_on = util.Set()
         for i in range(0, len(list_)):
-            elem = self.convert_element(list_[i])
-            if elem is not None:
-                list_[i] = elem
-            else:
-                list_[i] = self.traverse(list_[i], clone=True)
+            list_[i] = self.traverse(list_[i], stop_on=stop_on)
 
-    def traverse(self, elem, clone=False, stop_on=None, _clone_internals=False, _stop_set=None):
-        if _stop_set is None:
-            _stop_set = util.Set()
-
-        if stop_on is None or elem in stop_on:
-            return elem
-            
-        if clone:
-            elem = elem._clone()
-
-        self.traverse_chained(elem, _stop_set)
-
-        if clone or _clone_internals:
-            elem._copy_internals()
-        
-        for e in elem.get_children(**self.__traverse_options__):
-            if e not in _stop_set:
-                self.traverse(e, clone=False, stop_on=stop_on, _clone_internals=clone, _stop_set=_stop_set)
-            
-        return elem
-
-    def traverse_chained(self, obj, _stop_set):
+    def _convert_element(self, elem, stop_on):
         v = self
         while v is not None:
-            meth = getattr(v, "visit_%s" % obj.__visit_name__, None)
+            newelem = v.convert_element(elem)
+            if newelem:
+                stop_on.add(newelem)
+                return newelem
+            v = getattr(v, '_next_acp', None)
+        return elem._clone()
+        
+    def traverse(self, elem, clone=False, stop_on=None, _clone_toplevel=True):
+        if stop_on is None:
+            stop_on = util.Set()
+            
+        if elem in stop_on:
+            return elem
+        
+        if _clone_toplevel:
+            elem = self._convert_element(elem, stop_on)
+            if elem in stop_on:
+                return elem
+            
+        def clone(element):
+            return self._convert_element(element, stop_on)
+        elem._copy_internals(clone=clone)
+        
+        v = getattr(self, '_next', None)
+        while v is not None:
+            meth = getattr(v, "visit_%s" % elem.__visit_name__, None)
             if meth:
-                for x in meth(obj):
-                    _stop_set.add(x)
+                meth(elem)
             v = getattr(v, '_next', None)
         
-    def visit_grouping(self, grouping):
-        elem = self.convert_element(grouping.elem)
-        if elem is not None:
-            grouping.elem = elem
-            return [elem]
-        else:
-            return []
-                
-    def visit_clauselist(self, clist):
-        ret = []
-        for i in range(0, len(clist.clauses)):
-            n = self.convert_element(clist.clauses[i])
-            if n is not None:
-                clist.clauses[i] = n
-                ret.append(n)
-        return ret
-    
-    def visit_unary(self, unary):
-        elem = self.convert_element(unary.element)
-        if elem is not None:
-            unary.element = elem
-            return [elem]
-        else:
-            return []
-                
-    def visit_binary(self, binary):
-        ret = []
-        elem = self.convert_element(binary.left)
-        if elem is not None:
-            binary.left = elem
-            ret.append(elem)
-        elem = self.convert_element(binary.right)
-        if elem is not None:
-            binary.right = elem
-            ret.append(elem)
-        return ret
-            
-    def visit_join(self, join):
-        ret = []
-        elem = self.convert_element(join.left)
-        if elem is not None:
-            join.left = elem
-            ret.append(elem)
-        elem = self.convert_element(join.right)
-        if elem is not None:
-            join.right = elem
-            ret.append(elem)
-        join._init_primary_key()
-        return ret
-            
-    def visit_select(self, select):
-        ret =[]
-        fr = util.OrderedSet()
-        for elem in select._froms:
-            n = self.convert_element(elem)
-            if n is not None:
-                fr.add((elem, n))
-                ret.append(n)
-        select._recorrelate_froms(fr)
-
-        col = []
-        for elem in select._raw_columns:
-            n = self.convert_element(elem)
-            if n is None:
-                col.append(elem)
-            else:
-                col.append(n)
-                ret.append(n)
-        select._raw_columns = col
-        return ret
+        for e in elem.get_children(**self.__traverse_options__):
+            if e not in stop_on:
+                self.traverse(e, stop_on=stop_on, _clone_toplevel=False)
+        return elem
         
 class ClauseAdapter(AbstractClauseProcessor):
     """Given a clause (like as in a WHERE criterion), locate columns

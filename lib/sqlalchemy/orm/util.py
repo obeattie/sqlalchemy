@@ -265,16 +265,8 @@ class AliasedClauses(object):
 
 def create_row_adapter(from_, to):
     map = {}        
-    for c in from_.c:
-        fc = to.corresponding_column(c, raiseerr=False)
-        if fc:
-            map[fc] = c
-            map[fc._label] = c
-            map[fc.name] = c
-            # TODO: this sucks. corresponding_column needs to be smarter
-            for c2 in to.c:
-                if fc.shares_lineage(c2):
-                    map[c2] = c
+    for c in to.c:
+        map[c] = from_.corresponding_column(c)
 
     class AliasedRow(object):
         def __init__(self, row):
