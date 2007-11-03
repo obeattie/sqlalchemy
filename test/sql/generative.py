@@ -237,12 +237,9 @@ class ClauseTest(SQLCompileTest):
         t1alias = t1.alias('t1alias')
         
         vis = sql_util.ClauseAdapter(t1alias)
-#        ff = vis.traverse(func.count(t1.c.col1).label('foo'), clone=True)
-#        assert ff._get_from_objects() == [t1alias]
+        ff = vis.traverse(func.count(t1.c.col1).label('foo'), clone=True)
+        assert ff._get_from_objects() == [t1alias]
         
-        print vis.traverse(select(['*'], from_obj=[t1]), clone=True)
-        print "------------"
-        return 
         self.assert_compile(vis.traverse(select(['*'], from_obj=[t1]), clone=True), "SELECT * FROM table1 AS t1alias")
         self.assert_compile(vis.traverse(select(['*'], t1.c.col1==t2.c.col2), clone=True), "SELECT * FROM table1 AS t1alias, table2 WHERE t1alias.col1 = table2.col2")
         self.assert_compile(vis.traverse(select(['*'], t1.c.col1==t2.c.col2, from_obj=[t1, t2]), clone=True), "SELECT * FROM table1 AS t1alias, table2 WHERE t1alias.col1 = table2.col2")
