@@ -105,12 +105,14 @@ class Query(object):
         key column values in the order of the table def's primary key
         columns.
         """
-
+        print "LOAD CHECK1"
         ret = self._extension.load(self, ident, **kwargs)
         if ret is not mapper.EXT_CONTINUE:
             return ret
+        print "LOAD CHECK2"
         key = self.mapper.identity_key_from_primary_key(ident)
         instance = self.populate_existing()._get(key, ident, **kwargs)
+        print "LOAD CHECK3"
         if instance is None and raiseerr:
             raise exceptions.InvalidRequestError("No instance found for identity %s" % repr(ident))
         return instance
@@ -657,7 +659,7 @@ class Query(object):
         return self._execute_and_instances(context)
     
     def _execute_and_instances(self, querycontext):
-        result = self.session.execute(querycontext.statement, params=self._params, mapper=self.mapper)
+        result = self.session.execute(querycontext.statement, params=self._params, mapper=self.mapper, instance=self._refresh_instance)
         try:
             return iter(self.instances(result, querycontext=querycontext))
         finally:
@@ -725,7 +727,7 @@ class Query(object):
         for instance in context.identity_map.values():
             context.attributes.get(('populating_mapper', id(instance)), object_mapper(instance))._post_instance(context, instance)
 
-        if context.refresh_instance and context.load_props:
+        if context.refresh_instance and context.load_props and context.refresh_instance._instance_key in context.identity_map:
             # if refreshing partial instance, do special state commit
             # affecting only the refreshed attributes
             context.refresh_instance._state.commit(context.load_props)
@@ -743,18 +745,18 @@ class Query(object):
 
     def _get(self, key=None, ident=None, refresh_instance=None, lockmode=None, props=None):
         lockmode = lockmode or self._lockmode
-        if not refresh_instance and not self.mapper.always_refresh and lockmode is None:
+        if not self._populate_existing and not refresh_instance and not self.mapper.always_refresh and lockmode is None:
             try:
                 return self.session.identity_map[key]
             except KeyError:
                 pass
-
+            
         if ident is None:
             if key is not None:
                 ident = key[1]
         else:
             ident = util.to_list(ident)
-
+        print "IDENT", ident
         q = self
         
         if ident is not None:
@@ -1115,9 +1117,9 @@ class Query(object):
         return list(q)
 
     def _select_context_options(self, populate_existing=None, version_check=None, props=None, refresh_instance=None): #pragma: no cover
-        if populate_existing is not None:
+        if populate_existing:
             self._populate_existing = populate_existing
-        if version_check is not None:
+        if version_check:
             self._version_check = version_check
         if refresh_instance is not None:
             self._refresh_instance = refresh_instance

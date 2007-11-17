@@ -638,20 +638,17 @@ class InstanceState(object):
     def initialize(self, key):
         getattr(self.class_, key).impl.initialize(self)
         
-    def set_callable(self, key, callable_, clear=False):
-        if clear:
-            del self.dict[key]
+    def set_callable(self, key, callable_):
+        self.dict.pop(key, None)
         self.callables[key] = callable_
 
     def expire(self, key, callable_):
-        print "EXPIRE KEY", key
         if key not in self.callables:
             del self.dict[key]
             self.callables[key] = callable_
     
     def expire_all(self, callable_):
         for attr in self.class_._sa_attribute_manager.managed_attributes(self.class_):
-            print "EXPIRE ALL KEY", attr.impl.key
             try:
                 del self.dict[attr.impl.key]
             except KeyError:
@@ -672,11 +669,8 @@ class InstanceState(object):
     def commit_all(self):
         self.committed_state = {}
         self.modified = False
-        print "STATE BEFORE", self.dict
         for attr in self.class_._sa_attribute_manager.managed_attributes(self.class_):
-            print "COMMIT ALL, ATTR NAME", attr.impl.key
             attr.impl.commit_to_state(self)
-        print "STATE AFTER", self.dict
         # remove strong ref
         self._strong_obj = None
         
@@ -973,15 +967,6 @@ class AttributeManager(object):
 
     def has_parent(self, class_, obj, key, optimistic=False):
         return getattr(class_, key).impl.hasparent(obj._state, optimistic=optimistic)
-
-    def init_instance_attribute(self, obj, key, callable_=None):
-        """Initialize an attribute on an instance to either a blank
-        value, cancelling out any class- or instance-level callables
-        that were present, or if a `callable` is supplied set the
-        callable to be invoked when the attribute is next accessed.
-        """
-
-        getattr(obj.__class__, key).impl.set_callable(obj._state, callable_, clear=False)
 
     def _create_prop(self, class_, key, uselist, callable_, typecallable, useobject, **kwargs):
         """Create a scalar property object, defaulting to

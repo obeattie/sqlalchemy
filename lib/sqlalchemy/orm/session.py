@@ -522,9 +522,9 @@ class Session(object):
         resources of the underlying ``Connection``.
         """
 
-        engine = self.get_bind(mapper, clause=clause)
+        engine = self.get_bind(mapper, clause=clause, **kwargs)
         
-        return self.__connection(engine, close_with_result=True).execute(clause, params or {}, **kwargs)
+        return self.__connection(engine, close_with_result=True).execute(clause, params or {})
 
     def scalar(self, clause, params=None, mapper=None, **kwargs):
         """Like execute() but return a scalar result."""

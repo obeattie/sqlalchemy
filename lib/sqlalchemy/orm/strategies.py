@@ -115,7 +115,7 @@ class ColumnLoader(LoaderStrategy):
             
             def new_execute(instance, row, isnew, **flags):
                 if isnew:
-                    instance._state.set_callable(strategy.setup_loader(instance, props=props, create_statement=create_statement))
+                    instance._state.set_callable(self.key, strategy.setup_loader(instance, props=props, create_statement=create_statement))
                     
             if self._should_log_debug:
                 self.logger.debug("Returning deferred column fetcher for %s %s" % (mapper, self.key))
