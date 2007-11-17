@@ -718,11 +718,11 @@ def deferred_load(instance, props):
     column_props = [p for p in props if isinstance(p, ColumnProperty)]
     callable_ = column_props[0]._get_strategy(strategies.DeferredColumnLoader).setup_loader(instance, props=column_props)
     for p in column_props:
-        sessionlib.attribute_manager.init_instance_attribute(instance, p.key, callable_=callable_, clear=True)
+        instance._state.set_callable(p.key, callable_)
         
     for p in [p for p in props if isinstance(p, PropertyLoader)]:
         callable_ = p._get_strategy(strategies.LazyLoader).setup_loader(instance)
-        sessionlib.attribute_manager.init_instance_attribute(instance, p.key, callable_=callable_, clear=True)
+        instance._state.set_callable(p.key, callable_)
 
 mapper.ColumnProperty = ColumnProperty
 mapper.deferred_load = deferred_load

@@ -232,11 +232,6 @@ class AttributeImpl(object):
         try:
             return state.dict[self.key]
         except KeyError:
-            # if an instance-wide "trigger" was set, call that
-            # and start again
-            if state.trigger:
-                state.call_trigger()
-                return self.get(state, passive=passive)
 
             callable_ = self._get_callable(state)
             if callable_ is not None:
@@ -246,6 +241,8 @@ class AttributeImpl(object):
                 if value is not ATTR_WAS_SET:
                     return self.set_committed_value(state, value)
                 else:
+                    if self.key not in state.dict:
+                        return self.get(state, passive=passive)
                     return state.dict[self.key]
             else:
                 # Return a new, empty value
@@ -350,10 +347,6 @@ class ScalarAttributeImpl(AttributeImpl):
         if initiator is self:
             return
 
-        # if an instance-wide "trigger" was set, call that
-        if state.trigger:
-            state.call_trigger()
-
         state.dict[self.key] = value
         state.modified=True
 
@@ -388,10 +381,6 @@ class ScalarObjectAttributeImpl(ScalarAttributeImpl):
 
         if initiator is self:
             return
-
-        # if an instance-wide "trigger" was set, call that
-        if state.trigger:
-            state.call_trigger()
 
         old = self.get(state)
         state.dict[self.key] = value
@@ -477,10 +466,6 @@ class CollectionAttributeImpl(AttributeImpl):
             value = list(getattr(value, '_sa_adapter'))
         elif setting_type == dict:
             value = value.values()
-
-        # if an instance-wide "trigger" was set, call that
-        if state.trigger:
-            state.call_trigger()
 
         old = self.get(state)
         old_collection = self.get_collection(state, old)
@@ -649,32 +634,29 @@ class InstanceState(object):
         self.dict = self.obj().__dict__
         self.callables = {}
         self.trigger = None
-        
-    def call_trigger(self):
-        trig = self.trigger
-        self.trigger = None
-        trig()
     
+    def initialize(self, key):
+        getattr(self.class_, key).impl.initialize(self)
+        
     def set_callable(self, key, callable_, clear=False):
         if clear:
             del self.dict[key]
         self.callables[key] = callable_
-    
+
     def expire(self, key, callable_):
-        del self.dict[key]
-        del self.committed_state[key]
-        if callable_:
+        print "EXPIRE KEY", key
+        if key not in self.callables:
+            del self.dict[key]
             self.callables[key] = callable_
     
     def expire_all(self, callable_):
         for attr in self.class_._sa_attribute_manager.managed_attributes(self.class_):
+            print "EXPIRE ALL KEY", attr.impl.key
             try:
                 del self.dict[attr.impl.key]
             except KeyError:
                 pass
-            if callable_:
-                self.callables[attr.impl.key] = callable_
-        self.committed_state = {}
+            self.callables[attr.impl.key] = callable_
         
     def clear(self):
         for attr in self.class_._sa_attribute_manager.managed_attributes(self.class_):
@@ -683,16 +665,18 @@ class InstanceState(object):
             except KeyError:
                 pass
     
-    def commit_uncommitted(self):
-        for attr in self.class_._sa_attribute_manager.managed_attributes(self.class_):
-            if attr.impl.key not in self.committed_state:
-                attr.impl.commit_to_state(self)
-        
+    def commit(self, keys):
+        for key in keys:
+            getattr(self.class_, key).impl.commit_to_state(self)
+            
     def commit_all(self):
         self.committed_state = {}
         self.modified = False
+        print "STATE BEFORE", self.dict
         for attr in self.class_._sa_attribute_manager.managed_attributes(self.class_):
+            print "COMMIT ALL, ATTR NAME", attr.impl.key
             attr.impl.commit_to_state(self)
+        print "STATE AFTER", self.dict
         # remove strong ref
         self._strong_obj = None
         

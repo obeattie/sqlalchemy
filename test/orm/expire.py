@@ -48,7 +48,21 @@ class ExpireTest(FixtureTest):
         # object should be back to normal now,
         # this should *not* produce a SELECT statement (not tested here though....)
         assert u.name == 'jack'
-
+    
+    def test_expire_doesntload_on_set(self):
+        mapper(User, users)
+        
+        sess = create_session()
+        u = sess.query(User).get(7)
+        
+        sess.expire(u, attribute_names=['name'])
+        def go():
+            u.name = 'somenewname'
+        self.assert_sql_count(testbase.db, go, 0)
+        sess.flush()
+        sess.clear()
+        assert sess.query(User).get(7).name == 'somenewname'
+        
     def test_expire_committed(self):
         """test that the committed state of the attribute receives the most recent DB data"""
         mapper(Order, orders)
@@ -57,8 +71,6 @@ class ExpireTest(FixtureTest):
         o = sess.query(Order).get(3)
         sess.expire(o)
 
-        assert 'description' not in o._state.committed_state
-        
         orders.update(id=3).execute(description='order 3 modified')
         assert o.isopen == 1
         assert o._state.committed_state['description'] == 'order 3 modified'
@@ -74,8 +86,12 @@ class ExpireTest(FixtureTest):
         mapper(Address, addresses)
         s = create_session()
         u = s.get(User, 8)
+        assert u.addresses[0].email_address == 'ed@wood.com'
+
         u.addresses[0].email_address = 'someotheraddress'
         s.expire(u)
+        u.name
+        print u._state.dict
         assert u.addresses[0].email_address == 'ed@wood.com'
 
     def test_expired_lazy(self):

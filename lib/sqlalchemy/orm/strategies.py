@@ -76,6 +76,7 @@ class ColumnLoader(LoaderStrategy):
             def new_execute(instance, row, **flags):
                 if self._should_log_debug:
                     self.logger.debug("populating %s with %s/%s" % (mapperutil.attribute_str(instance, self.key), row.__class__.__name__, self.columns[0].key))
+                print "POPULATRE", self.key
                 instance.__dict__[self.key] = row[self.columns[0]]
             if self._should_log_debug:
                 self.logger.debug("Returning active column fetcher for %s %s" % (mapper, self.key))
@@ -114,8 +115,7 @@ class ColumnLoader(LoaderStrategy):
             
             def new_execute(instance, row, isnew, **flags):
                 if isnew:
-                    loader = strategy.setup_loader(instance, props=props, create_statement=create_statement)
-                    sessionlib.attribute_manager.init_instance_attribute(instance, self.key, callable_=loader)
+                    instance._state.set_callable(strategy.setup_loader(instance, props=props, create_statement=create_statement))
                     
             if self._should_log_debug:
                 self.logger.debug("Returning deferred column fetcher for %s %s" % (mapper, self.key))
@@ -140,7 +140,7 @@ class DeferredColumnLoader(LoaderStrategy):
             def new_execute(instance, row, **flags):
                 if self._should_log_debug:
                     self.logger.debug("set deferred callable on %s" % mapperutil.attribute_str(instance, self.key))
-                sessionlib.attribute_manager.init_instance_attribute(instance, self.key, callable_=self.setup_loader(instance))
+                instance._state.set_callable(self.key, self.setup_loader(instance))
             return (new_execute, None, None)
         else:
             def new_execute(instance, row, **flags):
@@ -236,7 +236,10 @@ class AbstractRelationLoader(LoaderStrategy):
         self._should_log_debug = logging.is_debug_enabled(self.logger)
         
     def _init_instance_attribute(self, instance, callable_=None):
-        return sessionlib.attribute_manager.init_instance_attribute(instance, self.key, callable_=callable_)
+        if callable_:
+            instance._state.set_callable(self.key, callable_)
+        else:
+            instance._state.initialize(self.key)
         
     def _register_attribute(self, class_, callable_=None, **kwargs):
         self.logger.info("register managed %s attribute %s on class %s" % ((self.uselist and "list-holding" or "scalar"), self.key, self.parent.class_.__name__))

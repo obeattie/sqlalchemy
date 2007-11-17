@@ -724,11 +724,17 @@ class Query(object):
 
         for instance in context.identity_map.values():
             context.attributes.get(('populating_mapper', id(instance)), object_mapper(instance))._post_instance(context, instance)
-        
+
+        if context.refresh_instance and context.load_props:
+            # if refreshing partial instance, do special state commit
+            # affecting only the refreshed attributes
+            context.refresh_instance._state.commit(context.load_props)
+            del context.identity_map[context.refresh_instance._instance_key]
+            
         # store new stuff in the identity map
         for instance in context.identity_map.values():
             session._register_persistent(instance)
-
+        
         if mappers_or_columns:
             return list(util.OrderedSet(zip(*([result] + [o[1] for o in process]))))
         else:

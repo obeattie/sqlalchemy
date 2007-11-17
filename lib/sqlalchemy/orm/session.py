@@ -6,7 +6,7 @@
 
 import weakref
 from sqlalchemy import util, exceptions, sql, engine
-from sqlalchemy.orm import unitofwork, query, util as mapperutil
+from sqlalchemy.orm import unitofwork, query, attributes, util as mapperutil
 from sqlalchemy.orm.mapper import object_mapper as _object_mapper
 from sqlalchemy.orm.mapper import class_mapper as _class_mapper
 from sqlalchemy.orm.mapper import Mapper
@@ -784,9 +784,17 @@ class Session(object):
             self.obj = obj
             self.attribute_names = None
         def __call__(self):
+            print "ATTR REFRESH CALLING ON ", self.obj.__class__
             obj = self.obj
             if object_session(obj).query(obj.__class__)._get(obj._instance_key, refresh_instance=obj, props=self.attribute_names) is None:
                 raise exceptions.InvalidRequestError("Could not refresh instance '%s'" % mapperutil.instance_str(obj))
+            if self.attribute_names:
+                for k in self.attribute_names:
+                    obj._state.callables.pop(k, None)
+            else:
+                obj._state.callables.clear()
+            obj._state.trigger = None
+            return attributes.ATTR_WAS_SET
             
     def _expire_impl(self, obj, attribute_names):
         self._validate_persistent(obj)
@@ -1058,7 +1066,7 @@ class Session(object):
     def _register_persistent(self, obj):
         obj._sa_session_id = self.hash_key
         self.identity_map[obj._instance_key] = obj
-        obj._state.commit_uncommitted()
+        obj._state.commit_all()
 
     def _attach(self, obj):
         old_id = getattr(obj, '_sa_session_id', None)
