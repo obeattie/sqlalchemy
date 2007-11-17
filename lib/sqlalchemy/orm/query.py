@@ -50,6 +50,8 @@ class Query(object):
         self._attributes = {}
         self._current_path = ()
         self._primary_adapter=None
+        self._load_props = None
+        self._refresh_instance = None
         
     def _clone(self):
         q = Query.__new__(Query)
@@ -108,7 +110,7 @@ class Query(object):
         if ret is not mapper.EXT_CONTINUE:
             return ret
         key = self.mapper.identity_key_from_primary_key(ident)
-        instance = self._get(key, ident, reload=True, **kwargs)
+        instance = self.populate_existing()._get(key, ident, **kwargs)
         if instance is None and raiseerr:
             raise exceptions.InvalidRequestError("No instance found for identity %s" % repr(ident))
         return instance
@@ -670,8 +672,6 @@ class Query(object):
         and add_column().
         """
 
-        self.__log_debug("instances()")
-
         session = self.session
 
         context = kwargs.pop('querycontext', None)
@@ -735,32 +735,38 @@ class Query(object):
             return result.data
 
 
-    def _get(self, key, ident=None, reload=False, lockmode=None):
+    def _get(self, key=None, ident=None, refresh_instance=None, lockmode=None, props=None):
         lockmode = lockmode or self._lockmode
-        if not reload and not self.mapper.always_refresh and lockmode is None:
+        if not refresh_instance and not self.mapper.always_refresh and lockmode is None:
             try:
                 return self.session.identity_map[key]
             except KeyError:
                 pass
 
         if ident is None:
-            ident = key[1]
+            if key is not None:
+                ident = key[1]
         else:
             ident = util.to_list(ident)
-        params = {}
+
+        q = self
         
-        (_get_clause, _get_params) = self.select_mapper._get_clause
-        for i, primary_key in enumerate(self.primary_key_columns):
-            try:
-                params[_get_params[primary_key].key] = ident[i]
-            except IndexError:
-                raise exceptions.InvalidRequestError("Could not find enough values to formulate primary key for query.get(); primary key columns are %s" % ', '.join(["'%s'" % str(c) for c in self.primary_key_columns]))
+        if ident is not None:
+            params = {}
+            (_get_clause, _get_params) = self.select_mapper._get_clause
+            q = q.filter(_get_clause)
+            for i, primary_key in enumerate(self.primary_key_columns):
+                try:
+                    params[_get_params[primary_key].key] = ident[i]
+                except IndexError:
+                    raise exceptions.InvalidRequestError("Could not find enough values to formulate primary key for query.get(); primary key columns are %s" % ', '.join(["'%s'" % str(c) for c in self.primary_key_columns]))
+            q = q.params(params)
+            
         try:
-            q = self
             if lockmode is not None:
                 q = q.with_lockmode(lockmode)
-            q = q.filter(_get_clause)
-            q = q.params(params)._select_context_options(populate_existing=reload, version_check=(lockmode is not None))
+            q = q._select_context_options(populate_existing=refresh_instance is not None, version_check=(lockmode is not None), props=props, refresh_instance=refresh_instance)
+            q = q.order_by(None)
             # call using all() to avoid LIMIT compilation complexity
             return q.all()[0]
         except IndexError:
@@ -861,7 +867,9 @@ class Query(object):
         # TODO: doing this off the select_mapper.  if its the polymorphic mapper, then
         # it has no relations() on it.  should we compile those too into the query ?  (i.e. eagerloads)
         for value in self.select_mapper.iterate_properties:
-            context.exec_with_path(self.select_mapper, value.key, value.setup, context)
+            if self._load_props and value.key not in self._load_props:
+                continue
+            context.exec_with_path(self.select_mapper, value.key, value.setup, context, load_props=self._load_props)
 
         # additional entities/columns, add those to selection criterion
         for tup in self._entities:
@@ -912,7 +920,6 @@ class Query(object):
             statement.append_order_by(*context.eager_order_by)
         else:
             statement = sql.select(context.primary_columns + context.secondary_columns, whereclause, from_obj=from_obj, use_labels=True, for_update=for_update, **self._select_args())
-
             if context.eager_joins:
                 statement.append_from(context.eager_joins, _copy_collection=False)
 
@@ -1101,11 +1108,15 @@ class Query(object):
         q._select_context_options(**kwargs)
         return list(q)
 
-    def _select_context_options(self, populate_existing=None, version_check=None): #pragma: no cover
+    def _select_context_options(self, populate_existing=None, version_check=None, props=None, refresh_instance=None): #pragma: no cover
         if populate_existing is not None:
             self._populate_existing = populate_existing
         if version_check is not None:
             self._version_check = version_check
+        if refresh_instance is not None:
+            self._refresh_instance = refresh_instance
+        if props:
+            self._load_props = util.Set(props)
         return self
         
     def join_to(self, key): #pragma: no cover
@@ -1207,6 +1218,8 @@ class QueryContext(object):
         self.statement = None
         self.populate_existing = query._populate_existing
         self.version_check = query._version_check
+        self.load_props = query._load_props
+        self.refresh_instance = query._refresh_instance
         self.identity_map = {}
         self.path = ()
         self.primary_columns = []

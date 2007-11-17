@@ -162,8 +162,11 @@ class DeferredColumnLoader(LoaderStrategy):
         self.logger.info("register managed attribute %s on class %s" % (self.key, self.parent.class_.__name__))
         sessionlib.attribute_manager.register_attribute(self.parent.class_, self.key, uselist=False, useobject=False, callable_=self.setup_loader, copy_function=self.columns[0].type.copy_value, compare_function=self.columns[0].type.compare_values, mutable_scalars=self.columns[0].type.is_mutable(), comparator=self.parent_property.comparator)
 
-    def setup_query(self, context, **kwargs):
-        if self.group is not None and context.attributes.get(('undefer', self.group), False):
+    def setup_query(self, context, load_props=None, **kwargs):
+        if \
+            (self.group is not None and context.attributes.get(('undefer', self.group), False)) or \
+            (load_props and self.key in load_props):
+            
             self.parent_property._get_strategy(ColumnLoader).setup_query(context, **kwargs)
         
     def setup_loader(self, instance, props=None, create_statement=None):
@@ -198,27 +201,12 @@ class DeferredColumnLoader(LoaderStrategy):
                 raise exceptions.InvalidRequestError("Parent instance %s is not bound to a Session; deferred load operation of attribute '%s' cannot proceed" % (instance.__class__, self.key))
 
             if create_statement is None:
-                (clause, param_map) = localparent._get_clause
                 ident = instance._instance_key[1]
-                params = {}
-                for i, primary_key in enumerate(localparent.primary_key):
-                    params[param_map[primary_key].key] = ident[i]
-                statement = sql.select([p.columns[0] for p in group], clause, from_obj=[localparent.mapped_table], use_labels=True)
+                session.query(localparent)._get(None, ident=ident, props=[p.key for p in group], refresh_instance=instance)
             else:
                 statement, params = create_statement(instance)
-            
-            # TODO: have the "fetch of one row" operation go through the same channels as a query._get()
-            # deferred load of several attributes should be a specialized case of a query refresh operation
-            conn = session.connection(mapper=localparent, instance=instance)
-            result = conn.execute(statement, params)
-            try:
-                row = result.fetchone()
-                for prop in group:
-                    sessionlib.attribute_manager.set_committed_value(instance, prop.key, row[prop.columns[0]])
-                return attributes.ATTR_WAS_SET
-            finally:
-                result.close()
-
+                session.query(localparent).from_statement(statement).params(params)._get(None, props=[p.key for p in group], refresh_instance=instance)
+            return attributes.ATTR_WAS_SET
         return lazyload
                 
 DeferredColumnLoader.logger = logging.class_logger(DeferredColumnLoader)

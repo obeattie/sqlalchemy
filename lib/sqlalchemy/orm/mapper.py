@@ -1356,29 +1356,36 @@ class Mapper(object):
         # TODO: what if our mapper inherits from the mapper (i.e. as in a polymorphic load?)
         if context.mapper is self:
             extension = context.extension
+            props = context.load_props
+            refresh_instance = context.refresh_instance
         else:
             extension = self.extension
+            props = refresh_instance = None
+        
+        if refresh_instance is None:
+            if 'translate_row' in extension.methods:
+                ret = extension.translate_row(self, context, row)
+                if ret is not EXT_CONTINUE:
+                    row = ret
 
-        if 'translate_row' in extension.methods:
-            ret = extension.translate_row(self, context, row)
-            if ret is not EXT_CONTINUE:
-                row = ret
-
-        if not skip_polymorphic and self.polymorphic_on is not None:
-            discriminator = row[self.polymorphic_on]
-            if discriminator is not None:
-                mapper = self.polymorphic_map[discriminator]
-                if mapper is not self:
-                    if ('polymorphic_fetch', mapper) not in context.attributes:
-                        context.attributes[('polymorphic_fetch', mapper)] = (self, [t for t in mapper.tables if t not in self.tables])
-                    row = self.translate_row(mapper, row)
-                    return mapper._instance(context, row, result=result, skip_polymorphic=True)
+            if not skip_polymorphic and self.polymorphic_on is not None:
+                discriminator = row[self.polymorphic_on]
+                if discriminator is not None:
+                    mapper = self.polymorphic_map[discriminator]
+                    if mapper is not self:
+                        if ('polymorphic_fetch', mapper) not in context.attributes:
+                            context.attributes[('polymorphic_fetch', mapper)] = (self, [t for t in mapper.tables if t not in self.tables])
+                        row = self.translate_row(mapper, row)
+                        return mapper._instance(context, row, result=result, skip_polymorphic=True)
         
         # look in main identity map.  if its there, we dont do anything to it,
         # including modifying any of its related items lists, as its already
         # been exposed to being modified by the application.
 
-        identitykey = self.identity_key_from_row(row)
+        if refresh_instance:
+            identitykey = refresh_instance._instance_key
+        else:
+            identitykey = self.identity_key_from_row(row)
         (session_identity_map, local_identity_map) = (context.session.identity_map, context.identity_map)
         
         if identitykey in session_identity_map:
@@ -1397,8 +1404,8 @@ class Mapper(object):
                 if identitykey not in local_identity_map:
                     local_identity_map[identitykey] = instance
                     isnew = True
-                if 'populate_instance' not in extension.methods or extension.populate_instance(self, context, row, instance, instancekey=identitykey, isnew=isnew) is EXT_CONTINUE:
-                    self.populate_instance(context, instance, row, instancekey=identitykey, isnew=isnew)
+                if 'populate_instance' not in extension.methods or extension.populate_instance(self, context, row, instance, instancekey=identitykey, isnew=isnew, props=props) is EXT_CONTINUE:
+                    self.populate_instance(context, instance, row, instancekey=identitykey, isnew=isnew, only_load_props=props)
 
             if 'append_result' not in extension.methods or extension.append_result(self, context, row, instance, result, instancekey=identitykey, isnew=isnew) is EXT_CONTINUE:
                 if result is not None:
@@ -1444,8 +1451,8 @@ class Mapper(object):
         # call further mapper properties on the row, to pull further
         # instances from the row and possibly populate this item.
         flags = {'instancekey':identitykey, 'isnew':isnew}
-        if 'populate_instance' not in extension.methods or extension.populate_instance(self, context, row, instance, **flags) is EXT_CONTINUE:
-            self.populate_instance(context, instance, row, **flags)
+        if 'populate_instance' not in extension.methods or extension.populate_instance(self, context, row, instance, only_load_props=props, **flags) is EXT_CONTINUE:
+            self.populate_instance(context, instance, row, only_load_props=props, **flags)
         if 'append_result' not in extension.methods or extension.append_result(self, context, row, instance, result, **flags) is EXT_CONTINUE:
             if result is not None:
                 result.append(instance)
@@ -1493,7 +1500,7 @@ class Mapper(object):
             self._row_translators[tomapper] = translator
             return translator(row)
 
-    def populate_instance(self, selectcontext, instance, row, ispostselect=None, isnew=False, **flags):
+    def populate_instance(self, selectcontext, instance, row, ispostselect=None, isnew=False, only_load_props=None, **flags):
         """populate an instance from a result row."""
 
         snapshot = selectcontext.path + (self,)
@@ -1511,6 +1518,8 @@ class Mapper(object):
             existing_populators = []
             post_processors = []
             for prop in self.__props.values():
+                if only_load_props and prop.key not in only_load_props:
+                    continue
                 (newpop, existingpop, post_proc) = selectcontext.exec_with_path(self, prop.key, prop.create_row_processor, selectcontext, self, row)
                 if newpop is not None:
                     new_populators.append((prop.key, newpop))

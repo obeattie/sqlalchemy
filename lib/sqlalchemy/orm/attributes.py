@@ -177,11 +177,11 @@ class AttributeImpl(object):
         if callable_ is None:
             self.initialize(state)
         else:
-            state.callables[self] = callable_
+            state.callables[self.key] = callable_
 
     def _get_callable(self, state):
-        if self in state.callables:
-            return state.callables[self]
+        if self.key in state.callables:
+            return state.callables[self.key]
         elif self.callable_ is not None:
             return self.callable_(state.obj())
         else:
@@ -589,7 +589,7 @@ class InstanceState(object):
         self.class_ = obj.__class__
         self.obj = weakref.ref(obj, self.__cleanup)
         self.dict = obj.__dict__
-        self.committed_state = None
+        self.committed_state = {}
         self.modified = False
         self.trigger = None
         self.callables = {}
@@ -654,31 +654,48 @@ class InstanceState(object):
         trig = self.trigger
         self.trigger = None
         trig()
+    
+    def set_callable(self, key, callable_, clear=False):
+        if clear:
+            del self.dict[key]
+        self.callables[key] = callable_
+    
+    def expire(self, key, callable_):
+        del self.dict[key]
+        del self.committed_state[key]
+        if callable_:
+            self.callables[key] = callable_
+    
+    def expire_all(self, callable_):
+        for attr in self.class_._sa_attribute_manager.managed_attributes(self.class_):
+            try:
+                del self.dict[attr.impl.key]
+            except KeyError:
+                pass
+            if callable_:
+                self.callables[attr.impl.key] = callable_
+        self.committed_state = {}
         
-    def commit(self, manager, obj):
+    def clear(self):
+        for attr in self.class_._sa_attribute_manager.managed_attributes(self.class_):
+            try:
+                del self.dict[attr.impl.key]
+            except KeyError:
+                pass
+    
+    def commit_uncommitted(self):
+        for attr in self.class_._sa_attribute_manager.managed_attributes(self.class_):
+            if attr.impl.key not in self.committed_state:
+                attr.impl.commit_to_state(self)
+        
+    def commit_all(self):
         self.committed_state = {}
         self.modified = False
-        for attr in manager.managed_attributes(obj.__class__):
+        for attr in self.class_._sa_attribute_manager.managed_attributes(self.class_):
             attr.impl.commit_to_state(self)
         # remove strong ref
         self._strong_obj = None
         
-    def rollback(self, manager, obj):
-        if not self.committed_state:
-            manager._clear(obj)
-        else:
-            for attr in manager.managed_attributes(obj.__class__):
-                if attr.impl.key in self.committed_state:
-                    if not hasattr(attr.impl, 'get_collection'):
-                        obj.__dict__[attr.impl.key] = self.committed_state[attr.impl.key]
-                    else:
-                        collection = attr.impl.get_collection(self)
-                        collection.clear_without_event()
-                        for item in self.committed_state[attr.impl.key]:
-                            collection.append_without_event(item)
-                else:
-                    if attr.impl.key in self.dict:
-                        del self.dict[attr.impl.key]
 
 class InstanceDict(UserDict.UserDict):
     """similar to WeakValueDictionary, but wired towards 'state' objects."""
@@ -878,15 +895,6 @@ class AttributeManager(object):
     def clear_attribute_cache(self):
         self._attribute_cache.clear()
 
-    def rollback(self, *obj):
-        """Retrieve the committed history for each object in the given
-        list, and rolls back the attributes each instance to their
-        original value.
-        """
-
-        for o in obj:
-            o._state.rollback(self, o)
-
     def _clear(self, obj):
         for attr in self.managed_attributes(obj.__class__):
             try:
@@ -894,12 +902,6 @@ class AttributeManager(object):
             except KeyError:
                 pass
     
-    def commit(self, *obj):
-        """Establish the "committed state" for each object in the given list."""
-
-        for o in obj:
-            o._state.commit(self, o)
-
     def managed_attributes(self, class_):
         """Return a list of all ``InstrumentedAttribute`` objects
         associated with the given class.
@@ -970,33 +972,6 @@ class AttributeManager(object):
         else:
             return [x]
 
-    def trigger_history(self, obj, callable):
-        """Clear all managed object attributes and places the given
-        `callable` as an attribute-wide *trigger*, which will execute
-        upon the next attribute access, after which the trigger is
-        removed.
-        """
-
-        s = obj._state
-        self._clear(obj)
-        s.committed_state = None
-        s.trigger = callable
-
-    def untrigger_history(self, obj):
-        """Remove a trigger function set by trigger_history.
-
-        Does not restore the previous state of the object.
-        """
-
-        obj._state.trigger = None
-
-    def has_trigger(self, obj):
-        """Return True if the given object has a trigger function set
-        by ``trigger_history()``.
-        """
-
-        return obj._state.trigger is not None
-
     def reset_instance_attribute(self, obj, key):
         """Remove any per-instance callable functions corresponding to
         given attribute `key` from the given object, and remove this
@@ -1015,14 +990,14 @@ class AttributeManager(object):
     def has_parent(self, class_, obj, key, optimistic=False):
         return getattr(class_, key).impl.hasparent(obj._state, optimistic=optimistic)
 
-    def init_instance_attribute(self, obj, key, callable_=None, clear=False):
+    def init_instance_attribute(self, obj, key, callable_=None):
         """Initialize an attribute on an instance to either a blank
         value, cancelling out any class- or instance-level callables
         that were present, or if a `callable` is supplied set the
         callable to be invoked when the attribute is next accessed.
         """
 
-        getattr(obj.__class__, key).impl.set_callable(obj._state, callable_, clear=clear)
+        getattr(obj.__class__, key).impl.set_callable(obj._state, callable_, clear=False)
 
     def _create_prop(self, class_, key, uselist, callable_, typecallable, useobject, **kwargs):
         """Create a scalar property object, defaulting to
