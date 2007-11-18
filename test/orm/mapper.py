@@ -179,7 +179,18 @@ class MapperTest(MapperSuperTest):
         sess.save(u3)
         sess.flush()
         sess.rollback()
-
+    
+    def test_illegal_non_primary(self):
+        mapper(User, users)
+        mapper(Address, addresses)
+        try:
+            mapper(User, users, non_primary=True, properties={
+                'addresses':relation(Address)
+            }).compile()
+            assert False
+        except exceptions.ArgumentError, e:
+            assert "Attempting to assign a new relation 'addresses' to a non-primary mapper on class 'User'" in str(e)
+        
     def test_propfilters(self):
         t = Table('person', MetaData(),
                   Column('id', Integer, primary_key=True),

@@ -76,7 +76,6 @@ class ColumnLoader(LoaderStrategy):
             def new_execute(instance, row, **flags):
                 if self._should_log_debug:
                     self.logger.debug("populating %s with %s/%s" % (mapperutil.attribute_str(instance, self.key), row.__class__.__name__, self.columns[0].key))
-                print "POPULATRE", self.key
                 instance.__dict__[self.key] = row[self.columns[0]]
             if self._should_log_debug:
                 self.logger.debug("Returning active column fetcher for %s %s" % (mapper, self.key))
@@ -134,7 +133,7 @@ class DeferredColumnLoader(LoaderStrategy):
     """Deferred column loader, a per-column or per-column-group lazy loader."""
     
     def create_row_processor(self, selectcontext, mapper, row):
-        if (self.group is not None and selectcontext.attributes.get(('undefer', self.group), False)) or self.columns[0] in row:
+        if self.columns[0] in row:
             return self.parent_property._get_strategy(ColumnLoader).create_row_processor(selectcontext, mapper, row)
         elif not self.is_class_level or len(selectcontext.options):
             def new_execute(instance, row, **flags):
@@ -146,7 +145,7 @@ class DeferredColumnLoader(LoaderStrategy):
             def new_execute(instance, row, **flags):
                 if self._should_log_debug:
                     self.logger.debug("set deferred callable on %s" % mapperutil.attribute_str(instance, self.key))
-                sessionlib.attribute_manager.reset_instance_attribute(instance, self.key)
+                instance._state.reset(self.key)
             return (new_execute, None, None)
 
     def init(self):
@@ -162,10 +161,10 @@ class DeferredColumnLoader(LoaderStrategy):
         self.logger.info("register managed attribute %s on class %s" % (self.key, self.parent.class_.__name__))
         sessionlib.attribute_manager.register_attribute(self.parent.class_, self.key, uselist=False, useobject=False, callable_=self.setup_loader, copy_function=self.columns[0].type.copy_value, compare_function=self.columns[0].type.compare_values, mutable_scalars=self.columns[0].type.is_mutable(), comparator=self.parent_property.comparator)
 
-    def setup_query(self, context, load_props=None, **kwargs):
+    def setup_query(self, context, only_load_props=None, **kwargs):
         if \
             (self.group is not None and context.attributes.get(('undefer', self.group), False)) or \
-            (load_props and self.key in load_props):
+            (only_load_props and self.key in only_load_props):
             
             self.parent_property._get_strategy(ColumnLoader).setup_query(context, **kwargs)
         
@@ -202,10 +201,10 @@ class DeferredColumnLoader(LoaderStrategy):
 
             if create_statement is None:
                 ident = instance._instance_key[1]
-                session.query(localparent)._get(None, ident=ident, props=[p.key for p in group], refresh_instance=instance)
+                session.query(localparent)._get(None, ident=ident, only_load_props=[p.key for p in group], refresh_instance=instance)
             else:
                 statement, params = create_statement(instance)
-                session.query(localparent).from_statement(statement).params(params)._get(None, props=[p.key for p in group], refresh_instance=instance)
+                session.query(localparent).from_statement(statement).params(params)._get(None, only_load_props=[p.key for p in group], refresh_instance=instance)
             return attributes.ATTR_WAS_SET
         return lazyload
                 
@@ -390,7 +389,7 @@ class LazyLoader(AbstractRelationLoader):
                     # so that the class-level lazy loader is executed when next referenced on this instance.
                     # this usually is not needed unless the constructor of the object referenced the attribute before we got 
                     # to load data into it.
-                    sessionlib.attribute_manager.reset_instance_attribute(instance, self.key)
+                    instance._state.reset(self.key)
             return (new_execute, None, None)
 
     def _create_lazy_clause(cls, prop, reverse_direction=False):

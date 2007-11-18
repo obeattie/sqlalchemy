@@ -187,31 +187,6 @@ class AttributeImpl(object):
         else:
             return None
 
-    def reset(self, state):
-        """Remove any per-instance callable functions corresponding to
-        this ``InstrumentedAttribute``'s attribute from the given
-        object, and remove this ``InstrumentedAttribute``'s attribute
-        from the given object's dictionary.
-        """
-
-        try:
-            del state.callables[self]
-        except KeyError:
-            pass
-        self.clear(state)
-
-    def clear(self, state):
-        """Remove this ``InstrumentedAttribute``'s attribute from the given object's dictionary.
-
-        Subsequent calls to ``getattr(obj, key)`` will raise an
-        ``AttributeError`` by default.
-        """
-
-        try:
-            del state.dict[self.key]
-        except KeyError:
-            pass
-
     def check_mutable_modified(self, state):
         return False
 
@@ -311,7 +286,8 @@ class ScalarAttributeImpl(AttributeImpl):
         if copy_function is None:
             copy_function = self.__copy
         self.copy = copy_function
-
+        self.accepts_global_callable = True
+        
     def __copy(self, item):
         # scalar values are assumed to be immutable unless a copy function
         # is passed
@@ -361,6 +337,7 @@ class ScalarObjectAttributeImpl(ScalarAttributeImpl):
           compare_function=compare_function, mutable_scalars=mutable_scalars, **kwargs)
         if compare_function is None:
             self.is_equal = identity_equal
+        self.accepts_global_callable = False
 
     def delete(self, state):
         old = self.get(state)
@@ -400,6 +377,8 @@ class CollectionAttributeImpl(AttributeImpl):
         if copy_function is None:
             copy_function = self.__copy
         self.copy = copy_function
+
+        self.accepts_global_callable = False
 
         if typecallable is None:
             typecallable = list
@@ -564,7 +543,7 @@ class GenericBackrefExtension(interfaces.AttributeExtension):
 class InstanceState(object):
     """tracks state information at the instance level."""
 
-    __slots__ = 'class_', 'obj', 'dict', 'committed_state', 'modified', 'trigger', 'callables', 'parents', 'instance_dict', '_strong_obj'
+    __slots__ = 'class_', 'obj', 'dict', 'committed_state', 'modified', 'trigger', 'callables', 'parents', 'instance_dict', '_strong_obj', 'expired_attributes'
     
     def __init__(self, obj):
         self.class_ = obj.__class__
@@ -638,34 +617,60 @@ class InstanceState(object):
         self.dict.pop(key, None)
         self.callables[key] = callable_
 
-    def expire_conditionally(self, key, callable_):
-        print "EC"
-        if key not in self.dict:
-            print "STEP1"
-            return False
+    def __fire_trigger(self):
+        self.trigger(self.obj(), self.expired_attributes)
+        for k in self.expired_attributes:
+            self.callables.pop(k, None)
+        self.expired_attributes.clear()
+        return ATTR_WAS_SET
+    
+    def expire_attributes(self, attribute_names):
+        if not hasattr(self, 'expired_attributes'):
+            self.expired_attributes = util.Set()
+        if attribute_names is None:
+            for attr in self.class_._sa_attribute_manager.managed_attributes(self.class_):
+                self.dict.pop(attr.impl.key, None)
+                self.callables[attr.impl.key] = self.__fire_trigger
+                self.expired_attributes.add(attr.impl.key)
+        else:
+            for key in attribute_names:
+                self.dict.pop(key, None)
 
-        if key not in self.callables:
-            print "STEP2"
-            self.dict.pop(key, None)
-            if getattr(self.class_, key).impl.callable_ is not None:
-                return False
-            self.callables[key] = callable_
-            return True
-        print "STEP3"    
-    def expire_all(self, callable_):
-        for attr in self.class_._sa_attribute_manager.managed_attributes(self.class_):
-            self.dict.pop(attr.impl.key, None)
-            self.callables[attr.impl.key] = callable_
+                if not getattr(self.class_, key).impl.accepts_global_callable:
+                    continue
+
+                self.callables[key] = self.__fire_trigger
+                self.expired_attributes.add(key)
+                
+    def reset(self, key):
+        """remove the given attribute and any callables associated with it."""
+        
+        self.dict.pop(key, None)
+        self.callables.pop(key, None)
         
     def clear(self):
+        """clear all attributes from the instance."""
+        
         for attr in self.class_._sa_attribute_manager.managed_attributes(self.class_):
             self.dict.pop(attr.impl.key, None)
     
     def commit(self, keys):
+        """commit all attributes named in the given list of key names.
+        
+        This is used by a partial-attribute load operation to mark committed those attributes
+        which were refreshed from the database.
+        """
+        
         for key in keys:
             getattr(self.class_, key).impl.commit_to_state(self)
             
     def commit_all(self):
+        """commit all attributes unconditionally.
+        
+        This is used after a flush() or a regular instance load or refresh operation
+        to mark committed all populated attributes.
+        """
+        
         self.committed_state = {}
         self.modified = False
         for attr in self.class_._sa_attribute_manager.managed_attributes(self.class_):
@@ -872,13 +877,6 @@ class AttributeManager(object):
     def clear_attribute_cache(self):
         self._attribute_cache.clear()
 
-    def _clear(self, obj):
-        for attr in self.managed_attributes(obj.__class__):
-            try:
-                del obj.__dict__[attr.impl.key]
-            except KeyError:
-                pass
-    
     def managed_attributes(self, class_):
         """Return a list of all ``InstrumentedAttribute`` objects
         associated with the given class.
@@ -948,21 +946,6 @@ class AttributeManager(object):
             return x
         else:
             return [x]
-
-    def reset_instance_attribute(self, obj, key):
-        """Remove any per-instance callable functions corresponding to
-        given attribute `key` from the given object, and remove this
-        attribute from the given object's dictionary.
-        """
-
-        attr = getattr(obj.__class__, key)
-        attr.impl.reset(obj._state)
-
-    def is_class_managed(self, class_, key):
-        """Return True if the given `key` correponds to an
-        instrumented property on the given class.
-        """
-        return hasattr(class_, key) and isinstance(getattr(class_, key), InstrumentedAttribute)
 
     def has_parent(self, class_, obj, key, optimistic=False):
         return getattr(class_, key).impl.hasparent(obj._state, optimistic=optimistic)
@@ -1077,9 +1060,6 @@ class AttributeManager(object):
         comparator = kwargs.pop('comparator', None)
         setattr(class_, key, InstrumentedAttribute(self._create_prop(class_, key, uselist, callable_, useobject=useobject,
                                            typecallable=typecallable, **kwargs), comparator=comparator))
-
-    def set_committed_value(self, instance, key, value):
-        getattr(instance.__class__, key).impl.set_committed_value(instance._state, value)
 
     def init_collection(self, instance, key):
         """Initialize a collection attribute and return the collection adapter."""

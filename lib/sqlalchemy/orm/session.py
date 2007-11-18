@@ -737,7 +737,7 @@ class Session(object):
 
         self._validate_persistent(obj)
             
-        if self.query(obj.__class__)._get(obj._instance_key, refresh_instance=obj, props=attribute_names) is None:
+        if self.query(obj.__class__)._get(obj._instance_key, refresh_instance=obj, only_load_props=attribute_names) is None:
             raise exceptions.InvalidRequestError("Could not refresh instance '%s'" % mapperutil.instance_str(obj))
 
     def expire(self, obj, attribute_names=None):
@@ -761,10 +761,12 @@ class Session(object):
         """
         
         if attribute_names:
-            self._expire_impl(obj, attribute_names=attribute_names)
+            self._validate_persistent(obj)
+            expire_instance(obj, attribute_names=attribute_names)
         else:
             for c in [obj] + list(_object_mapper(obj).cascade_iterator('refresh-expire', obj)):
-                self._expire_impl(c, None)
+                self._validate_persistent(obj)
+                expire_instance(c, None)
 
     def prune(self):
         """Removes unreferenced instances cached in the identity map.
@@ -778,45 +780,6 @@ class Session(object):
         """
 
         return self.uow.prune_identity_map()
-
-    class AttributeRefresh(object):
-        def __init__(self, obj, attribute_names):
-            self.obj = obj
-            if attribute_names:
-                self.attribute_names = util.Set()
-                self.add_attributes(attribute_names)
-            else:
-                self.attribute_names = None
-                obj._state.expire_all(self)
-                
-        def add_attributes(self, attribute_names):
-            if self.attribute_names is not None:
-                for key in attribute_names:
-                    if key not in self.attribute_names and self.obj._state.expire_conditionally(key, self):
-                        self.attribute_names.add(key)
-
-        def __call__(self):
-            obj = self.obj
-            if object_session(obj).query(obj.__class__)._get(obj._instance_key, refresh_instance=obj, props=self.attribute_names) is None:
-                raise exceptions.InvalidRequestError("Could not refresh instance '%s'" % mapperutil.instance_str(obj))
-            if self.attribute_names:
-                for k in self.attribute_names:
-                    obj._state.callables.pop(k, None)
-            else:
-                obj._state.callables.clear()
-            obj._state.trigger = None
-            return attributes.ATTR_WAS_SET
-            
-    def _expire_impl(self, obj, attribute_names):
-        self._validate_persistent(obj)
-
-        attr_refresh = obj._state.trigger
-        
-        if not attr_refresh:
-            # build new AttributeRefresh
-            attr_refresh = obj._state.trigger = Session.AttributeRefresh(obj, attribute_names)
-        else:
-            attr_refresh.add_attributes(attribute_names)
 
     def is_expired(self, obj, unexpire=False):
         """Return True if the given object has been marked as expired."""
@@ -1142,6 +1105,25 @@ class Session(object):
     new = property(lambda s:s.uow.new,
                    doc="A ``Set`` of all objects marked as 'new' within this ``Session``.")
 
+def expire_instance(obj, attribute_names):
+    """standalone expire instance function. 
+    
+    installs a callable with the given instance's _state
+    which will fire off when any of the named attributes are accessed;
+    their existing value is removed.
+    
+    If the list is None or blank, the entire instance is expired.
+    """
+    
+    if obj._state.trigger is None:
+        def load_attributes(instance, attribute_names):
+            if object_session(instance).query(instance.__class__)._get(instance._instance_key, refresh_instance=instance, only_load_props=attribute_names) is None:
+                raise exceptions.InvalidRequestError("Could not refresh instance '%s'" % mapperutil.instance_str(instance))
+        obj._state.trigger = load_attributes
+        
+    obj._state.expire_attributes(attribute_names)
+    
+
 
 # this is the AttributeManager instance used to provide attribute behavior on objects.
 # to all the "global variable police" out there:  its a stateless object.
@@ -1167,3 +1149,4 @@ def object_session(obj):
 unitofwork.object_session = object_session
 from sqlalchemy.orm import mapper
 mapper.attribute_manager = attribute_manager
+mapper.expire_instance = expire_instance

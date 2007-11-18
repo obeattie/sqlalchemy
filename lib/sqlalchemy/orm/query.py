@@ -50,7 +50,7 @@ class Query(object):
         self._attributes = {}
         self._current_path = ()
         self._primary_adapter=None
-        self._load_props = None
+        self._only_load_props = None
         self._refresh_instance = None
         
     def _clone(self):
@@ -715,22 +715,24 @@ class Query(object):
             result = []
         else:
             result = util.UniqueAppender([])
-                    
+        
+        primary_mapper_args = dict(extension=context.extension, only_load_props=context.only_load_props, refresh_instance=context.refresh_instance)
+        
         for row in cursor.fetchall():
             if self._primary_adapter:
-                self.select_mapper._instance(context, self._primary_adapter(row), result)
+                self.select_mapper._instance(context, self._primary_adapter(row), result, **primary_mapper_args)
             else:
-                self.select_mapper._instance(context, row, result)
+                self.select_mapper._instance(context, row, result, **primary_mapper_args)
             for proc in process:
                 proc[0](context, row)
 
         for instance in context.identity_map.values():
             context.attributes.get(('populating_mapper', id(instance)), object_mapper(instance))._post_instance(context, instance)
 
-        if context.refresh_instance and context.load_props and context.refresh_instance._instance_key in context.identity_map:
+        if context.refresh_instance and context.only_load_props and context.refresh_instance._instance_key in context.identity_map:
             # if refreshing partial instance, do special state commit
             # affecting only the refreshed attributes
-            context.refresh_instance._state.commit(context.load_props)
+            context.refresh_instance._state.commit(context.only_load_props)
             del context.identity_map[context.refresh_instance._instance_key]
             
         # store new stuff in the identity map
@@ -743,7 +745,7 @@ class Query(object):
             return result.data
 
 
-    def _get(self, key=None, ident=None, refresh_instance=None, lockmode=None, props=None):
+    def _get(self, key=None, ident=None, refresh_instance=None, lockmode=None, only_load_props=None):
         lockmode = lockmode or self._lockmode
         if not self._populate_existing and not refresh_instance and not self.mapper.always_refresh and lockmode is None:
             try:
@@ -756,7 +758,7 @@ class Query(object):
                 ident = key[1]
         else:
             ident = util.to_list(ident)
-        print "IDENT", ident
+
         q = self
         
         if ident is not None:
@@ -773,7 +775,7 @@ class Query(object):
         try:
             if lockmode is not None:
                 q = q.with_lockmode(lockmode)
-            q = q._select_context_options(populate_existing=refresh_instance is not None, version_check=(lockmode is not None), props=props, refresh_instance=refresh_instance)
+            q = q._select_context_options(populate_existing=refresh_instance is not None, version_check=(lockmode is not None), only_load_props=only_load_props, refresh_instance=refresh_instance)
             q = q.order_by(None)
             # call using all() to avoid LIMIT compilation complexity
             return q.all()[0]
@@ -875,9 +877,9 @@ class Query(object):
         # TODO: doing this off the select_mapper.  if its the polymorphic mapper, then
         # it has no relations() on it.  should we compile those too into the query ?  (i.e. eagerloads)
         for value in self.select_mapper.iterate_properties:
-            if self._load_props and value.key not in self._load_props:
+            if self._only_load_props and value.key not in self._only_load_props:
                 continue
-            context.exec_with_path(self.select_mapper, value.key, value.setup, context, load_props=self._load_props)
+            context.exec_with_path(self.select_mapper, value.key, value.setup, context, only_load_props=self._only_load_props)
 
         # additional entities/columns, add those to selection criterion
         for tup in self._entities:
@@ -1116,15 +1118,15 @@ class Query(object):
         q._select_context_options(**kwargs)
         return list(q)
 
-    def _select_context_options(self, populate_existing=None, version_check=None, props=None, refresh_instance=None): #pragma: no cover
+    def _select_context_options(self, populate_existing=None, version_check=None, only_load_props=None, refresh_instance=None): #pragma: no cover
         if populate_existing:
             self._populate_existing = populate_existing
         if version_check:
             self._version_check = version_check
         if refresh_instance is not None:
             self._refresh_instance = refresh_instance
-        if props:
-            self._load_props = util.Set(props)
+        if only_load_props:
+            self._only_load_props = util.Set(only_load_props)
         return self
         
     def join_to(self, key): #pragma: no cover
@@ -1226,7 +1228,7 @@ class QueryContext(object):
         self.statement = None
         self.populate_existing = query._populate_existing
         self.version_check = query._version_check
-        self.load_props = query._load_props
+        self.only_load_props = query._only_load_props
         self.refresh_instance = query._refresh_instance
         self.identity_map = {}
         self.path = ()

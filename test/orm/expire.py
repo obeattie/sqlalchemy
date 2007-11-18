@@ -167,6 +167,17 @@ class ExpireTest(FixtureTest):
         assert o._state.committed_state['description'] == 'order 3 modified'
         assert o._state.committed_state['isopen'] == 1
 
+        sess.flush()
+        
+        sess.expire(o, attribute_names=['id', 'isopen', 'description'])
+        assert 'id' not in o.__dict__
+        assert 'isopen' not in o.__dict__
+        assert 'description' not in o.__dict__
+        def go():
+            assert o.description == 'order 3 modified'
+            assert o.id == 3
+            assert o.isopen == 5
+        self.assert_sql_count(testbase.db, go, 1)
 
     def test_partial_expire_lazy(self):
         mapper(User, users, properties={
@@ -193,19 +204,23 @@ class ExpireTest(FixtureTest):
         # only do the lazy load
         sess.expire(u, ['name', 'addresses'])
         def go():
-            u.addresses = [Address(email_address='foo@bar.com')]
+            u.addresses = [Address(id=10, email_address='foo@bar.com')]
         self.assert_sql_count(testbase.db, go, 1)
         
         sess.flush()
         
+        # flush has occurred, and addresses was modified, 
+        # so the addresses collection got committed and is
+        # longer expired
         def go():
             assert u.addresses[0].email_address=='foo@bar.com'
             assert len(u.addresses) == 1
         self.assert_sql_count(testbase.db, go, 0)
         
+        # but the name attribute was never loaded and so
+        # still loads
         def go():
             assert u.name == 'ed'
-        # this loads due to the name attribute
         self.assert_sql_count(testbase.db, go, 1)
 
     def test_partial_expire_eager(self):
@@ -229,21 +244,91 @@ class ExpireTest(FixtureTest):
         # do the refresh
         sess.expire(u, ['name', 'addresses'])
         def go():
-            u.addresses = [Address(email_address='foo@bar.com')]
+            u.addresses = [Address(id=10, email_address='foo@bar.com')]
         self.assert_sql_count(testbase.db, go, 1)
         sess.flush()
-        
-        # this should trigger the whole load
+
+        # this should ideally trigger the whole load
+        # but currently it works like the lazy case
         def go():
             assert u.addresses[0].email_address=='foo@bar.com'
             assert len(u.addresses) == 1
-        self.assert_sql_count(testbase.db, go, 1)
+        self.assert_sql_count(testbase.db, go, 0)
         
         def go():
             assert u.name == 'ed'
-        # and this was already loaded
-        self.assert_sql_count(testbase.db, go, 0)
+        # scalar attributes have their own load
+        self.assert_sql_count(testbase.db, go, 1)
+        # ideally, this was already loaded, but we arent
+        # doing it that way right now
+        #self.assert_sql_count(testbase.db, go, 0)
 
+    def test_partial_expire_deferred(self):
+        mapper(Order, orders, properties={
+            'description':deferred(orders.c.description)
+        })
+        
+        sess = create_session()
+        o = sess.query(Order).get(3)
+        sess.expire(o, ['description', 'isopen'])
+        assert 'isopen' not in o.__dict__
+        assert 'description' not in o.__dict__
+        
+        # test that expired attribute access refreshes
+        # the deferred
+        def go():
+            assert o.isopen == 1
+            assert o.description == 'order 3'
+        self.assert_sql_count(testbase.db, go, 1)
+        
+        sess.expire(o, ['description', 'isopen'])
+        assert 'isopen' not in o.__dict__
+        assert 'description' not in o.__dict__
+        # test that the deferred attribute triggers the full
+        # reload
+        def go():
+            assert o.description == 'order 3'
+            assert o.isopen == 1
+        self.assert_sql_count(testbase.db, go, 1)
+        
+        clear_mappers()
+        
+        mapper(Order, orders)
+        sess.clear()
+
+        # same tests, using deferred at the options level
+        o = sess.query(Order).options(defer('description')).get(3)
+
+        assert 'description' not in o.__dict__
+
+        # sanity check
+        def go():
+            assert o.description == 'order 3'
+        self.assert_sql_count(testbase.db, go, 1)
+         
+        assert 'description' in o.__dict__
+        assert 'isopen' in o.__dict__
+        sess.expire(o, ['description', 'isopen'])
+        assert 'isopen' not in o.__dict__
+        assert 'description' not in o.__dict__
+        
+        # test that expired attribute access refreshes
+        # the deferred
+        def go():
+            assert o.isopen == 1
+            assert o.description == 'order 3'
+        self.assert_sql_count(testbase.db, go, 1)
+        sess.expire(o, ['description', 'isopen'])
+
+        assert 'isopen' not in o.__dict__
+        assert 'description' not in o.__dict__
+        # test that the deferred attribute triggers the full
+        # reload
+        def go():
+            assert o.description == 'order 3'
+            assert o.isopen == 1
+        self.assert_sql_count(testbase.db, go, 1)
+        
 
 class RefreshTest(FixtureTest):
     keep_mappers = False
@@ -284,6 +369,15 @@ class RefreshTest(FixtureTest):
         assert u.name == 'jack'
         assert id(a) not in [id(x) for x in u.addresses]
 
+    def test_refresh_expired(self):
+        mapper(User, users)
+        s = create_session()
+        u = s.get(User, 7)
+        s.expire(u)
+        assert 'name' not in u.__dict__
+        s.refresh(u)
+        assert u.name == 'jack'
+        
     def test_refresh_with_lazy(self):
         """test that when a lazy loader is set as a trigger on an object's attribute 
         (at the attribute level, not the class level), a refresh() operation doesnt 
@@ -322,27 +416,24 @@ class RefreshTest(FixtureTest):
         """test a hang condition that was occuring on expire/refresh"""
 
         s = create_session()
-        m1 = mapper(Address, addresses)
+        mapper(Address, addresses)
 
-        m2 = mapper(User, users, properties = dict(addresses=relation(Address,private=True,lazy=False)) )
+        mapper(User, users, properties = dict(addresses=relation(Address,cascade="all, delete-orphan",lazy=False)) )
+        
         u=User()
         u.name='Justin'
-        a = Address()
-        a.address_id=17  # to work around the hardcoded IDs in this test suite....
+        a = Address(id=10, email_address='lala')
         u.addresses.append(a)
+        
+        s.save(u)
         s.flush()
         s.clear()
-        u = s.query(User).first()
+        u = s.query(User).filter(User.name=='Justin').one()
 
-        #ok so far
-        s.expire(u)        #hangs when
-        print u.name #this line runs
+        s.expire(u)
+        assert u.name == 'Justin'
 
-        s.refresh(u) #hangs
-
-
-
-
+        s.refresh(u)
 
 if __name__ == '__main__':
     testbase.main()
