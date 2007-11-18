@@ -275,10 +275,6 @@ class AttributeImpl(object):
         state.dict[self.key] = value
         return value
 
-    def set_raw_value(self, state, value):
-        state.dict[self.key] = value
-        return value
-
     def fire_append_event(self, state, value, initiator):
         state.modified = True
         if self.trackparent and value is not None:
@@ -642,25 +638,28 @@ class InstanceState(object):
         self.dict.pop(key, None)
         self.callables[key] = callable_
 
-    def expire(self, key, callable_):
+    def expire_conditionally(self, key, callable_):
+        print "EC"
+        if key not in self.dict:
+            print "STEP1"
+            return False
+
         if key not in self.callables:
-            del self.dict[key]
+            print "STEP2"
+            self.dict.pop(key, None)
+            if getattr(self.class_, key).impl.callable_ is not None:
+                return False
             self.callables[key] = callable_
-    
+            return True
+        print "STEP3"    
     def expire_all(self, callable_):
         for attr in self.class_._sa_attribute_manager.managed_attributes(self.class_):
-            try:
-                del self.dict[attr.impl.key]
-            except KeyError:
-                pass
+            self.dict.pop(attr.impl.key, None)
             self.callables[attr.impl.key] = callable_
         
     def clear(self):
         for attr in self.class_._sa_attribute_manager.managed_attributes(self.class_):
-            try:
-                del self.dict[attr.impl.key]
-            except KeyError:
-                pass
+            self.dict.pop(attr.impl.key, None)
     
     def commit(self, keys):
         for key in keys:
@@ -1078,9 +1077,6 @@ class AttributeManager(object):
         comparator = kwargs.pop('comparator', None)
         setattr(class_, key, InstrumentedAttribute(self._create_prop(class_, key, uselist, callable_, useobject=useobject,
                                            typecallable=typecallable, **kwargs), comparator=comparator))
-
-    def set_raw_value(self, instance, key, value):
-        getattr(instance.__class__, key).impl.set_raw_value(instance._state, value)
 
     def set_committed_value(self, instance, key, value):
         getattr(instance.__class__, key).impl.set_committed_value(instance._state, value)

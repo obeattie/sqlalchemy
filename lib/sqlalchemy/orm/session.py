@@ -780,11 +780,22 @@ class Session(object):
         return self.uow.prune_identity_map()
 
     class AttributeRefresh(object):
-        def __init__(self, obj):
+        def __init__(self, obj, attribute_names):
             self.obj = obj
-            self.attribute_names = None
+            if attribute_names:
+                self.attribute_names = util.Set()
+                self.add_attributes(attribute_names)
+            else:
+                self.attribute_names = None
+                obj._state.expire_all(self)
+                
+        def add_attributes(self, attribute_names):
+            if self.attribute_names is not None:
+                for key in attribute_names:
+                    if key not in self.attribute_names and self.obj._state.expire_conditionally(key, self):
+                        self.attribute_names.add(key)
+
         def __call__(self):
-            print "ATTR REFRESH CALLING ON ", self.obj.__class__
             obj = self.obj
             if object_session(obj).query(obj.__class__)._get(obj._instance_key, refresh_instance=obj, props=self.attribute_names) is None:
                 raise exceptions.InvalidRequestError("Could not refresh instance '%s'" % mapperutil.instance_str(obj))
@@ -803,28 +814,9 @@ class Session(object):
         
         if not attr_refresh:
             # build new AttributeRefresh
-            attr_refresh = obj._state.trigger = Session.AttributeRefresh(obj)
-            if attribute_names:
-                # apply limited attribute names
-                for key in attribute_names:
-                    obj._state.expire(key, attr_refresh)
-                attr_refresh.attribute_names = attribute_names
-            else:
-                # expire all
-                obj._state.expire_all(attr_refresh)
-        elif attr_refresh.attribute_names:
-            # existing AttributeRefresh with limited attribute names
-            if attribute_names:
-                # add ours
-                attr_refresh.attribute_names += attribute_names
-                for key in attribute_names:
-                    obj._state.expire(key, attr_refresh)
-            else:
-                # upgrade AttributeRefresh to cover the whole instance
-                attr_refresh.attribute_names = None
-                obj._state.expire_all(attr_refresh)
-        # else we have already put an AttributeRefresh with
-        # all attribues
+            attr_refresh = obj._state.trigger = Session.AttributeRefresh(obj, attribute_names)
+        else:
+            attr_refresh.add_attributes(attribute_names)
 
     def is_expired(self, obj, unexpire=False):
         """Return True if the given object has been marked as expired."""

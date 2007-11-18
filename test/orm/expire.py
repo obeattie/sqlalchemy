@@ -78,7 +78,6 @@ class ExpireTest(FixtureTest):
             sess.flush()
         self.assert_sql_count(testbase.db, go, 0)
         
-        
     def test_expire_cascade(self):
         mapper(User, users, properties={
             'addresses':relation(Address, cascade="all, refresh-expire")
@@ -108,9 +107,31 @@ class ExpireTest(FixtureTest):
         assert 'addresses' not in u.__dict__
 
         def go():
-            u.addresses
-        # two loads - one will load 
+            assert u.addresses[0].email_address == 'jack@bean.com'
+            assert u.name == 'jack'
+        # two loads 
         self.assert_sql_count(testbase.db, go, 2)
+        assert 'name' in u.__dict__
+        assert 'addresses' in u.__dict__
+
+    def test_expired_eager(self):
+        mapper(User, users, properties={
+            'addresses':relation(Address, backref='user', lazy=False),
+            })
+        mapper(Address, addresses)
+
+        sess = create_session()
+        u = sess.query(User).get(7)
+
+        sess.expire(u)
+        assert 'name' not in u.__dict__
+        assert 'addresses' not in u.__dict__
+
+        def go():
+            assert u.addresses[0].email_address == 'jack@bean.com'
+            assert u.name == 'jack'
+        # one load
+        self.assert_sql_count(testbase.db, go, 1)
         assert 'name' in u.__dict__
         assert 'addresses' in u.__dict__
 
@@ -145,8 +166,84 @@ class ExpireTest(FixtureTest):
         assert o.__dict__['isopen'] == 5
         assert o._state.committed_state['description'] == 'order 3 modified'
         assert o._state.committed_state['isopen'] == 1
+
+
+    def test_partial_expire_lazy(self):
+        mapper(User, users, properties={
+            'addresses':relation(Address, backref='user'),
+            })
+        mapper(Address, addresses)
+
+        sess = create_session()
+        u = sess.query(User).get(8)
         
+        sess.expire(u, ['name', 'addresses'])
+        assert 'name' not in u.__dict__
+        assert 'addresses' not in u.__dict__
         
+        # hit the lazy loader.  just does the lazy load,
+        # doesnt do the overall refresh
+        def go():
+            assert u.addresses[0].email_address=='ed@wood.com'
+        self.assert_sql_count(testbase.db, go, 1)
+        
+        assert 'name' not in u.__dict__
+        
+        # check that mods to expired lazy-load attributes 
+        # only do the lazy load
+        sess.expire(u, ['name', 'addresses'])
+        def go():
+            u.addresses = [Address(email_address='foo@bar.com')]
+        self.assert_sql_count(testbase.db, go, 1)
+        
+        sess.flush()
+        
+        def go():
+            assert u.addresses[0].email_address=='foo@bar.com'
+            assert len(u.addresses) == 1
+        self.assert_sql_count(testbase.db, go, 0)
+        
+        def go():
+            assert u.name == 'ed'
+        # this loads due to the name attribute
+        self.assert_sql_count(testbase.db, go, 1)
+
+    def test_partial_expire_eager(self):
+        mapper(User, users, properties={
+            'addresses':relation(Address, backref='user', lazy=False),
+            })
+        mapper(Address, addresses)
+
+        sess = create_session()
+        u = sess.query(User).get(8)
+
+        sess.expire(u, ['name', 'addresses'])
+        assert 'name' not in u.__dict__
+        assert 'addresses' not in u.__dict__
+
+        def go():
+            assert u.addresses[0].email_address=='ed@wood.com'
+        self.assert_sql_count(testbase.db, go, 1)
+
+        # check that mods to expired eager-load attributes 
+        # do the refresh
+        sess.expire(u, ['name', 'addresses'])
+        def go():
+            u.addresses = [Address(email_address='foo@bar.com')]
+        self.assert_sql_count(testbase.db, go, 1)
+        sess.flush()
+        
+        # this should trigger the whole load
+        def go():
+            assert u.addresses[0].email_address=='foo@bar.com'
+            assert len(u.addresses) == 1
+        self.assert_sql_count(testbase.db, go, 1)
+        
+        def go():
+            assert u.name == 'ed'
+        # and this was already loaded
+        self.assert_sql_count(testbase.db, go, 0)
+
 
 class RefreshTest(FixtureTest):
     keep_mappers = False

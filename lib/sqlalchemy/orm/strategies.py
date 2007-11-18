@@ -594,10 +594,7 @@ class EagerLoader(AbstractRelationLoader):
                         # parent object, bypassing InstrumentedAttribute
                         # event handlers.
                         #
-                        # FIXME: instead of...
-                        sessionlib.attribute_manager.set_raw_value(instance, self.key, self.select_mapper._instance(selectcontext, decorated_row, None))
-                        # bypass and set directly:
-                        #instance.__dict__[self.key] = self.select_mapper._instance(selectcontext, decorated_row, None)
+                        instance.__dict__[self.key] = self.select_mapper._instance(selectcontext, decorated_row, None)
                     else:
                         # call _instance on the row, even though the object has been created,
                         # so that we further descend into properties
