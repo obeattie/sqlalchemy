@@ -270,10 +270,20 @@ class UOWTransaction(object):
         
     def register_object(self, state, isdelete = False, listonly = False, postupdate=False, post_update_cols=None, **kwargs):
 
+        # if object is not in the overall session, do nothing
+        if not self.uow._is_valid(state.obj()):
+            if self._should_log_debug:
+                self.logger.debug("object %s not part of session, not registering for flush" % (mapperutil.instance_str(obj)))
+            return
+
         if self._should_log_debug:
             self.logger.debug("register object for flush: %s isdelete=%s listonly=%s postupdate=%s" % (mapperutil.instance_str(state.obj()), isdelete, listonly, postupdate))
 
         mapper = object_mapper(state.obj())
+        
+        # prevent gcs on objects
+        state.modified = True
+        
         task = self.get_task_by_mapper(mapper)
         if postupdate:
             task.append_postupdate(state, post_update_cols)
@@ -448,13 +458,13 @@ class UOWTransaction(object):
 
         # get list of base mappers
         mappers = [t.mapper for t in self.tasks.values() if t.base_task is t]
-        nodes = topological.QueueDependencySorter(self.dependencies, mappers).sort(allow_cycles=True, create_tree=False)
+        nodes = topological.sort_with_cycles(self.dependencies, mappers)
 
         ret = []
-        for node in nodes:
-            task = self.get_task_by_mapper(node.item)
-            if node.cycles is not None:
-                task = task._sort_circular_dependencies(self, [self.get_task_by_mapper(n.item) for n in node.cycles])
+        for item, cycles in nodes:
+            task = self.get_task_by_mapper(item)
+            if cycles:
+                task = task._sort_circular_dependencies(self, [self.get_task_by_mapper(i) for i in cycles])
             ret.append(task)
 
         if self._should_log_debug:
@@ -739,27 +749,28 @@ class UOWTask(object):
 
         #print "TUPLES", tuples
         #print "ALLOBJECTS", allobjects
-        head = topological.QueueDependencySorter(tuples, allobjects).sort()
+        head = topological.sort_as_tree(tuples, allobjects)
         
         # create a tree of UOWTasks corresponding to the tree of object instances
         # created by the DependencySorter
         
         used_tasks = util.Set()
         def make_task_tree(node, parenttask, nexttasks):
-            originating_task = object_to_original_task[node.item]
+            (state, cycles, children) = node
+            originating_task = object_to_original_task[state]
             used_tasks.add(originating_task)
             t = nexttasks.get(originating_task, None)
             if t is None:
                 t = UOWTask(self.uowtransaction, originating_task.mapper)
                 nexttasks[originating_task] = t
                 parenttask._append_cyclical_childtask(t)
-            t.append(node.item, originating_task._objects[node.item].listonly, isdelete=originating_task._objects[node.item].isdelete)
+            t.append(state, originating_task._objects[state].listonly, isdelete=originating_task._objects[state].isdelete)
 
-            if node.item in dependencies:
-                for depprocessor, deptask in dependencies[node.item].iteritems():
+            if state in dependencies:
+                for depprocessor, deptask in dependencies[state].iteritems():
                     t.cyclical_dependencies.add(depprocessor.branch(deptask))
             nd = {}
-            for n in node.children:
+            for n in children:
                 t2 = make_task_tree(n, t, nd)
             return t
 

@@ -812,7 +812,6 @@ class Session(object):
         The `entity_name` keyword argument will further qualify the
         specific ``Mapper`` used to handle this instance.
         """
-
         self._save_impl(instance, entity_name=entity_name)
         self._cascade_save_or_update(instance)
 

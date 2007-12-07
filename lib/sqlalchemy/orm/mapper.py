@@ -942,6 +942,10 @@ class Mapper(object):
         if self.__should_log_debug:
             self.__log_debug("save_obj() start, " + (single and "non-batched" or "batched"))
 
+        for o in objects:
+            if o.obj() is None:
+                raise "state : " + o.class_.__name__ + " was gced"
+        
         # temporary switch from state->instance
         objects = [s.obj() for s in objects]
         
