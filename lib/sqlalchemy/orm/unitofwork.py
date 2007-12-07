@@ -269,15 +269,16 @@ class UOWTransaction(object):
         self.logger = logging.instance_logger(self, echoflag=session.echo_uow)
         
     def register_object(self, state, isdelete = False, listonly = False, postupdate=False, post_update_cols=None, **kwargs):
-
+        assert isinstance(state, attributes.InstanceState)
+        
         # if object is not in the overall session, do nothing
         if not self.uow._is_valid(state.obj()):
             if self._should_log_debug:
-                self.logger.debug("object %s not part of session, not registering for flush" % (mapperutil.instance_str(obj)))
+                self.logger.debug("object %s not part of session, not registering for flush" % (mapperutil.state_str(state)))
             return
 
         if self._should_log_debug:
-            self.logger.debug("register object for flush: %s isdelete=%s listonly=%s postupdate=%s" % (mapperutil.instance_str(state.obj()), isdelete, listonly, postupdate))
+            self.logger.debug("register object for flush: %s isdelete=%s listonly=%s postupdate=%s" % (mapperutil.state_str(state), isdelete, listonly, postupdate))
 
         mapper = _state_mapper(state)
         
@@ -319,6 +320,11 @@ class UOWTransaction(object):
         task = self.get_task_by_mapper(mapper)
         return task.is_deleted(obj._state)
 
+    def state_is_deleted(self, state):
+        mapper = _state_mapper(state)
+        task = self.get_task_by_mapper(mapper)
+        return task.is_deleted(state)
+        
     def get_task_by_mapper(self, mapper, dontcreate=False):
         """return UOWTask element corresponding to the given mapper.
 
@@ -717,7 +723,7 @@ class UOWTask(object):
                         # the task corresponding to saving/deleting of those dependent objects
                         childtask = trans.get_task_by_mapper(processor.mapper)
 
-                        childlist = childlist.added_items() + childlist.unchanged_items() + childlist.deleted_items()
+                        childlist = [getattr(x, '_state', None) for x in childlist.added_items() + childlist.unchanged_items() + childlist.deleted_items()]
 
                         for o in childlist:
                             # other object is None.  this can occur if the relationship is many-to-one
@@ -729,12 +735,12 @@ class UOWTask(object):
                             # the other object is not in the UOWTransaction !  but if we are many-to-one,
                             # we need a task in order to attach dependency operations, so establish a "listonly"
                             # task
-                            if o._state not in childtask:
-                                childtask.append(o._state, listonly=True)
-                                object_to_original_task[o._state] = childtask
+                            if o not in childtask:
+                                childtask.append(o, listonly=True)
+                                object_to_original_task[o] = childtask
 
                             # create a tuple representing the "parent/child"
-                            whosdep = dep.whose_dependent_on_who(state, o._state)
+                            whosdep = dep.whose_dependent_on_who(state, o)
                             if whosdep is not None:
                                 # append the tuple to the partial ordering.
                                 tuples.append(whosdep)
@@ -838,6 +844,7 @@ class UOWTaskElement(object):
     """
 
     def __init__(self, state):
+        assert isinstance(state, (attributes.InstanceState, type(None)))
         self.state = state
         self.__listonly = True
         self.childtasks = []

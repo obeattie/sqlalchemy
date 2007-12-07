@@ -908,12 +908,11 @@ class Mapper(object):
     def _primary_key_from_state(self, state):
         return [self._get_state_attr_by_column(state, column) for column in self.primary_key]
 
-    def _canload(self, instance):
-        """return true if this mapper is capable of loading the given instance"""
+    def _canload(self, state):
         if self.polymorphic_on is not None:
-            return isinstance(instance, self.class_)
+            return issubclass(state.class_, self.class_)
         else:
-            return instance.__class__ is self.class_
+            return state.class_ is self.class_
     
     def _get_state_attr_by_column(self, state, column):
         try:
@@ -1125,7 +1124,7 @@ class Mapper(object):
                     # per table
                     for m in util.reversed(list(mapper.iterate_to_root())):
                         if m._synchronizer is not None:
-                            m._synchronizer.execute(state.obj(), state.obj())
+                            m._synchronizer.execute(state, state)
 
                     # testlib.pragma exempt:__hash__
                     inserted_objects.add((state, connection))
@@ -1163,7 +1162,7 @@ class Mapper(object):
         if deferred_props:
             _expire_state(state, deferred_props)
 
-    def delete_obj(self, objects, uowtransaction):
+    def delete_obj(self, states, uowtransaction):
         """Issue ``DELETE`` statements for a list of objects.
 
         This is called within the context of a UOWTransaction during a
@@ -1173,20 +1172,17 @@ class Mapper(object):
         if self.__should_log_debug:
             self.__log_debug("delete_obj() start")
 
-        # temporary switch from state->instance
-        objects = [s.obj() for s in objects]
-
         if 'connection_callable' in uowtransaction.mapper_flush_opts:
             connection_callable = uowtransaction.mapper_flush_opts['connection_callable']
-            tups = [(obj, connection_callable(self, obj)) for obj in objects]
+            tups = [(state, connection_callable(self, state.obj())) for state in states]
         else:
             connection = uowtransaction.transaction.connection(self)
-            tups = [(obj, connection) for obj in objects]
+            tups = [(state, connection) for state in states]
 
-        for (obj, connection) in tups:
-            for mapper in object_mapper(obj).iterate_to_root():
+        for (state, connection) in tups:
+            for mapper in _state_mapper(state).iterate_to_root():
                 if 'before_delete' in mapper.extension.methods:
-                    mapper.extension.before_delete(mapper, connection, obj)
+                    mapper.extension.before_delete(mapper, connection, state.obj())
 
         deleted_objects = util.Set()
         table_to_mapper = {}
@@ -1196,22 +1192,22 @@ class Mapper(object):
 
         for table in sqlutil.sort_tables(table_to_mapper.keys(), reverse=True):
             delete = {}
-            for (obj, connection) in tups:
-                mapper = object_mapper(obj)
+            for (state, connection) in tups:
+                mapper = _state_mapper(state)
                 if table not in mapper._pks_by_table:
                     continue
 
                 params = {}
-                if not hasattr(obj, '_instance_key'):
+                if not _state_has_identity(state):
                     continue
                 else:
                     delete.setdefault(connection, []).append(params)
                 for col in mapper._pks_by_table[table]:
-                    params[col.key] = mapper._get_attr_by_column(obj, col)
+                    params[col.key] = mapper._get_state_attr_by_column(state, col)
                 if mapper.version_id_col is not None and table.c.contains_column(mapper.version_id_col):
-                    params[mapper.version_id_col.key] = mapper._get_attr_by_column(obj, mapper.version_id_col)
+                    params[mapper.version_id_col.key] = mapper._get_state_attr_by_column(state, mapper.version_id_col)
                 # testlib.pragma exempt:__hash__
-                deleted_objects.add((id(obj), obj, connection))
+                deleted_objects.add((state, connection))
             for connection, del_objects in delete.iteritems():
                 mapper = table_to_mapper[table]
                 def comparator(a, b):
@@ -1231,10 +1227,10 @@ class Mapper(object):
                 if c.supports_sane_multi_rowcount() and c.rowcount != len(del_objects):
                     raise exceptions.ConcurrentModificationError("Deleted rowcount %d does not match number of objects deleted %d" % (c.rowcount, len(del_objects)))
 
-        for id_, obj, connection in deleted_objects:
-            for mapper in object_mapper(obj).iterate_to_root():
+        for state, connection in deleted_objects:
+            for mapper in _state_mapper(state).iterate_to_root():
                 if 'after_delete' in mapper.extension.methods:
-                    mapper.extension.after_delete(mapper, connection, obj)
+                    mapper.extension.after_delete(mapper, connection, state.obj())
 
     def register_dependencies(self, uowcommit, *args, **kwargs):
         """Register ``DependencyProcessor`` instances with a
