@@ -942,10 +942,13 @@ class Mapper(object):
         if self.__should_log_debug:
             self.__log_debug("save_obj() start, " + (single and "non-batched" or "batched"))
 
+        # temporary switch from state->instance
+        objects = [s.obj() for s in objects]
+        
         # if batch=false, call save_obj separately for each object
         if not single and not self.batch:
             for obj in objects:
-                self.save_obj([obj], uowtransaction, postupdate=postupdate, post_update_cols=post_update_cols, single=True)
+                self.save_obj([obj._state], uowtransaction, postupdate=postupdate, post_update_cols=post_update_cols, single=True)
             return
 
         if 'connection_callable' in uowtransaction.mapper_flush_opts:
@@ -1162,6 +1165,9 @@ class Mapper(object):
 
         if self.__should_log_debug:
             self.__log_debug("delete_obj() start")
+
+        # temporary switch from state->instance
+        objects = [s.obj() for s in objects]
 
         if 'connection_callable' in uowtransaction.mapper_flush_opts:
             connection_callable = uowtransaction.mapper_flush_opts['connection_callable']

@@ -993,6 +993,9 @@ def is_modified(instance):
 def get_history(instance, key, **kwargs):
     return getattr(instance.__class__, key).impl.get_history(instance._state, **kwargs)
 
+def get_state_history(state, key, **kwargs):
+    return getattr(state.class_, key).impl.get_history(state, **kwargs)
+    
 def get_as_list(instance, key, passive=False):
     """Return an attribute of the given name from the given instance.
 
