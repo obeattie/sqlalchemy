@@ -612,14 +612,14 @@ class ClassState(object):
 class InstanceState(object):
     """tracks state information at the instance level."""
 
-    __slots__ = 'class_', 'obj', 'dict', 'pending', 'committed_state', 'modified', 'trigger', 'callables', 'parents', 'instance_dict', '_strong_obj', 'expired_attributes'
+#    __slots__ = 'class_', 'obj', 'dict', 'pending', 'committed_state', 'modified', 'trigger', 'callables', 'parents', 'instance_dict', '_strong_obj', 'expired_attributes'
     
     def __init__(self, obj):
         self.class_ = obj.__class__
         self.obj = weakref.ref(obj, self.__cleanup)
         self.dict = obj.__dict__
         self.committed_state = {}
-        self.modified = False
+        self.modified = self.strong = False
         self.trigger = None
         self.callables = {}
         self.parents = {}
@@ -681,7 +681,7 @@ class InstanceState(object):
             return False
         
     def __resurrect(self, instance_dict):
-        if self.is_modified():
+        if self.strong or self.is_modified():
             # store strong ref'ed version of the object; will revert
             # to weakref when changes are persisted
             obj = new_instance(self.class_, state=self)

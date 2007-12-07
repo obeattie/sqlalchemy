@@ -23,7 +23,7 @@ import gc, StringIO, weakref
 from sqlalchemy import util, logging, topological, exceptions
 from sqlalchemy.orm import attributes, interfaces
 from sqlalchemy.orm import util as mapperutil
-from sqlalchemy.orm.mapper import object_mapper
+from sqlalchemy.orm.mapper import object_mapper, _state_mapper
 
 # Load lazily
 object_session = None
@@ -118,8 +118,8 @@ class UnitOfWork(object):
         if not hasattr(obj, '_instance_key'):
             mapper = object_mapper(obj)
             obj._instance_key = mapper.identity_key_from_instance(obj)
-        if hasattr(obj, '_sa_insert_order'):
-            delattr(obj, '_sa_insert_order')
+        if hasattr(obj._state, 'insert_order'):
+            delattr(obj._state, 'insert_order')
         self.identity_map[obj._instance_key] = obj
         obj._state.commit_all()
 
@@ -130,7 +130,7 @@ class UnitOfWork(object):
             raise exceptions.InvalidRequestError("Object '%s' already has an identity - it can't be registered as new" % repr(obj))
         if obj not in self.new:
             self.new.add(obj)
-            obj._sa_insert_order = len(self.new)
+            obj._state.insert_order = len(self.new)
 
     def register_deleted(self, obj):
         """register the given persistent object as 'to be deleted' within this unit of work."""
@@ -279,10 +279,10 @@ class UOWTransaction(object):
         if self._should_log_debug:
             self.logger.debug("register object for flush: %s isdelete=%s listonly=%s postupdate=%s" % (mapperutil.instance_str(state.obj()), isdelete, listonly, postupdate))
 
-        mapper = object_mapper(state.obj())
+        mapper = _state_mapper(state)
         
         # prevent gcs on objects
-        state.modified = True
+        state.strong = True
         
         task = self.get_task_by_mapper(mapper)
         if postupdate:
@@ -439,6 +439,7 @@ class UOWTransaction(object):
             for elem in task.elements:
                 if elem.state is None:
                     continue
+                elem.state.strong = False
                 if elem.isdelete:
                     self.uow._remove_deleted(elem.state.obj())
                 else:

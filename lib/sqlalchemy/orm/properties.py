@@ -54,13 +54,13 @@ class ColumnProperty(StrategizedProperty):
         
     def copy(self):
         return ColumnProperty(deferred=self.deferred, group=self.group, *self.columns)
+    
+    def getattr(self, state, column):
+        return getattr(state.class_, self.key).impl.get(state)
+
+    def setattr(self, state, value, column):
+        getattr(state.class_, self.key).impl.set(state, value, None)
         
-    def getattr(self, object, column):
-        return getattr(object, self.key)
-
-    def setattr(self, object, value, column):
-        setattr(object, self.key, value)
-
     def merge(self, session, source, dest, dont_load, _recursive):
         setattr(dest, self.key, getattr(source, self.key, None))
 
@@ -95,18 +95,21 @@ class CompositeProperty(ColumnProperty):
     def copy(self):
         return CompositeProperty(deferred=self.deferred, group=self.group, composite_class=self.composite_class, *self.columns)
 
-    def getattr(self, object, column):
-        obj = getattr(object, self.key)
+    def getattr(self, state, column):
+        obj = getattr(state.class_, self.key).impl.get(state)
         return self.get_col_value(column, obj)
 
-    def setattr(self, object, value, column):
-        obj = getattr(object, self.key, None)
+    def setattr(self, state, value, column):
+        # TODO: test coverage for this method
+        obj = getattr(state.class_, self.key).impl.get(state)
         if obj is None:
             obj = self.composite_class(*[None for c in self.columns])
+            getattr(state.class_, self.key).impl.set(state, obj, None)
+            
         for a, b in zip(self.columns, value.__composite_values__()):
             if a is column:
                 setattr(obj, b, value)
-
+        
     def get_col_value(self, column, value):
         for a, b in zip(self.columns, value.__composite_values__()):
             if a is column:

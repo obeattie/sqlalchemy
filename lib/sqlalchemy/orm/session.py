@@ -765,16 +765,16 @@ class Session(object):
         
         if attribute_names:
             self._validate_persistent(instance)
-            expire_instance(instance, attribute_names=attribute_names)
+            _expire_state(instance._state, attribute_names=attribute_names)
         else:
             # pre-fetch the full cascade since the expire is going to 
             # remove associations
             cascaded = list(_cascade_iterator('refresh-expire', instance))
             self._validate_persistent(instance)
-            expire_instance(instance, None)
+            _expire_state(instance._state, None)
             for (c, m) in cascaded:
                 self._validate_persistent(c)
-                expire_instance(c, None)
+                _expire_state(c._state, None)
 
     def prune(self):
         """Removes unreferenced instances cached in the identity map.
@@ -1102,7 +1102,7 @@ class Session(object):
     new = property(lambda s:s.uow.new,
                    doc="A ``Set`` of all instances marked as 'new' within this ``Session``.")
 
-def expire_instance(instance, attribute_names):
+def _expire_state(state, attribute_names):
     """standalone expire instance function. 
     
     installs a callable with the given instance's _state
@@ -1112,13 +1112,13 @@ def expire_instance(instance, attribute_names):
     If the list is None or blank, the entire instance is expired.
     """
     
-    if instance._state.trigger is None:
+    if state.trigger is None:
         def load_attributes(instance, attribute_names):
             if object_session(instance).query(instance.__class__)._get(instance._instance_key, refresh_instance=instance, only_load_props=attribute_names) is None:
                 raise exceptions.InvalidRequestError("Could not refresh instance '%s'" % mapperutil.instance_str(instance))
-        instance._state.trigger = load_attributes
+        state.trigger = load_attributes
         
-    instance._state.expire_attributes(attribute_names)
+    state.expire_attributes(attribute_names)
     
 register_attribute = unitofwork.register_attribute
 
@@ -1142,4 +1142,4 @@ def object_session(instance):
 # Lazy initialization to avoid circular imports
 unitofwork.object_session = object_session
 from sqlalchemy.orm import mapper
-mapper.expire_instance = expire_instance
+mapper._expire_state = _expire_state
