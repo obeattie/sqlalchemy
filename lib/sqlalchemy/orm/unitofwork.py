@@ -282,9 +282,6 @@ class UOWTransaction(object):
 
         mapper = _state_mapper(state)
         
-        # prevent gcs on objects
-        state.strong = True
-        
         task = self.get_task_by_mapper(mapper)
         if postupdate:
             task.append_postupdate(state, post_update_cols)
@@ -445,7 +442,6 @@ class UOWTransaction(object):
             for elem in task.elements:
                 if elem.state is None:
                     continue
-                elem.state.strong = False
                 if elem.isdelete:
                     self.uow._remove_deleted(elem.state.obj())
                 else:
@@ -845,7 +841,6 @@ class UOWTaskElement(object):
     """
 
     def __init__(self, state):
-        assert isinstance(state, (attributes.InstanceState, type(None)))
         self.state = state
         self.__listonly = True
         self.childtasks = []

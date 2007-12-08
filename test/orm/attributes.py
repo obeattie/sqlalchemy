@@ -225,10 +225,10 @@ class AttributesTest(PersistTest):
         attributes.register_attribute(Foo, 'element', uselist=False, useobject=True)
         x = Bar()
         x.element = 'this is the element'
-        (added, unchanged, deleted) = attributes.get_history(x, 'element')
+        (added, unchanged, deleted) = attributes.get_history(x._state, 'element')
         assert added == ['this is the element']
         x._state.commit_all()
-        (added, unchanged, deleted) = attributes.get_history(x, 'element')
+        (added, unchanged, deleted) = attributes.get_history(x._state, 'element')
         assert added == []
         assert unchanged == ['this is the element']
 
@@ -258,7 +258,7 @@ class AttributesTest(PersistTest):
         x = Foo()
         x._state.commit_all()
         x.col2.append(Bar(4))
-        (added, unchanged, deleted) = attributes.get_history(x, 'col2')
+        (added, unchanged, deleted) = attributes.get_history(x._state, 'col2')
 
         
     def test_parenttrack(self):    
@@ -297,7 +297,7 @@ class AttributesTest(PersistTest):
         x.element = ['one', 'two', 'three']    
         x._state.commit_all()
         x.element[1] = 'five'
-        assert attributes.is_modified(x)
+        assert x._state.is_modified()
         
         attributes.unregister_class(Foo)
         
@@ -307,7 +307,7 @@ class AttributesTest(PersistTest):
         x.element = ['one', 'two', 'three']    
         x._state.commit_all()
         x.element[1] = 'five'
-        assert not attributes.is_modified(x)
+        assert not x._state.is_modified()
         
     def test_descriptorattributes(self):
         """changeset: 1633 broke ability to use ORM to map classes with unusual

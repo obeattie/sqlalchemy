@@ -182,7 +182,8 @@ class AttributeImpl(object):
         current = self.get(state, passive=passive)
         if current is PASSIVE_NORESULT:
             return (None, None, None)
-        return _new_get_history(self, state, current)
+        else:
+            return _create_history(self, state, current)
         
     def set_callable(self, state, callable_, clear=False):
         """Set a callable function for this attribute on the given object.
@@ -568,7 +569,6 @@ class CollectionAttributeImpl(AttributeImpl):
             collections.CollectionAdapter(self, state, user_data)
             return getattr(user_data, '_sa_adapter')
 
-
 class GenericBackrefExtension(interfaces.AttributeExtension):
     """An extension which synchronizes a two-way relationship.
 
@@ -612,8 +612,6 @@ class ClassState(object):
 class InstanceState(object):
     """tracks state information at the instance level."""
 
-#    __slots__ = 'class_', 'obj', 'dict', 'pending', 'committed_state', 'modified', 'trigger', 'callables', 'parents', 'instance_dict', '_strong_obj', 'expired_attributes'
-    
     def __init__(self, obj):
         self.class_ = obj.__class__
         self.obj = weakref.ref(obj, self.__cleanup)
@@ -894,7 +892,7 @@ class StrongInstanceDict(dict):
     def all_states(self):
         return [o._state for o in self.values()]
 
-def _new_get_history(attr, state, current):
+def _create_history(attr, state, current):
     if state.committed_state:
         original = state.committed_state.get(attr.key, NO_VALUE)
     else:
@@ -906,21 +904,19 @@ def _new_get_history(attr, state, current):
         else:
             s = util.IdentitySet(original)
 
-        _added_items = util.OrderedIdentitySet()
-        _unchanged_items = util.OrderedIdentitySet()
-        _deleted_items = util.OrderedIdentitySet()
+        _added_items = []
+        _unchanged_items = []
+        _deleted_items = []
         if current:
             collection = attr.get_collection(state, current)
             for a in collection:
                 if a in s:
-                    _unchanged_items.add(a)
+                    _unchanged_items.append(a)
                 else:
-                    _added_items.add(a)
-        for a in s:
-            if a not in _unchanged_items:
-                _deleted_items.add(a)
+                    _added_items.append(a)
+        _deleted_items = list(s.difference(_unchanged_items))
 
-        return (list(_added_items), list(_unchanged_items), list(_deleted_items))
+        return (_added_items, _unchanged_items, _deleted_items)
     else:
         if attr.is_equal(current, original) is True:
             _unchanged_items = [current]
@@ -961,23 +957,25 @@ def _managed_attributes(class_):
     
     return chain(*[cl._class_state.attrs.values() for cl in class_.__mro__[:-1] if hasattr(cl, '_class_state')])
 
-def is_modified(instance):
-    return instance._state.is_modified()
-
-def get_history(instance, key, **kwargs):
-    return getattr(instance.__class__, key).impl.get_history(instance._state, **kwargs)
-
-def get_state_history(state, key, **kwargs):
+def get_history(state, key, **kwargs):
     return getattr(state.class_, key).impl.get_history(state, **kwargs)
+get_state_history = get_history
 
-def get_as_list(instance, key, passive=False):
-    attr = getattr(instance.__class__, key).impl
-    state = instance._state
+def get_as_list(state, key, passive=False):
+    """return an InstanceState attribute as a list, 
+    regardless of it being a scalar or collection-based
+    attribute.
+    
+    returns None if passive=True and the getter returns
+    PASSIVE_NORESULT.
+    """
+    
+    attr = getattr(state.class_, key).impl
     x = attr.get(state, passive=passive)
     if x is PASSIVE_NORESULT:
         return None
     elif hasattr(attr, 'get_collection'):
-        return list(attr.get_collection(state, x))
+        return attr.get_collection(state, x)
     elif isinstance(x, list):
         return x
     else:

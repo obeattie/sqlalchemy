@@ -1127,7 +1127,7 @@ _sessions = weakref.WeakValueDictionary()
 
 def _cascade_iterator(cascade, instance, **kwargs):
     mapper = _object_mapper(instance)
-    for (o, m) in mapper.cascade_iterator(cascade, instance, **kwargs):
+    for (o, m) in mapper.cascade_iterator(cascade, instance._state, **kwargs):
         yield o, m
 
 def object_session(instance):

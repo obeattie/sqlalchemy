@@ -123,13 +123,10 @@ class DependencyProcessor(object):
         raise NotImplementedError()
 
     def _compile_synchronizers(self):
-        """Assemble a list of *synchronization rules*, which are
-        instructions on how to populate the objects on each side of a
-        relationship.  This is done when a ``DependencyProcessor`` is
-        first initialized.
-
-        The list of rules is used within commits by the ``_synchronize()``
-        method when dependent objects are processed.
+        """Assemble a list of *synchronization rules*.
+                
+        These are fired to populate attributes from one side
+        of a relation to another.
         """
 
         self.syncrules = sync.ClauseSynchronizer(self.parent, self.mapper, self.direction)
@@ -141,11 +138,16 @@ class DependencyProcessor(object):
 
     def get_object_dependencies(self, state, uowcommit, passive = True):
         key = ("dependencies", state, self.key, passive)
+        
+        # cache the objects, not the states; the strong reference here
+        # prevents newly loaded objects from being dereferenced during the 
+        # flush process
         if key in uowcommit.attributes:
             (added, unchanged, deleted) = uowcommit.attributes[key]
         else:
-            (added, unchanged, deleted) = attributes.get_state_history(state, self.key, passive = passive)
+            (added, unchanged, deleted) = attributes.get_history(state, self.key, passive = passive)
             uowcommit.attributes[key] = (added, unchanged, deleted)
+            
         if added is None:
             return (added, unchanged, deleted)
         else:
@@ -249,7 +251,7 @@ class OneToManyDP(DependencyProcessor):
                             uowcommit.register_object(child, isdelete=False)
                         elif self.hasparent(child) is False:
                             uowcommit.register_object(child, isdelete=True)
-                            for c, m in self.mapper.cascade_iterator('delete', child.obj()):
+                            for c, m in self.mapper.cascade_iterator('delete', child):
                                 uowcommit.register_object(c._state, isdelete=True)
 
     def _synchronize(self, state, child, associationrow, clearkeys, uowcommit):
@@ -305,7 +307,7 @@ class ManyToOneDP(DependencyProcessor):
                         for child in deleted + unchanged:
                             if child is not None and self.hasparent(child) is False:
                                 uowcommit.register_object(child, isdelete=True)
-                                for c, m in self.mapper.cascade_iterator('delete', child.obj()):
+                                for c, m in self.mapper.cascade_iterator('delete', child):
                                     uowcommit.register_object(c._state, isdelete=True)
         else:
             for state in deplist:
@@ -316,7 +318,7 @@ class ManyToOneDP(DependencyProcessor):
                         for child in deleted:
                             if self.hasparent(child) is False:
                                 uowcommit.register_object(child, isdelete=True)
-                                for c, m in self.mapper.cascade_iterator('delete', child.obj()):
+                                for c, m in self.mapper.cascade_iterator('delete', child):
                                     uowcommit.register_object(c._state, isdelete=True)
 
     def _synchronize(self, state, child, associationrow, clearkeys, uowcommit):
@@ -402,7 +404,7 @@ class ManyToManyDP(DependencyProcessor):
                     for child in deleted:
                         if self.cascade.delete_orphan and self.hasparent(child) is False:
                             uowcommit.register_object(child, isdelete=True)
-                            for c, m in self.mapper.cascade_iterator('delete', child.obj()):
+                            for c, m in self.mapper.cascade_iterator('delete', child):
                                 uowcommit.register_object(c._state, isdelete=True)
 
     def _synchronize(self, state, child, associationrow, clearkeys, uowcommit):

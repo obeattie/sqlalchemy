@@ -322,7 +322,7 @@ class PropertyLoader(StrategizedProperty):
     def merge(self, session, source, dest, dont_load, _recursive):
         if not "merge" in self.cascade:
             return
-        instances = attributes.get_as_list(source, self.key, passive=True)
+        instances = attributes.get_as_list(source._state, self.key, passive=True)
         if not instances:
             return
         if self.uselist:
@@ -345,12 +345,12 @@ class PropertyLoader(StrategizedProperty):
                     else:
                         setattr(dest, self.key, obj)
 
-    def cascade_iterator(self, type, object, recursive, halt_on=None):
+    def cascade_iterator(self, type, state, recursive, halt_on=None):
         if not type in self.cascade:
             return
         passive = type != 'delete' or self.passive_deletes
         mapper = self.mapper.primary_mapper()
-        instances = attributes.get_as_list(object, self.key, passive=passive)
+        instances = attributes.get_as_list(state, self.key, passive=passive)
         if instances:
             for c in instances:
                 if c is not None and c not in recursive and (halt_on is None or not halt_on(c)):
@@ -358,7 +358,7 @@ class PropertyLoader(StrategizedProperty):
                         raise exceptions.AssertionError("Attribute '%s' on class '%s' doesn't handle objects of type '%s'" % (self.key, str(self.parent.class_), str(c.__class__)))
                     recursive.add(c)
                     yield (c, mapper)
-                    for (c2, m) in mapper.cascade_iterator(type, c, recursive):
+                    for (c2, m) in mapper.cascade_iterator(type, c._state, recursive):
                         yield (c2, m)
 
     def _get_target_class(self):
