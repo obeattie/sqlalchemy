@@ -178,11 +178,17 @@ class AttributeImpl(object):
 
         state.parents[id(self)] = value
 
-    def get_history(self, state, passive=False):
+    def get_history(self, state, passive=False, new=False):
         current = self.get(state, passive=passive)
         if current is PASSIVE_NORESULT:
-            return None
-        return AttributeHistory(self, state, current)
+            if new:
+                return (None, None, None)
+            else:
+                return None
+        if new:
+            return _new_get_history(self, state, current)
+        else:
+            return AttributeHistory(self, state, current)
         
     def set_callable(self, state, callable_, clear=False):
         """Set a callable function for this attribute on the given object.
@@ -893,6 +899,45 @@ class WeakInstanceDict(UserDict.UserDict):
 class StrongInstanceDict(dict):
     def all_states(self):
         return [o._state for o in self.values()]
+
+def _new_get_history(attr, state, current):
+    if state.committed_state:
+        original = state.committed_state.get(attr.key, NO_VALUE)
+    else:
+        original = NO_VALUE
+
+    if hasattr(attr, 'get_collection'):
+        if original is NO_VALUE:
+            s = util.IdentitySet([])
+        else:
+            s = util.IdentitySet(original)
+
+        _added_items = util.OrderedIdentitySet()
+        _unchanged_items = util.OrderedIdentitySet()
+        _deleted_items = util.OrderedIdentitySet()
+        if current:
+            collection = attr.get_collection(state, current)
+            for a in collection:
+                if a in s:
+                    _unchanged_items.add(a._state)
+                else:
+                    _added_items.add(a._state)
+        for a in s:
+            if a not in _unchanged_items:
+                _deleted_items.add(a._state)
+    else:
+        if attr.is_equal(current, original) is True:
+            _unchanged_items = [getattr(current, '_state', current)]
+            _added_items = []
+            _deleted_items = []
+        else:
+            _added_items = [getattr(current, '_state', current)]
+            if original is not NO_VALUE and original is not None:
+                _deleted_items = [getattr(original, '_state', original)]
+            else:
+                _deleted_items = []
+            _unchanged_items = []
+    return (list(_added_items), list(_unchanged_items), list(_deleted_items))
     
 class AttributeHistory(object):
     """Calculate the *history* of a particular attribute on a
@@ -994,6 +1039,10 @@ def get_history(instance, key, **kwargs):
     return getattr(instance.__class__, key).impl.get_history(instance._state, **kwargs)
 
 def get_state_history(state, key, **kwargs):
+    return getattr(state.class_, key).impl.get_history(state, **kwargs)
+
+def get_new_history(state, key, **kwargs):
+    kwargs['new'] = True
     return getattr(state.class_, key).impl.get_history(state, **kwargs)
     
 def get_as_list(instance, key, passive=False):

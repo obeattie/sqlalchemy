@@ -136,6 +136,7 @@ class CollectionHistory(attributes.AttributeHistory):
 
     def __init__(self, attr, state, apply_to=None):
         if apply_to:
+            print "USING SESSION:", object_session(state.obj())
             deleted = util.IdentitySet(apply_to._deleted_items)
             added = apply_to._added_items
             coll = AppenderQuery(attr, state).autoflush(False)
