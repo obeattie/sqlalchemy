@@ -425,12 +425,18 @@ class UOWTransaction(object):
 
         tasks = self._sort_dependencies()
         if self._should_log_info:
-            self.logger.info("Task dump:\n" + str(tasks))
+            self.logger.info("Task dump:\n" + self._dump(tasks))
         if tasks is not None:
             UOWExecutor().execute(self, tasks)
         if self._should_log_info:
             self.logger.info("Execute Complete")
 
+    def _dump(self, tasks):
+        buf = StringIO.StringIO()
+        import uowdumper
+        uowdumper.UOWDumper(tasks, buf)
+        return buf.getvalue()
+        
     def post_exec(self):
         """mark processed objects as clean / deleted after a successful flush().
         
@@ -550,6 +556,14 @@ class UOWTask(object):
             t = self.base_task._inheriting_tasks.get(mapper, None)
             if t is not None:
                 yield t
+
+    def is_empty(self):
+        """return True if this UOWTask is 'empty', meaning it has no child items.
+
+        used only for debugging output.
+        """
+
+        return len(self._objects) == 0 and len(self._dependencies) == 0 and len(self.childtasks) == 0
             
     def append(self, state, listonly=False, isdelete=False):
         if state not in self._objects:
@@ -808,19 +822,10 @@ class UOWTask(object):
         
         return t
 
-    def dump(self):
-        """return a string representation of this UOWTask and its 
-        full dependency graph."""
-        
-        buf = StringIO.StringIO()
-        import uowdumper
-        uowdumper.UOWDumper(self, buf)
-        return buf.getvalue()
-
     def __repr__(self):
         if self.mapper is not None:
             if self.mapper.__class__.__name__ == 'Mapper':
-                name = self.mapper.class_.__name__ + "/" + self.mapper.local_table.name
+                name = self.mapper.class_.__name__ + "/" + self.mapper.local_table.description
             else:
                 name = repr(self.mapper)
         else:
