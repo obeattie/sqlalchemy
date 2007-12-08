@@ -37,39 +37,6 @@ class DependencySortTest(PersistTest):
                 assert_unique(c)
         assert_unique(node)
         assert len(collection) == 0
-
-    def dont_assert_sort(self, tuples, node, collection=None):
-        print str(node)
-        def assert_tuple(tuple, node):
-            if node.cycles:
-                cycles = [i.item for i in node.cycles]
-            else:
-                cycles = []
-            if tuple[0] is node.item or tuple[0] in cycles:
-                tuple.pop()
-                if tuple[0] is node.item or tuple[0] in cycles:
-                    return
-            elif len(tuple) > 1 and tuple[1] is node.item:
-                assert False, "Tuple not in dependency tree: " + str(tuple)
-            for c in node.children:
-                assert_tuple(tuple, c)
-        
-        for tuple in tuples:
-            assert_tuple(list(tuple), node)
-
-        if collection is None:
-            collection = []
-        items = util.Set()
-        def assert_unique(node):
-            for item in [n.item for n in node.cycles or [node,]]:
-                assert item not in items
-                items.add(item)
-                if item in collection:
-                    collection.remove(item)
-            for c in node.children:
-                assert_unique(c)
-        assert_unique(node)
-        assert len(collection) == 0
         
     def testsort(self):
         rootnode = 'root'
