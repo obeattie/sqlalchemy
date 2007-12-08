@@ -108,11 +108,6 @@ class UOWDumper(unitofwork.UOWExecutor):
     def execute_dependencies(self, trans, task, isdelete=None):
         super(UOWDumper, self).execute_dependencies(trans, task, isdelete)
 
-    def execute_childtasks(self, trans, task, isdelete=None):
-        self.header("Child tasks" + self._inheritance_tag(task))
-        super(UOWDumper, self).execute_childtasks(trans, task, isdelete)
-        self.closeheader()
-
     def execute_cyclical_dependencies(self, trans, task, isdelete):
         self.header("Cyclical %s dependencies" % (isdelete and "delete" or "save"))
         super(UOWDumper, self).execute_cyclical_dependencies(trans, task, isdelete)
@@ -175,7 +170,11 @@ class UOWDumper(unitofwork.UOWExecutor):
                 name = repr(task.mapper)
         else:
             name = '(none)'
-        return ("UOWTask(%s, %s)" % (hex(id(task)), name))
+        sd = getattr(task, '_superduper', False)
+        if sd:
+            return ("SD UOWTask(%s, %s)" % (hex(id(task)), name))
+        else:
+            return ("UOWTask(%s, %s)" % (hex(id(task)), name))
 
     def _repr_task_class(self, task):
         if task.mapper is not None and task.mapper.__class__.__name__ == 'Mapper':

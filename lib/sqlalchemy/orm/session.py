@@ -799,7 +799,7 @@ class Session(object):
         self._validate_persistent(instance)
         for c, m in [(instance, None)] + list(_cascade_iterator('expunge', instance)):
             if c in self:
-                self.uow._remove_deleted(c)
+                self.uow._remove_deleted(c._state)
                 self._unattach(c)
 
     def save(self, instance, entity_name=None):
@@ -1051,12 +1051,12 @@ class Session(object):
         result of True.
         """
         
-        return instance in self.uow.new or (hasattr(instance, '_instance_key') and self.identity_map.get(instance._instance_key) is instance)
+        return instance._state in self.uow.new or (hasattr(instance, '_instance_key') and self.identity_map.get(instance._instance_key) is instance)
 
     def __iter__(self):
         """return an iterator of all instances which are pending or persistent within this Session."""
         
-        return iter(list(self.uow.new) + self.uow.identity_map.values())
+        return iter(list(self.uow.new.values()) + self.uow.identity_map.values())
 
     def is_modified(self, instance, include_collections=True, passive=False):
         """return True if the given instance has modified attributes.
@@ -1097,10 +1097,10 @@ class Session(object):
                      is_modified() method.
                      """)
 
-    deleted = property(lambda s:s.uow.deleted,
+    deleted = property(lambda s:util.IdentitySet(s.uow.deleted.values()),
                        doc="A ``Set`` of all instances marked as 'deleted' within this ``Session``")
 
-    new = property(lambda s:s.uow.new,
+    new = property(lambda s:util.IdentitySet(s.uow.new.values()),
                    doc="A ``Set`` of all instances marked as 'new' within this ``Session``.")
 
 def _expire_state(state, attribute_names):

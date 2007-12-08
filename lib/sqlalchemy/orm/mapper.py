@@ -903,7 +903,7 @@ class Mapper(object):
         instance.
         """
 
-        return [self._get_attr_by_column(instance, column) for column in self.primary_key]
+        return [self._get_state_attr_by_column(instance._state, column) for column in self.primary_key]
 
     def _primary_key_from_state(self, state):
         return [self._get_state_attr_by_column(state, column) for column in self.primary_key]
@@ -932,7 +932,6 @@ class Mapper(object):
         
     def _set_attr_by_column(self, obj, column, value):
         self._set_state_attr_by_column(obj._state, column, value)
-        
 
     def save_obj(self, states, uowtransaction, postupdate=False, post_update_cols=None, single=False):
         """Issue ``INSERT`` and/or ``UPDATE`` statements for a list of objects.
@@ -1144,7 +1143,7 @@ class Mapper(object):
         which will populate those attributes in one query when next accessed.
         """
 
-        postfetch_cols = resultproxy.postfetch_cols().union(util.Set(value_params.keys())) 
+        postfetch_cols = util.Set(resultproxy.postfetch_cols()).union(util.Set(value_params.keys())) 
         deferred_props = []
 
         for c in self._cols_by_table[table]:

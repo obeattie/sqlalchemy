@@ -75,10 +75,7 @@ class DependencyProcessor(object):
     def whose_dependent_on_who(self, state1, state2):
         """Given an object pair assuming `obj2` is a child of `obj1`,
         return a tuple with the dependent object second, or None if
-        they are equal.
-
-        Used by stateectstore's stateect-level topological sort (i.e. cyclical
-        table dependency).
+        there is no dependency.
         """
 
         if state1 is state2:
@@ -426,7 +423,7 @@ class MapperStub(object):
     many-to-many join, when performing a ``flush()``.
 
     The ``Task`` objects in the objectstore module treat it just like
-    any other ``Mapper``, but in fact it only serves as a *dependency*
+    any other ``Mapper``, but in fact it only serves as a dependency
     placeholder for the many-to-many update task.
     """
 
