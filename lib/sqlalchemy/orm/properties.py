@@ -322,13 +322,13 @@ class PropertyLoader(StrategizedProperty):
     def merge(self, session, source, dest, dont_load, _recursive):
         if not "merge" in self.cascade:
             return
-        childlist = attributes.get_history(source, self.key, passive=True)
-        if childlist is None:
+        instances = attributes.get_as_list(source, self.key, passive=True)
+        if not instances:
             return
         if self.uselist:
             # sets a blank collection according to the correct list class
             dest_list = attributes.init_collection(dest, self.key)
-            for current in list(childlist):
+            for current in instances:
                 obj = session.merge(current, entity_name=self.mapper.entity_name, dont_load=dont_load, _recursive=_recursive)
                 if obj is not None:
                     if dont_load:
@@ -336,7 +336,7 @@ class PropertyLoader(StrategizedProperty):
                     else:
                         dest_list.append_with_event(obj)
         else:
-            current = list(childlist)[0]
+            current = instances[0]
             if current is not None:
                 obj = session.merge(current, entity_name=self.mapper.entity_name, dont_load=dont_load, _recursive=_recursive)
                 if obj is not None:
@@ -350,14 +350,16 @@ class PropertyLoader(StrategizedProperty):
             return
         passive = type != 'delete' or self.passive_deletes
         mapper = self.mapper.primary_mapper()
-        for c in attributes.get_as_list(object, self.key, passive=passive):
-            if c is not None and c not in recursive and (halt_on is None or not halt_on(c)):
-                if not isinstance(c, self.mapper.class_):
-                    raise exceptions.AssertionError("Attribute '%s' on class '%s' doesn't handle objects of type '%s'" % (self.key, str(self.parent.class_), str(c.__class__)))
-                recursive.add(c)
-                yield (c, mapper)
-                for (c2, m) in mapper.cascade_iterator(type, c, recursive):
-                    yield (c2, m)
+        instances = attributes.get_as_list(object, self.key, passive=passive)
+        if instances:
+            for c in instances:
+                if c is not None and c not in recursive and (halt_on is None or not halt_on(c)):
+                    if not isinstance(c, self.mapper.class_):
+                        raise exceptions.AssertionError("Attribute '%s' on class '%s' doesn't handle objects of type '%s'" % (self.key, str(self.parent.class_), str(c.__class__)))
+                    recursive.add(c)
+                    yield (c, mapper)
+                    for (c2, m) in mapper.cascade_iterator(type, c, recursive):
+                        yield (c2, m)
 
     def _get_target_class(self):
         """Return the target class of the relation, even if the

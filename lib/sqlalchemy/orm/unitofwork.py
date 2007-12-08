@@ -717,13 +717,14 @@ class UOWTask(object):
                         isdelete = taskelement.isdelete
 
                         # list of dependent objects from this object
-                        childlist = dep.get_object_dependencies(state, trans, passive=True)
-                        if childlist is None:
+                        (added, unchanged, deleted) = dep.get_object_dependencies(state, trans, passive=True)
+                        if not added and not unchanged and not deleted:
                             continue
+                            
                         # the task corresponding to saving/deleting of those dependent objects
                         childtask = trans.get_task_by_mapper(processor.mapper)
 
-                        childlist = [getattr(x, '_state', None) for x in childlist.added_items() + childlist.unchanged_items() + childlist.deleted_items()]
+                        childlist = added + unchanged + deleted
 
                         for o in childlist:
                             # other object is None.  this can occur if the relationship is many-to-one

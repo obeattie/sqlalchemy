@@ -1078,7 +1078,8 @@ class Session(object):
         for attr in attributes._managed_attributes(instance.__class__):
             if not include_collections and hasattr(attr.impl, 'get_collection'):
                 continue
-            if attr.get_history(instance).is_modified():
+            (added, unchanged, deleted) = attr.get_history(instance)
+            if added or deleted:
                 return True
         return False
         

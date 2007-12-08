@@ -1048,8 +1048,8 @@ class Mapper(object):
                             params[col._label] = mapper._get_state_attr_by_column(state, col)
                             params[col.key] = params[col._label] + 1
                             for prop in mapper._columntoproperty.values():
-                                history = attributes.get_state_history(state, prop.key, passive=True)
-                                if history and history.added_items():
+                                (added, unchanged, deleted) = attributes.get_state_history(state, prop.key, passive=True)
+                                if added:
                                     hasdata = True
                         elif col in pks:
                             params[col._label] = mapper._get_state_attr_by_column(state, col)
@@ -1059,15 +1059,13 @@ class Mapper(object):
                             if post_update_cols is not None and col not in post_update_cols:
                                 continue
                             prop = mapper._columntoproperty[col]
-                            history = attributes.get_state_history(state, prop.key, passive=True)
-                            if history:
-                                a = history.added_items()
-                                if a:
-                                    if isinstance(a[0], sql.ClauseElement):
-                                        value_params[col] = a[0]
-                                    else:
-                                        params[col.key] = prop.get_col_value(col, a[0])
-                                    hasdata = True
+                            (added, unchanged, deleted) = attributes.get_state_history(state, prop.key, passive=True)
+                            if added:
+                                if isinstance(added[0], sql.ClauseElement):
+                                    value_params[col] = added[0]
+                                else:
+                                    params[col.key] = prop.get_col_value(col, added[0])
+                                hasdata = True
                     if hasdata:
                         update.append((state, params, mapper, connection, value_params))
 

@@ -178,17 +178,11 @@ class AttributeImpl(object):
 
         state.parents[id(self)] = value
 
-    def get_history(self, state, passive=False, new=False):
+    def get_history(self, state, passive=False):
         current = self.get(state, passive=passive)
         if current is PASSIVE_NORESULT:
-            if new:
-                return (None, None, None)
-            else:
-                return None
-        if new:
-            return _new_get_history(self, state, current)
-        else:
-            return AttributeHistory(self, state, current)
+            return (None, None, None)
+        return _new_get_history(self, state, current)
         
     def set_callable(self, state, callable_, clear=False):
         """Set a callable function for this attribute on the given object.
@@ -332,8 +326,8 @@ class ScalarAttributeImpl(AttributeImpl):
 
     def check_mutable_modified(self, state):
         if self.mutable_scalars:
-            h = self.get_history(state, passive=True)
-            if h is not None and h.is_modified():
+            (added, unchanged, deleted) = self.get_history(state, passive=True)
+            if added or deleted:
                 state.modified = True
                 return True
             else:
@@ -919,93 +913,28 @@ def _new_get_history(attr, state, current):
             collection = attr.get_collection(state, current)
             for a in collection:
                 if a in s:
-                    _unchanged_items.add(a._state)
+                    _unchanged_items.add(a)
                 else:
-                    _added_items.add(a._state)
+                    _added_items.add(a)
         for a in s:
             if a not in _unchanged_items:
-                _deleted_items.add(a._state)
+                _deleted_items.add(a)
+
+        return (list(_added_items), list(_unchanged_items), list(_deleted_items))
     else:
         if attr.is_equal(current, original) is True:
-            _unchanged_items = [getattr(current, '_state', current)]
+            _unchanged_items = [current]
             _added_items = []
             _deleted_items = []
         else:
-            _added_items = [getattr(current, '_state', current)]
+            _added_items = [current]
             if original is not NO_VALUE and original is not None:
-                _deleted_items = [getattr(original, '_state', original)]
+                _deleted_items = [original]
             else:
                 _deleted_items = []
             _unchanged_items = []
-    return (list(_added_items), list(_unchanged_items), list(_deleted_items))
+        return (_added_items, _unchanged_items, _deleted_items)
     
-class AttributeHistory(object):
-    """Calculate the *history* of a particular attribute on a
-    particular instance.
-    """
-
-    def __init__(self, attr, state, current):
-        self.attr = attr
-
-        # get the "original" value.  if a lazy load was fired when we got
-        # the 'current' value, this "original" was also populated just
-        # now as well (therefore we have to get it second)
-        if state.committed_state:
-            original = state.committed_state.get(attr.key, NO_VALUE)
-        else:
-            original = NO_VALUE
-
-        if hasattr(attr, 'get_collection'):
-            self._current = current
-
-            if original is NO_VALUE:
-                s = util.IdentitySet([])
-            else:
-                s = util.IdentitySet(original)
-
-            # FIXME: the tests have an assumption on the collection's ordering
-            self._added_items = util.OrderedIdentitySet()
-            self._unchanged_items = util.OrderedIdentitySet()
-            self._deleted_items = util.OrderedIdentitySet()
-            if current:
-                collection = attr.get_collection(state, current)
-                for a in collection:
-                    if a in s:
-                        self._unchanged_items.add(a)
-                    else:
-                        self._added_items.add(a)
-            for a in s:
-                if a not in self._unchanged_items:
-                    self._deleted_items.add(a)
-        else:
-            self._current = [current]
-            if attr.is_equal(current, original) is True:
-                self._unchanged_items = [current]
-                self._added_items = []
-                self._deleted_items = []
-            else:
-                self._added_items = [current]
-                if original is not NO_VALUE and original is not None:
-                    self._deleted_items = [original]
-                else:
-                    self._deleted_items = []
-                self._unchanged_items = []
-
-    def __iter__(self):
-        return iter(self._current)
-
-    def is_modified(self):
-        return len(self._deleted_items) > 0 or len(self._added_items) > 0
-
-    def added_items(self):
-        return list(self._added_items)
-
-    def unchanged_items(self):
-        return list(self._unchanged_items)
-
-    def deleted_items(self):
-        return list(self._deleted_items)
-
 class PendingCollection(object):
     """stores items appended and removed from a collection that has not been loaded yet.
     
@@ -1041,26 +970,12 @@ def get_history(instance, key, **kwargs):
 def get_state_history(state, key, **kwargs):
     return getattr(state.class_, key).impl.get_history(state, **kwargs)
 
-def get_new_history(state, key, **kwargs):
-    kwargs['new'] = True
-    return getattr(state.class_, key).impl.get_history(state, **kwargs)
-    
 def get_as_list(instance, key, passive=False):
-    """Return an attribute of the given name from the given instance.
-
-    If the attribute is a scalar, return it as a single-item list,
-    otherwise return a collection based attribute.
-
-    If the attribute's value is to be produced by an unexecuted
-    callable, the callable will only be executed if the given
-    `passive` flag is False.
-    """
-
     attr = getattr(instance.__class__, key).impl
     state = instance._state
     x = attr.get(state, passive=passive)
     if x is PASSIVE_NORESULT:
-        return []
+        return None
     elif hasattr(attr, 'get_collection'):
         return list(attr.get_collection(state, x))
     elif isinstance(x, list):
