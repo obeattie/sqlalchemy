@@ -722,13 +722,9 @@ class Query(object):
     
     def _execute_and_instances(self, querycontext):
         result = self.session.execute(querycontext.statement, params=self._params, mapper=self.mapper, instance=self._refresh_instance)
-        try:
-            rows = result.fetchall()
-            return iter(self.instances(rows, querycontext=querycontext))
-        finally:
-            result.close()
+        return iter(self.instances(result, querycontext=querycontext))
 
-    def instances(self, rows, *mappers_or_columns, **kwargs):
+    def instances(self, cursor, *mappers_or_columns, **kwargs):
         """Return a list of mapped instances corresponding to the rows
         in a given *cursor* (i.e. ``ResultProxy``).
         
@@ -806,7 +802,10 @@ class Query(object):
 #        result = []
         lastinstance = None
         pile = util.Set()
-        for row in rows:
+        while True:
+            row = cursor.fetchone()
+            if not row:
+                break
             pile.update(context.progress)
             if self._primary_adapter:
                 instance = self.select_mapper._instance(context, self._primary_adapter(row), None, **primary_mapper_args)
