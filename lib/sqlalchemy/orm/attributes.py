@@ -263,7 +263,7 @@ class AttributeImpl(object):
     def get_committed_value(self, state):
         if state.committed_state is not None:
             if self.key not in state.committed_state:
-                self.get()
+                self.get(state)
             return state.committed_state.get(self.key)
         else:
             return None
@@ -631,6 +631,7 @@ class InstanceState(object):
         self.parents = {}
         self.pending = {}
         self.instance_dict = None
+        self.timestamp = None
         
     def __cleanup(self, ref):
         # tiptoe around Python GC unpredictableness

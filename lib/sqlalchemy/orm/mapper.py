@@ -1295,14 +1295,6 @@ class Mapper(object):
         return self.__surrogate_mapper or self
 
     def _instance(self, context, row, result=None, skip_polymorphic=False, extension=None, only_load_props=None, refresh_instance=None):
-        """Pull an object instance from the given row and append it to
-        the given result list.
-
-        If the instance already exists in the given identity map, its
-        not added.  In either case, execute all the property loaders
-        on the instance to also process extra information in the row.
-        """
-
         if not extension:
             extension = self.extension
             
@@ -1311,71 +1303,55 @@ class Mapper(object):
             if ret is not EXT_CONTINUE:
                 row = ret
 
-        if refresh_instance is None:
-            if not skip_polymorphic and self.polymorphic_on is not None:
-                discriminator = row[self.polymorphic_on]
-                if discriminator is not None:
-                    mapper = self.polymorphic_map[discriminator]
-                    if mapper is not self:
-                        if ('polymorphic_fetch', mapper) not in context.attributes:
-                            context.attributes[('polymorphic_fetch', mapper)] = (self, [t for t in mapper.tables if t not in self.tables])
-                        row = self.translate_row(mapper, row)
-                        return mapper._instance(context, row, result=result, skip_polymorphic=True)
+        if not refresh_instance and not skip_polymorphic and self.polymorphic_on is not None:
+            discriminator = row[self.polymorphic_on]
+            if discriminator is not None:
+                mapper = self.polymorphic_map[discriminator]
+                if mapper is not self:
+                    if ('polymorphic_fetch', mapper) not in context.attributes:
+                        context.attributes[('polymorphic_fetch', mapper)] = (self, [t for t in mapper.tables if t not in self.tables])
+                    row = self.translate_row(mapper, row)
+                    return mapper._instance(context, row, result=result, skip_polymorphic=True)
         
-
         # determine identity key 
         if refresh_instance:
             identitykey = refresh_instance.dict['_instance_key']
         else:
             identitykey = self.identity_key_from_row(row)
-        (session_identity_map, local_identity_map) = (context.session.identity_map, context.identity_map)
+            
+        session_identity_map = context.session.identity_map
 
-        # look in main identity map.  if present, we only populate
-        # if repopulate flags are set.  this block returns the instance.
         if identitykey in session_identity_map:
             instance = session_identity_map[identitykey]
+            state = instance._state
 
             if self.__should_log_debug:
                 self.__log_debug("_instance(): using existing instance %s identity %s" % (mapperutil.instance_str(instance), str(identitykey)))
-                
-            isnew = False
 
-            if context.version_check and self.version_id_col is not None and self._get_attr_by_column(instance, self.version_id_col) != row[self.version_id_col]:
-                raise exceptions.ConcurrentModificationError("Instance '%s' version of %s does not match %s" % (instance, self._get_attr_by_column(instance, self.version_id_col), row[self.version_id_col]))
-
-            if context.populate_existing or self.always_refresh or instance._state.trigger is not None:
-                instance._state.trigger = None
-                if identitykey not in local_identity_map:
-                    local_identity_map[identitykey] = instance
-                    isnew = True
-                if 'populate_instance' not in extension.methods or extension.populate_instance(self, context, row, instance, instancekey=identitykey, isnew=isnew, only_load_props=only_load_props) is EXT_CONTINUE:
-                    self.populate_instance(context, instance, row, instancekey=identitykey, isnew=isnew, only_load_props=only_load_props)
-
-            if 'append_result' not in extension.methods or extension.append_result(self, context, row, instance, result, instancekey=identitykey, isnew=isnew) is EXT_CONTINUE:
-                if result is not None:
-                    result.append(instance)
+            isnew = state.timestamp != context.timestamp
+            currentload = not isnew
+            if currentload:
+                if state not in context.progress:
+                    return instance
+            else:    
+                if context.version_check and self.version_id_col and self._get_attr_by_column(instance, self.version_id_col) != row[self.version_id_col]:
+                    raise exceptions.ConcurrentModificationError("Instance '%s' version of %s does not match %s" % (instance, self._get_attr_by_column(instance, self.version_id_col), row[self.version_id_col]))
             
-            return instance
-            
-        elif self.__should_log_debug:
-            self.__log_debug("_instance(): identity key %s not in session" % str(identitykey))
+        else:
+            if self.__should_log_debug:
+                self.__log_debug("_instance(): identity key %s not in session" % str(identitykey))
                 
-        # look in identity map which is local to this load operation
-        if identitykey not in local_identity_map:
-            # check that sufficient primary key columns are present
             if self.allow_null_pks:
-                # check if *all* primary key cols in the result are None - this indicates
-                # an instance of the object is not present in the row.
                 for x in identitykey[1]:
                     if x is not None:
                         break
                 else:
                     return None
             else:
-                # otherwise, check if *any* primary key cols in the result are None - this indicates
-                # an instance of the object is not present in the row.
                 if None in identitykey[1]:
                     return None
+            isnew = True
+            currentload = True
 
             if 'create_instance' in extension.methods:
                 instance = extension.create_instance(self, context, row, self.class_)
@@ -1386,30 +1362,29 @@ class Mapper(object):
             else:
                 instance = attributes.new_instance(self.class_)
                 
-            instance._entity_name = self.entity_name
-            instance._instance_key = identitykey
-
             if self.__should_log_debug:
                 self.__log_debug("_instance(): created new instance %s identity %s" % (mapperutil.instance_str(instance), str(identitykey)))
-
-            local_identity_map[identitykey] = instance
-            isnew = True
-        else:
-            # instance is already present
-            instance = local_identity_map[identitykey]
-            isnew = False
-
-        # populate.  note that we still call this for an instance already loaded as additional collection state is present
-        # in subsequent rows (i.e. eagerly loaded collections)
-        flags = {'instancekey':identitykey, 'isnew':isnew}
-        if 'populate_instance' not in extension.methods or extension.populate_instance(self, context, row, instance, only_load_props=only_load_props, **flags) is EXT_CONTINUE:
-            self.populate_instance(context, instance, row, only_load_props=only_load_props, **flags)
-        if 'append_result' not in extension.methods or extension.append_result(self, context, row, instance, result, **flags) is EXT_CONTINUE:
-            if result is not None:
-                result.append(instance)
+            
+            state = instance._state    
+            instance._entity_name = self.entity_name
+            instance._instance_key = identitykey
+            instance._sa_session_id = context.session.hash_key
+            session_identity_map[identitykey] = instance
         
-        return instance
+        if currentload or context.populate_existing or self.always_refresh or state.trigger:
+            if isnew:
+                state.timestamp = context.timestamp
+                state.trigger = None
+                context.progress.add(state)
 
+            if 'populate_instance' not in extension.methods or extension.populate_instance(self, context, row, instance, only_load_props=only_load_props, instancekey=identitykey, isnew=isnew) is EXT_CONTINUE:
+                self.populate_instance(context, instance, row, only_load_props=only_load_props, instancekey=identitykey, isnew=isnew)
+        
+        if result is not None and ('append_result' not in extension.methods or extension.append_result(self, context, row, instance, result, instancekey=identitykey, isnew=isnew) is EXT_CONTINUE):
+            result.append(instance)
+            
+        return instance
+                
     def _deferred_inheritance_condition(self, base_mapper, needs_tables):
         def visit_binary(binary):
             leftcol = binary.left

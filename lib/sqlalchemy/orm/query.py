@@ -11,6 +11,7 @@ from sqlalchemy.orm import mapper, object_mapper
 from sqlalchemy.orm import util as mapperutil
 from itertools import chain
 import warnings
+import time
 
 __all__ = ['Query', 'QueryContext']
 
@@ -722,11 +723,12 @@ class Query(object):
     def _execute_and_instances(self, querycontext):
         result = self.session.execute(querycontext.statement, params=self._params, mapper=self.mapper, instance=self._refresh_instance)
         try:
-            return iter(self.instances(result, querycontext=querycontext))
+            rows = result.fetchall()
+            return iter(self.instances(rows, querycontext=querycontext))
         finally:
             result.close()
 
-    def instances(self, cursor, *mappers_or_columns, **kwargs):
+    def instances(self, rows, *mappers_or_columns, **kwargs):
         """Return a list of mapped instances corresponding to the rows
         in a given *cursor* (i.e. ``ResultProxy``).
         
@@ -740,7 +742,10 @@ class Query(object):
         context = kwargs.pop('querycontext', None)
         if context is None:
             context = QueryContext(self)
-
+        
+        context.timestamp = time.time()
+        context.progress = util.Set()
+        
         process = []
         mappers_or_columns = tuple(self._entities) + mappers_or_columns
         if mappers_or_columns:
@@ -773,41 +778,57 @@ class Query(object):
                 else:
                     raise exceptions.InvalidRequestError("Invalid column expression '%r'" % m)
                     
-            result = []
-        else:
-            result = util.UniqueAppender([])
-        
         primary_mapper_args = dict(extension=context.extension, only_load_props=context.only_load_props, refresh_instance=context.refresh_instance)
-        
-        for row in cursor.fetchall():
-            if self._primary_adapter:
-                self.select_mapper._instance(context, self._primary_adapter(row), result, **primary_mapper_args)
+
+        def emit():
+            if context.refresh_instance and context.only_load_props and context.refresh_instance in pile:
+                context.refresh_instance.commit(context.only_load_props)
+                pile.remove(context.refresh_instance)
+                context.progress.remove(context.refresh_instance)
+                
+            for ii in pile:
+                obj = ii.obj()  # oof
+                context.attributes.get(('populating_mapper', id(obj)), object_mapper(obj))._post_instance(context, obj)
+                ii.commit_all()
+            context.progress = context.progress.difference(pile)
+            pile.clear()
+
+            if mappers_or_columns:
+                # needs work eh ? :)
+                ret = [o[1][0:len(o[1]) > 1 and -1 or 1 ] for o in process]
+                ret = zip(*([[lastinstance for x in ret[0]]] + ret))
+                for o in process:
+                    o[1][:] = o[1][-1:]
+                return list(util.OrderedSet(ret))
             else:
-                self.select_mapper._instance(context, row, result, **primary_mapper_args)
+                return [lastinstance]
+
+#        result = []
+        lastinstance = None
+        pile = util.Set()
+        for row in rows:
+            pile.update(context.progress)
+            if self._primary_adapter:
+                instance = self.select_mapper._instance(context, self._primary_adapter(row), None, **primary_mapper_args)
+            else:
+                instance = self.select_mapper._instance(context, row, None, **primary_mapper_args)
             for proc in process:
                 proc[0](context, row)
-
-        for instance in context.identity_map.values():
-            context.attributes.get(('populating_mapper', id(instance)), object_mapper(instance))._post_instance(context, instance)
-
-        # "refresh_instance" may be loaded from a row which has no primary key columns to identify it.
-        # this occurs during the load of the "joined" table in a joined-table inheritance mapper, and saves
-        # the need to join to the primary table in those cases.
-        if context.refresh_instance and context.only_load_props and context.refresh_instance.dict['_instance_key'] in context.identity_map:
-            # if refreshing partial instance, do special state commit
-            # affecting only the refreshed attributes
-            context.refresh_instance.commit(context.only_load_props)
-            del context.identity_map[context.refresh_instance.dict['_instance_key']]
             
-        # store new stuff in the identity map
-        for instance in context.identity_map.values():
-            session._register_persistent(instance)
-        
-        if mappers_or_columns:
-            return list(util.OrderedSet(zip(*([result] + [o[1] for o in process]))))
-        else:
-            return result.data
-
+            if lastinstance is None:
+                lastinstance = instance
+            elif lastinstance is not instance:
+                for x in emit():
+                    yield x
+#                result += emit()
+                lastinstance = instance
+            
+        if lastinstance is not None:
+            pile.update(context.progress)
+            for x in emit():
+                yield x
+#            result += emit()
+#        return result
 
     def _get(self, key=None, ident=None, refresh_instance=None, lockmode=None, only_load_props=None):
         lockmode = lockmode or self._lockmode

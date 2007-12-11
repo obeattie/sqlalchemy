@@ -372,7 +372,8 @@ class FilterTest(QueryTest):
 
         sess = create_session()
         user = sess.query(User).get(8)
-        assert [Address(id=2), Address(id=3), Address(id=4)] == sess.query(Address).filter(Address.user==user).all()
+        r = sess.query(Address).filter(Address.user==user).all()
+        assert [Address(id=2), Address(id=3), Address(id=4)] == r, repr(r)
 
         assert [Address(id=1), Address(id=5)] == sess.query(Address).filter(Address.user!=user).all()
 
@@ -696,7 +697,7 @@ class InstancesTest(QueryTest):
 
         def go():
             l = q.options(contains_alias('ulist'), contains_eager('addresses')).instances(query.execute())
-            assert fixtures.user_address_result == l
+            assert fixtures.user_address_result == l, repr(l) + "\n\n " + repr(fixtures.user_address_result)
         self.assert_sql_count(testbase.db, go, 1)
 
         sess.clear()
