@@ -8,6 +8,7 @@ from sqlalchemy import sql, util, exceptions, logging
 from sqlalchemy.sql import util as sql_util
 from sqlalchemy.sql import expression, visitors, operators
 from sqlalchemy.orm import mapper, object_mapper
+from sqlalchemy.orm.mapper import _state_mapper
 from sqlalchemy.orm import util as mapperutil
 from itertools import chain
 import warnings
@@ -722,17 +723,21 @@ class Query(object):
     
     def _execute_and_instances(self, querycontext):
         result = self.session.execute(querycontext.statement, params=self._params, mapper=self.mapper, instance=self._refresh_instance)
-        return iter(self.instances(result, querycontext=querycontext))
+        return self.iterate(result, querycontext=querycontext)
 
     def instances(self, cursor, *mappers_or_columns, **kwargs):
-        """Return a list of mapped instances corresponding to the rows
+        """returns the result of iterate() as a list."""
+        
+        return list(self.iterate(cursor, *mappers_or_columns, **kwargs))
+        
+    def iterate(self, cursor, *mappers_or_columns, **kwargs):
+        """Return an iterator of mapped instances corresponding to the rows
         in a given *cursor* (i.e. ``ResultProxy``).
         
         The \*mappers_or_columns and \**kwargs arguments are deprecated.
         To add instances or columns to the results, use add_entity()
         and add_column().
         """
-
         session = self.session
 
         context = kwargs.pop('querycontext', None)
@@ -742,9 +747,22 @@ class Query(object):
         context.timestamp = time.time()
         context.progress = util.Set()
         
-        process = []
+        
         mappers_or_columns = tuple(self._entities) + mappers_or_columns
-        if mappers_or_columns:
+        tuples = bool(mappers_or_columns)
+
+        primary_mapper_args = dict(extension=context.extension, only_load_props=context.only_load_props, refresh_instance=context.refresh_instance)
+
+        if self._primary_adapter:
+            def main(context, row):
+                return self.select_mapper._instance(context, self._primary_adapter(row), None, **primary_mapper_args)
+        else:
+            def main(context, row):
+                return self.select_mapper._instance(context, row, None, **primary_mapper_args)
+        
+        if tuples:
+            process = []
+            process.append(main)
             for tup in mappers_or_columns:
                 if isinstance(tup, tuple):
                     (m, alias, alias_id) = tup
@@ -754,80 +772,80 @@ class Query(object):
                     m = tup
                 if isinstance(m, type):
                     m = mapper.class_mapper(m)
+
                 if isinstance(m, mapper.Mapper):
                     def x(m):
                         row_adapter = clauses is not None and clauses.row_decorator or (lambda row: row)
-                        appender = []
                         def proc(context, row):
-                            if not m._instance(context, row_adapter(row), appender):
-                                appender.append(None)
-                        process.append((proc, appender))
+                            return m._instance(context, row_adapter(row), None)
+                        process.append(proc)
                     x(m)
                 elif isinstance(m, (sql.ColumnElement, basestring)):
                     def y(m):
                         row_adapter = clauses is not None and clauses.row_decorator or (lambda row: row)
                         res = []
                         def proc(context, row):
-                            res.append(row_adapter(row)[m])
-                        process.append((proc, res))
+                            return row_adapter(row)[m]
+                        process.append(proc)
                     y(m)
                 else:
                     raise exceptions.InvalidRequestError("Invalid column expression '%r'" % m)
-                    
-        primary_mapper_args = dict(extension=context.extension, only_load_props=context.only_load_props, refresh_instance=context.refresh_instance)
 
-        def emit():
+        def emit(lastrow):
             if context.refresh_instance and context.only_load_props and context.refresh_instance in pile:
                 context.refresh_instance.commit(context.only_load_props)
                 pile.remove(context.refresh_instance)
                 context.progress.remove(context.refresh_instance)
                 
             for ii in pile:
-                obj = ii.obj()  # oof
-                context.attributes.get(('populating_mapper', id(obj)), object_mapper(obj))._post_instance(context, obj)
+                context.attributes.get(('populating_mapper', ii), _state_mapper(ii))._post_instance(context, ii)
                 ii.commit_all()
+
             context.progress = context.progress.difference(pile)
             pile.clear()
-
-            if mappers_or_columns:
-                # needs work eh ? :)
-                ret = [o[1][0:len(o[1]) > 1 and -1 or 1 ] for o in process]
-                ret = zip(*([[lastinstance for x in ret[0]]] + ret))
-                for o in process:
-                    o[1][:] = o[1][-1:]
-                return list(util.OrderedSet(ret))
+            
+            if tuples:
+                # TODO: OrderedSet here will not pass the __hash__ t
+                if lastrow:
+                    r = list(util.OrderedSet(rows))
+                    rows[:] = []
+                else:
+                    r = list(util.OrderedSet(rows[0:-1]))
+                    rows[:-1] = []
+                return r
             else:
                 return [lastinstance]
 
-#        result = []
+        if tuples:
+            rows = []
+            
         lastinstance = None
         pile = util.Set()
         while True:
-            row = cursor.fetchone()
-            if not row:
+            batch = cursor.fetchmany(100)
+            if not batch:
                 break
-            pile.update(context.progress)
-            if self._primary_adapter:
-                instance = self.select_mapper._instance(context, self._primary_adapter(row), None, **primary_mapper_args)
-            else:
-                instance = self.select_mapper._instance(context, row, None, **primary_mapper_args)
-            for proc in process:
-                proc[0](context, row)
+            for row in batch:
+                pile.update(context.progress)
             
-            if lastinstance is None:
-                lastinstance = instance
-            elif lastinstance is not instance:
-                for x in emit():
-                    yield x
-#                result += emit()
-                lastinstance = instance
+                if tuples:
+                    newrow = tuple(proc(context, row) for proc in process)
+                    rows.append(newrow)
+                    instance = newrow[0]
+                else:
+                    instance = main(context, row)
+            
+                if lastinstance is None:
+                    lastinstance = instance
+                elif lastinstance is not instance:
+                    for x in emit(False):
+                        yield x
+                    lastinstance = instance
             
         if lastinstance is not None:
             pile.update(context.progress)
-            for x in emit():
+            for x in emit(True):
                 yield x
-#            result += emit()
-#        return result
 
     def _get(self, key=None, ident=None, refresh_instance=None, lockmode=None, only_load_props=None):
         lockmode = lockmode or self._lockmode

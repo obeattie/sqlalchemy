@@ -1332,6 +1332,8 @@ class Mapper(object):
             currentload = not isnew
             if currentload:
                 if state not in context.progress:
+                    if result is not None and ('append_result' not in extension.methods or extension.append_result(self, context, row, instance, result, instancekey=identitykey, isnew=isnew) is EXT_CONTINUE):
+                        result.append(instance)
                     return instance
             else:    
                 if context.version_check and self.version_id_col and self._get_attr_by_column(instance, self.version_id_col) != row[self.version_id_col]:
@@ -1469,12 +1471,12 @@ class Mapper(object):
             selectcontext.exec_with_path(self, key, populator, instance, row, ispostselect=ispostselect, isnew=isnew, **flags)
             
         if self.non_primary:
-            selectcontext.attributes[('populating_mapper', id(instance))] = self
+            selectcontext.attributes[('populating_mapper', instance._state)] = self
         
-    def _post_instance(self, selectcontext, instance):
+    def _post_instance(self, selectcontext, state):
         post_processors = selectcontext.attributes[('post_processors', self, None)]
         for p in post_processors:
-            p(instance)
+            p(state.obj())
 
     def _get_poly_select_loader(self, selectcontext, row):
         # 'select' or 'union'+col not present

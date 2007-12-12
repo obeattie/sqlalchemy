@@ -276,7 +276,7 @@ class CompileTest(QueryTest):
         session = create_session()
         s = session.query(User).filter(and_(addresses.c.email_address == bindparam('emailad'), Address.user_id==User.id)).compile()
 
-        l = session.query(User).instances(s.execute(emailad = 'jack@bean.com'))
+        l = list(session.query(User).instances(s.execute(emailad = 'jack@bean.com')))
         assert [User(id=7)] == l
 
 class SliceTest(QueryTest):
@@ -356,6 +356,7 @@ class FilterTest(QueryTest):
         sess = create_session()
         assert [Address(id=5)] == sess.query(Address).filter(Address.user.has(name='fred')).all()
 
+        print "--------------------"
         assert [Address(id=2), Address(id=3), Address(id=4), Address(id=5)] == sess.query(Address).filter(Address.user.has(User.name.like('%ed%'))).all()
 
         assert [Address(id=2), Address(id=3), Address(id=4)] == sess.query(Address).filter(Address.user.has(User.name.like('%ed%'), id=8)).all()
@@ -766,7 +767,7 @@ class InstancesTest(QueryTest):
         # test using string alias with more than one level deep
         def go():
             l = q.options(contains_eager('orders', alias='o1'), contains_eager('orders.items', alias='i1')).instances(query.execute())
-            assert fixtures.user_order_result == l
+            assert fixtures.user_order_result == l, [id(x) for x in l]
         self.assert_sql_count(testbase.db, go, 1)
 
         sess.clear()
@@ -820,6 +821,7 @@ class InstancesTest(QueryTest):
             assert q.all() == [(user8, address3)]
             sess.clear()
 
+            print "------------------------"
             q = sess.query(User, Address).join('addresses', aliased=aliased).options(eagerload('addresses')).filter_by(email_address='ed@bettyboop.com')
             assert q.all() == [(user8, address3)]
             sess.clear()
