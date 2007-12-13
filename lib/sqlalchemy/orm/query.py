@@ -725,21 +725,12 @@ class Query(object):
     
     def _execute_and_instances(self, querycontext):
         result = self.session.execute(querycontext.statement, params=self._params, mapper=self.mapper, instance=self._refresh_instance)
-        return self.iterate(result, querycontext=querycontext)
+        try:
+            return iter(self.instances(result, querycontext=querycontext))
+        finally:
+            result.close()
 
     def instances(self, cursor, *mappers_or_columns, **kwargs):
-        """returns the result of iterate() as a list."""
-        
-        return list(self.iterate(cursor, *mappers_or_columns, **kwargs))
-        
-    def iterate(self, cursor, *mappers_or_columns, **kwargs):
-        """Return an iterator of mapped instances corresponding to the rows
-        in a given *cursor* (i.e. ``ResultProxy``).
-        
-        The \*mappers_or_columns and \**kwargs arguments are deprecated.
-        To add instances or columns to the results, use add_entity()
-        and add_column().
-        """
         session = self.session
 
         context = kwargs.pop('querycontext', None)
@@ -793,61 +784,25 @@ class Query(object):
                 else:
                     raise exceptions.InvalidRequestError("Invalid column expression '%r'" % m)
 
-        def emit(lastrow):
-            if context.refresh_instance and context.only_load_props and context.refresh_instance in pile:
-                context.refresh_instance.commit(context.only_load_props)
-                pile.remove(context.refresh_instance)
-                context.progress.remove(context.refresh_instance)
-                
-            for ii in pile:
-                context.attributes.get(('populating_mapper', ii), _state_mapper(ii))._post_instance(context, ii)
-                ii.commit_all()
-
-            context.progress.difference_update(pile)
-            pile.clear()
-            
-            if tuples:
-                # TODO: OrderedSet here will not pass the __hash__ test
-                if lastrow:
-                    r = list(util.OrderedSet(rows))
-                    rows[:] = []
-                else:
-                    r = list(util.OrderedSet(rows[0:-1]))
-                    rows[:-1] = []
-                return r
-            else:
-                return [lastinstance]
-
+        context.progress = util.Set()    
         if tuples:
-            rows = []
-            
-        lastinstance = None
-        pile = util.Set()
-        while True:
-            batch = cursor.fetchmany(100)
-            if not batch:
-                break   
-            for row in batch:
-                pile.update(context.progress)
-            
-                if tuples:
-                    newrow = tuple(proc(context, row) for proc in process)
-                    rows.append(newrow)
-                    instance = newrow[0]
-                else:
-                    instance = main(context, row)
-            
-                if lastinstance is None:
-                    lastinstance = instance
-                elif lastinstance is not instance:
-                    for x in emit(False):
-                        yield x
-                    lastinstance = instance
-            
-        if lastinstance is not None:
-            pile.update(context.progress)
-            for x in emit(True):
-                yield x
+            rows = util.OrderedSet()
+            for row in cursor.fetchall():
+                rows.add(tuple(proc(context, row) for proc in process))
+        else:
+            rows = util.UniqueAppender([])
+            for row in cursor.fetchall():
+                rows.append(main(context, row))
+
+        if context.refresh_instance and context.only_load_props and context.refresh_instance in context.progress:
+            context.refresh_instance.commit(context.only_load_props)
+            context.progress.remove(context.refresh_instance)
+
+        for ii in context.progress:
+            context.attributes.get(('populating_mapper', ii), _state_mapper(ii))._post_instance(context, ii)
+            ii.commit_all()
+
+        return list(rows)
 
     def _get(self, key=None, ident=None, refresh_instance=None, lockmode=None, only_load_props=None):
         lockmode = lockmode or self._lockmode

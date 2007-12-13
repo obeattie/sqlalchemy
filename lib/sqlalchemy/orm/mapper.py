@@ -1331,17 +1331,8 @@ class Mapper(object):
             isnew = state.runid != context.runid
             currentload = not isnew
             
-            if currentload:
-                if state not in context.progress:
-                    if self.__should_log_debug:
-                        self.__log_debug("_instance(): found deja vu on instance %s identity %s" % (mapperutil.instance_str(instance), str(identitykey)))
-                        
-                    if result is not None and ('append_result' not in extension.methods or extension.append_result(self, context, row, instance, result, instancekey=identitykey, isnew=isnew) is EXT_CONTINUE):
-                        result.append(instance)
-                    return instance
-            else:    
-                if context.version_check and self.version_id_col and self._get_attr_by_column(instance, self.version_id_col) != row[self.version_id_col]:
-                    raise exceptions.ConcurrentModificationError("Instance '%s' version of %s does not match %s" % (instance, self._get_attr_by_column(instance, self.version_id_col), row[self.version_id_col]))
+            if not currentload and context.version_check and self.version_id_col and self._get_attr_by_column(instance, self.version_id_col) != row[self.version_id_col]:
+                raise exceptions.ConcurrentModificationError("Instance '%s' version of %s does not match %s" % (instance, self._get_attr_by_column(instance, self.version_id_col), row[self.version_id_col]))
             
         else:
             if self.__should_log_debug:

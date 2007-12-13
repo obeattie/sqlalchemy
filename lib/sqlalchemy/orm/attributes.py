@@ -254,12 +254,10 @@ class AttributeImpl(object):
         raise NotImplementedError()
     
     def get_committed_value(self, state):
-        if state.committed_state is not None:
-            if self.key not in state.committed_state:
-                self.get(state)
+        if state.committed_state is not None and self.key in state.committed_state:
             return state.committed_state.get(self.key)
         else:
-            return None
+            return self.get(state)
             
     def set_committed_value(self, state, value):
         """set an attribute value on the given instance and 'commit' it.
@@ -775,7 +773,10 @@ class InstanceState(object):
         
         self.committed_state = {}
         self.modified = False
+
         for attr in _managed_attributes(self.class_):
+            # TODO: time to start moving this commit to a first-access trigger,
+            # for all impls except mutable
             if attr.impl.key in self.dict:
                 attr.impl.commit_to_state(self, self.dict[attr.impl.key])
 

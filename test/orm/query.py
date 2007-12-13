@@ -374,6 +374,8 @@ class FilterTest(QueryTest):
 
         sess = create_session()
         user = sess.query(User).get(8)
+        print user
+        print user.addresses
         r = sess.query(Address).filter(Address.user==user).all()
         assert [Address(id=2), Address(id=3), Address(id=4)] == r, repr(r)
 
