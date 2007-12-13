@@ -197,6 +197,7 @@ class OneToManyDP(DependencyProcessor):
         else:
             for state in deplist:
                 (added, unchanged, deleted) = uowcommit.get_attribute_history(state, self.key, passive=True)
+                print "HISTORY ON KEY", self.key, (added, unchanged, deleted)
                 if added or deleted:
                     for child in added:
                         self._synchronize(state, child, None, False, uowcommit)
@@ -328,6 +329,7 @@ class ManyToOneDP(DependencyProcessor):
         else:
             for state in deplist:
                 (added, unchanged, deleted) = uowcommit.get_attribute_history(state, self.key,passive=True)
+                print "AUD,KEY ", self.key , ":", (added, unchanged, deleted)
                 if added or deleted or unchanged:
                     for child in added:
                         self._synchronize(state, child, None, False, uowcommit)

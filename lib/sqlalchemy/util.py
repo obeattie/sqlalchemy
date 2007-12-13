@@ -464,26 +464,30 @@ class OrderedSet(Set):
     __or__ = union
 
     def intersection(self, other):
-      return self.__class__([a for a in self if a in other])
+        other = Set(other)
+        return self.__class__([a for a in self if a in other])
 
     __and__ = intersection
 
     def symmetric_difference(self, other):
-      result = self.__class__([a for a in self if a not in other])
-      result.update([a for a in other if a not in self])
-      return result
+        other = Set(other)
+        result = self.__class__([a for a in self if a not in other])
+        result.update([a for a in other if a not in self])
+        return result
 
     __xor__ = symmetric_difference
 
     def difference(self, other):
-      return self.__class__([a for a in self if a not in other])
+        other = Set(other)
+        return self.__class__([a for a in self if a not in other])
 
     __sub__ = difference
 
     def intersection_update(self, other):
-      Set.intersection_update(self, other)
-      self._list = [ a for a in self._list if a in other]
-      return self
+        other = Set(other)
+        Set.intersection_update(self, other)
+        self._list = [ a for a in self._list if a in other]
+        return self
 
     __iand__ = intersection_update
 
@@ -496,9 +500,9 @@ class OrderedSet(Set):
     __ixor__ = symmetric_difference_update
 
     def difference_update(self, other):
-      Set.difference_update(self, other)
-      self._list = [ a for a in self._list if a in self]
-      return self
+        Set.difference_update(self, other)
+        self._list = [ a for a in self._list if a in self]
+        return self
 
     __isub__ = difference_update
 
@@ -512,6 +516,7 @@ class IdentitySet(object):
 
     def __init__(self, iterable=None):
         self._members = _IterableUpdatableDict()
+        self._tempset = Set
         if iterable:
             for o in iterable:
                 self.add(o)
@@ -601,7 +606,7 @@ class IdentitySet(object):
         result = type(self)()
         # testlib.pragma exempt:__hash__
         result._members.update(
-            Set(self._members.iteritems()).union(_iter_id(iterable)))
+            self._tempset(self._members.iteritems()).union(_iter_id(iterable)))
         return result
 
     def __or__(self, other):
@@ -623,7 +628,7 @@ class IdentitySet(object):
         result = type(self)()
         # testlib.pragma exempt:__hash__
         result._members.update(
-            Set(self._members.iteritems()).difference(_iter_id(iterable)))
+            self._tempset(self._members.iteritems()).difference(_iter_id(iterable)))
         return result
 
     def __sub__(self, other):
@@ -645,7 +650,7 @@ class IdentitySet(object):
         result = type(self)()
         # testlib.pragma exempt:__hash__
         result._members.update(
-            Set(self._members.iteritems()).intersection(_iter_id(iterable)))
+            self._tempset(self._members.iteritems()).intersection(_iter_id(iterable)))
         return result
 
     def __and__(self, other):
@@ -667,7 +672,7 @@ class IdentitySet(object):
         result = type(self)()
         # testlib.pragma exempt:__hash__
         result._members.update(
-            Set(self._members.iteritems()).symmetric_difference(_iter_id(iterable)))
+            self._tempset(self._members.iteritems()).symmetric_difference(_iter_id(iterable)))
         return result
 
     def __xor__(self, other):
@@ -725,6 +730,7 @@ class OrderedIdentitySet(IdentitySet):
     def __init__(self, iterable=None):
         IdentitySet.__init__(self)
         self._members = OrderedDict()
+        self._tempset = OrderedSet
         if iterable:
             for o in iterable:
                 self.add(o)

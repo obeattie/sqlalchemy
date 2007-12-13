@@ -10,7 +10,7 @@ class DynamicAttributeImpl(attributes.AttributeImpl):
     def __init__(self, class_, key, typecallable, target_mapper, **kwargs):
         super(DynamicAttributeImpl, self).__init__(class_, key, typecallable, **kwargs)
         self.target_mapper = target_mapper
-        
+
     def get(self, state, passive=False):
         if passive:
             return self._get_collection(state, passive=True).added_items
@@ -22,6 +22,25 @@ class DynamicAttributeImpl(attributes.AttributeImpl):
 
     def get_collection(self, state, user_data=None):
         return self._get_collection(state, passive=True).added_items
+
+    def fire_append_event(self, state, value, initiator):
+        state.modified = True
+
+        if self.trackparent and value is not None:
+            self.sethasparent(value._state, True)
+        instance = state.obj()
+        for ext in self.extensions:
+            ext.append(instance, value, initiator or self)
+
+    def fire_remove_event(self, state, value, initiator):
+        state.modified = True
+
+        if self.trackparent and value is not None:
+            self.sethasparent(value._state, False)
+
+        instance = state.obj()
+        for ext in self.extensions:
+            ext.remove(instance, value, initiator or self)
         
     def set(self, state, value, initiator):
         if initiator is self:
