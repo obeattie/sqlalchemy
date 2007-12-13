@@ -17,9 +17,6 @@ class DynamicAttributeImpl(attributes.AttributeImpl):
         else:
             return AppenderQuery(self, state)
 
-    def commit_to_state(self, state, value):
-        pass
-
     def get_collection(self, state, user_data=None):
         return self._get_collection(state, passive=True).added_items
 

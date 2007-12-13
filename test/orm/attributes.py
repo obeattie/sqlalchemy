@@ -567,6 +567,44 @@ class HistoryTest(PersistTest):
         f.someattr = None
         self.assertEquals(attributes.get_history(f._state, 'someattr'), ([None], [], ['new']))
 
+    def test_mutable_scalar(self):
+        class Foo(fixtures.Base):
+            pass
+
+        attributes.register_class(Foo)
+        attributes.register_attribute(Foo, 'someattr', uselist=False, useobject=False, mutable_scalars=True, copy_function=dict)
+
+        # case 1.  new object
+        f = Foo()
+        self.assertEquals(attributes.get_history(f._state, 'someattr'), ([], [], []))
+
+        f.someattr = {'foo':'hi'}
+        self.assertEquals(attributes.get_history(f._state, 'someattr'), ([{'foo':'hi'}], [], []))
+
+        f._state.commit(['someattr'])
+        self.assertEquals(attributes.get_history(f._state, 'someattr'), ([], [{'foo':'hi'}], []))
+        self.assertEquals(f._state.committed_state['someattr'], {'foo':'hi'})
+
+        f.someattr['foo'] = 'there'
+        self.assertEquals(f._state.committed_state['someattr'], {'foo':'hi'})
+
+        self.assertEquals(attributes.get_history(f._state, 'someattr'), ([{'foo':'there'}], [], [{'foo':'hi'}]))
+        f._state.commit(['someattr'])
+
+        self.assertEquals(attributes.get_history(f._state, 'someattr'), ([], [{'foo':'there'}], []))
+
+        # case 2.  object with direct dictionary settings (similar to a load operation)
+        f = Foo()
+        f.__dict__['someattr'] = {'foo':'new'}
+        self.assertEquals(attributes.get_history(f._state, 'someattr'), ([], [{'foo':'new'}], []))
+
+        f.someattr = {'foo':'old'}
+        self.assertEquals(attributes.get_history(f._state, 'someattr'), ([{'foo':'old'}], [], [{'foo':'new'}]))
+
+        f._state.commit(['someattr'])
+        self.assertEquals(attributes.get_history(f._state, 'someattr'), ([], [{'foo':'old'}], []))
+
+
     def test_use_object(self):
         class Foo(fixtures.Base):
             pass
@@ -652,7 +690,7 @@ class HistoryTest(PersistTest):
         f = Foo()
         collection = attributes.init_collection(f, 'someattr')
         collection.append_without_event(new)
-        f._state.init_loaded()
+        f._state.commit_all()
         self.assertEquals(attributes.get_history(f._state, 'someattr'), ([], [new], []))
 
         f.someattr = [old]
@@ -701,7 +739,7 @@ class HistoryTest(PersistTest):
         f.__dict__['id'] = 1
         collection = attributes.init_collection(f, 'someattr')
         collection.append_without_event(new)
-        f._state.init_loaded()
+        f._state.commit_all()
         self.assertEquals(attributes.get_history(f._state, 'someattr'), ([], [new], []))
 
         f.someattr.append(old)
@@ -713,15 +751,13 @@ class HistoryTest(PersistTest):
         f = Foo()
         collection = attributes.init_collection(f, 'someattr')
         collection.append_without_event(new)
-        f._state.init_loaded()
+        f._state.commit_all()
         print f._state.dict
         self.assertEquals(attributes.get_history(f._state, 'someattr'), ([], [new], []))
         
         f.id = 1
         f.someattr.remove(new)
         self.assertEquals(attributes.get_history(f._state, 'someattr'), ([], [], [new]))
-        
-        
         
     def test_collections_via_backref(self):
         class Foo(fixtures.Base):

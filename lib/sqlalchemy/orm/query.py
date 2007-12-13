@@ -800,7 +800,7 @@ class Query(object):
 
         for ii in context.progress:
             context.attributes.get(('populating_mapper', ii), _state_mapper(ii))._post_instance(context, ii)
-            ii.init_loaded()
+            ii.commit_all()
 
         return list(rows)
 

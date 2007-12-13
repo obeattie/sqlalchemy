@@ -75,9 +75,6 @@ class ProxiedAttribute(InstrumentedAttribute):
         def __init__(self, key):
             self.key = key
         
-        def commit_to_state(self, state, value):
-            pass
-            
     def __init__(self, key, user_prop, comparator=None):
         self.user_prop = user_prop
         self.comparator = comparator
@@ -236,7 +233,9 @@ class AttributeImpl(object):
         raise NotImplementedError()
     
     def get_committed_value(self, state):
-        if state.committed_state is not None and self.key in state.committed_state:
+        """return the unchanged value of this attribute"""
+        
+        if self.key in state.committed_state:
             return state.committed_state.get(self.key)
         else:
             return self.get(state)
@@ -255,7 +254,7 @@ class AttributeImpl(object):
         if state.committed_state is not None:
             state.commit_attr(self, value)
         # remove per-instance callable, if any
-        state.callables.pop(self, None)
+        state.callables.pop(self.key, None)
         state.dict[self.key] = value
         return value
 
@@ -264,27 +263,17 @@ class ScalarAttributeImpl(AttributeImpl):
 
     accepts_global_callable = True
     
-    def __init__(self, class_, key, callable_, compare_function=None, mutable_scalars=False, **kwargs):
+    def __init__(self, class_, key, callable_, compare_function=None, **kwargs):
         super(ScalarAttributeImpl, self).__init__(class_, key, callable_, compare_function=compare_function, **kwargs)
 
     def delete(self, state):
         del state.dict[self.key]
         state.modified=True
 
-    def commit_to_state(self, state, value):
-        state.committed_state[self.key] = value
-
     def get_history(self, state, passive=False):
         return _create_history(self, state, state.dict.get(self.key, NO_VALUE))
 
     def set(self, state, value, initiator):
-        """Set a value on the given InstanceState.
-
-        `initiator` is the ``InstrumentedAttribute`` that initiated the
-        ``set()` operation and is used to control the depth of a circular
-        setter operation.
-        """
-
         if initiator is self:
             return
 
@@ -303,14 +292,11 @@ class MutableScalarAttributeImpl(ScalarAttributeImpl):
         super(ScalarAttributeImpl, self).__init__(class_, key, callable_, compare_function=compare_function, **kwargs)
         class_._class_state.has_mutable_scalars = True
         if copy_function is None:
-            copy_function = self.__copy
-        
+            raise exceptions.ArgumentError("MutableScalarAttributeImpl requires a copy function")
         self.copy = copy_function
 
-    def __copy(self, item):
-        # scalar values are assumed to be immutable unless a copy function
-        # is passed
-        return item
+    def get_history(self, state, passive=False):
+        return _create_history(self, state, state.dict.get(self.key, NO_VALUE))
 
     def commit_to_state(self, state, value):
         state.committed_state[self.key] = self.copy(value)
@@ -324,15 +310,14 @@ class MutableScalarAttributeImpl(ScalarAttributeImpl):
             return False
 
     def set(self, state, value, initiator):
-        """Set a value on the given InstanceState.
-
-        `initiator` is the ``InstrumentedAttribute`` that initiated the
-        ``set()` operation and is used to control the depth of a circular
-        setter operation.
-        """
-
         if initiator is self:
             return
+
+        if self.key not in state.committed_state:
+            if self.key in state.dict:
+                state.committed_state[self.key] = self.copy(state.dict[self.key])
+            else:
+                state.committed_state[self.key] = NO_VALUE
 
         state.dict[self.key] = value
         state.modified=True
@@ -449,9 +434,6 @@ class CollectionAttributeImpl(AttributeImpl):
                 return (None, None, None)
             else:
                 return _create_history(self, state, current)
-
-    def commit_to_state(self, state, value):
-        state.committed_state[self.key] = self.copy(value)
 
     def fire_append_event(self, state, value, initiator):
         if self.key not in state.committed_state:
@@ -608,7 +590,7 @@ class CollectionAttributeImpl(AttributeImpl):
         if state.committed_state is not None:
             state.commit_attr(self, value)
         # remove per-instance callable, if any
-        state.callables.pop(self, None)
+        state.callables.pop(self.key, None)
         state.dict[self.key] = value
         return value
 
@@ -836,7 +818,10 @@ class InstanceState(object):
         self.callables.pop(key, None)
         
     def commit_attr(self, attr, value):    
-        attr.commit_to_state(self, value)
+        if hasattr(attr, 'commit_to_state'):
+            attr.commit_to_state(self, value)
+        else:
+            self.committed_state.pop(attr.key, None)
         self.pending.pop(attr.key, None)
         self.appenders.pop(attr.key, None)
         
@@ -847,21 +832,21 @@ class InstanceState(object):
         which were refreshed from the database.
         """
         
-        for key in keys:
-            if key in self.dict:
+        if self.class_._class_state.has_mutable_scalars:
+            for key in keys:
                 attr = getattr(self.class_, key).impl
-                attr.commit_to_state(self, self.dict[key])
-            self.pending.pop(key, None)
-            self.appenders.pop(key, None)
-    
-    def init_loaded(self):
-        self.committed_state = {}
-        self.modified = False
-        self.pending = {}
-        self.appenders = {}
-        # remove strong ref
-        self._strong_obj = None
-        
+                if hasattr(attr, 'commit_to_state') and attr.key in self.dict:
+                    attr.commit_to_state(self, self.dict[attr.key])
+                else:
+                    self.committed_state.pop(attr.key, None)
+                self.pending.pop(key, None)
+                self.appenders.pop(key, None)
+        else:
+            for key in keys:
+                self.committed_state.pop(key, None)
+                self.pending.pop(key, None)
+                self.appenders.pop(key, None)
+            
     def commit_all(self):
         """commit all attributes unconditionally.
         
@@ -871,15 +856,14 @@ class InstanceState(object):
         
         self.committed_state = {}
         self.modified = False
-
-        for attr in _managed_attributes(self.class_):
-            # TODO: time to start moving this commit to a first-access trigger,
-            # for all impls except mutable
-            if attr.impl.key in self.dict:
-                attr.impl.commit_to_state(self, self.dict[attr.impl.key])
-
         self.pending = {}
         self.appenders = {}
+
+        if self.class_._class_state.has_mutable_scalars:
+            for attr in _managed_attributes(self.class_):
+                if hasattr(attr.impl, 'commit_to_state') and attr.impl.key in self.dict:
+                    attr.impl.commit_to_state(self, self.dict[attr.impl.key])
+
         # remove strong ref
         self._strong_obj = None
         
