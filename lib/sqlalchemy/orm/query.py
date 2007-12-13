@@ -16,6 +16,8 @@ import time
 
 __all__ = ['Query', 'QueryContext']
 
+_runid = 1
+
 class Query(object):
     """Encapsulates the object-fetching operations provided by Mappers."""
     
@@ -744,9 +746,10 @@ class Query(object):
         if context is None:
             context = QueryContext(self)
         
-        context.timestamp = time.time()
+        global _runid
+        context.runid = _runid
+        _runid += 1
         context.progress = util.Set()
-        
         
         mappers_or_columns = tuple(self._entities) + mappers_or_columns
         tuples = bool(mappers_or_columns)
@@ -783,7 +786,6 @@ class Query(object):
                 elif isinstance(m, (sql.ColumnElement, basestring)):
                     def y(m):
                         row_adapter = clauses is not None and clauses.row_decorator or (lambda row: row)
-                        res = []
                         def proc(context, row):
                             return row_adapter(row)[m]
                         process.append(proc)
@@ -801,11 +803,11 @@ class Query(object):
                 context.attributes.get(('populating_mapper', ii), _state_mapper(ii))._post_instance(context, ii)
                 ii.commit_all()
 
-            context.progress = context.progress.difference(pile)
+            context.progress.difference_update(pile)
             pile.clear()
             
             if tuples:
-                # TODO: OrderedSet here will not pass the __hash__ t
+                # TODO: OrderedSet here will not pass the __hash__ test
                 if lastrow:
                     r = list(util.OrderedSet(rows))
                     rows[:] = []
@@ -824,7 +826,7 @@ class Query(object):
         while True:
             batch = cursor.fetchmany(100)
             if not batch:
-                break
+                break   
             for row in batch:
                 pile.update(context.progress)
             

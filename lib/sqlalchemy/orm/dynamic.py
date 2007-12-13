@@ -10,17 +10,15 @@ class DynamicAttributeImpl(attributes.AttributeImpl):
     def __init__(self, class_, key, typecallable, target_mapper, **kwargs):
         super(DynamicAttributeImpl, self).__init__(class_, key, typecallable, **kwargs)
         self.target_mapper = target_mapper
-
+        
     def get(self, state, passive=False):
         if passive:
             return self._get_collection(state, passive=True).added_items
         else:
             return AppenderQuery(self, state)
 
-    def commit_to_state(self, state, value=attributes.NO_VALUE):
-        # we have our own AttributeHistory therefore dont need CommittedState
-        # instead, we reset the history stored on the attribute
-        state.dict[self.key] = CollectionHistory(self, state)
+    def commit_to_state(self, state, value):
+        pass
 
     def get_collection(self, state, user_data=None):
         return self._get_collection(state, passive=True).added_items

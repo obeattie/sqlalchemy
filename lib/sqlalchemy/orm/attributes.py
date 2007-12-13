@@ -73,10 +73,10 @@ class ProxiedAttribute(InstrumentedAttribute):
     class ProxyImpl(object):
         def __init__(self, key):
             self.key = key
-
-        def commit_to_state(self, state, value=NO_VALUE):
+        
+        def commit_to_state(self, state, value):
             pass
-
+            
     def __init__(self, key, user_prop, comparator=None):
         self.user_prop = user_prop
         self.comparator = comparator
@@ -143,15 +143,8 @@ class AttributeImpl(object):
             self.is_equal = compare_function
         self.extensions = util.to_list(extension or [])
 
-    def commit_to_state(self, state, value=NO_VALUE):
-        """Commits the object's current state to its 'committed' state."""
-
-        if value is NO_VALUE:
-            if self.key in state.dict:
-                value = state.dict[self.key]
-        if value is not NO_VALUE:
-            state.committed_state[self.key] = self.copy(value)
-        state.pending.pop(self.key, None)
+    def commit_to_state(self, state, value):
+        state.committed_state[self.key] = self.copy(value)
 
     def hasparent(self, state, optimistic=False):
         """Return the boolean value of a `hasparent` flag attached to the given item.
@@ -280,7 +273,7 @@ class AttributeImpl(object):
         """
 
         if state.committed_state is not None:
-            self.commit_to_state(state, value)
+            state.commit_attr(self, value)
         # remove per-instance callable, if any
         state.callables.pop(self, None)
         state.dict[self.key] = value
@@ -525,7 +518,7 @@ class CollectionAttributeImpl(AttributeImpl):
         value = user_data
 
         if state.committed_state is not None:
-            self.commit_to_state(state, value)
+            state.commit_attr(self, value)
         # remove per-instance callable, if any
         state.callables.pop(self, None)
         state.dict[self.key] = value
@@ -630,8 +623,9 @@ class InstanceState(object):
         self.callables = {}
         self.parents = {}
         self.pending = {}
+        self.appenders = {}
         self.instance_dict = None
-        self.timestamp = None
+        self.runid = None
         
     def __cleanup(self, ref):
         # tiptoe around Python GC unpredictableness
@@ -753,6 +747,11 @@ class InstanceState(object):
         self.dict.pop(key, None)
         self.callables.pop(key, None)
         
+    def commit_attr(self, attr, value):    
+        attr.commit_to_state(self, value)
+        self.pending.pop(attr.key, None)
+        self.appenders.pop(attr.key, None)
+        
     def commit(self, keys):
         """commit all attributes named in the given list of key names.
         
@@ -761,7 +760,11 @@ class InstanceState(object):
         """
         
         for key in keys:
-            getattr(self.class_, key).impl.commit_to_state(self)
+            if key in self.dict:
+                attr = getattr(self.class_, key).impl
+                attr.commit_to_state(self, self.dict[key])
+            self.pending.pop(key, None)
+            self.appenders.pop(key, None)
             
     def commit_all(self):
         """commit all attributes unconditionally.
@@ -773,7 +776,11 @@ class InstanceState(object):
         self.committed_state = {}
         self.modified = False
         for attr in _managed_attributes(self.class_):
-            attr.impl.commit_to_state(self)
+            if attr.impl.key in self.dict:
+                attr.impl.commit_to_state(self, self.dict[attr.impl.key])
+
+        self.pending = {}
+        self.appenders = {}
         # remove strong ref
         self._strong_obj = None
         

@@ -1328,10 +1328,14 @@ class Mapper(object):
             if self.__should_log_debug:
                 self.__log_debug("_instance(): using existing instance %s identity %s" % (mapperutil.instance_str(instance), str(identitykey)))
 
-            isnew = state.timestamp != context.timestamp
+            isnew = state.runid != context.runid
             currentload = not isnew
+            
             if currentload:
                 if state not in context.progress:
+                    if self.__should_log_debug:
+                        self.__log_debug("_instance(): found deja vu on instance %s identity %s" % (mapperutil.instance_str(instance), str(identitykey)))
+                        
                     if result is not None and ('append_result' not in extension.methods or extension.append_result(self, context, row, instance, result, instancekey=identitykey, isnew=isnew) is EXT_CONTINUE):
                         result.append(instance)
                     return instance
@@ -1375,7 +1379,7 @@ class Mapper(object):
         
         if currentload or context.populate_existing or self.always_refresh or state.trigger:
             if isnew:
-                state.timestamp = context.timestamp
+                state.runid = context.runid
                 state.trigger = None
                 context.progress.add(state)
 

@@ -169,6 +169,7 @@ class GetTest(QueryTest):
         userlist = s.query(User).all()
 
         u = userlist[0]
+
         u.name = 'foo'
         a = Address(name='ed')
         u.addresses.append(a)
