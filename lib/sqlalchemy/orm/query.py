@@ -762,6 +762,7 @@ class Query(object):
                 else:
                     clauses = alias = alias_id = None
                     m = tup
+
                 if isinstance(m, type):
                     m = mapper.class_mapper(m)
 
@@ -1301,7 +1302,6 @@ class QueryContext(object):
         self.version_check = query._version_check
         self.only_load_props = query._only_load_props
         self.refresh_instance = query._refresh_instance
-        self.identity_map = {}
         self.path = ()
         self.primary_columns = []
         self.secondary_columns = []
