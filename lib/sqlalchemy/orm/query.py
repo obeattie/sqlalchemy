@@ -16,7 +16,6 @@ import time
 
 __all__ = ['Query', 'QueryContext']
 
-_runid = 1
 
 class Query(object):
     """Encapsulates the object-fetching operations provided by Mappers."""
@@ -737,22 +736,21 @@ class Query(object):
         if context is None:
             context = QueryContext(self)
         
-        global _runid
-        context.runid = _runid
-        _runid += 1
-        context.progress = util.Set()
+        context.runid = _new_runid()
         
         mappers_or_columns = tuple(self._entities) + mappers_or_columns
         tuples = bool(mappers_or_columns)
 
-        primary_mapper_args = dict(extension=context.extension, only_load_props=context.only_load_props, refresh_instance=context.refresh_instance)
-
         if self._primary_adapter:
             def main(context, row):
-                return self.select_mapper._instance(context, self._primary_adapter(row), None, **primary_mapper_args)
+                return self.select_mapper._instance(context, self._primary_adapter(row), None, 
+                    extension=context.extension, only_load_props=context.only_load_props, refresh_instance=context.refresh_instance
+                )
         else:
             def main(context, row):
-                return self.select_mapper._instance(context, row, None, **primary_mapper_args)
+                return self.select_mapper._instance(context, row, None, 
+                    extension=context.extension, only_load_props=context.only_load_props, refresh_instance=context.refresh_instance
+                )
         
         if tuples:
             process = []
@@ -1319,4 +1317,16 @@ class QueryContext(object):
             return func(*args, **kwargs)
         finally:
             self.path = oldpath
+
+_runid = 1
+_id_lock = util.threading.Lock()
+
+def _new_runid():
+    global _runid
+    _id_lock.acquire()
+    try:
+        _runid += 1
+        return _runid
+    finally:
+        _id_lock.release()
 

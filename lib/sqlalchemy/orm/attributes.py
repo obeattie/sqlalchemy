@@ -255,9 +255,6 @@ class ScalarAttributeImpl(AttributeImpl):
 
     accepts_global_callable = True
     
-    def __init__(self, class_, key, callable_, compare_function=None, **kwargs):
-        super(ScalarAttributeImpl, self).__init__(class_, key, callable_, compare_function=compare_function, **kwargs)
-
     def delete(self, state):
         del state.dict[self.key]
         state.modified=True
@@ -1011,7 +1008,7 @@ def _create_history(attr, state, current):
             return ([], [], [])
         elif original is NO_VALUE:
             return ([current], [], [])
-        elif original is NEVER_SET or attr.is_equal(current, original):
+        elif original is NEVER_SET or attr.is_equal(current, original) is True:   # dont let ClauseElement expressions here trip things up
             return ([], [current], [])
         else:
             if original is not None:
