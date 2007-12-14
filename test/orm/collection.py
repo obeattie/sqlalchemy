@@ -313,6 +313,8 @@ class CollectionsTest(PersistTest):
                 self.data.insert(index, item)
             def pop(self, index=-1):
                 return self.data.pop(index)
+            def __getitem__(self, index):
+                return self.data[index]
             def extend(self):
                 assert False
             def __iter__(self):

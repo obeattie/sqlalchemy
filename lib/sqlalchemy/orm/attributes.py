@@ -241,15 +241,7 @@ class AttributeImpl(object):
             return self.get(state)
             
     def set_committed_value(self, state, value):
-        """set an attribute value on the given instance and 'commit' it.
-        
-        this indicates that the given value is the "persisted" value,
-        and history will be logged only if a newly set value is not
-        equal to this value.
-        
-        this is typically used by deferred/lazy attribute loaders
-        to set object attributes after the initial load.
-        """
+        """set an attribute value on the given instance and 'commit' it."""
 
         if state.committed_state is not None:
             state.commit_attr(self, value)
@@ -286,7 +278,9 @@ class ScalarAttributeImpl(AttributeImpl):
     type = property(lambda self: self.property.columns[0].type)
 
 class MutableScalarAttributeImpl(ScalarAttributeImpl):
-    """represents a scalar value-holding InstrumentedAttribute."""
+    """represents a scalar value-holding InstrumentedAttribute, which can detect
+    changes within the value itself.
+    """
     
     def __init__(self, class_, key, callable_, copy_function=None, compare_function=None, **kwargs):
         super(ScalarAttributeImpl, self).__init__(class_, key, callable_, compare_function=compare_function, **kwargs)
@@ -324,7 +318,7 @@ class MutableScalarAttributeImpl(ScalarAttributeImpl):
 
 
 class ScalarObjectAttributeImpl(ScalarAttributeImpl):
-    """represents a scalar class-instance holding InstrumentedAttribute.
+    """represents a scalar-holding InstrumentedAttribute, where the target object is also instrumented.
     
     Adds events to delete/set operations.
     """
@@ -399,6 +393,8 @@ class ScalarObjectAttributeImpl(ScalarAttributeImpl):
 class CollectionAttributeImpl(AttributeImpl):
     """A collection-holding attribute that instruments changes in membership.
 
+    Only handles collections of instrumented objects.
+
     InstrumentedCollectionAttribute holds an arbitrary, user-specified
     container object (defaulting to a list) and brokers access to the
     CollectionAdapter, a "view" onto that object that presents consistent
@@ -448,6 +444,13 @@ class CollectionAttributeImpl(AttributeImpl):
         instance = state.obj()
         for ext in self.extensions:
             ext.append(instance, value, initiator or self)
+
+    def fire_pre_remove_event(self, state, initiator):
+        if self.key not in state.committed_state:
+            if self.key in state.dict:
+                state.committed_state[self.key] = self.copy(state.dict[self.key])
+            else:
+                state.committed_state[self.key] = NO_VALUE
 
     def fire_remove_event(self, state, value, initiator):
         if self.key not in state.committed_state:
@@ -1045,7 +1048,6 @@ def _managed_attributes(class_):
 
 def get_history(state, key, **kwargs):
     return getattr(state.class_, key).impl.get_history(state, **kwargs)
-get_state_history = get_history
 
 def get_as_list(state, key, passive=False):
     """return an InstanceState attribute as a list, 

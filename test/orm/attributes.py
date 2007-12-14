@@ -734,6 +734,15 @@ class HistoryTest(PersistTest):
         f.someattr.remove(there)
         self.assertEquals(tuple([set(x) for x in attributes.get_history(f._state, 'someattr')]), (set(), set([hi]), set([there])))
         
+        f.someattr.append(old)
+        f.someattr.append(new)
+        self.assertEquals(tuple([set(x) for x in attributes.get_history(f._state, 'someattr')]), (set([new, old]), set([hi]), set([there])))
+        f._state.commit(['someattr'])
+        self.assertEquals(tuple([set(x) for x in attributes.get_history(f._state, 'someattr')]), (set(), set([new, old, hi]), set()))
+        
+        f.someattr.pop(0)
+        self.assertEquals(tuple([set(x) for x in attributes.get_history(f._state, 'someattr')]), (set(), set([new, old]), set([hi])))
+        
         # case 2.  object with direct settings (similar to a load operation)
         f = Foo()
         f.__dict__['id'] = 1
