@@ -274,6 +274,8 @@ def generate_round_trip_test(include_base=False, lazy_relation=True, redefine_co
         session.clear()
         
         id = c.company_id
+        print "----------------------------------"
+        print "PERSON JOIN:", person_join
         def go():
             c = session.query(Company).get(id)
             for e in c.employees:
