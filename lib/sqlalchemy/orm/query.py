@@ -1083,11 +1083,6 @@ class Query(object):
             if adapt_criterion:
                 # TODO - detect loading polymorphically, set up ClauseAdapter at the beginning
                 adapter = self._make_clause_adapter(from_obj)
-#                foo = []
-#                for c in context.primary_columns:
-#                    c2 = adapter.convert_element(c)
-#                    if c2 is None:
-#                        raise "no conversion available for "+ str(c) + " full selectable: " + str(from_obj)
                 context.primary_columns = [col for col in [adapter.convert_element(c) for c in context.primary_columns] if col is not None]
                 #context.primary_columns = [from_obj.corresponding_column(c) or c for c in context.primary_columns]
                 self._primary_adapter = self._make_primary_adapter(from_obj)
