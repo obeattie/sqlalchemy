@@ -196,19 +196,22 @@ def create_row_adapter(from_, to, equivalent_columns=None):
     adapter class itself *is* fairly expensive so caching should be used to prevent
     repeated calls to this function.
     """
+    return create_row_multi_adapter(from_, [(to, equivalent_columns)])
     
+def create_row_multi_adapter(from_, tuples):
     map = {}
-    for c in to.c:
-        corr = from_.corresponding_column(c)
-        if corr:
-            map[c] = corr
-        elif equivalent_columns:
-            if c in equivalent_columns:
-                for c2 in equivalent_columns[c]:
-                    corr = from_.corresponding_column(c2)
-                    if corr:
-                        map[c] = corr
-                        break
+    for to, equivalent_columns in tuples:
+        for c in to.c:
+            corr = from_.corresponding_column(c)
+            if corr:
+                map[c] = corr
+            elif equivalent_columns:
+                if c in equivalent_columns:
+                    for c2 in equivalent_columns[c]:
+                        corr = from_.corresponding_column(c2)
+                        if corr:
+                            map[c] = corr
+                            break
 
     class AliasedRow(object):
         def __init__(self, row):

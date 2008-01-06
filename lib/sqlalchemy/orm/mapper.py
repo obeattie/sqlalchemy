@@ -206,9 +206,26 @@ class Mapper(object):
         return prop
     
     def iterate_properties(self):
+        """return an iterator of all MapperProperty objects attached to this mapper."""
         self.compile()
         return self.__props.itervalues()
-    iterate_properties = property(iterate_properties, doc="returns an iterator of all MapperProperty objects.")
+    iterate_properties = property(iterate_properties)
+    
+    def iterate_polymorphic_properties(self):
+        """return an iterator of MapperProperty objects attached to this mapper and submappers.
+        
+        For the root mapper, all MapperProperty objects are iterated.  For 
+        inheriting mappers, only column-based properties are iterated.
+        """
+        for mapper in self.polymorphic_iterator():
+            if mapper is self:
+                for prop in mapper.iterate_properties:
+                    yield prop
+            else:
+                for prop in mapper.iterate_properties:
+                    if isinstance(prop, ColumnProperty):
+                        yield prop
+    iterate_polymorphic_properties = property(iterate_polymorphic_properties)
     
     def properties(self):
         raise NotImplementedError("Public collection of MapperProperty objects is provided by the get_property() and iterate_properties accessors.")

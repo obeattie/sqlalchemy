@@ -957,6 +957,17 @@ class Query(object):
     def compile(self):
         """compiles and returns a SQL statement based on the criterion and conditions within this Query."""
         return self._compile_context().statement
+    
+    def _make_primary_adapter(self, from_obj):
+        return mapperutil.create_row_multi_adapter(from_obj, 
+            [(m.local_table, m._get_equivalent_columns()) for m in self.mapper.polymorphic_iterator()]
+        )
+    
+    def _make_clause_adapter(self, from_obj):
+        equivs = {}
+        for m in self.mapper.polymorphic_iterator():
+            equivs.update(m._get_equivalent_columns())
+        return sql_util.ClauseAdapter(from_obj, equivalents=equivs)
         
     def _compile_context(self):
 
@@ -1011,7 +1022,11 @@ class Query(object):
         
         # TODO: for polymorphic, need to call select_mapper.iterate_polymorphic_properties.
         # this should be called in all cases.
-        for value in self.select_mapper.iterate_properties:
+        if self.select_mapper.polymorphic_fetch == 'union':
+            iterator = self.select_mapper.iterate_polymorphic_properties
+        else:
+            iterator = self.select_mapper.iterate_properties
+        for value in iterator:
             if self._only_load_props and value.key not in self._only_load_props:
                 continue
             context.exec_with_path(self.select_mapper, value.key, value.setup, context, only_load_props=self._only_load_props)
@@ -1067,10 +1082,15 @@ class Query(object):
         else:
             if adapt_criterion:
                 # TODO - detect loading polymorphically, set up ClauseAdapter at the beginning
-                adapter = sql_util.ClauseAdapter(from_obj, equivalents=self.mapper._get_equivalent_columns())
-                context.primary_columns = [adapter.convert_element(c) for c in context.primary_columns]
+                adapter = self._make_clause_adapter(from_obj)
+#                foo = []
+#                for c in context.primary_columns:
+#                    c2 = adapter.convert_element(c)
+#                    if c2 is None:
+#                        raise "no conversion available for "+ str(c) + " full selectable: " + str(from_obj)
+                context.primary_columns = [col for col in [adapter.convert_element(c) for c in context.primary_columns] if col is not None]
                 #context.primary_columns = [from_obj.corresponding_column(c) or c for c in context.primary_columns]
-                self._primary_adapter = mapperutil.create_row_adapter(from_obj, self.table, equivalent_columns=self.mapper._get_equivalent_columns())
+                self._primary_adapter = self._make_primary_adapter(from_obj)
                 print [c.key for c in context.primary_columns]
                 
             if adapt_criterion or self._distinct:
