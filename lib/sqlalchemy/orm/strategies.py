@@ -518,23 +518,28 @@ class EagerLoader(AbstractRelationLoader):
         
         if context.eager_joins:
             towrap = context.eager_joins
+            # TODO: this isnt going to work.  might need to adapt at *any* point in 
+            # an eager load chain
+            towrap_adapter = None
+            
         else:
-            if isinstance(context.from_clause, sql.Join):
-                towrap = context.from_clause
-            else:
-                towrap = localparent.mapped_table
-        
+            towrap = context.from_clause
+            # TODO: this isnt going to work.  might need to adapt at *any* point in 
+            # an eager load chain
+            towrap_adapter = context.query._parent_clause_adapter()
+            
         # create AliasedClauses object to build up the eager query.  this is cached after 1st creation.    
         try:
             clauses = self.clauses[path]
         except KeyError:
+            # TODO: may still need to tweak PAC to know about the parent mapper and whether or not its polymorphic
             clauses = mapperutil.PropertyAliasedClauses(self.parent_property, self.parent_property.polymorphic_primaryjoin, self.parent_property.polymorphic_secondaryjoin, parentclauses)
             self.clauses[path] = clauses
 
         # place the "row_decorator" from the AliasedClauses into the QueryContext, where it will
         # be picked up in create_row_processor() when results are fetched
         context.attributes[("eager_row_processor", path)] = clauses.row_decorator
-        
+
         if self.secondaryjoin is not None:
             context.eager_joins = sql.outerjoin(towrap, clauses.secondary, clauses.primaryjoin).outerjoin(clauses.alias, clauses.secondaryjoin)
             
@@ -544,7 +549,11 @@ class EagerLoader(AbstractRelationLoader):
             if self.order_by is False and self.secondary.default_order_by() is not None:
                 context.eager_order_by += clauses.secondary.default_order_by()
         else:
-            context.eager_joins = towrap.outerjoin(clauses.alias, clauses.primaryjoin)
+            if towrap_adapter:
+                primaryjoin = towrap_adapter.trqverse(clauses.primaryjoin)
+            else:
+                primaryjoin = clauses.primaryjoin
+            context.eager_joins = towrap.outerjoin(clauses.alias, primaryjoin)
 
             # ensure all the cols on the parent side are actually in the
             # columns clause (i.e. are not deferred), so that aliasing applied by the Query propagates 

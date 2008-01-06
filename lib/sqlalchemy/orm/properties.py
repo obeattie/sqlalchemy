@@ -234,7 +234,7 @@ class PropertyLoader(StrategizedProperty):
         else:
             self.backref = backref
         self.is_backref = is_backref
-
+    
     class Comparator(PropComparator):
         def __eq__(self, other):
             if other is None:
@@ -666,7 +666,11 @@ class PropertyLoader(StrategizedProperty):
         elif not mapper.class_mapper(self.parent.class_, compile=False)._get_property(self.key, raiseerr=False):
             raise exceptions.ArgumentError("Attempting to assign a new relation '%s' to a non-primary mapper on class '%s'.  New relations can only be added to the primary mapper, i.e. the very first mapper created for class '%s' " % (self.key, self.parent.class_.__name__, self.parent.class_.__name__))
 
+        if self.parent.get_select_mapper() is not self.parent:
+            self.parent.get_select_mapper()._adapt_inherited_property(self.key, self)
+
         super(PropertyLoader, self).do_init()
+
 
     def _is_self_referential(self):
         return self.parent.mapped_table is self.target or self.parent.select_table is self.target

@@ -503,9 +503,9 @@ class StrategizedProperty(MapperProperty):
 
 def build_path(mapper, key, prev=None):
     if prev:
-        return prev + (mapper.base_mapper, key)
+        return prev + (mapper.base_mapper.primary_mapper(), key)
     else:
-        return (mapper.base_mapper, key)
+        return (mapper.base_mapper.primary_mapper(), key)
 
 def serialize_path(path):
     if path is None:

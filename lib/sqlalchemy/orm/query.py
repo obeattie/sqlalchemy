@@ -413,6 +413,7 @@ class Query(object):
 
         currenttables = self._get_joinable_tables()
         
+        # TODO: reconcile with _parent_clause_adapter() !
         if self._clause_adapter and start is self.mapper:
             adapt_to = self._from_obj
         else:
@@ -963,6 +964,15 @@ class Query(object):
         """compiles and returns a SQL statement based on the criterion and conditions within this Query."""
         return self._compile_context().statement
     
+    def _parent_clause_adapter(self):
+        # TODO: cleanup!
+        if self._clause_adapter:
+            return self._clause_adapter
+        elif self.mapper is not self.select_mapper:
+            return sql_util.ClauseAdapter(from_obj, equivalents=self.select_mapper._get_equivalent_columns())
+        else:
+            return None
+                
     def _compile_context(self):
 
         context = QueryContext(self)
@@ -975,9 +985,15 @@ class Query(object):
         whereclause = self._criterion
 
         from_obj = self._from_obj
-
-        if not self._clause_adapter and whereclause and (self.mapper is not self.select_mapper):
-            whereclause = sql_util.ClauseAdapter(from_obj, equivalents=self.select_mapper._get_equivalent_columns()).traverse(whereclause)
+        
+        # TODO: reconcile with _parent_clause_adapter() !
+        if not self._clause_adapter and (self.mapper is not self.select_mapper):
+            _local_clause_adapter = sql_util.ClauseAdapter(from_obj, equivalents=self.select_mapper._get_equivalent_columns())
+        else:
+            _local_clause_adapter = None
+            
+        if _local_clause_adapter and whereclause:
+            whereclause = _local_clause_adapter.traverse(whereclause)
         
         order_by = self._order_by
         if order_by is False:
@@ -1005,7 +1021,6 @@ class Query(object):
             if self._only_load_props and value.key not in self._only_load_props:
                 continue
             context.exec_with_path(self.select_mapper, value.key, value.setup, context, only_load_props=self._only_load_props)
-
         # additional entities/columns, add those to selection criterion
         for tup in self._entities:
             (m, alias, alias_id) = tup
@@ -1075,13 +1090,19 @@ class Query(object):
             statement = sql.select(context.primary_columns + context.secondary_columns, whereclause, from_obj=from_obj, use_labels=True, for_update=for_update, order_by=util.to_list(order_by), **self._select_args())
             
             if context.eager_joins:
-                if self._clause_adapter:
-                    context.eager_joins = self._clause_adapter.traverse(context.eager_joins)
+                #if self._clause_adapter:
+                #    context.eager_joins = self._clause_adapter.traverse(context.eager_joins)
+                #elif _local_clause_adapter:
+                #    context.eager_joins = _local_clause_adapter.traverse(context.eager_joins)
+                    
                 statement.append_from(context.eager_joins, _copy_collection=False)
 
             if context.eager_order_by:
-                if self._clause_adapter:
-                    context.eager_order_by = self._clause_adapter.copy_and_process(context.eager_order_by)
+                #if self._clause_adapter:
+                #    context.eager_order_by = self._clause_adapter.copy_and_process(context.eager_order_by)
+                #elif _local_clause_adapter:
+                #    context.eager_order_by = _local_clause_adapter.copy_and_process(context.eager_order_by)
+                    
                 statement.append_order_by(*context.eager_order_by)
                 
         context.statement = statement
@@ -1364,7 +1385,7 @@ Query.logger = logging.class_logger(Query)
 class QueryContext(object):
     def __init__(self, query):
         self.query = query
-        self.mapper = query.mapper
+        self.mapper = query.select_mapper
         self.session = query.session
         self.extension = query._extension
         self.statement = None
@@ -1382,7 +1403,7 @@ class QueryContext(object):
     
     def exec_with_path(self, mapper, propkey, func, *args, **kwargs):
         oldpath = self.path
-        self.path += (mapper.base_mapper, propkey)
+        self.path += (mapper.base_mapper.primary_mapper(), propkey)
         try:
             return func(*args, **kwargs)
         finally:

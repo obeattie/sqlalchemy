@@ -20,12 +20,15 @@ class Manager(Person):
 class Boss(Manager):
     pass
 
+class Paperwork(fixtures.Base):
+    pass
 
 class PolymorphicQueryTest(ORMTest):
     keep_data = True
+    keep_mappers = True
     
     def define_tables(self, metadata):
-        global companies, people, engineers, managers, boss
+        global companies, people, engineers, managers, boss, paperwork
         
         companies = Table('companies', metadata, 
            Column('company_id', Integer, Sequence('company_id_seq', optional=True), primary_key=True),
@@ -55,6 +58,11 @@ class PolymorphicQueryTest(ORMTest):
             Column('golf_swing', String(30)),
             )
 
+        paperwork = Table('paperwork', metadata, 
+            Column('paperwork_id', Integer, primary_key=True),
+            Column('description', String(50)), 
+            Column('person_id', Integer, ForeignKey('people.person_id')))
+            
         # create the most awkward polymorphic selects possible; 
         # the union does not include the "people" table by itself nor does it have
         # "people.person_id" directly in it, and it also does not include at all
@@ -71,18 +79,33 @@ class PolymorphicQueryTest(ORMTest):
         mapper(Company, companies, properties={
             'employees':relation(Person)
         })
-        mapper(Person, people, select_table=person_join, polymorphic_on=people.c.type, polymorphic_identity='person', order_by=person_join.c.person_id)
+        mapper(Person, people, select_table=person_join, polymorphic_on=people.c.type, polymorphic_identity='person', order_by=person_join.c.person_id, 
+            properties={
+                'paperwork':relation(Paperwork)
+            })
         mapper(Engineer, engineers, inherits=Person, polymorphic_identity='engineer')
         mapper(Manager, managers, select_table=manager_join, inherits=Person, polymorphic_identity='manager')
         mapper(Boss, boss, inherits=Manager, polymorphic_identity='boss')
+        mapper(Paperwork, paperwork)
         
     def insert_data(self):
         c1 = Company(name="MegaCorp, Inc.")
         c2 = Company(name="Elbonia, Inc.")
-        e1 = Engineer(name="dilbert", engineer_name="dilbert", primary_language="java", status="regular engineer")
-        e2 = Engineer(name="wally", engineer_name="wally", primary_language="c++", status="regular engineer")
-        b1 = Boss(name="pointy haired boss", golf_swing="fore", manager_name="pointy", status="da boss")
-        m1 = Manager(name="dogbert", manager_name="dogbert", status="regular manager")
+        e1 = Engineer(name="dilbert", engineer_name="dilbert", primary_language="java", status="regular engineer", paperwork=[
+            Paperwork(description="tps report #1"),
+            Paperwork(description="tps report #2")
+        ])
+        e2 = Engineer(name="wally", engineer_name="wally", primary_language="c++", status="regular engineer", paperwork=[
+            Paperwork(description="tps report #3"),
+            Paperwork(description="tps report #4")
+        ])
+        b1 = Boss(name="pointy haired boss", golf_swing="fore", manager_name="pointy", status="da boss", paperwork=[
+            Paperwork(description="review #1"),
+        ])
+        m1 = Manager(name="dogbert", manager_name="dogbert", status="regular manager", paperwork=[
+            Paperwork(description="review #2"),
+            Paperwork(description="review #3")
+        ])
         c1.employees = [e1, e2, b1, m1]
         
         e3 = Engineer(name="vlad", engineer_name="vlad", primary_language="cobol", status="elbonian engineer")
@@ -97,11 +120,23 @@ class PolymorphicQueryTest(ORMTest):
         all_employees = [e1, e2, b1, m1, e3]
         c1_employees = [e1, e2, b1, m1]
         c2_employees = [e3]
+    
+    def test_print_attrs(self):
+        m = class_mapper(Person).get_select_mapper()
+        print "PROPS:", [p.key for p in m.iterate_properties]
+        sess = create_session()
+        q = sess.query(Person)
+        o =eagerload('paperwork')
+        q= q.options(o)
+        print o._get_paths(q, False)
+        print repr(class_mapper(Person))
         
     def test_load_all(self):
         sess = create_session()
         
-        self.assertEquals(sess.query(Person).all(), all_employees)
+        #self.assertEquals(sess.query(Person).all(), all_employees)
+
+        self.assertEquals(sess.query(Person).options(eagerload('paperwork')).all(), all_employees)
         
 if __name__ == "__main__":    
     testbase.main()
