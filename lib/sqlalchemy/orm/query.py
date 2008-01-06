@@ -35,7 +35,7 @@ class Query(object):
             self.mapper = mapper.class_mapper(class_or_mapper, entity_name=entity_name)
         else:
             self.mapper = class_or_mapper.compile()
-        self.select_mapper = self.mapper #.get_select_mapper().compile()
+        self.select_mapper = self.mapper
         
         self.table = self.mapper.mapped_table
         self.primary_key_columns = self.mapper.primary_key
@@ -61,7 +61,6 @@ class Query(object):
         self._aliases = None
         self._alias_ids = {}
         
-        # TODO: set up ClauseAdapter when _from_obj is configured to not self.table
         self._from_obj = self.mapper.select_table or self.table
         self._populate_existing = False
         self._version_check = False
@@ -70,10 +69,15 @@ class Query(object):
         self._attributes = {}
         self.__joinable_tables = {}
         self._current_path = ()
-        self._primary_adapter=None
+        self._row_adapter=None
         self._only_load_props = None
         self._refresh_instance = None
-    
+        self.__configure_clause_adapter()
+        
+    def _load_polymorphic(self):
+        # TODO: this will be configurable via options() (FetchModeOption)
+        return self.select_mapper.polymorphic_fetch == 'union'
+        
     def _no_criterion(self, meth):
         q = self._clone()
         
@@ -364,27 +368,20 @@ class Query(object):
         
         the criterion is any sql.ClauseElement applicable to the WHERE clause of a select.
         """
-        
+
+        if criterion is None:
+            return self
+            
         if isinstance(criterion, basestring):
             criterion = sql.text(criterion)
             
         if criterion is not None and not isinstance(criterion, sql.ClauseElement):
             raise exceptions.ArgumentError("filter() argument must be of type sqlalchemy.sql.ClauseElement or string")
         
-        if criterion is None:
-            raise "eh?"
         if self._aliases is not None:
             criterion = self._aliases.adapt_clause(criterion)
-        elif self.table not in self._get_joinable_tables():
-            print "FROMOBJ,", self._from_obj
-            # TODO: use query-wide ClauseAdapter 
-            criterion = sql_util.ClauseAdapter(self._from_obj, equivalents=self.mapper._get_equivalent_columns()).traverse(criterion)
-            print "YES,", criterion
-#            print self.table.c.person_id
-#            print self._from_obj.corresponding_column(self.table.c.person_id)
-            print "--------------------"
-        else:
-            print "NO,", criterion
+        elif self._clause_adapter:
+            criterion = self._clause_adapter.traverse(criterion)
             
         q = self._no_statement("filter")
         if q._criterion is not None:
@@ -418,9 +415,6 @@ class Query(object):
         clause = self._from_obj
 
         currenttables = self._get_joinable_tables()
-        # TODO: use query-wide ClauseAdapter for all of this, needs to 
-        # take mapper equiv cols into account
-        adapt_criterion = self.table not in currenttables
         
         mapper = start
         alias = self._aliases
@@ -438,13 +432,13 @@ class Query(object):
                             alias
                         )
                         crit = alias.primaryjoin
-                        if adapt_criterion:
-                            crit = sql_util.ClauseAdapter(clause).traverse(crit)
+                        if self._clause_adapter:
+                            crit = self._clause_adapter.traverse(crit)
                         clause = clause.join(alias.secondary, crit, isouter=outerjoin).join(alias.alias, alias.secondaryjoin, isouter=outerjoin)
                     else:
                         crit = prop.get_join(mapper, primary=True, secondary=False)
-                        if adapt_criterion:
-                            crit = sql_util.ClauseAdapter(clause).traverse(crit)
+                        if self._clause_adapter:
+                            crit = self._clause_adapter.traverse(crit)
                         clause = clause.join(prop.secondary, crit, isouter=outerjoin)
                         clause = clause.join(prop.select_table, prop.get_join(mapper, primary=False), isouter=outerjoin)
                 else:
@@ -455,13 +449,13 @@ class Query(object):
                             alias
                         )
                         crit = alias.primaryjoin
-                        if adapt_criterion:
-                            crit = sql_util.ClauseAdapter(clause).traverse(crit)
+                        if self._clause_adapter:
+                            crit = self._clause_adapter.traverse(crit)
                         clause = clause.join(alias.alias, crit, isouter=outerjoin)
                     else:
                         crit = prop.get_join(mapper)
-                        if adapt_criterion:
-                            crit = sql_util.ClauseAdapter(clause).traverse(crit)
+                        if self._clause_adapter:
+                            crit = self._clause_adapter.traverse(crit)
                         clause = clause.join(prop.select_table, crit, isouter=outerjoin)
             elif not create_aliases and prop.secondary is not None and prop.secondary not in currenttables:
                 # TODO: this check is not strong enough for different paths to the same endpoint which
@@ -662,11 +656,30 @@ class Query(object):
             # alias SELECTs and unions
             from_obj = from_obj.alias()
 
-        # TODO: set up ClauseAdapter here
-            
         new._from_obj = from_obj
+        new.__configure_clause_adapter()
+            
         return new
-        
+    
+    def __configure_clause_adapter(self):
+        if self.table not in self._get_joinable_tables():
+            if self._load_polymorphic():
+                self._row_adapter = mapperutil.create_row_multi_adapter(self._from_obj, 
+                    [(m.local_table, m._get_equivalent_columns()) for m in self.mapper.polymorphic_iterator()]
+                )
+
+                equivs = {}
+                for m in self.mapper.polymorphic_iterator():
+                    equivs.update(m._get_equivalent_columns())
+            else:
+                equivs = self.mapper._get_equivalent_columns()
+                self._row_adapter = mapperutil.create_row_adapter(self._from_obj, self.table, self.mapper._get_equivalent_columns)
+
+            self._clause_adapter = sql_util.ClauseAdapter(self._from_obj, equivalents=equivs)
+        else:
+            self._clause_adapter = self._row_adapter = None
+            
+
     def __getitem__(self, item):
         if isinstance(item, slice):
             start = item.start
@@ -801,9 +814,9 @@ class Query(object):
         mappers_or_columns = tuple(self._entities) + mappers_or_columns
         tuples = bool(mappers_or_columns)
 
-        if self._primary_adapter:
+        if self._row_adapter:
             def main(context, row):
-                return self.select_mapper._instance(context, self._primary_adapter(row), None, 
+                return self.select_mapper._instance(context, self._row_adapter(row), None, 
                     extension=context.extension, only_load_props=context.only_load_props, refresh_instance=context.refresh_instance
                 )
         else:
@@ -958,17 +971,6 @@ class Query(object):
         """compiles and returns a SQL statement based on the criterion and conditions within this Query."""
         return self._compile_context().statement
     
-    def _make_primary_adapter(self, from_obj):
-        return mapperutil.create_row_multi_adapter(from_obj, 
-            [(m.local_table, m._get_equivalent_columns()) for m in self.mapper.polymorphic_iterator()]
-        )
-    
-    def _make_clause_adapter(self, from_obj):
-        equivs = {}
-        for m in self.mapper.polymorphic_iterator():
-            equivs.update(m._get_equivalent_columns())
-        return sql_util.ClauseAdapter(from_obj, equivalents=equivs)
-        
     def _compile_context(self):
 
         context = QueryContext(self)
@@ -982,18 +984,6 @@ class Query(object):
 
         from_obj = self._from_obj
         
-        # indicates if the "from" clause of the query does not include 
-        # the normally mapped table, i.e. the user issued select_from(somestatement)
-        # or similar.  all clauses which derive from the mapped table will need to
-        # be adapted to be relative to the user-supplied selectable.
-        adapt_criterion = self.table not in self._get_joinable_tables()
-
-        #if not adapt_criterion and whereclause is not None and (self.mapper is not self.select_mapper):
-        #    whereclause = sql_util.ClauseAdapter(from_obj, equivalents=self.select_mapper._get_equivalent_columns()).traverse(whereclause)
-
-        # TODO: mappers added via add_entity(), adapt their queries also, 
-        # if those mappers are polymorphic
-
         order_by = self._order_by
         if order_by is False:
             order_by = self.mapper.order_by
@@ -1022,7 +1012,7 @@ class Query(object):
         
         # TODO: for polymorphic, need to call select_mapper.iterate_polymorphic_properties.
         # this should be called in all cases.
-        if self.select_mapper.polymorphic_fetch == 'union':
+        if self._load_polymorphic():
             iterator = self.select_mapper.iterate_polymorphic_properties
         else:
             iterator = self.select_mapper.iterate_properties
@@ -1059,15 +1049,15 @@ class Query(object):
                 for o in order_by:
                     cf.update(sql_util.find_columns(o))
 
-            if adapt_criterion:
-                context.primary_columns = [from_obj.corresponding_column(c) or c for c in context.primary_columns]
-                cf = [from_obj.corresponding_column(c) or c for c in cf]
+            if self._clause_adapter:
+                context.primary_columns = [self._clause_adapter.convert_element(c) or c for c in context.primary_columns]
+                cf = [self._clause_adapter.convert_element(c) or c for c in cf]
 
             s2 = sql.select(context.primary_columns + list(cf), whereclause, from_obj=context.from_clause, use_labels=True, correlate=False, order_by=util.to_list(order_by), **self._select_args())
             
             s3 = s2.alias()
                 
-            self._primary_adapter = mapperutil.create_row_adapter(s3, self.table)
+            self._row_adapter = mapperutil.create_row_adapter(s3, self.table)
 
             statement = sql.select([s3] + context.secondary_columns, for_update=for_update, use_labels=True)
 
@@ -1080,20 +1070,15 @@ class Query(object):
                 
             statement.append_order_by(*context.eager_order_by)
         else:
-            if adapt_criterion:
-                # TODO - detect loading polymorphically, set up ClauseAdapter at the beginning
-                adapter = self._make_clause_adapter(from_obj)
-                context.primary_columns = [col for col in [adapter.convert_element(c) for c in context.primary_columns] if col is not None]
-                #context.primary_columns = [from_obj.corresponding_column(c) or c for c in context.primary_columns]
-                self._primary_adapter = self._make_primary_adapter(from_obj)
-                print [c.key for c in context.primary_columns]
+            if self._clause_adapter:
+                context.primary_columns = [col for col in [self._clause_adapter.convert_element(c) for c in context.primary_columns] if col is not None]
                 
-            if adapt_criterion or self._distinct:
+            if self._clause_adapter or self._distinct:
                 if order_by:
                     order_by = [expression._literal_as_text(o) for o in util.to_list(order_by) or []]
 
-                    if adapt_criterion:
-                        order_by = sql_util.ClauseAdapter(from_obj).copy_and_process(order_by)
+                    if self._clause_adapter:
+                        order_by = self._clause_adapter.copy_and_process(order_by)
                     
                 if self._distinct and order_by:
                     cf = util.Set()
@@ -1105,13 +1090,13 @@ class Query(object):
             statement = sql.select(context.primary_columns + context.secondary_columns, whereclause, from_obj=from_obj, use_labels=True, for_update=for_update, order_by=util.to_list(order_by), **self._select_args())
             
             if context.eager_joins:
-                if adapt_criterion:
-                    context.eager_joins = sql_util.ClauseAdapter(from_obj).traverse(context.eager_joins)
+                if self._clause_adapter:
+                    context.eager_joins = self._clause_adapter.traverse(context.eager_joins)
                 statement.append_from(context.eager_joins, _copy_collection=False)
 
             if context.eager_order_by:
-                if adapt_criterion:
-                    context.eager_order_by = sql_util.ClauseAdapter(from_obj).copy_and_process(context.eager_order_by)
+                if self._clause_adapter:
+                    context.eager_order_by = self._clause_adapter.copy_and_process(context.eager_order_by)
                 statement.append_order_by(*context.eager_order_by)
                 
         context.statement = statement

@@ -100,6 +100,7 @@ class PolymorphicQueryTest(ORMTest):
         
     def test_load_all(self):
         sess = create_session()
+        
         self.assertEquals(sess.query(Person).all(), all_employees)
         
 if __name__ == "__main__":    

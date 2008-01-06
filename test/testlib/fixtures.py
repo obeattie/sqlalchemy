@@ -51,25 +51,25 @@ class Base(object):
                         # catch AttributeError so that lazy loaders trigger
                         battr = getattr(b, attr)
                     except AttributeError:
-                        #print "b class does not have attribute named '%s'" % attr
+                        print "b class does not have attribute named '%s'" % attr
                         return False
                     #print "other:", battr
                     if not hasattr(value, '__len__'):
                         value = list(iter(value))
                         battr = list(iter(battr))
                     if len(value) != len(battr):
-                        #print "Length of collection '%s' does not match that of b" % attr
+                        print "Length of collection '%s' does not match that of b" % attr
                         return False
                     for (us, them) in zip(value, battr):
                         if us != them:
-                            #print "1. Attribute named '%s' does not match b" % attr
+                            print "1. Attribute named '%s' does not match b" % attr
                             return False
                     else:
                         continue
                 else:
                     if value is not None:
                         if value != getattr(b, attr, None):
-                            #print "2. Attribute named '%s' does not match that of b" % attr
+                            print "2. Attribute named '%s' does not match that of b" % attr
                             return False
             else:
                 return True
