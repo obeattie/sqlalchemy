@@ -671,7 +671,7 @@ class PropertyLoader(StrategizedProperty):
     def _is_self_referential(self):
         return self.parent.mapped_table is self.target or self.parent.select_table is self.target
 
-    def get_join(self, parent, primary=True, secondary=True, polymorphic_parent=True):
+    def get_join(self, parent, primary=True, secondary=True, adapt_to=None):
         """return a join condition from the given parent mapper to this PropertyLoader's mapper.
         
            The resulting ClauseElement object is cached and should not be modified directly.
@@ -687,35 +687,49 @@ class PropertyLoader(StrategizedProperty):
               include the secondary join condition in the resulting join.  If both primary
               and secondary are returned, they are joined via AND.
               
-            polymorphic_parent
-              if True, use the parent's 'select_table' instead of its 'mapped_table' to produce the join.
         """
         
         try:
-            return self._parent_join_cache[(parent, primary, secondary, polymorphic_parent)]
+            if not adapt_to:
+                return self._parent_join_cache[(parent, primary, secondary)]
         except KeyError:
-            parent_equivalents = parent._get_equivalent_columns()
-            secondaryjoin = self.polymorphic_secondaryjoin
-            if polymorphic_parent:
-                # adapt the "parent" side of our join condition to the "polymorphic" select of the parent
-                if self.direction is sync.ONETOMANY:
-                    primaryjoin = ClauseAdapter(parent.select_table, exclude=self.foreign_keys, equivalents=parent_equivalents).traverse(self.polymorphic_primaryjoin, clone=True)
-                elif self.direction is sync.MANYTOONE:
-                    primaryjoin = ClauseAdapter(parent.select_table, include=self.foreign_keys, equivalents=parent_equivalents).traverse(self.polymorphic_primaryjoin, clone=True)
-                elif self.secondaryjoin:
-                    primaryjoin = ClauseAdapter(parent.select_table, exclude=self.foreign_keys, equivalents=parent_equivalents).traverse(self.polymorphic_primaryjoin, clone=True)
+            pass
+            
+        parent_equivalents = parent._get_equivalent_columns()
+        secondaryjoin = self.polymorphic_secondaryjoin
 
-            if secondaryjoin is not None:
-                if secondary and not primary:
-                    j = secondaryjoin
-                elif primary and secondary:
-                    j = primaryjoin & secondaryjoin
-                elif primary and not secondary:
-                    j = primaryjoin
+        if not adapt_to:
+            if parent.select_table is not parent.mapped_table:
+                # adapt the "parent" side of our join condition to the "polymorphic" select of the parent
+                clauseadapt = parent.select_table
             else:
+                clauseadapt = None
+        else:
+            clauseadapt = adapt_to
+            
+        if clauseadapt:
+            if self.direction is sync.ONETOMANY:
+                primaryjoin = ClauseAdapter(clauseadapt, exclude=self.foreign_keys, equivalents=parent_equivalents).traverse(self.polymorphic_primaryjoin, clone=True)
+            elif self.direction is sync.MANYTOONE:
+                primaryjoin = ClauseAdapter(clauseadapt, include=self.foreign_keys, equivalents=parent_equivalents).traverse(self.polymorphic_primaryjoin, clone=True)
+            elif self.secondaryjoin:
+                primaryjoin = ClauseAdapter(clauseadapt, exclude=self.foreign_keys, equivalents=parent_equivalents).traverse(self.polymorphic_primaryjoin, clone=True)
+        else:
+            primaryjoin = self.polymorphic_primaryjoin
+            
+        if secondaryjoin is not None:
+            if secondary and not primary:
+                j = secondaryjoin
+            elif primary and secondary:
+                j = primaryjoin & secondaryjoin
+            elif primary and not secondary:
                 j = primaryjoin
-            self._parent_join_cache[(parent, primary, secondary, polymorphic_parent)] = j
-            return j
+        else:
+            j = primaryjoin
+            
+        if not adapt_to:
+            self._parent_join_cache[(parent, primary, secondary)] = j
+        return j
 
     def register_dependencies(self, uowcommit):
         if not self.viewonly:

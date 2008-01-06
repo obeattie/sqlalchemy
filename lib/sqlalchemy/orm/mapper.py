@@ -1501,6 +1501,8 @@ class Mapper(object):
             return None
 
     def _deferred_inheritance_condition(self, base_mapper, needs_tables):
+        base_mapper = base_mapper.primary_mapper()
+        
         def visit_binary(binary):
             leftcol = binary.left
             rightcol = binary.right

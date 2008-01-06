@@ -185,7 +185,8 @@ class ClauseAdapter(AbstractClauseProcessor):
         self.include = include
         self.exclude = exclude
         self.equivalents = equivalents
-
+        self._cache = {}
+        
     def convert_element(self, col):
         if isinstance(col, expression.FromClause):
             if self.selectable.is_derived_from(col):
@@ -198,12 +199,16 @@ class ClauseAdapter(AbstractClauseProcessor):
         elif self.exclude and col in self.exclude:
             return None
         else:
-            newcol = self.selectable.corresponding_column(col, require_embedded=True)
-            if newcol is None and self.equivalents and col in self.equivalents:
-                for equiv in self.equivalents[col]:
-                    newcol = self.selectable.corresponding_column(equiv, require_embedded=True)
-                    if newcol:
-                        return newcol
-            return newcol
+            return self.convert_column(col)
 
-
+    def convert_column(self, col):
+        if col in self._cache:
+            return self._cache[col]
+        newcol = self.selectable.corresponding_column(col, require_embedded=True)
+        if newcol is None and self.equivalents and col in self.equivalents:
+            for equiv in self.equivalents[col]:
+                newcol = self.selectable.corresponding_column(equiv, require_embedded=True)
+                if newcol:
+                    break
+        self._cache[col] = newcol
+        return newcol

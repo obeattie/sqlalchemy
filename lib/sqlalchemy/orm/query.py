@@ -35,10 +35,7 @@ class Query(object):
             self.mapper = mapper.class_mapper(class_or_mapper, entity_name=entity_name)
         else:
             self.mapper = class_or_mapper.compile()
-        self.select_mapper = self.mapper
-        
-        self.table = self.mapper.mapped_table
-        self.primary_key_columns = self.mapper.primary_key
+        self.select_mapper = self.mapper.get_select_mapper()
         
         self._session = session
             
@@ -61,7 +58,8 @@ class Query(object):
         self._aliases = None
         self._alias_ids = {}
         
-        self._from_obj = self.mapper.select_table or self.table
+        self._from_obj = self.table
+        self._clause_adapter = self._row_adapter = None
         self._populate_existing = False
         self._version_check = False
         self._autoflush = True
@@ -72,7 +70,6 @@ class Query(object):
         self._row_adapter=None
         self._only_load_props = None
         self._refresh_instance = None
-        self.__configure_clause_adapter()
         
     def _load_polymorphic(self):
         # TODO: this will be configurable via options() (FetchModeOption)
@@ -109,8 +106,8 @@ class Query(object):
         else:
             return self._session
 
-    #table = property(lambda s:s.select_mapper.mapped_table)
-    #primary_key_columns = property(lambda s:s.select_mapper.primary_key)
+    table = property(lambda s:s.select_mapper.mapped_table)
+    primary_key_columns = property(lambda s:s.select_mapper.primary_key)
     session = property(_get_session)
 
     def _with_current_path(self, path):
@@ -416,6 +413,11 @@ class Query(object):
 
         currenttables = self._get_joinable_tables()
         
+        if self._clause_adapter and start is self.mapper:
+            adapt_to = self._from_obj
+        else:
+            adapt_to = None
+            
         mapper = start
         alias = self._aliases
         for key in util.to_list(keys):
@@ -427,35 +429,27 @@ class Query(object):
                 if prop.secondary:
                     if create_aliases:
                         alias = mapperutil.PropertyAliasedClauses(prop, 
-                            prop.get_join(mapper, primary=True, secondary=False),
-                            prop.get_join(mapper, primary=False, secondary=True),
+                            prop.get_join(mapper, primary=True, secondary=False, adapt_to=adapt_to),
+                            prop.get_join(mapper, primary=False, secondary=True, adapt_to=adapt_to),
                             alias
                         )
                         crit = alias.primaryjoin
-                        if self._clause_adapter:
-                            crit = self._clause_adapter.traverse(crit)
                         clause = clause.join(alias.secondary, crit, isouter=outerjoin).join(alias.alias, alias.secondaryjoin, isouter=outerjoin)
                     else:
-                        crit = prop.get_join(mapper, primary=True, secondary=False)
-                        if self._clause_adapter:
-                            crit = self._clause_adapter.traverse(crit)
+                        crit = prop.get_join(mapper, primary=True, secondary=False, adapt_to=adapt_to)
                         clause = clause.join(prop.secondary, crit, isouter=outerjoin)
                         clause = clause.join(prop.select_table, prop.get_join(mapper, primary=False), isouter=outerjoin)
                 else:
                     if create_aliases:
                         alias = mapperutil.PropertyAliasedClauses(prop, 
-                            prop.get_join(mapper, primary=True, secondary=False),
+                            prop.get_join(mapper, primary=True, secondary=False, adapt_to=adapt_to),
                             None,
                             alias
                         )
                         crit = alias.primaryjoin
-                        if self._clause_adapter:
-                            crit = self._clause_adapter.traverse(crit)
                         clause = clause.join(alias.alias, crit, isouter=outerjoin)
                     else:
-                        crit = prop.get_join(mapper)
-                        if self._clause_adapter:
-                            crit = self._clause_adapter.traverse(crit)
+                        crit = prop.get_join(mapper, adapt_to=adapt_to)
                         clause = clause.join(prop.select_table, crit, isouter=outerjoin)
             elif not create_aliases and prop.secondary is not None and prop.secondary not in currenttables:
                 # TODO: this check is not strong enough for different paths to the same endpoint which
@@ -657,27 +651,25 @@ class Query(object):
             from_obj = from_obj.alias()
 
         new._from_obj = from_obj
-        new.__configure_clause_adapter()
+        if new.table not in new._get_joinable_tables():
+            new.__configure_clause_adapter()
             
         return new
     
     def __configure_clause_adapter(self):
-        if self.table not in self._get_joinable_tables():
-            if self._load_polymorphic():
-                self._row_adapter = mapperutil.create_row_multi_adapter(self._from_obj, 
-                    [(m.local_table, m._get_equivalent_columns()) for m in self.mapper.polymorphic_iterator()]
-                )
+        if self._load_polymorphic():
+            self._row_adapter = mapperutil.create_row_multi_adapter(self._from_obj, 
+                [(m.local_table, m._get_equivalent_columns()) for m in self.mapper.polymorphic_iterator()]
+            )
 
-                equivs = {}
-                for m in self.mapper.polymorphic_iterator():
-                    equivs.update(m._get_equivalent_columns())
-            else:
-                equivs = self.mapper._get_equivalent_columns()
-                self._row_adapter = mapperutil.create_row_adapter(self._from_obj, self.table, self.mapper._get_equivalent_columns)
-
-            self._clause_adapter = sql_util.ClauseAdapter(self._from_obj, equivalents=equivs)
+            equivs = {}
+            for m in self.mapper.polymorphic_iterator():
+                equivs.update(m._get_equivalent_columns())
         else:
-            self._clause_adapter = self._row_adapter = None
+            equivs = self.mapper._get_equivalent_columns()
+            self._row_adapter = mapperutil.create_row_adapter(self._from_obj, self.table, self.mapper._get_equivalent_columns)
+
+        self._clause_adapter = sql_util.ClauseAdapter(self._from_obj, equivalents=equivs)
             
 
     def __getitem__(self, item):
@@ -983,6 +975,9 @@ class Query(object):
         whereclause = self._criterion
 
         from_obj = self._from_obj
+
+        if not self._clause_adapter and whereclause and (self.mapper is not self.select_mapper):
+            whereclause = sql_util.ClauseAdapter(from_obj, equivalents=self.select_mapper._get_equivalent_columns()).traverse(whereclause)
         
         order_by = self._order_by
         if order_by is False:
@@ -1006,17 +1001,7 @@ class Query(object):
 
         context.from_clause = from_obj
         
-        # give all the attached properties a chance to modify the query
-        # TODO: doing this off the select_mapper.  if its the polymorphic mapper, then
-        # it has no relations() on it.  should we compile those too into the query ?  (i.e. eagerloads)
-        
-        # TODO: for polymorphic, need to call select_mapper.iterate_polymorphic_properties.
-        # this should be called in all cases.
-        if self._load_polymorphic():
-            iterator = self.select_mapper.iterate_polymorphic_properties
-        else:
-            iterator = self.select_mapper.iterate_properties
-        for value in iterator:
+        for value in self.select_mapper.iterate_properties:
             if self._only_load_props and value.key not in self._only_load_props:
                 continue
             context.exec_with_path(self.select_mapper, value.key, value.setup, context, only_load_props=self._only_load_props)
@@ -1071,7 +1056,7 @@ class Query(object):
             statement.append_order_by(*context.eager_order_by)
         else:
             if self._clause_adapter:
-                context.primary_columns = [col for col in [self._clause_adapter.convert_element(c) for c in context.primary_columns] if col is not None]
+                context.primary_columns = [self._clause_adapter.convert_element(c) or c for c in context.primary_columns]
                 
             if self._clause_adapter or self._distinct:
                 if order_by:
@@ -1086,7 +1071,7 @@ class Query(object):
                         cf.update(sql_util.find_columns(o))
                     for c in cf:
                         context.primary_columns.append(c)
-                
+            
             statement = sql.select(context.primary_columns + context.secondary_columns, whereclause, from_obj=from_obj, use_labels=True, for_update=for_update, order_by=util.to_list(order_by), **self._select_args())
             
             if context.eager_joins:
