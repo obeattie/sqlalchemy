@@ -841,12 +841,19 @@ class InstancesTest(QueryTest):
         q2 = q.join('addresses', aliased=True).filter(User.name.like('%e%')).columns([User.name, Address.email_address])
         self.assertEquals(q2.all(), [(u'ed', u'ed@wood.com'), (u'ed', u'ed@bettyboop.com'), (u'ed', u'ed@lala.com'), (u'fred', u'fred@fred.com')])
         
+        q2 = q.columns([func.count(User.name)])
+        assert q2.one() == (4,)
+        
         sel = users.select(User.id.in_([7, 8])).alias()
         q2 = q.select_from(sel).columns([User.name])
         self.assertEquals(q2.all(), [(u'jack',), (u'ed',)])
+
+        u2 = users.alias()
+        q2 = q.select_from(sel).filter(u2.c.id>1).columns([users.c.name, sel.c.name, u2.c.name])
+        self.assertEquals(q2.all(), [(u'jack', u'jack', u'jack'), (u'jack', u'jack', u'ed'), (u'jack', u'jack', u'fred'), (u'jack', u'jack', u'chuck'), (u'ed', u'ed', u'jack'), (u'ed', u'ed', u'ed'), (u'ed', u'ed', u'fred'), (u'ed', u'ed', u'chuck')])
         
         q2 = q.select_from(sel).filter(users.c.id>1).columns([users.c.name, sel.c.name, User.name])
-        self.assertEquals(q2.all(), [])
+        self.assertEquals(q2.all(), [(u'jack', u'jack', u'jack'), (u'ed', u'ed', u'ed')])
         
     def test_multi_mappers(self):
 
