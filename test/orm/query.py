@@ -822,7 +822,32 @@ class InstancesTest(QueryTest):
         self.assert_sql_count(testing.db, go, 1)
         sess.clear()
 
-
+    def test_columns(self):
+        sess = create_session()
+        
+        q = sess.query(User)
+        q2 = q.columns([User.name, User.name + " " + cast(User.id, String)])
+        self.assertEquals(q2.all(), [(u'jack', u'jack 7'), (u'ed', u'ed 8'), (u'fred', u'fred 9'), (u'chuck', u'chuck 10')])
+        
+        q2 = q.columns([User.name.like('%j%'), func.count(User.name.like('%j%'))]).group_by(User.name.like('%j%'))
+        self.assertEquals(q2.all(), [(True, 1), (False, 3)])
+        
+        q2 = q.join('addresses').filter(User.name.like('%e%')).columns([User.name, Address.email_address])
+        self.assertEquals(q2.all(), [(u'ed', u'ed@wood.com'), (u'ed', u'ed@bettyboop.com'), (u'ed', u'ed@lala.com'), (u'fred', u'fred@fred.com')])
+        
+        q2 = q2.order_by(desc(Address.email_address))[1:3]
+        self.assertEquals(q2.all(), [(u'ed', u'ed@wood.com'), (u'ed', u'ed@lala.com')])
+        
+        q2 = q.join('addresses', aliased=True).filter(User.name.like('%e%')).columns([User.name, Address.email_address])
+        self.assertEquals(q2.all(), [(u'ed', u'ed@wood.com'), (u'ed', u'ed@bettyboop.com'), (u'ed', u'ed@lala.com'), (u'fred', u'fred@fred.com')])
+        
+        sel = users.select(User.id.in_([7, 8])).alias()
+        q2 = q.select_from(sel).columns([User.name])
+        self.assertEquals(q2.all(), [(u'jack',), (u'ed',)])
+        
+        q2 = q.select_from(sel).filter(users.c.id>1).columns([users.c.name, sel.c.name, User.name])
+        self.assertEquals(q2.all(), [])
+        
     def test_multi_mappers(self):
 
         test_session = create_session()

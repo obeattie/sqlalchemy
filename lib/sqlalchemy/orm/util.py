@@ -143,11 +143,24 @@ class AliasedClauses(object):
     """Creates aliases of a mapped tables for usage in ORM queries.
     """
 
-    def __init__(self, mapped_table, alias=None):
-        if alias:
-            self.alias = alias
+    def __init__(self, mapped_table, alias=None, equivalents=None, adapter=None):
+        if adapter:
+            if alias or equivalents:
+                raise exceptions.ArgumentError("Can't init AliasedClauses with alias or equivalents and adapter")
+            self.alias = adapter.selectable
+            self.equivalents = adapter.equivalents
+            self._adapter = adapter
         else:
-            self.alias = mapped_table.alias()
+            if adapter:
+                raise exceptions.ArgumentError("Can't init AliasedClauses with alias or equivalents and adapter")
+                
+            if alias:
+                self.alias = alias
+            else:
+                self.alias = mapped_table.alias()
+            self._adapter = sql_util.ClauseAdapter(self.alias, equivalents=equivalents)
+            self.equivalents=equivalents
+            
         self.mapped_table = mapped_table
         self.row_decorator = self._create_row_adapter()
         
@@ -160,24 +173,32 @@ class AliasedClauses(object):
             return conv
 
         aliased_column = column
+
         # for column-level subqueries, swap out its selectable with our
         # eager version as appropriate, and manually build the 
-        # "correlation" list of the subquery.  
+        # "correlation" list of the subquery. 
+        # TODO: this functionality should be rolled into ClauseAdapter
         class ModifySubquery(visitors.ClauseVisitor):
             def visit_select(s, select):
                 select._should_correlate = False
                 select.append_correlation(self.alias)
-        aliased_column = sql_util.ClauseAdapter(self.alias).chain(ModifySubquery()).traverse(aliased_column, clone=True)
+        aliased_column = sql_util.ClauseAdapter(self.alias, equivalents=self.equivalents).chain(ModifySubquery()).traverse(aliased_column, clone=True)
         aliased_column = aliased_column.label(None)
         self.row_decorator.map[column] = aliased_column
         return aliased_column
 
     def adapt_clause(self, clause):
-        return sql_util.ClauseAdapter(self.alias).traverse(clause, clone=True)
+        return self._adapter.traverse(clause, clone=True)
     
     def adapt_list(self, clauses):
-        return sql_util.ClauseAdapter(self.alias).copy_and_process(clauses)
-        
+        return self._adapter.copy_and_process(clauses)
+    
+    def copy_and_chain(self, aliasedclauses):
+        ac = AliasedClauses(self.mapped_table, alias=self.alias, equivalents=self.equivalents)
+        if aliasedclauses:
+            ac._adapter = ac._adapter.copy_and_chain(aliasedclauses._adapter)
+        return ac
+    
     def _create_row_adapter(self):
         """Return a callable which, 
         when passed a RowProxy, will return a new dict-like object
@@ -187,7 +208,7 @@ class AliasedClauses(object):
         of that table, in such a way that the row can be passed to logic which knows nothing about the aliased form
         of the table.
         """
-        return create_row_adapter(self.alias, self.mapped_table)
+        return create_row_adapter(self.alias, self.mapped_table, equivalent_columns=self.equivalents)
 
 
 class PropertyAliasedClauses(AliasedClauses):
