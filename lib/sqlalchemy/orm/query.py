@@ -331,9 +331,7 @@ class Query(object):
     def _add_column(self, column, id=None):
         if isinstance(column, interfaces.PropComparator):
             column = column.clause_element()
-            return _QueryEntity(column=column, alias=None, id=id)
-        else:
-            return _QueryEntity(column=column, alias=None, id=id, convert=False)
+        return _QueryEntity(column=column, alias=None, id=id)
         
     def options(self, *args):
         """Return a new Query object, applying the given list of
@@ -906,7 +904,10 @@ class Query(object):
             if main:
                 process.append(main)
             for query_entity in mappers_or_columns:
-                clauses = query_entity.clauses(self)
+                if not isinstance(query_entity, _QueryEntity):
+                    query_entity = _QueryEntity.legacy_guess_type(query_entity)
+                    
+                clauses = query_entity.get_entity_clauses(self) 
 
                 if query_entity.mapper:
                     def x(m):
@@ -915,7 +916,7 @@ class Query(object):
                             return m._instance(context, row_adapter(row), None)
                         process.append(proc)
                     x(query_entity.mapper)
-                elif query_entity.column:
+                elif query_entity.column and isinstance(query_entity.column, (sql.ColumnElement, basestring)):
                     def y(m):
                         row_adapter = clauses is not None and clauses.row_decorator or (lambda row: row)
                         def proc(context, row):
@@ -923,7 +924,7 @@ class Query(object):
                         process.append(proc)
                     y(query_entity.column)
                 else:
-                    raise exceptions.InvalidRequestError("Invalid column expression '%r'" % m)
+                    raise exceptions.InvalidRequestError("Invalid column expression '%r'" % query_entity.column)
 
         while True:
             context.progress = util.Set()
@@ -1106,13 +1107,17 @@ class Query(object):
                 context.exec_with_path(self.select_mapper, value.key, value.setup, context, only_load_props=self._only_load_props)
 
         # additional entities/columns, add those to selection criterion
-        for query_entity in self._entities:
-            if query_entity.mapper:
-                clauses = query_entity.clauses(self)
-                for value in query_entity.mapper.iterate_properties:
-                    context.exec_with_path(query_entity.mapper, value.key, value.setup, context, parentclauses=clauses)
-            elif query_entity.column:
-                context.secondary_columns.append(query_entity.aliased_column(self))
+        for tup in self._entities:
+            (m, alias, alias_id) = tup.tup
+            clauses = tup.get_entity_clauses(self)
+            if tup.mapper:
+                for value in tup.mapper.iterate_properties:
+                    context.exec_with_path(tup.mapper, value.key, value.setup, context, parentclauses=clauses)
+            elif tup.column and isinstance(m, sql.ColumnElement):
+                if clauses:
+                    context.secondary_columns.append(clauses.aliased_column(tup.column))
+                else:
+                    context.secondary_columns.append(tup.column)
 
         if self._eager_loaders and self._nestable(**self._select_args()):
             # eager loaders are present, and the SELECT has limiting criterion
@@ -1188,39 +1193,6 @@ class Query(object):
         """Return a dictionary of attributes that can be applied to a ``sql.Select`` statement.
         """
         return {'limit':self._limit, 'offset':self._offset, 'distinct':self._distinct, 'group_by':self._group_by or None, 'having':self._having or None}
-
-
-    def _get_entity_clauses(self, query_entity):
-        # TODO: move this to _QueryEntity
-        
-        if query_entity.alias:
-            return query_entity.alias
-        elif query_entity.alias_id is not None:
-            try:
-                return self._alias_ids[query_entity.alias_id]
-            except KeyError:
-                raise exceptions.InvalidRequestError("Query has no alias identified by '%s'" % query_entity.alias_id)
-
-        if query_entity.mapper:
-            l = self._alias_ids.get(query_entity.mapper)
-            if l:
-                if len(l) > 1:
-                    raise exceptions.InvalidRequestError("Ambiguous join for entity '%s'; specify id=<someid> to query.join()/query.add_entity()" % str(query_entity.mapper))
-                else:
-                    return l[0]
-            else:
-                return None
-        elif query_entity.column:
-            aliases = []
-            for table in sql_util.find_tables(query_entity.column, check_columns=True):
-                for a in self._alias_ids.get(table, []):
-                    aliases.append(a)
-            if len(aliases) > 1:
-                raise exceptions.InvalidRequestError("Ambiguous join for entity '%s'; specify id=<someid> to query.join()/query.add_column()" % str(query_entity.column))
-            elif len(aliases) == 1:
-                return aliases[0]
-            else:
-                return None
 
     def __log_debug(self, msg):
         self.logger.debug(msg)
@@ -1456,7 +1428,6 @@ for deprecated_method in ('list', 'scalar', 'count_by',
             util.deprecated(getattr(Query, deprecated_method),
                             add_deprecation_to_docstring=False))
 
-
 class _QueryEntity(object):
     def __init__(self, mapper=None, column=None, alias=None, id=None, convert=True):
         self.mapper = mapper
@@ -1466,21 +1437,51 @@ class _QueryEntity(object):
         self.alias = alias
         self.alias_id = id
         self.convert = convert
+        self.tup = (mapper or column, alias, id)
 
-    def clauses(self, query):
-        if self.convert:
-            return query._get_entity_clauses(self)
+    def get_entity_clauses(self, query):
+        if not self.convert:
+            return None
+        if self.alias is not None:
+            return self.alias
+        if self.alias_id:
+            try:
+                return query._alias_ids[self.alias_id]
+            except KeyError:
+                raise exceptions.InvalidRequestError("Query has no alias identified by '%s'" % self.alias_id)
+
+        if self.mapper:
+            l = query._alias_ids.get(self.mapper)
+            if l:
+                if len(l) > 1:
+                    raise exceptions.InvalidRequestError("Ambiguous join for entity '%s'; specify id=<someid> to query.join()/query.add_entity()" % str(self.mapper))
+                else:
+                    return l[0]
+            else:
+                return None
+        elif self.column and isinstance(self.column, sql.ColumnElement):
+            aliases = []
+            for table in sql_util.find_tables(self.column, check_columns=True):
+                for a in query._alias_ids.get(table, []):
+                    aliases.append(a)
+            if len(aliases) > 1:
+                raise exceptions.InvalidRequestError("Ambiguous join for entity '%s'; specify id=<someid> to query.join()/query.add_column()" % str(self.column))
+            elif len(aliases) == 1:
+                return aliases[0]
+            else:
+                return None
         else:
             return None
-    
-    def aliased_column(self, query):
-        if True or self.convert:
-            clauses = query._get_entity_clauses(self)
-            if clauses:
-                x = clauses.aliased_column(self.column)
-                print "X IS", repr(x)
-                return x
-        return self.column
+        
+    def legacy_guess_type(self, e):
+        if isinstance(e, type):
+            return _QueryEntity(mapper=mapper.class_mapper(e))
+        elif isinstance(e, mapper.Mapper):
+            return _QueryEntity(mapper=e)
+        else:
+            return _QueryEntity(column=e)
+    legacy_guess_type=classmethod(legacy_guess_type)
+        
         
 Query.logger = logging.class_logger(Query)
 
