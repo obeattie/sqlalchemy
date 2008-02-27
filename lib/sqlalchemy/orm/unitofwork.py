@@ -21,7 +21,7 @@ changes at once.
 
 import StringIO, weakref
 from sqlalchemy import util, logging, topological, exceptions
-from sqlalchemy.orm import attributes, interfaces
+from sqlalchemy.orm import attributes, interfaces, identity
 from sqlalchemy.orm import util as mapperutil
 from sqlalchemy.orm.mapper import object_mapper, _state_mapper
 
@@ -97,9 +97,9 @@ class UnitOfWork(object):
 
     def __init__(self, session):
         if session.weak_identity_map:
-            self.identity_map = attributes.WeakInstanceDict()
+            self.identity_map = identity.WeakInstanceDict()
         else:
-            self.identity_map = attributes.StrongInstanceDict()
+            self.identity_map = identity.StrongInstanceDict()
 
         self.new = {}   # InstanceState->object, strong refs object
         self.deleted = {}  # same

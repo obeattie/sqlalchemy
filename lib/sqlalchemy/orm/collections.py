@@ -1259,7 +1259,9 @@ def _set_decorators():
 
 class InstrumentedList(list):
     """An instrumented version of the built-in list."""
-
+    
+#    def __init__(self):
+#        raise "HI"
     __instrumentation__ = {
        'appender': 'append',
        'remover': 'remove',

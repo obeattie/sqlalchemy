@@ -1,91 +1,90 @@
 from sqlalchemy import *
 from sqlalchemy.orm import *
 
-from sqlalchemy.orm.attributes import ClassState, InstanceState
+from sqlalchemy.orm.attributes import InstrumentClass, set_attribute, get_attribute, del_attribute, is_instrumented
 
-class MyClassState(ClassState):
-    def instrument_attribute(self, key, inst):
-        self.attrs[key] = inst
-        
-    def pre_instrument_attribute(self, key, inst):
+class MyClassState(InstrumentClass):
+    
+    def instrument_attribute(self, class_, key, attr):
         pass
         
-    def is_instrumented(self, key):
-        return key in self.attrs
-
-    def get_impl(self, key):
-        # TODO: needs to work for superclasses too
-        return self.attrs[key].impl
+    def pre_instrument_attribute(self, class_, key, attr):
+        pass
+        
+    def instrument_collection_class(self, class_, key, collection_class):
+        return MyListLike
     
-    def get_inst(self, key):
-        # TODO: needs to work for superclasses too
-        return self.attrs[key]
+    def get_instance_dict(self, instance):
+        return instance._goofy_dict
         
-    def manage(self, instance, state=None):
-        if state:
-            # used during a weakref "resurrection"
-            instance.__dict__['_state'] = state
-        else:
-            instance.__dict__['_state'] = MyInstanceState(instance)
-            
-class MyInstanceState(InstanceState):
-    def __init__(self, obj):
-        InstanceState.__init__(self, obj)
-        self.dict = obj.__dict__['_goofy_dict'] = {}
+    def initialize_instance_dict(self, instance):
+        instance.__dict__['_goofy_dict'] = {}
 
-    def custom_get(self, key):
-        if self.class_._class_state.is_instrumented(key):
-            return self.get_impl(key).get(self)
-        else:
-            try:
-                return self.dict[key]
-            except KeyError:
-                raise AttributeError(key)
-            
-    def custom_set(self, key, value):
-        if self.class_._class_state.is_instrumented(key):
-            self.get_impl(key).set(self, value, None)
-        else:
-            self.dict[key] = value
-        
-    def custom_del(self, key):
-        if self.class_._class_state.is_instrumented(key):
-            self.get_impl(key).delete(self)
-        else:
-            try:
-                del self.dict[key]
-            except KeyError:
-                raise AttributeError(key)
-        
-meta = MetaData(create_engine('sqlite://'))
-
-table1 = Table('table1', meta, Column('id', Integer, primary_key=True), Column('name', Text))
-meta.create_all()
-
+class MyListLike(list):
+    # add @appender, @remover decorators as needed
+    pass
 
 class MyClass(object):
-    def __getattr__(self, key):
-        return self._state.custom_get(key)
-    
-    def __setattr__(self, key, value):
-        self._state.custom_set(key, value)
-    
-    def __delattr__(self, key):
-        self._state.custom_del(key)
+    __sa_instrument_class__ = MyClassState
+
+    def __init__(self, **kwargs):
+        for k in kwargs:
+            setattr(self, k, kwargs[k])
             
-MyClass._class_state = MyClassState(MyClass)
+    def __getattr__(self, key):
+        if is_instrumented(self, key):
+            return get_attribute(self, key)
+        else:
+            try:
+                return self._goofy_dict[key]
+            except KeyError:
+                raise AttributeError(key)
 
-mapper(MyClass, table1)
+    def __setattr__(self, key, value):
+        if is_instrumented(self, key):
+            set_attribute(self, key, value)
+        else:
+            self._goofy_dict[key] = value
+
+    def __delattr__(self, key):
+        if is_instrumented(self, key):
+            del_attribute(self, key)
+        else:
+            del self._goofy_dict[key]
+
+if __name__ == '__main__':
+    meta = MetaData(create_engine('sqlite://'))
+
+    table1 = Table('table1', meta, Column('id', Integer, primary_key=True), Column('name', Text))
+    table2 = Table('table2', meta, Column('id', Integer, primary_key=True), Column('name', Text), Column('t1id', Integer, ForeignKey('table1.id')))
+    meta.create_all()
+
+    class A(MyClass):
+        pass
     
-mc = MyClass()
-mc.name = 'my instance'
-assert mc.name == 'my instance'
+    class B(MyClass):
+        pass
+    
+    mapper(A, table1, properties={
+        'bs':relation(B)
+    })
+    
+    mapper(B, table2)
+    
+    a1 = A(name='a1', bs=[B(name='b1'), B(name='b2')])
 
-sess = create_session()
-sess.save(mc)
+    assert a1.name == 'a1'
+    assert a1.bs[0].name == 'b1'
+    assert isinstance(a1.bs, MyListLike)
+    
+    sess = create_session()
+    sess.save(a1)
 
-sess.flush()
-sess.clear()
+    sess.flush()
+    sess.clear()
 
-mc = sess.query(MyClass).get(mc.id)
-assert mc.name == 'my instance'
+    a1 = sess.query(A).get(a1.id)
+
+    assert a1.name == 'a1'
+    assert a1.bs[0].name == 'b1'
+    assert isinstance(a1.bs, MyListLike)

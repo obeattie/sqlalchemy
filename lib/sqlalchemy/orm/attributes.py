@@ -4,9 +4,8 @@
 # This module is part of SQLAlchemy and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
-import weakref, threading, operator
+import weakref, operator
 from itertools import chain
-import UserDict
 from sqlalchemy import util
 from sqlalchemy.orm import interfaces, collections
 from sqlalchemy.orm.util import identity_equal
@@ -895,6 +894,9 @@ class ClassState(object):
     
     def pre_instrument_attribute(self, key, inst):
         setattr(self.class_, key, inst)
+
+    def instrument_collection_class(self, key, collection_class):
+        return collection_class
         
     def is_instrumented(self, key):
         return key in self.class_.__dict__ and isinstance(self.class_.__dict__[key], InstrumentedAttribute)
@@ -911,130 +913,60 @@ class ClassState(object):
         else:
             instance._state = InstanceState(instance)
 
+class _ClassStateAdapter(ClassState):
+    def __init__(self, class_):
+        ClassState.__init__(self, class_)
+        self._instrument = class_.__sa_instrument_class__()
+        
+    def instrument_attribute(self, key, inst):
+        self.attrs[key] = inst
+        self._instrument.instrument_attribute(self.class_, key, inst)
 
+    def pre_instrument_attribute(self, key, inst):
+        self._instrument.pre_instrument_attribute(self.class_, key, inst)
 
-class WeakInstanceDict(UserDict.UserDict):
-    """similar to WeakValueDictionary, but wired towards 'state' objects."""
+    def instrument_collection_class(self, key, collection_class):
+        return self._instrument.instrument_collection_class(self.class_, key, collection_class)
 
-    def __init__(self, *args, **kw):
-        self._wr = weakref.ref(self)
-        # RLock because the mutex is used by a cleanup
-        # handler, which can be called at any time (including within an already mutexed block)
-        self._mutex = threading.RLock()
-        UserDict.UserDict.__init__(self, *args, **kw)
-
-    def __getitem__(self, key):
-        state = self.data[key]
-        o = state.obj()
-        if o is None:
-            o = state._check_resurrect(self)
-        if o is None:
-            raise KeyError, key
-        return o
-
-    def __contains__(self, key):
-        try:
-            state = self.data[key]
-            o = state.obj()
-            if o is None:
-                o = state._check_resurrect(self)
-        except KeyError:
-            return False
-        return o is not None
-
-    def has_key(self, key):
-        return key in self
-
-    def __repr__(self):
-        return "<InstanceDict at %s>" % id(self)
-
-    def __setitem__(self, key, value):
-        if key in self.data:
-            self._mutex.acquire()
-            try:
-                if key in self.data:
-                    self.data[key].instance_dict = None
-            finally:
-                self._mutex.release()
-        self.data[key] = value._state
-        value._state.instance_dict = self._wr
-
-    def __delitem__(self, key):
-        state = self.data[key]
-        state.instance_dict = None
-        del self.data[key]
-
-    def get(self, key, default=None):
-        try:
-            state = self.data[key]
-        except KeyError:
-            return default
+    def is_instrumented(self, key):
+        for cl in self.class_.__mro__[:-1]:
+            if hasattr(cl, '_class_state') and key in cl._class_state.attrs:
+                return True
         else:
-            o = state.obj()
-            if o is None:
-                # This should only happen
-                return default
-            else:
-                return o
+            return False
+        
+    def get_impl(self, key):
+        return self.get_inst(key).impl
 
-    def items(self):
-        L = []
-        for key, state in self.data.items():
-            o = state.obj()
-            if o is not None:
-                L.append((key, o))
-        return L
+    def get_inst(self, key):
+        for cl in self.class_.__mro__[:-1]:
+            if hasattr(cl, '_class_state') and key in cl._class_state.attrs:
+                return cl._class_state.attrs[key]
+        else:
+            raise AttributeError(key)
+    
+    def manage(self, instance, state=None):
+        self._instrument.initialize_instance_dict(instance)
+        ClassState.manage(self, instance, state=state)
+        instance._state.dict = self._instrument.get_instance_dict(instance)
+        
+class InstrumentClass(object):
 
-    def iteritems(self):
-        for state in self.data.itervalues():
-            value = state.obj()
-            if value is not None:
-                yield value._instance_key, value
+    def instrument_attribute(self, class_, key, attr):
+        setattr(self.class_, key, inst)
 
-    def iterkeys(self):
-        return self.data.iterkeys()
+    def pre_instrument_attribute(self, class_, key, attr):
+        setattr(self.class_, key, inst)
 
-    def __iter__(self):
-        return self.data.iterkeys()
+    def instrument_collection_class(self, class_, key, collection_class):
+        return collection_class
 
-    def __len__(self):
-        return len(self.values())
+    def get_instance_dict(self, instance):
+        return instance.__dict__
 
-    def itervalues(self):
-        for state in self.data.itervalues():
-            instance = state.obj()
-            if instance is not None:
-                yield instance
+    def initialize_instance_dict(self, instance):
+        pass
 
-    def values(self):
-        L = []
-        for state in self.data.values():
-            o = state.obj()
-            if o is not None:
-                L.append(o)
-        return L
-
-    def popitem(self):
-        raise NotImplementedError()
-
-    def pop(self, key, *args):
-        raise NotImplementedError()
-
-    def setdefault(self, key, default=None):
-        raise NotImplementedError()
-
-    def update(self, dict=None, **kwargs):
-        raise NotImplementedError()
-
-    def copy(self):
-        raise NotImplementedError()
-
-    def all_states(self):
-        return self.data.values()
-
-class StrongInstanceDict(dict):
-    def all_states(self):
-        return [o._state for o in self.values()]
 
 def _create_history(attr, state, current):
     original = state.committed_state.get(attr.key, NEVER_SET)
@@ -1150,7 +1082,10 @@ def new_instance(class_, state=None):
 
 def _init_class_state(class_):
     if not hasattr(class_, '_class_state') or class_._class_state.class_ is not class_:
-        class_._class_state = ClassState(class_)
+        if hasattr(class_, '__sa_instrument_class__'):
+            class_._class_state = _ClassStateAdapter(class_)
+        else:
+            class_._class_state = ClassState(class_)
 
 def register_class(class_, extra_init=None, on_exception=None, deferred_scalar_loader=None):
     # do a sweep first, this also helps some attribute extensions
@@ -1222,14 +1157,18 @@ def unregister_class(class_):
 def register_attribute(class_, key, uselist, useobject, callable_=None, proxy_property=None, mutable_scalars=False, **kwargs):
     _init_class_state(class_)
 
-    typecallable = kwargs.pop('typecallable', None)
-    comparator = kwargs.pop('comparator', None)
-
     if class_._class_state.is_instrumented(key):
         # this currently only occurs if two primary mappers are made for the same class.
         # TODO:  possibly have InstrumentedAttribute check "entity_name" when searching for impl.
         # raise an error if two attrs attached simultaneously otherwise
         return
+
+    if uselist:
+        typecallable = class_._class_state.instrument_collection_class(key, kwargs.pop('typecallable', None))
+    else:
+        typecallable = None
+        
+    comparator = kwargs.pop('comparator', None)
 
     if proxy_property:
         inst = ProxiedAttribute(key, proxy_property, comparator=comparator)
@@ -1251,3 +1190,16 @@ def init_collection(instance, key):
     attr = state.get_impl(key)
     user_data = attr.initialize(state)
     return attr.get_collection(state, user_data)
+
+def set_attribute(instance, key, value):
+    instance._state.get_impl(key).set(instance._state, value, None)
+    
+def get_attribute(instance, key):
+    return instance._state.get_impl(key).get(instance._state)
+    
+def del_attribute(instance, key):
+    instance._state.get_impl(key).delete(instance._state)
+
+def is_instrumented(instance, key):
+    return instance._class_state.is_instrumented(key)
+    
