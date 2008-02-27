@@ -221,7 +221,17 @@ class UserDefinedExtensionTest(TestBase):
             self.assertEquals(attributes.get_history(f1._state, 'bars'), ([b2], [b1], []))
             f1.bars.remove(b1)
             self.assertEquals(attributes.get_history(f1._state, 'bars'), ([b2], [], [b1]))
-
+    
+    def test_null_instrumentation(self):
+        class Foo(InstrumentClass):
+            pass
+        attributes.register_class(Foo)
+        attributes.register_attribute(Foo, "name", uselist=False, useobject=False)
+        attributes.register_attribute(Foo, "bars", uselist=True, trackparent=True, useobject=True)
+        
+        assert Foo.name == Foo._class_state.get_inst('name')
+        assert Foo.bars == Foo._class_state.get_inst('bars')
+        
 
 if __name__ == '__main__':
     testing.main()
