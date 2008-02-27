@@ -19,7 +19,7 @@ class MyClassState(ClassState):
     
     def get_inst(self, key):
         # TODO: needs to work for superclasses too
-        return self.attrs[key].impl
+        return self.attrs[key]
         
     def manage(self, instance, state=None):
         if state:
