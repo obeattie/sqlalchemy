@@ -64,13 +64,13 @@ class ColumnProperty(StrategizedProperty):
         return ColumnProperty(deferred=self.deferred, group=self.group, *self.columns)
 
     def getattr(self, state, column):
-        return getattr(state.class_, self.key).impl.get(state)
+        return state.get_impl(self.key).get(state)
 
     def getcommitted(self, state, column):
-        return getattr(state.class_, self.key).impl.get_committed_value(state)
+        return state.get_impl(self.key).get_committed_value(state)
 
     def setattr(self, state, value, column):
-        getattr(state.class_, self.key).impl.set(state, value, None)
+        state.get_impl(self.key).set(state, value, None)
 
     def merge(self, session, source, dest, dont_load, _recursive):
         value = attributes.get_as_list(source._state, self.key, passive=True)
@@ -112,19 +112,19 @@ class CompositeProperty(ColumnProperty):
         return CompositeProperty(deferred=self.deferred, group=self.group, composite_class=self.composite_class, *self.columns)
 
     def getattr(self, state, column):
-        obj = getattr(state.class_, self.key).impl.get(state)
+        obj = state.get_impl(self.key).get(state)
         return self.get_col_value(column, obj)
 
     def getcommitted(self, state, column):
-        obj = getattr(state.class_, self.key).impl.get_committed_value(state)
+        obj = state.get_impl(self.key).get_committed_value(state)
         return self.get_col_value(column, obj)
 
     def setattr(self, state, value, column):
         # TODO: test coverage for this method
-        obj = getattr(state.class_, self.key).impl.get(state)
+        obj = state.get_impl(self.key).get(state)
         if obj is None:
             obj = self.composite_class(*[None for c in self.columns])
-            getattr(state.class_, self.key).impl.set(state, obj, None)
+            state.get_impl(self.key).set(state, obj, None)
 
         for a, b in zip(self.columns, value.__composite_values__()):
             if a is column:
@@ -300,7 +300,7 @@ class PropertyLoader(StrategizedProperty):
                 j = self.prop.full_join_against(self.prop.parent, None, toselectable=to_selectable)
 
             for k in kwargs:
-                crit = (getattr(self.prop.mapper.class_, k) == kwargs[k])
+                crit = self.prop.mapper._class_state.get_inst(k) == kwargs[k]
                 if criterion is None:
                     criterion = crit
                 else:

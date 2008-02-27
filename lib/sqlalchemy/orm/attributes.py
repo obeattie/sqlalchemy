@@ -665,13 +665,6 @@ class GenericBackrefExtension(interfaces.AttributeExtension):
         if child is not None:
             getattr(child.__class__, self.key).impl.remove(child._state, instance, initiator, passive=True)
 
-class ClassState(object):
-    """tracks state information at the class level."""
-    def __init__(self):
-        self.mappers = {}
-        self.attrs = {}
-        self.has_mutable_scalars = False
-
 class InstanceState(object):
     """tracks state information at the instance level."""
 
@@ -719,6 +712,15 @@ class InstanceState(object):
         finally:
             instance_dict._mutex.release()
 
+    def get_history(self, key, **kwargs):
+        return self.class_._class_state.get_impl(key).get_history(self, **kwargs)
+    
+    def get_impl(self, key):
+        return self.class_._class_state.get_impl(key)
+    
+    def get_inst(self, key):
+        return self.class_._class_state.get_inst(key)
+        
     def get_pending(self, key):
         if key not in self.pending:
             self.pending[key] = PendingCollection()
@@ -768,7 +770,7 @@ class InstanceState(object):
             self.expire_attributes(state['expired_attributes'])
 
     def initialize(self, key):
-        getattr(self.class_, key).impl.initialize(self)
+        self.class_._class_state.get_impl(key).initialize(self)
 
     def set_callable(self, key, callable_):
         self.dict.pop(key, None)
@@ -820,7 +822,7 @@ class InstanceState(object):
                 self.dict.pop(key, None)
                 self.committed_state.pop(key, None)
                 self.expired_attributes.add(key)
-                if getattr(self.class_, key).impl.accepts_scalar_loader:
+                if self.class_._class_state.get_impl(key).accepts_scalar_loader:
                     self.callables[key] = self
 
     def reset(self, key):
@@ -845,7 +847,7 @@ class InstanceState(object):
 
         if self.class_._class_state.has_mutable_scalars:
             for key in keys:
-                attr = getattr(self.class_, key).impl
+                attr = self.class_._class_state.get_impl(key)
                 if hasattr(attr, 'commit_to_state') and attr.key in self.dict:
                     attr.commit_to_state(self, self.dict[attr.key])
                 else:
@@ -877,6 +879,38 @@ class InstanceState(object):
 
         # remove strong ref
         self._strong_obj = None
+
+class ClassState(object):
+    """tracks state information at the class level."""
+
+    def __init__(self, class_):
+        self.class_ = class_
+        self.mappers = {}
+        self.attrs = {}
+        self.has_mutable_scalars = False
+
+    def instrument_attribute(self, key, inst):
+        setattr(self.class_, key, inst)
+        self.attrs[key] = inst
+    
+    def pre_instrument_attribute(self, key, inst):
+        setattr(self.class_, key, inst)
+        
+    def is_instrumented(self, key):
+        return key in self.class_.__dict__ and isinstance(self.class_.__dict__[key], InstrumentedAttribute)
+
+    def get_impl(self, key):
+        return getattr(self.class_, key).impl
+    
+    def get_inst(self, key):
+        return getattr(self.class_, key)
+        
+    def manage(self, instance, state=None):
+        if state:
+            instance._state = state
+        else:
+            instance._state = InstanceState(instance)
+
 
 
 class WeakInstanceDict(UserDict.UserDict):
@@ -1060,7 +1094,7 @@ def _managed_attributes(class_):
     return chain(*[cl._class_state.attrs.values() for cl in class_.__mro__[:-1] if hasattr(cl, '_class_state')])
 
 def get_history(state, key, **kwargs):
-    return getattr(state.class_, key).impl.get_history(state, **kwargs)
+    return state.get_history(key, **kwargs)
 
 def get_as_list(state, key, passive=False):
     """return an InstanceState attribute as a list,
@@ -1071,7 +1105,7 @@ def get_as_list(state, key, passive=False):
     PASSIVE_NORESULT.
     """
 
-    attr = getattr(state.class_, key).impl
+    attr = state.get_impl(key)
     x = attr.get(state, passive=passive)
     if x is PASSIVE_NORESULT:
         return None
@@ -1083,7 +1117,7 @@ def get_as_list(state, key, passive=False):
         return [x]
 
 def has_parent(class_, instance, key, optimistic=False):
-    return getattr(class_, key).impl.hasparent(instance._state, optimistic=optimistic)
+    return class_._class_state.get_impl(key).hasparent(instance._state, optimistic=optimistic)
 
 def _create_prop(class_, key, uselist, callable_, typecallable, useobject, mutable_scalars, **kwargs):
     if kwargs.pop('dynamic', False):
@@ -1102,7 +1136,7 @@ def manage(instance):
     """initialize an InstanceState on the given instance."""
 
     if not hasattr(instance, '_state'):
-        instance._state = InstanceState(instance)
+        instance._class_state.manage(instance)
 
 def new_instance(class_, state=None):
     """create a new instance of class_ without its __init__() method being called.
@@ -1110,16 +1144,13 @@ def new_instance(class_, state=None):
     Also initializes an InstanceState on the new instance.
     """
 
-    s = class_.__new__(class_)
-    if state:
-        s._state = state
-    else:
-        s._state = InstanceState(s)
-    return s
+    instance = class_.__new__(class_)
+    instance._class_state.manage(instance, state)
+    return instance
 
 def _init_class_state(class_):
-    if not '_class_state' in class_.__dict__:
-        class_._class_state = ClassState()
+    if not hasattr(class_, '_class_state') or class_._class_state.class_ is not class_:
+        class_._class_state = ClassState(class_)
 
 def register_class(class_, extra_init=None, on_exception=None, deferred_scalar_loader=None):
     # do a sweep first, this also helps some attribute extensions
@@ -1136,7 +1167,7 @@ def register_class(class_, extra_init=None, on_exception=None, deferred_scalar_l
 
     def init(instance, *args, **kwargs):
         if not hasattr(instance, '_state'):
-            instance._state = InstanceState(instance)
+            instance._class_state.manage(instance)
 
         if extra_init:
             extra_init(class_, oldinit, instance, args, kwargs)
@@ -1192,11 +1223,9 @@ def register_attribute(class_, key, uselist, useobject, callable_=None, proxy_pr
     _init_class_state(class_)
 
     typecallable = kwargs.pop('typecallable', None)
-    if isinstance(typecallable, InstrumentedAttribute):
-        typecallable = None
     comparator = kwargs.pop('comparator', None)
 
-    if key in class_.__dict__ and isinstance(class_.__dict__[key], InstrumentedAttribute):
+    if class_._class_state.is_instrumented(key):
         # this currently only occurs if two primary mappers are made for the same class.
         # TODO:  possibly have InstrumentedAttribute check "entity_name" when searching for impl.
         # raise an error if two attrs attached simultaneously otherwise
@@ -1208,8 +1237,7 @@ def register_attribute(class_, key, uselist, useobject, callable_=None, proxy_pr
         inst = InstrumentedAttribute(_create_prop(class_, key, uselist, callable_, useobject=useobject,
                                        typecallable=typecallable, mutable_scalars=mutable_scalars, **kwargs), comparator=comparator)
 
-    setattr(class_, key, inst)
-    class_._class_state.attrs[key] = inst
+    class_._class_state.instrument_attribute(key, inst)
 
 def unregister_attribute(class_, key):
     class_state = class_._class_state
@@ -1219,7 +1247,7 @@ def unregister_attribute(class_, key):
 
 def init_collection(instance, key):
     """Initialize a collection attribute and return the collection adapter."""
-    attr = getattr(instance.__class__, key).impl
     state = instance._state
+    attr = state.get_impl(key)
     user_data = attr.initialize(state)
     return attr.get_collection(state, user_data)

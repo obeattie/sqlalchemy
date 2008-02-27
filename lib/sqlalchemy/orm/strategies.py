@@ -67,7 +67,7 @@ class ColumnLoader(LoaderStrategy):
                 def new_execute(instance, row, **flags):
                     if self._should_log_debug:
                         self.logger.debug("populating %s with %s/%s..." % (mapperutil.attribute_str(instance, self.key), row.__class__.__name__, self.columns[0].key))
-                    instance.__dict__[self.key] = self.parent_property.composite_class(*[row[c] for c in self.columns])
+                    instance._state.dict[self.key] = self.parent_property.composite_class(*[row[c] for c in self.columns])
                 if self._should_log_debug:
                     self.logger.debug("Returning active composite column fetcher for %s %s" % (mapper, self.key))
                 return (new_execute, None, None)
@@ -76,7 +76,7 @@ class ColumnLoader(LoaderStrategy):
             def new_execute(instance, row, **flags):
                 if self._should_log_debug:
                     self.logger.debug("populating %s with %s/%s" % (mapperutil.attribute_str(instance, self.key), row.__class__.__name__, self.columns[0].key))
-                instance.__dict__[self.key] = row[self.columns[0]]
+                instance._state.dict[self.key] = row[self.columns[0]]
             if self._should_log_debug:
                 self.logger.debug("Returning active column fetcher for %s %s" % (mapper, self.key))
             return (new_execute, None, None)
@@ -617,7 +617,7 @@ class EagerLoader(AbstractRelationLoader):
                         # parent object, bypassing InstrumentedAttribute
                         # event handlers.
                         #
-                        instance.__dict__[self.key] = self.select_mapper._instance(selectcontext, decorated_row, None)
+                        instance._state.dict[self.key] = self.select_mapper._instance(selectcontext, decorated_row, None)
                     else:
                         # call _instance on the row, even though the object has been created,
                         # so that we further descend into properties
