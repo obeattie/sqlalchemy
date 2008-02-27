@@ -23,7 +23,8 @@ class MyClassState(ClassState):
         
     def manage(self, instance, state=None):
         if state:
-            raise NotImplementedError()
+            # used during a weakref "resurrection"
+            instance.__dict__['_state'] = state
         else:
             instance.__dict__['_state'] = MyInstanceState(instance)
             
