@@ -1097,5 +1097,6 @@ class HistoryTest(TestBase):
         assert f.bar is None
         self.assertEquals(attributes.get_history(f._state, 'bar'), ([None], [], [bar1]))
 
+    
 if __name__ == "__main__":
     testenv.main()

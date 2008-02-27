@@ -7,6 +7,7 @@ import sharding.alltests as sharding
 def suite():
     modules_to_test = (
     'orm.attributes',
+    'orm.extendedattr', 
         'orm.query',
         'orm.lazy_relations',
         'orm.eager_relations',

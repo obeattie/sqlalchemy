@@ -249,7 +249,7 @@ class UnitOfWork(object):
         the number of objects pruned.
         """
 
-        if isinstance(self.identity_map, attributes.WeakInstanceDict):
+        if isinstance(self.identity_map, identity.WeakInstanceDict):
             return 0
         ref_count = len(self.identity_map)
         dirty = self.locate_dirty()

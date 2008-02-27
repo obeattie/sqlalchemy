@@ -649,20 +649,20 @@ class GenericBackrefExtension(interfaces.AttributeExtension):
         if oldchild is not None:
             # With lazy=None, there's no guarantee that the full collection is
             # present when updating via a backref.
-            impl = getattr(oldchild.__class__, self.key).impl
+            impl = oldchild._state.get_impl(self.key)
             try:
                 impl.remove(oldchild._state, instance, initiator, passive=True)
             except (ValueError, KeyError, IndexError):
                 pass
         if child is not None:
-            getattr(child.__class__, self.key).impl.append(child._state, instance, initiator, passive=True)
+            child._state.get_impl(self.key).append(child._state, instance, initiator, passive=True)
 
     def append(self, instance, child, initiator):
-        getattr(child.__class__, self.key).impl.append(child._state, instance, initiator, passive=True)
+        child._state.get_impl(self.key).append(child._state, instance, initiator, passive=True)
 
     def remove(self, instance, child, initiator):
         if child is not None:
-            getattr(child.__class__, self.key).impl.remove(child._state, instance, initiator, passive=True)
+            child._state.get_impl(self.key).remove(child._state, instance, initiator, passive=True)
 
 class InstanceState(object):
     """tracks state information at the instance level."""
@@ -898,8 +898,11 @@ class ClassState(object):
     def instrument_collection_class(self, key, collection_class):
         return collection_class
         
-    def is_instrumented(self, key):
-        return key in self.class_.__dict__ and isinstance(self.class_.__dict__[key], InstrumentedAttribute)
+    def is_instrumented(self, key, search=False):
+        if search:
+            return hasattr(self.class_, key) and isinstance(getattr(self.class_, key), InstrumentedAttribute)
+        else:
+            return key in self.class_.__dict__ and isinstance(self.class_.__dict__[key], InstrumentedAttribute)
 
     def get_impl(self, key):
         return getattr(self.class_, key).impl
@@ -914,6 +917,8 @@ class ClassState(object):
             instance._state = InstanceState(instance)
 
 class _ClassStateAdapter(ClassState):
+    """adapts a user-defined InstrumentClass instance to ClassState"""
+    
     def __init__(self, class_):
         ClassState.__init__(self, class_)
         self._instrument = class_.__sa_instrument_class__()
@@ -928,13 +933,16 @@ class _ClassStateAdapter(ClassState):
     def instrument_collection_class(self, key, collection_class):
         return self._instrument.instrument_collection_class(self.class_, key, collection_class)
 
-    def is_instrumented(self, key):
-        for cl in self.class_.__mro__[:-1]:
-            if hasattr(cl, '_class_state') and key in cl._class_state.attrs:
-                return True
+    def is_instrumented(self, key, search=False):
+        if search:
+            for cl in self.class_.__mro__[:-1]:
+                if hasattr(cl, '_class_state') and key in cl._class_state.attrs:
+                    return True
+            else:
+                return False
         else:
-            return False
-        
+            return key in self.attrs
+            
     def get_impl(self, key):
         return self.get_inst(key).impl
 
@@ -951,7 +959,8 @@ class _ClassStateAdapter(ClassState):
         instance._state.dict = self._instrument.get_instance_dict(instance)
         
 class InstrumentClass(object):
-
+    """User-defined class instrumentation extension."""
+    
     def instrument_attribute(self, class_, key, attr):
         setattr(self.class_, key, inst)
 
@@ -1166,7 +1175,7 @@ def register_attribute(class_, key, uselist, useobject, callable_=None, proxy_pr
     if uselist:
         typecallable = class_._class_state.instrument_collection_class(key, kwargs.pop('typecallable', None))
     else:
-        typecallable = None
+        typecallable = kwargs.pop('typecallable', None)
         
     comparator = kwargs.pop('comparator', None)
 
@@ -1201,5 +1210,5 @@ def del_attribute(instance, key):
     instance._state.get_impl(key).delete(instance._state)
 
 def is_instrumented(instance, key):
-    return instance._class_state.is_instrumented(key)
+    return instance._class_state.is_instrumented(key, search=True)
     
