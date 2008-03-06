@@ -613,7 +613,7 @@ class CollectionAdapter(object):
 
 
 __instrumentation_mutex = sautil.threading.Lock()
-def _prepare_instrumentation(factory):
+def prepare_instrumentation(factory):
     """Prepare a callable for future use as a collection class factory.
 
     Given a collection class factory (either a type or no-arg callable),
@@ -646,6 +646,8 @@ def _prepare_instrumentation(factory):
             __instrumentation_mutex.release()
 
     return factory
+# this was non-public but semi-advertised pre 0.4.4
+_prepare_instrumentation = prepare_instrumentation
 
 def __converting_factory(original_factory):
     """Convert the type returned by collection factories on the fly.

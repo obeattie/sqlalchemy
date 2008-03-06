@@ -52,6 +52,7 @@ class DependencyProcessor(object):
         ``DependencyProecssor``.
         """
 
+        return self.parent.class_._class_state.get_impl(self.key)
         return getattr(self.parent.class_, self.key)
 
     def hasparent(self, state):
@@ -59,7 +60,7 @@ class DependencyProcessor(object):
         according to the ``InstrumentedAttribute`` handled by this ``DependencyProcessor``."""
 
         # TODO: use correct API for this
-        return self._get_instrumented_attribute().impl.hasparent(state)
+        return self._get_instrumented_attribute().hasparent(state)
 
     def register_dependencies(self, uowcommit):
         """Tell a ``UOWTransaction`` what mappers are dependent on

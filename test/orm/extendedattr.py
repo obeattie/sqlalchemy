@@ -26,7 +26,19 @@ class MyClassState(InstrumentClass):
 
 class MyListLike(list):
     # add @appender, @remover decorators as needed
-    pass
+    _sa_iterator = list.__iter__
+    def _sa_appender(self, item, _sa_initiator=None):
+        if _sa_initiator is not False:
+            self._sa_adapter.fire_append_event(item, _sa_initiator)
+        list.append(self, item)
+    append = _sa_appender
+    def _sa_remover(self, item, _sa_initiator=None):
+        self._sa_adapter.fire_pre_remove_event(_sa_initiator)
+        if _sa_initiator is not False:
+            self._sa_adapter.fire_remove_event(item, _sa_initiator)
+        list.remove(self, item)
+    remove = _sa_remover
+
 
 class MyClass(object):
     __sa_instrument_class__ = MyClassState

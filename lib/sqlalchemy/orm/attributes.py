@@ -426,10 +426,7 @@ class CollectionAttributeImpl(AttributeImpl):
             copy_function = self.__copy
         self.copy = copy_function
 
-        if typecallable is None:
-            typecallable = list
-        self.collection_factory = \
-          collections._prepare_instrumentation(typecallable)
+        self.collection_factory = typecallable
         # may be removed in 0.5:
         self.collection_interface = \
           util.duck_type_collection(self.collection_factory())
@@ -497,9 +494,13 @@ class CollectionAttributeImpl(AttributeImpl):
     def initialize(self, state):
         """Initialize this attribute on the given object instance with an empty collection."""
 
-        _, user_data = self._build_collection(state)
+        _, user_data = self._initialize_collection(state)
         state.dict[self.key] = user_data
         return user_data
+
+    def _initialize_collection(self, state):
+        return state.class_._class_state.initialize_collection(
+            self.key, state, self.collection_factory)
 
     def append(self, state, value, initiator, passive=False):
         if initiator is self:
@@ -538,7 +539,7 @@ class CollectionAttributeImpl(AttributeImpl):
         # assignable iterable.  pulling a new collection first so that
         # an adaptation exception does not trigger a lazy load of the
         # old collection.
-        new_collection, user_data = self._build_collection(state)
+        new_collection, user_data = self._initialize_collection(state)
         new_values = list(new_collection.adapt_like_to_iterable(value))
 
         old = self.get(state)
@@ -579,7 +580,7 @@ class CollectionAttributeImpl(AttributeImpl):
         Loads the existing collection from lazy callables in all cases.
         """
 
-        collection, user_data = self._build_collection(state)
+        collection, user_data = self._initialize_collection(state)
 
         if value:
             for item in value:
@@ -605,13 +606,6 @@ class CollectionAttributeImpl(AttributeImpl):
 
         return user_data
 
-    def _build_collection(self, state):
-        """build a new, blank collection and return it wrapped in a CollectionAdapter."""
-
-        user_data = self.collection_factory()
-        collection = collections.CollectionAdapter(self, state, user_data)
-        return collection, user_data
-
     def get_collection(self, state, user_data=None, passive=False):
         """retrieve the CollectionAdapter associated with the given state.
 
@@ -623,13 +617,7 @@ class CollectionAttributeImpl(AttributeImpl):
             user_data = self.get(state, passive=passive)
             if user_data is PASSIVE_NORESULT:
                 return user_data
-        try:
-            return getattr(user_data, '_sa_adapter')
-        except AttributeError:
-            # TODO: this codepath never occurs, and this 
-            # except/initialize should be removed
-            collections.CollectionAdapter(self, state, user_data)
-            return getattr(user_data, '_sa_adapter')
+        return getattr(user_data, '_sa_adapter')
 
 class GenericBackrefExtension(interfaces.AttributeExtension):
     """An extension which synchronizes a two-way relationship.
@@ -896,8 +884,14 @@ class ClassState(object):
         setattr(self.class_, key, inst)
 
     def instrument_collection_class(self, key, collection_class):
-        return collection_class
-        
+        return collections.prepare_instrumentation(collection_class)
+
+    def initialize_collection(self, key, state, factory):
+        user_data = factory()
+        adapter = collections.CollectionAdapter(
+            self.get_impl(key), state, user_data)
+        return adapter, user_data
+
     def is_instrumented(self, key, search=False):
         if search:
             return hasattr(self.class_, key) and isinstance(getattr(self.class_, key), InstrumentedAttribute)
@@ -932,6 +926,13 @@ class _ClassStateAdapter(ClassState):
 
     def instrument_collection_class(self, key, collection_class):
         return self._instrument.instrument_collection_class(self.class_, key, collection_class)
+
+    def initialize_collection(self, key, state, factory):
+        delegate = getattr(self._instrument, 'initialize_collection', None)
+        if delegate:
+            return delegate(key, state, factory)
+        else:
+            return ClassState.initialize_collection(self, key, state, factory)
 
     def is_instrumented(self, key, search=False):
         if search:
@@ -1173,7 +1174,9 @@ def register_attribute(class_, key, uselist, useobject, callable_=None, proxy_pr
         return
 
     if uselist:
-        typecallable = class_._class_state.instrument_collection_class(key, kwargs.pop('typecallable', None))
+        factory = kwargs.pop('typecallable', None)
+        typecallable = class_._class_state.instrument_collection_class(
+            key, factory or list)
     else:
         typecallable = kwargs.pop('typecallable', None)
         
