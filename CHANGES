@@ -17,6 +17,11 @@ CHANGES
 
     - Session.execute can now find binds from metadata
 
+    - when using with_polymorphic(), eagerloads can 
+      be turned on for relations on subclasses, by specifying
+      an InstrumentedAttribute or list of them, e.g.:
+      query.options(eagerload(Engineer.machines))
+      
 - extensions
     - the "synonym" function is now directly usable with 
       "declarative".  Pass in the decorated property using 

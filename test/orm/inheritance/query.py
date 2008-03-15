@@ -288,7 +288,35 @@ def make_test(select_type):
                 # limit the polymorphic join down to just "Person", overriding select_table
                 self.assertEquals(sess.query(Person).with_polymorphic(Person).all(), emps_without_relations)
             self.assert_sql_count(testing.db, go, 6)
+        
+        def test_with_polymorphic_eagerload(self):
+            sess = create_session()
+            def go():
+                self.assertEquals(sess.query(Person).with_polymorphic('*').options(eagerload([Engineer.machines])).filter(Person.name=='dilbert').all(), 
+                [Engineer(name="dilbert", engineer_name="dilbert", primary_language="java", status="regular engineer", machines=[Machine(name="IBM ThinkPad"), Machine(name="IPhone")])]
+                )
+            self.assert_sql_count(testing.db, go, 1)
 
+            sess = create_session()
+            def go():
+                self.assertEquals(sess.query(Company).options(eagerload_all([Company.employees.of_type(Engineer), Engineer.machines])).all(), 
+                [
+                Company(name="MegaCorp, Inc.", employees=[
+                    Engineer(name="dilbert", engineer_name="dilbert", primary_language="java", status="regular engineer", machines=[Machine(name="IBM ThinkPad"), Machine(name="IPhone")]),
+                    Engineer(name="wally", engineer_name="wally", primary_language="c++", status="regular engineer"),
+                    Boss(name="pointy haired boss", golf_swing="fore", manager_name="pointy", status="da boss"),
+                    Manager(name="dogbert", manager_name="dogbert", status="regular manager"),
+                ]),
+                Company(name="Elbonia, Inc.", employees=[
+                    Engineer(name="vlad", engineer_name="vlad", primary_language="cobol", status="elbonian engineer")
+                ])
+                ]
+                )
+            self.assert_sql_count(testing.db, go, 1)
+
+
+            
+            
         def test_join_to_subclass(self):
             sess = create_session()
 
@@ -316,7 +344,6 @@ def make_test(select_type):
             self.assertEquals(sess.query(Company).join([Company.employees.of_type(Engineer), 'machines']).filter(Machine.name.ilike("%thinkpad%")).all(), [c1])
 
 
-        
         def test_join_through_polymorphic(self):
 
             sess = create_session()
