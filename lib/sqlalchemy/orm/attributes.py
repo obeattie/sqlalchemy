@@ -667,6 +667,7 @@ class InstanceState(object):
         self.appenders = {}
         self.instance_dict = None
         self.runid = None
+        self.key = self.sessionid = self.entity_name = None
 
     def __cleanup(self, ref):
         # tiptoe around Python GC unpredictableness
@@ -740,11 +741,14 @@ class InstanceState(object):
             return None
 
     def __getstate__(self):
-        return {'committed_state':self.committed_state, 'pending':self.pending, 'parents':self.parents, 'modified':self.modified, 'instance':self.obj(), 'expired_attributes':getattr(self, 'expired_attributes', None), 'callables':self.callables}
+        return {'key':self.key, 'sessionid':self.sessionid, 'entity_name':self.entity_name, 'committed_state':self.committed_state, 'pending':self.pending, 'parents':self.parents, 'modified':self.modified, 'instance':self.obj(), 'expired_attributes':getattr(self, 'expired_attributes', None), 'callables':self.callables}
 
     def __setstate__(self, state):
         self.committed_state = state['committed_state']
         self.parents = state['parents']
+        self.key = state['key']
+        self.sessionid = state['sessionid']
+        self.entity_name = state['entity_name']
         self.pending = state['pending']
         self.modified = state['modified']
         self.obj = weakref.ref(state['instance'])
