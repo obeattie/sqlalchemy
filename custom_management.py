@@ -122,8 +122,6 @@ class MyCollection(object):
     def __len__(self):
         return len(self.members)
 
-class MyListLike(list): pass
-
 if __name__ == '__main__':
     meta = MetaData(create_engine('sqlite://'))
 

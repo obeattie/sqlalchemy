@@ -387,11 +387,14 @@ class AttributesTest(TestBase):
 
         class Foo(object):pass
         attributes.register_class(Foo)
+
         attributes.register_attribute(Foo, "collection", uselist=True, typecallable=set, useobject=True)
+        assert attributes.get_class_state(Foo).is_instrumented("collection")
         assert isinstance(Foo().collection, set)
 
         attributes.unregister_attribute(Foo, "collection")
-
+        assert not attributes.get_class_state(Foo).is_instrumented("collection")
+        
         try:
             attributes.register_attribute(Foo, "collection", uselist=True, typecallable=dict, useobject=True)
             assert False

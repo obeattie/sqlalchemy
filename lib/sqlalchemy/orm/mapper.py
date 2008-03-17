@@ -155,9 +155,9 @@ class Mapper(object):
         self.__should_log_info = logging.is_info_enabled(self.logger)
         self.__should_log_debug = logging.is_debug_enabled(self.logger)
 
-        self._compile_class()
         self._compile_inheritance()
         self._compile_extensions()
+        self._compile_class()
         self._compile_tables()
         self._compile_properties()
         self._compile_pks()
@@ -284,6 +284,7 @@ class Mapper(object):
             for ext_obj in util.to_list(extension):
                 # local MapperExtensions have already instrumented the class
                 extlist.add(ext_obj)
+                ext_obj.instrument_class(self, self.class_)
 
         if self.inherits is not None:
             for ext in self.inherits.extension:
@@ -753,9 +754,6 @@ class Mapper(object):
         _mapper_registry[self] = True
 
         self.class_._class_state.mappers[self.entity_name] = self
-
-        for ext in util.to_list(self.extension, []):
-            ext.instrument_class(self, self.class_)
 
         if self.entity_name is None:
             self.class_.c = self.c
