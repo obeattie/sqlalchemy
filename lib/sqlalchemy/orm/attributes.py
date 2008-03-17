@@ -974,13 +974,13 @@ class InstrumentClass(object):
         pass
 
     def install_descriptor(self, class_, key, inst):
-        setattr(self.class_, key, inst)
+        setattr(class_, key, inst)
 
     def uninstall_descriptor(self, class_, key):
-        delattr(self.class_, key)
+        delattr(class_, key)
 
     def instrument_collection_class(self, class_, key, collection_class):
-        return collection_class
+        return collections.prepare_instrumentation(collection_class)
 
     def get_instance_dict(self, instance):
         return instance.__dict__

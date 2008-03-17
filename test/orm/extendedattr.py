@@ -42,7 +42,9 @@ class MyListLike(list):
         list.remove(self, item)
     remove = _sa_remover
 
-
+class MyBaseClass(object):
+    __sa_instrument_class__ = InstrumentClass
+    
 class MyClass(object):
     __sa_instrument_class__ = MyClassState
 
@@ -73,7 +75,7 @@ class MyClass(object):
 
 class UserDefinedExtensionTest(TestBase):
     def test_basic(self):
-        for base in (object, InstrumentClass, MyClass):
+        for base in (object, MyBaseClass, MyClass):
             class User(base):
                 pass
 
@@ -96,7 +98,7 @@ class UserDefinedExtensionTest(TestBase):
             self.assert_(u.user_id == 7 and u.user_name == 'heythere' and u.email_address == 'foo@bar.com')
 
     def test_deferred(self):
-        for base in (object, InstrumentClass, MyClass):
+        for base in (object, MyBaseClass, MyClass):
             class Foo(base):pass
 
             data = {'a':'this is a', 'b':12}
@@ -139,7 +141,7 @@ class UserDefinedExtensionTest(TestBase):
     def test_inheritance(self):
         """tests that attributes are polymorphic"""
 
-        for base in (object, InstrumentClass, MyClass):
+        for base in (object, MyBaseClass, MyClass):
             class Foo(base):pass
             class Bar(Foo):pass
 
@@ -167,7 +169,7 @@ class UserDefinedExtensionTest(TestBase):
             assert y.element2 == 'this is the shared attr'
 
     def test_collection_with_backref(self):
-        for base in (object, InstrumentClass, MyClass):
+        for base in (object, MyBaseClass, MyClass):
             class Post(base):pass
             class Blog(base):pass
 
@@ -199,7 +201,7 @@ class UserDefinedExtensionTest(TestBase):
             del p5.blog
 
     def test_history(self):
-        for base in (object, InstrumentClass, MyClass):
+        for base in (object, MyBaseClass, MyClass):
             class Foo(base):
                 pass
             class Bar(base):
@@ -238,7 +240,7 @@ class UserDefinedExtensionTest(TestBase):
             self.assertEquals(attributes.get_history(f1._state, 'bars'), ([b2], [], [b1]))
     
     def test_null_instrumentation(self):
-        class Foo(InstrumentClass):
+        class Foo(MyBaseClass):
             pass
         attributes.register_class(Foo)
         attributes.register_attribute(Foo, "name", uselist=False, useobject=False)
