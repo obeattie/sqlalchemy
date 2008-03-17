@@ -678,7 +678,7 @@ class Mapper(object):
             prop.set_parent(self)
 
             if not self.non_primary:
-                self._class_state.pre_instrument_attribute(key, Mapper._CompileOnAttr(self.class_, key))
+                self._class_state.install_descriptor(key, Mapper._CompileOnAttr(self.class_, key))
 
         if init:
             prop.init(key, self)

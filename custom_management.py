@@ -9,7 +9,10 @@ class MyClassState(InstrumentClass):
     def instrument_attribute(self, class_, key, attr):
         pass
         
-    def pre_instrument_attribute(self, class_, key, attr):
+    def install_descriptor(self, class_, key, attr):
+        pass
+        
+    def uninstall_descriptor(self, class_, key, attr):
         pass
         
     def instrument_collection_class(self, class_, key, collection_class):

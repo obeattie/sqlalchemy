@@ -867,21 +867,46 @@ class InstanceState(object):
         # remove strong ref
         self._strong_obj = None
 
-class ClassState(object):
+class ClassState(dict):
     """tracks state information at the class level."""
 
     def __init__(self, class_):
         self.class_ = class_
         self.mappers = {}
-        self.attrs = {}
         self.has_mutable_scalars = False
+        self.local_attrs = {}
+        for base in class_.__mro__[-2:0:-1]:   # reverse, skipping 1st and last
+            self.update(get_class_state(base))
 
-    def instrument_attribute(self, key, inst):
+    def instrument_attribute(self, key, inst, propagated=False):
+        if propagated:
+            if key in self.local_attrs:
+                return  # don't override local attr with inherited attr
+        else:
+            self.local_attrs[key] = inst
+            self.install_descriptor(key, inst)
+        self[key] = inst
+        for cls in self.class_.__subclasses__():
+            get_class_state(cls).instrument_attribute(key, inst, True)
+
+    def uninstrument_attribute(self, key, propagated=False):
+        if key not in self:
+            return
+        if propagated:
+            if key in self.local_attrs:
+                return  # don't get rid of local attr
+        else:
+            del self.local_attrs[key]
+            self.uninstall_descriptor(key)
+        del self[key]
+        for cls in self.class_.__subclasses__():
+            get_class_state(cls).uninstrument_attribute(key, True)
+
+    def install_descriptor(self, key, inst):
         setattr(self.class_, key, inst)
-        self.attrs[key] = inst
-    
-    def pre_instrument_attribute(self, key, inst):
-        setattr(self.class_, key, inst)
+
+    def uninstall_descriptor(self, key):
+        delattr(self.class_, key)
 
     def instrument_collection_class(self, key, collection_class):
         return collections.prepare_instrumentation(collection_class)
@@ -894,16 +919,15 @@ class ClassState(object):
 
     def is_instrumented(self, key, search=False):
         if search:
-            return hasattr(self.class_, key) and isinstance(getattr(self.class_, key), InstrumentedAttribute)
+            return key in self
         else:
-            return key in self.class_.__dict__ and isinstance(self.class_.__dict__[key], InstrumentedAttribute)
+            return key in self.local_attrs
 
     def get_impl(self, key):
-        return getattr(self.class_, key).impl
+        return self[key].impl
     
-    def get_inst(self, key):
-        return getattr(self.class_, key)
-        
+    get_inst = dict.__getitem__
+
     def manage(self, instance, state=None):
         if state:
             instance._state = state
@@ -917,12 +941,16 @@ class _ClassStateAdapter(ClassState):
         ClassState.__init__(self, class_)
         self._instrument = class_.__sa_instrument_class__()
         
-    def instrument_attribute(self, key, inst):
-        self.attrs[key] = inst
-        self._instrument.instrument_attribute(self.class_, key, inst)
+    def instrument_attribute(self, key, inst, propagated=False):
+        ClassState.instrument_attribute(self, key, inst, propagated)
+        if not propagated:
+            self._instrument.instrument_attribute(self.class_, key, inst)
 
-    def pre_instrument_attribute(self, key, inst):
-        self._instrument.pre_instrument_attribute(self.class_, key, inst)
+    def install_descriptor(self, key, inst):
+        self._instrument.install_descriptor(self.class_, key, inst)
+
+    def uninstall_descriptor(self, key):
+        self._instrument.uninstall_descriptor(self.class_, key)
 
     def instrument_collection_class(self, key, collection_class):
         return self._instrument.instrument_collection_class(self.class_, key, collection_class)
@@ -934,26 +962,6 @@ class _ClassStateAdapter(ClassState):
         else:
             return ClassState.initialize_collection(self, key, state, factory)
 
-    def is_instrumented(self, key, search=False):
-        if search:
-            for cl in self.class_.__mro__[:-1]:
-                if hasattr(cl, '_class_state') and key in cl._class_state.attrs:
-                    return True
-            else:
-                return False
-        else:
-            return key in self.attrs
-            
-    def get_impl(self, key):
-        return self.get_inst(key).impl
-
-    def get_inst(self, key):
-        for cl in self.class_.__mro__[:-1]:
-            if hasattr(cl, '_class_state') and key in cl._class_state.attrs:
-                return cl._class_state.attrs[key]
-        else:
-            raise AttributeError(key)
-    
     def manage(self, instance, state=None):
         self._instrument.initialize_instance_dict(instance)
         ClassState.manage(self, instance, state=state)
@@ -962,11 +970,14 @@ class _ClassStateAdapter(ClassState):
 class InstrumentClass(object):
     """User-defined class instrumentation extension."""
     
-    def instrument_attribute(self, class_, key, attr):
+    def instrument_attribute(self, class_, key, inst):
+        pass
+
+    def install_descriptor(self, class_, key, inst):
         setattr(self.class_, key, inst)
 
-    def pre_instrument_attribute(self, class_, key, attr):
-        setattr(self.class_, key, inst)
+    def uninstall_descriptor(self, class_, key):
+        delattr(self.class_, key)
 
     def instrument_collection_class(self, class_, key, collection_class):
         return collection_class
@@ -1032,8 +1043,7 @@ class PendingCollection(object):
 
 def _managed_attributes(class_):
     """return all InstrumentedAttributes associated with the given class_ and its superclasses."""
-
-    return chain(*[cl._class_state.attrs.values() for cl in class_.__mro__[:-1] if hasattr(cl, '_class_state')])
+    return get_class_state(class_).itervalues()
 
 def get_history(state, key, **kwargs):
     return state.get_history(key, **kwargs)
@@ -1090,12 +1100,15 @@ def new_instance(class_, state=None):
     instance._class_state.manage(instance, state)
     return instance
 
-def _init_class_state(class_):
-    if not hasattr(class_, '_class_state') or class_._class_state.class_ is not class_:
+def get_class_state(class_):
+    try:
+        return class_.__dict__['_class_state']
+    except KeyError:
         if hasattr(class_, '__sa_instrument_class__'):
-            class_._class_state = _ClassStateAdapter(class_)
+            cs = class_._class_state = _ClassStateAdapter(class_)
         else:
-            class_._class_state = ClassState(class_)
+            cs = class_._class_state = ClassState(class_)
+        return cs
 
 def register_class(class_, extra_init=None, on_exception=None, deferred_scalar_loader=None):
     # do a sweep first, this also helps some attribute extensions
@@ -1104,8 +1117,7 @@ def register_class(class_, extra_init=None, on_exception=None, deferred_scalar_l
     for key in dir(class_):
         getattr(class_, key, None)
 
-    _init_class_state(class_)
-    class_._class_state.deferred_scalar_loader=deferred_scalar_loader
+    get_class_state(class_).deferred_scalar_loader=deferred_scalar_loader
 
     oldinit = None
     doinit = False
@@ -1159,15 +1171,15 @@ def unregister_class(class_):
 
     if '_class_state' in class_.__dict__:
         _class_state = class_.__dict__['_class_state']
-        for key, attr in _class_state.attrs.iteritems():
+        for key, attr in _class_state.iteritems():
             if key in class_.__dict__:
                 delattr(class_, attr.impl.key)
         delattr(class_, '_class_state')
 
 def register_attribute(class_, key, uselist, useobject, callable_=None, proxy_property=None, mutable_scalars=False, **kwargs):
-    _init_class_state(class_)
 
-    if class_._class_state.is_instrumented(key):
+    cs = get_class_state(class_)
+    if cs.is_instrumented(key):
         # this currently only occurs if two primary mappers are made for the same class.
         # TODO:  possibly have InstrumentedAttribute check "entity_name" when searching for impl.
         # raise an error if two attrs attached simultaneously otherwise
@@ -1175,8 +1187,7 @@ def register_attribute(class_, key, uselist, useobject, callable_=None, proxy_pr
 
     if uselist:
         factory = kwargs.pop('typecallable', None)
-        typecallable = class_._class_state.instrument_collection_class(
-            key, factory or list)
+        typecallable = cs.instrument_collection_class(key, factory or list)
     else:
         typecallable = kwargs.pop('typecallable', None)
         
@@ -1188,13 +1199,10 @@ def register_attribute(class_, key, uselist, useobject, callable_=None, proxy_pr
         inst = InstrumentedAttribute(_create_prop(class_, key, uselist, callable_, useobject=useobject,
                                        typecallable=typecallable, mutable_scalars=mutable_scalars, **kwargs), comparator=comparator)
 
-    class_._class_state.instrument_attribute(key, inst)
+    cs.instrument_attribute(key, inst)
 
 def unregister_attribute(class_, key):
-    class_state = class_._class_state
-    if key in class_state.attrs:
-        del class_._class_state.attrs[key]
-        delattr(class_, key)
+    get_class_state(class_).uninstrument_attribute(key)
 
 def init_collection(instance, key):
     """Initialize a collection attribute and return the collection adapter."""
