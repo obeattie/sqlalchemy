@@ -208,7 +208,8 @@ class Mapper(object):
     def _with_polymorphic_mappers(self, spec=None, selectable=None):
         if not spec and self.with_polymorphic:
             spec = self.with_polymorphic[0]
-            
+        
+        # TODO: when using default spec, this whole collection should be cached    
         if spec == '*':
             mappers = list(self.polymorphic_iterator())
         elif spec:
@@ -227,6 +228,8 @@ class Mapper(object):
                     from_obj = from_obj.outerjoin(m.local_table, m.inherit_condition)
             return mappers, from_obj
         else:
+            tables = util.Set(sqlutil.find_tables(selectable))
+            mappers = [m for m in mappers if m.local_table in tables]
             return mappers, selectable
 
         

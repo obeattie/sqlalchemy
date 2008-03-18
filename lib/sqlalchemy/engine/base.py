@@ -1482,8 +1482,8 @@ class ResultProxy(object):
 
             try:
                 rec = props[key]
-                print "KEY", id(key), key, "IN RESULT: YES!"
-                print "ALL KEYS", [id(k) for k in props]
+#                print "KEY", id(key), key, "IN RESULT: YES!"
+#                print "ALL KEYS", [id(k) for k in props]
             except KeyError:
                 # fallback for targeting a ColumnElement to a textual expression
 #                if isinstance(key, expression.ColumnElement):

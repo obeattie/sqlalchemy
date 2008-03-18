@@ -21,6 +21,15 @@ CHANGES
       be turned on for relations on subclasses, by specifying
       an InstrumentedAttribute or list of them, e.g.:
       query.options(eagerload(Engineer.machines))
+
+    - "with_polymorphic" has been added as a keyword argument
+      to mapper(), and "select_table" has been deprecated.
+      The "select_table=<someselectable>" keyword argument 
+      is now synonymous for with_polymorphic=('*', <someselectable>).
+      Special logic has been added to account for select_table
+      selectables that don't include all subclass tables to trim 
+      the final list of mappers, preventing extra tables from being 
+      inserted.
       
 - extensions
     - the "synonym" function is now directly usable with 
