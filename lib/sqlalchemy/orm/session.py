@@ -968,7 +968,7 @@ class Session(object):
         if key is None:
             if dont_load:
                 raise exceptions.InvalidRequestError("merge() with dont_load=True option does not support objects transient (i.e. unpersisted) objects.  flush() all changes on mapped instances before merging with dont_load=True.")
-            merged = attributes.new_instance(mapper.class_)
+            merged = mapper._class_state.new_instance()
         else:
             if key in self.identity_map:
                 merged = self.identity_map[key]
@@ -977,7 +977,7 @@ class Session(object):
                 if state.modified:
                     raise exceptions.InvalidRequestError("merge() with dont_load=True option does not support objects marked as 'dirty'.  flush() all changes on mapped instances before merging with dont_load=True.")
 
-                merged = attributes.new_instance(mapper.class_)
+                merged = mapper._class_state.new_instance()
                 merged._instance_key = key
                 merged._entity_name = entity_name
                 self._update_impl(merged, entity_name=mapper.entity_name)

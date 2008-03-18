@@ -1372,11 +1372,11 @@ class Mapper(object):
             if 'create_instance' in extension.methods:
                 instance = extension.create_instance(self, context, row, self.class_)
                 if instance is EXT_CONTINUE:
-                    instance = attributes.new_instance(self.class_)
+                    instance = self._class_state.new_instance()
                 else:
                     attributes.manage(instance)
             else:
-                instance = attributes.new_instance(self.class_)
+                instance = self._class_state.new_instance()
 
             if self.__should_log_debug:
                 self.__log_debug("_instance(): created new instance %s identity %s" % (instance_str(instance), str(identitykey)))

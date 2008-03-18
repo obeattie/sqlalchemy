@@ -4,7 +4,7 @@
 # This module is part of SQLAlchemy and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
-import weakref, operator
+import operator, weakref
 from itertools import chain
 from sqlalchemy import util
 from sqlalchemy.orm import interfaces, collections
@@ -742,7 +742,8 @@ class InstanceState(object):
         if self.is_modified():
             # store strong ref'ed version of the object; will revert
             # to weakref when changes are persisted
-            obj = new_instance(self.class_, state=self)
+            class_state = class_state_getter(self.class_)
+            obj = class_state.new_instance(state=self)
             self.obj = weakref.ref(obj, self.__cleanup)
             self._strong_obj = obj
             obj.__dict__.update(self.dict)
@@ -962,6 +963,11 @@ class ClassState(dict):
                 state = InstanceState(instance)
             setattr(instance, STATE_ATTR, state)
 
+    def new_instance(self, state=None):
+        instance = self.class_.__new__(self.class_)
+        self.manage(instance, state)
+        return instance
+
 
 class _ClassStateAdapter(ClassState):
     """adapts a user-defined InstrumentClass instance to ClassState"""
@@ -995,7 +1001,8 @@ class _ClassStateAdapter(ClassState):
         self._instrument.initialize_instance_dict(instance)
         ClassState.manage(self, instance, state=state)
         state_getter(instance).dict = self._instrument.get_instance_dict(instance)
-        
+
+
 class InstrumentClass(object):
     """User-defined class instrumentation extension."""
     
@@ -1124,9 +1131,7 @@ def new_instance(class_, state=None):
     Also initializes an InstanceState on the new instance.
     """
 
-    instance = class_.__new__(class_)
-    class_state_getter(instance).manage(instance, state)
-    return instance
+    return class_state_getter(type(instance)).new_instance(state)
 
 def get_class_state(class_, create=True):
     try:
