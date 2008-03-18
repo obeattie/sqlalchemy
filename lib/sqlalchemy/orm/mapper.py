@@ -233,8 +233,8 @@ class Mapper(object):
             return mappers, selectable
 
         
-    def _iterate_polymorphic_properties(self, spec=None):
-        cls_or_mappers, from_obj = self._with_polymorphic_mappers(spec)
+    def _iterate_polymorphic_properties(self, spec=None, selectable=None):
+        cls_or_mappers, from_obj = self._with_polymorphic_mappers(spec, selectable)
         props = util.Set()
         for m in [self] + cls_or_mappers:
             for value in m.iterate_properties:
@@ -1319,6 +1319,8 @@ class Mapper(object):
                 row = ret
 
         if not refresh_instance and not skip_polymorphic and self.polymorphic_on:
+#            print "OK HERES THE ROW", type(row)
+#            row.dump_map()
             discriminator = row[self.polymorphic_on]
             if discriminator:
                 mapper = self.polymorphic_map[discriminator]
@@ -1438,8 +1440,8 @@ class Mapper(object):
         else:
             #mappers, from_obj = self._with_polymorphic_mappers()
             #translator = create_row_adapter(from_obj, tomapper.mapped_table, equivalent_columns=self._equivalent_columns)
-            #translator = create_row_adapter(self.mapped_table, tomapper.mapped_table, equivalent_columns=self._equivalent_columns)
-            translator = lambda r: r
+            translator = create_row_adapter(self.mapped_table, tomapper.mapped_table, equivalent_columns=self._equivalent_columns)
+            #translator = lambda r: r
             self._row_translators[tomapper] = translator
             return translator(row)
 

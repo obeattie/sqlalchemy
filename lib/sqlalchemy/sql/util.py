@@ -101,7 +101,8 @@ def row_adapter(from_, to, equivalent_columns=None):
     adapter class itself *is* fairly expensive so caching should be used to prevent
     repeated calls to this function.
     """
-
+    print "CERATE ROW ADAPTER FOR", from_, "\n\nTO", to
+    print "ALL DONE\n\n"
     map = {}
     for c in to.c:
         corr = from_.corresponding_column(c)
@@ -118,6 +119,10 @@ def row_adapter(from_, to, equivalent_columns=None):
     class AliasedRow(object):
         def __init__(self, row):
             self.row = row
+        def dump_map(self):
+            for k, v in map.iteritems():
+                print k._label, v._label
+            
         def __contains__(self, key):
             if key in map:
                 return map[key] in self.row
@@ -295,7 +300,17 @@ class ClauseAdapter(AbstractClauseProcessor):
         ca = ClauseAdapter(self.selectable, self.include, self.exclude, self.equivalents)
         ca._next_acp = adapter
         return ca
+    
+    def row_adapter(self, target):
+        equivalents = {}
+        x = self
+        while x:
+            if x.equivalents:
+                equivalents.update(x.equivalents)
+            x = getattr(x, '_next_acp', None)
 
+        return row_adapter(self.selectable, target, equivalent_columns=equivalents)
+        
     def convert_element(self, col):
         if isinstance(col, expression.FromClause):
             if self.selectable.is_derived_from(col):

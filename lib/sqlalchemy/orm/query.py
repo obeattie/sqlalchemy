@@ -95,18 +95,15 @@ class Query(object):
             from_obj = from_obj.alias()
 
         self._from_obj = from_obj
-
+        
         if self.table not in self._get_joinable_tables():
             self._adapter = sql_util.ClauseAdapter(self._from_obj, equivalents=self.mapper._equivalent_columns)
 
     def _set_with_polymorphic(self, cls_or_mappers, selectable=None):
-        
-        if selectable:
-            self._set_select_from(selectable)
-
         mappers, from_obj = self.mapper._with_polymorphic_mappers(cls_or_mappers, selectable)
         self._with_polymorphic = mappers
-        self._from_obj = from_obj
+
+        self._set_select_from(from_obj)
 
     def _no_criterion_condition(self, q, meth):
         if q._criterion or q._statement: # or q._from_obj is not self.table:
@@ -1126,7 +1123,7 @@ class Query(object):
         from_obj = self._from_obj
         adapter = self._adapter
         order_by = self._order_by
-
+        
         if order_by is False:
             order_by = self.select_mapper.order_by
         if order_by is False:
@@ -1149,7 +1146,7 @@ class Query(object):
 
         context.from_clause = from_obj
 
-        for value in self.select_mapper._iterate_polymorphic_properties(self._with_polymorphic):
+        for value in self.select_mapper._iterate_polymorphic_properties(self._with_polymorphic, from_obj):
             if self._only_load_props and value.key not in self._only_load_props:
                 continue
             context.exec_with_path(self.select_mapper, value.key, value.setup, context, only_load_props=self._only_load_props)
@@ -1207,10 +1204,14 @@ class Query(object):
             if adapter:
                 # TODO: make usage of the ClauseAdapter here to create row adapter, list
                 # of primary columns ?
+#                context.primary_columns = adapter.copy_and_process(context.primary_columns) #[from_obj.corresponding_column(c) or c for c in context.primary_columns]
+#                context.row_adapter = adapter.row_adapter(self.table) #mapperutil.create_row_adapter(from_obj, self.table)
+
                 context.primary_columns = [from_obj.corresponding_column(c) or c for c in context.primary_columns]
-                context.row_adapter = mapperutil.create_row_adapter(from_obj, self.table)
+                context.row_adapter = mapperutil.create_row_adapter(from_obj, self.table, equivalent_columns=self.mapper._equivalent_columns)
+
                 order_by = adapter.copy_and_process(order_by)
-                
+
             if self._distinct:
 
                 if self._distinct and order_by:
