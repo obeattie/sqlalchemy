@@ -102,7 +102,11 @@ class Mapper(object):
         self.concrete = concrete
         self.single = False
         self.inherits = inherits
-        self.select_table = select_table
+        if select_table:
+            self.with_polymorphic = ('*', select_table)
+        else:
+            self.with_polymorphic = None
+        self.select_table = None #select_table
         self.local_table = local_table
         self.inherit_condition = inherit_condition
         self.inherit_foreign_keys = inherit_foreign_keys
@@ -127,7 +131,7 @@ class Mapper(object):
         if polymorphic_fetch not in (None, 'union', 'select', 'deferred'):
             raise exceptions.ArgumentError("Invalid option for 'polymorphic_fetch': '%s'" % polymorphic_fetch)
         if polymorphic_fetch is None:
-            self.polymorphic_fetch = (self.select_table is None) and 'select' or 'union'
+            self.polymorphic_fetch = (self.with_polymorphic is None) and 'select' or 'union'
         else:
             self.polymorphic_fetch = polymorphic_fetch
 
@@ -201,6 +205,40 @@ class Mapper(object):
         return self.__props.itervalues()
     iterate_properties = property(iterate_properties, doc="returns an iterator of all MapperProperty objects.")
 
+    def _with_polymorphic_mappers(self, spec=None, selectable=None):
+        if not spec and self.with_polymorphic:
+            spec = self.with_polymorphic[0]
+            
+        if spec == '*':
+            mappers = list(self.polymorphic_iterator())
+        elif spec:
+            mappers = [m for m in [_class_to_mapper(m) for m in util.to_list(spec)] if m is not self]
+        else:
+            mappers = []
+        
+        if not selectable:
+            from_obj = self.mapped_table
+            for m in mappers:
+                if m is self:
+                    continue
+                if m.concrete:
+                    raise exceptions.InvalidRequestError("'with_polymorphic()' requires 'selectable' argument when concrete-inheriting mappers are used.")
+                elif not m.single:
+                    from_obj = from_obj.outerjoin(m.local_table, m.inherit_condition)
+            return mappers, from_obj
+        else:
+            return mappers, selectable
+
+        
+    def _iterate_polymorphic_properties(self, spec=None):
+        cls_or_mappers, from_obj = self._with_polymorphic_mappers(spec)
+        props = util.Set()
+        for m in [self] + cls_or_mappers:
+            for value in m.iterate_properties:
+                props.add(value)
+        return iter(props)
+            
+        
     def properties(self):
         raise NotImplementedError("Public collection of MapperProperty objects is provided by the get_property() and iterate_properties accessors.")
     properties = property(properties)
@@ -1395,7 +1433,10 @@ class Mapper(object):
             # row translators are cached based on target mapper
             return self._row_translators[tomapper](row)
         else:
-            translator = create_row_adapter(self.mapped_table, tomapper.mapped_table, equivalent_columns=self._equivalent_columns)
+            #mappers, from_obj = self._with_polymorphic_mappers()
+            #translator = create_row_adapter(from_obj, tomapper.mapped_table, equivalent_columns=self._equivalent_columns)
+            #translator = create_row_adapter(self.mapped_table, tomapper.mapped_table, equivalent_columns=self._equivalent_columns)
+            translator = lambda r: r
             self._row_translators[tomapper] = translator
             return translator(row)
 

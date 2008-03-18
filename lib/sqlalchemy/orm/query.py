@@ -33,7 +33,6 @@ class Query(object):
     """Encapsulates the object-fetching operations provided by Mappers."""
 
     def __init__(self, class_or_mapper, session=None, entity_name=None):
-        self._init_mapper(_class_to_mapper(class_or_mapper, entity_name=entity_name))
         self._session = session
 
         self._with_options = []
@@ -62,6 +61,8 @@ class Query(object):
         self._current_path = ()
         self._only_load_props = None
         self._refresh_instance = None
+
+        self._init_mapper(_class_to_mapper(class_or_mapper, entity_name=entity_name))
     
     def _init_mapper(self, mapper, select_mapper=None):
         """populate all instance variables derived from this Query's mapper."""
@@ -74,7 +75,9 @@ class Query(object):
         self._adapter = self.select_mapper._clause_adapter
         self._joinpoint = self.mapper
         self._with_polymorphic = []
-    
+        if self.mapper.with_polymorphic:
+            self._set_with_polymorphic(*self.mapper.with_polymorphic)
+            
     def _no_criterion(self, meth):
         return self._conditional_clone(meth, [self._no_criterion_condition])
 
@@ -85,15 +88,38 @@ class Query(object):
         q = self._conditional_clone(meth, [self._no_criterion_condition])
         q._init_mapper(mapper, mapper)
         return q
+
+    def _set_select_from(self, from_obj):
+        if isinstance(from_obj, expression._SelectBaseMixin):
+            # alias SELECTs and unions
+            from_obj = from_obj.alias()
+
+        self._from_obj = from_obj
+
+        if self.table not in self._get_joinable_tables():
+            self._adapter = sql_util.ClauseAdapter(self._from_obj, equivalents=self.mapper._equivalent_columns)
+
+    def _set_with_polymorphic(self, cls_or_mappers, selectable=None):
         
+        if selectable:
+            self._set_select_from(selectable)
+
+        mappers, from_obj = self.mapper._with_polymorphic_mappers(cls_or_mappers, selectable)
+        self._with_polymorphic = mappers
+        self._from_obj = from_obj
+
     def _no_criterion_condition(self, q, meth):
-        if q._criterion or q._statement or q._from_obj is not self.table:
+        if q._criterion or q._statement: # or q._from_obj is not self.table:
             util.warn(
                 ("Query.%s() being called on a Query with existing criterion; "
                  "criterion is being ignored.") % meth)
 
-        q._from_obj = self.table
-        q._adapter = self.select_mapper._clause_adapter
+        #q._from_obj = self.table
+        #q._adapter = self.select_mapper._clause_adapter
+
+        if self.mapper.with_polymorphic:
+            self._set_with_polymorphic(*self.mapper.with_polymorphic)
+
         q._alias_ids = {}
         q._joinpoint = self.mapper
         q._statement = q._aliases = q._criterion = None
@@ -165,27 +191,10 @@ class Query(object):
         
         q = self._new_base_mapper(self.mapper, 'with_polymorphic')
 
-        if cls_or_mappers == '*':
-            cls_or_mappers = self.mapper.polymorphic_iterator()
-        else:
-            cls_or_mappers = util.to_list(cls_or_mappers)
-        
-        if selectable:
-            q = q.select_from(selectable)
-                
-        for cls_or_mapper in cls_or_mappers:
-            poly_mapper = _class_to_mapper(cls_or_mapper)
-            if poly_mapper is self.mapper:
-                continue
-
-            q._with_polymorphic.append(poly_mapper)
-            if not selectable:
-                if poly_mapper.concrete:
-                    raise exceptions.InvalidRequestError("'with_polymorphic()' requires 'selectable' argument when concrete-inheriting mappers are used.")
-                elif not poly_mapper.single:
-                    q._from_obj = q._from_obj.outerjoin(poly_mapper.local_table, poly_mapper.inherit_condition)
+        q._set_with_polymrphic(cls_or_mappers, selectable=selectable)
 
         return q
+    
         
     def yield_per(self, count):
         """Yield only ``count`` rows at a time.
@@ -795,16 +804,9 @@ class Query(object):
             util.warn_deprecated("select_from() now accepts a single Selectable as its argument, which replaces any existing FROM criterion.")
             from_obj = from_obj[-1]
 
-        if isinstance(from_obj, expression._SelectBaseMixin):
-            # alias SELECTs and unions
-            from_obj = from_obj.alias()
-
-        new._from_obj = from_obj
-
-        if new.table not in new._get_joinable_tables():
-            new._adapter = sql_util.ClauseAdapter(new._from_obj, equivalents=new.mapper._equivalent_columns)
+        new._set_select_from(from_obj)
         return new
-
+    
     def __getitem__(self, item):
         if isinstance(item, slice):
             start = item.start
@@ -1149,16 +1151,7 @@ class Query(object):
 
         context.from_clause = from_obj
 
-        # TODO: compile eagerloads from select_mapper if polymorphic ? [ticket:917]
-        if self._with_polymorphic:
-            props = util.Set()
-            for m in [self.select_mapper]  + self._with_polymorphic:
-                for value in m.iterate_properties:
-                    props.add(value)
-        else:
-            props = self.select_mapper.iterate_properties
-            
-        for value in props:
+        for value in self.select_mapper._iterate_polymorphic_properties(self._with_polymorphic):
             if self._only_load_props and value.key not in self._only_load_props:
                 continue
             context.exec_with_path(self.select_mapper, value.key, value.setup, context, only_load_props=self._only_load_props)

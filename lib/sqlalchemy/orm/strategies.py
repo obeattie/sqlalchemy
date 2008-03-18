@@ -568,7 +568,7 @@ class EagerLoader(AbstractRelationLoader):
         if clauses.order_by:
             context.eager_order_by += util.to_list(clauses.order_by)
         
-        for value in self.select_mapper.iterate_properties:
+        for value in self.select_mapper._iterate_polymorphic_properties():
             context.exec_with_path(self.select_mapper, value.key, value.setup, context, parentclauses=clauses, parentmapper=self.select_mapper)
         
     def _create_row_decorator(self, selectcontext, row, path):

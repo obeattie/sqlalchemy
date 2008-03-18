@@ -127,7 +127,10 @@ def row_adapter(from_, to, equivalent_columns=None):
             return key in self
         def __getitem__(self, key):
             if key in map:
+                print "TRANSLATED KEY", id(key), "TO", id(map[key])
                 key = map[key]
+            else:
+                print "DIDNT TRANSALTE KEY", id(key)
             return self.row[key]
         def keys(self):
             return map.keys()

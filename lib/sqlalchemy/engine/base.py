@@ -1482,13 +1482,15 @@ class ResultProxy(object):
 
             try:
                 rec = props[key]
+                print "KEY", id(key), key, "IN RESULT: YES!"
+                print "ALL KEYS", [id(k) for k in props]
             except KeyError:
                 # fallback for targeting a ColumnElement to a textual expression
-                if isinstance(key, expression.ColumnElement):
-                    if key._label.lower() in props:
-                        return props[key._label.lower()]
-                    elif key.name.lower() in props:
-                        return props[key.name.lower()]
+#                if isinstance(key, expression.ColumnElement):
+#                    if key._label.lower() in props:
+#                        return props[key._label.lower()]
+#                    elif key.name.lower() in props:
+#                        return props[key.name.lower()]
                 raise exceptions.NoSuchColumnError("Could not locate column in row for column '%s'" % (str(key)))
 
             return rec
