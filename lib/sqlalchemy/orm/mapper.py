@@ -20,6 +20,7 @@ from sqlalchemy.orm import sync, attributes
 from sqlalchemy.orm.util import ExtensionCarrier, create_row_adapter, state_str, instance_str
 from sqlalchemy.orm.interfaces import MapperProperty, EXT_CONTINUE, PropComparator
 
+
 __all__ = ['Mapper', 'class_mapper', 'object_mapper', '_mapper_registry']
 
 _mapper_registry = weakref.WeakKeyDictionary()
@@ -222,10 +223,10 @@ class Mapper(object):
     def dispose(self):
         # disaable any attribute-based compilation
         self.__props_init = True
-        try:
+
+        if hasattr(self.class_, 'c') and self.class_.c is self.c:
             del self.class_.c
-        except AttributeError:
-            pass
+
         if not self.non_primary and self.entity_name in self._class_state.mappers:
             del self._class_state.mappers[self.entity_name]
         if not self._class_state.mappers:
@@ -732,13 +733,33 @@ class Mapper(object):
         auto-session attachment logic.
         """
 
+        # XXX
+        #def hello(self):
+        #    raise Exception("Bah")
+        #self.class_._state = property(hello)
+        #self.class_._class_state = property(hello)
+
         if self.non_primary:
-            self._class_state = self.class_._class_state
+            self._class_state = attributes.class_state_getter(self.class_)
             _mapper_registry[self] = True
             return
 
-        if not self.non_primary and '_class_state' in self.class_.__dict__ and (self.entity_name in self.class_._class_state.mappers):
-             raise exceptions.ArgumentError("Class '%s' already has a primary mapper defined with entity name '%s'.  Use non_primary=True to create a non primary Mapper.  clear_mappers() will remove *all* current mappers from all classes." % (self.class_, self.entity_name))
+        if not self.non_primary:
+            try:
+                state = attributes.class_state_getter(self.class_)
+            except AttributeError:
+                state = None
+            else:
+                if state.class_ is not self.class_:
+                    # Avoid inheritance chain to kick in.
+                    state = None
+            if state is not None and self.entity_name in state.mappers:
+                raise exceptions.ArgumentError(
+                    "Class '%s' already has a primary mapper defined "
+                    "with entity name '%s'.  Use non_primary=True to "
+                    "create a non primary Mapper.  clear_mappers() will "
+                    "remove *all* current mappers from all classes." %
+                    (self.class_, self.entity_name))
 
         def extra_init(class_, oldinit, instance, args, kwargs):
             self.compile()
@@ -750,10 +771,10 @@ class Mapper(object):
 
         attributes.register_class(self.class_, extra_init=extra_init, on_exception=on_exception, deferred_scalar_loader=_load_scalar_attributes)
 
-        self._class_state = self.class_._class_state
+        self._class_state = attributes.class_state_getter(self.class_)
         _mapper_registry[self] = True
 
-        self.class_._class_state.mappers[self.entity_name] = self
+        self._class_state.mappers[self.entity_name] = self
 
         if self.entity_name is None:
             self.class_.c = self.c
@@ -882,8 +903,8 @@ class Mapper(object):
         """Return the list of primary key values for the given
         instance.
         """
-
-        return [self._get_state_attr_by_column(instance._state, column) for column in self.primary_key]
+        state = attributes.state_getter(instance)
+        return self._primary_key_from_state(state)
 
     def _primary_key_from_state(self, state):
         return [self._get_state_attr_by_column(state, column) for column in self.primary_key]
@@ -911,13 +932,16 @@ class Mapper(object):
         return self._get_col_to_prop(column).setattr(state, value, column)
 
     def _get_attr_by_column(self, obj, column):
-        return self._get_col_to_prop(column).getattr(obj._state, column)
-
-    def _get_committed_attr_by_column(self, obj, column):
-        return self._get_col_to_prop(column).getcommitted(obj._state, column)
+        state = attributes.state_getter(obj)
+        return self._get_state_attr_by_column(state, column)
 
     def _set_attr_by_column(self, obj, column, value):
-        self._get_col_to_prop(column).setattr(obj._state, column, value)
+        state = attributes.state_getter(obj)
+        self._set_state_attr_by_column(state, column, value)
+
+    def _get_committed_attr_by_column(self, obj, column):
+        state = attributes.state_getter(obj)
+        return self._get_col_to_prop(column).getcommitted(state, column)
 
     def _save_obj(self, states, uowtransaction, postupdate=False, post_update_cols=None, single=False):
         """Issue ``INSERT`` and/or ``UPDATE`` statements for a list of objects.
@@ -969,7 +993,8 @@ class Mapper(object):
             mapper = _state_mapper(state)
             instance_key = mapper._identity_key_from_state(state)
             if not postupdate and not has_identity and instance_key in uowtransaction.uow.identity_map:
-                existing = uowtransaction.uow.identity_map[instance_key]._state
+                instance = uowtransaction.uow.identity_map[instance_key]
+                existing = attributes.state_getter(instance)
                 if not uowtransaction.is_deleted(existing):
                     raise exceptions.FlushError("New instance %s with identity key %s conflicts with persistent instance %s" % (state_str(state), str(instance_key), state_str(existing)))
                 if self.__should_log_debug:
@@ -1310,7 +1335,7 @@ class Mapper(object):
 
         if identitykey in session_identity_map:
             instance = session_identity_map[identitykey]
-            state = instance._state
+            state = attributes.state_getter(instance)
 
             if self.__should_log_debug:
                 self.__log_debug("_instance(): using existing instance %s identity %s" % (instance_str(instance), str(identitykey)))
@@ -1356,7 +1381,7 @@ class Mapper(object):
             if self.__should_log_debug:
                 self.__log_debug("_instance(): created new instance %s identity %s" % (instance_str(instance), str(identitykey)))
 
-            state = instance._state
+            state = attributes.state_getter(instance)
             instance._entity_name = self.entity_name
             instance._instance_key = identitykey
             instance._sa_session_id = context.session.hash_key
@@ -1453,7 +1478,8 @@ class Mapper(object):
             selectcontext.exec_with_path(self, key, populator, instance, row, ispostselect=ispostselect, isnew=isnew, **flags)
 
         if self.non_primary:
-            selectcontext.attributes[('populating_mapper', instance._state)] = self
+            selectcontext.attributes[('populating_mapper',
+                                      attributes.state_getter(instance))] = self
 
     def _post_instance(self, selectcontext, state, **kwargs):
         post_processors = selectcontext.attributes[('post_processors', self, None)]
@@ -1503,15 +1529,19 @@ class Mapper(object):
 
                 props = [prop for prop in [self._get_col_to_prop(col) for col in statement.inner_columns] if prop.key not in instance.__dict__]
                 keys = [p.key for p in props]
-                
+
                 only_load_props = flags.get('only_load_props', None)
                 if only_load_props:
                     keys = util.Set(keys).difference(only_load_props)
                     props = [p for p in props if p.key in only_load_props]
-                    
+
                 for prop in props:
                     strategy = prop._get_strategy(DeferredColumnLoader)
-                    instance._state.set_callable(prop.key, strategy.setup_loader(instance, props=keys, create_statement=create_statement))
+                    state = attributes.state_getter(instance)
+                    state.set_callable(prop.key,
+                                       strategy.setup_loader(
+                                           instance, props=keys,
+                                           create_statement=create_statement))
             return post_execute
         else:
             return None
@@ -1572,7 +1602,7 @@ def _load_scalar_attributes(instance, attribute_names):
         except exceptions.InvalidRequestError:
             raise exceptions.UnboundExecutionError("Instance %s is not bound to a Session, and no contextual session is established; attribute refresh operation cannot proceed" % (instance.__class__))
 
-    state = instance._state
+    state = attributes.state_getter(instance)
     if '_instance_key' in state.dict:
         identity_key = state.dict['_instance_key']
     else:
@@ -1581,7 +1611,7 @@ def _load_scalar_attributes(instance, attribute_names):
         raise exceptions.InvalidRequestError("Could not refresh instance '%s'" % instance_str(instance))
 
 def _state_mapper(state, entity_name=None):
-    return state.class_._class_state.mappers[state.dict.get('_entity_name', entity_name)]
+    return attributes.class_state_getter(state.class_).mappers[state.dict.get('_entity_name', entity_name)]
 
 def object_mapper(object, entity_name=None, raiseerror=True):
     """Given an object, return the primary Mapper associated with the object instance.
@@ -1599,9 +1629,9 @@ def object_mapper(object, entity_name=None, raiseerror=True):
             be located.  If False, return None.
 
     """
-
     try:
-        mapper = object.__class__._class_state.mappers[getattr(object, '_entity_name', entity_name)]
+        class_state = attributes.class_state_getter(object)
+        mapper = class_state.mappers[getattr(object, '_entity_name', entity_name)]
     except (KeyError, AttributeError):
         if raiseerror:
             raise exceptions.InvalidRequestError("Class '%s' entity name '%s' has no mapper associated with it" % (object.__class__.__name__, getattr(object, '_entity_name', entity_name)))
@@ -1614,9 +1644,9 @@ def class_mapper(class_, entity_name=None, compile=True, raiseerror=True):
 
     If no mapper can be located, raises ``InvalidRequestError``.
     """
-
     try:
-        mapper = class_._class_state.mappers[entity_name]
+        class_state = attributes.class_state_getter(class_)
+        mapper = class_state.mappers[entity_name]
     except (KeyError, AttributeError):
         if raiseerror:
             raise exceptions.InvalidRequestError("Class '%s' entity name '%s' has no mapper associated with it" % (class_.__name__, entity_name))

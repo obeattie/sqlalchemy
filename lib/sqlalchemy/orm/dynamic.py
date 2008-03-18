@@ -7,6 +7,8 @@ from sqlalchemy.orm.query import Query
 from sqlalchemy.orm.mapper import has_identity, object_mapper
 
 class DynamicAttributeImpl(attributes.AttributeImpl):
+    uses_objects = True
+    
     def __init__(self, class_, key, typecallable, target_mapper, **kwargs):
         super(DynamicAttributeImpl, self).__init__(class_, key, typecallable, **kwargs)
         self.target_mapper = target_mapper

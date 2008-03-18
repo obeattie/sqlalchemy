@@ -67,7 +67,7 @@ class ColumnLoader(LoaderStrategy):
                 def new_execute(instance, row, **flags):
                     if self._should_log_debug:
                         self.logger.debug("populating %s with %s/%s..." % (mapperutil.attribute_str(instance, self.key), row.__class__.__name__, self.columns[0].key))
-                    instance._state.dict[self.key] = self.parent_property.composite_class(*[row[c] for c in self.columns])
+                    attributes.state_getter(instance).dict[self.key] = self.parent_property.composite_class(*[row[c] for c in self.columns])
                 if self._should_log_debug:
                     self.logger.debug("Returning active composite column fetcher for %s %s" % (mapper, self.key))
                 return (new_execute, None, None)
@@ -76,14 +76,14 @@ class ColumnLoader(LoaderStrategy):
             def new_execute(instance, row, **flags):
                 if self._should_log_debug:
                     self.logger.debug("populating %s with %s/%s" % (mapperutil.attribute_str(instance, self.key), row.__class__.__name__, self.columns[0].key))
-                instance._state.dict[self.key] = row[self.columns[0]]
+                attributes.state_getter(instance).dict[self.key] = row[self.columns[0]]
             if self._should_log_debug:
                 self.logger.debug("Returning active column fetcher for %s %s" % (mapper, self.key))
             return (new_execute, None, None)
         else:
             def new_execute(instance, row, isnew, **flags):
                 if isnew:
-                    instance._state.expire_attributes([self.key])
+                    attributes.state_getter(instance).expire_attributes([self.key])
             if self._should_log_debug:
                 self.logger.debug("Deferring load for %s %s" % (mapper, self.key))
             return (new_execute, None, None)
@@ -100,13 +100,13 @@ class DeferredColumnLoader(LoaderStrategy):
             def new_execute(instance, row, **flags):
                 if self._should_log_debug:
                     self.logger.debug("set deferred callable on %s" % mapperutil.attribute_str(instance, self.key))
-                instance._state.set_callable(self.key, self.setup_loader(instance))
+                attributes.state_getter(instance).set_callable(self.key, self.setup_loader(instance))
             return (new_execute, None, None)
         else:
             def new_execute(instance, row, **flags):
                 if self._should_log_debug:
                     self.logger.debug("set deferred callable on %s" % mapperutil.attribute_str(instance, self.key))
-                instance._state.reset(self.key)
+                attributes.state_getter(instance).reset(self.key)
             return (new_execute, None, None)
 
     def init(self):
@@ -185,7 +185,8 @@ class LoadDeferredColumns(object):
             toload = [self.key]
 
         # narrow the keys down to just those which have no history
-        group = [k for k in toload if k in self.instance._state.unmodified]
+        group = [k for k in toload
+                 if k in attributes.state_getter(self.instance).unmodified]
 
         if strategy._should_log_debug:
             strategy.logger.debug("deferred load %s group %s" % (mapperutil.attribute_str(self.instance, self.key), group and ','.join(group) or 'None'))
@@ -197,10 +198,14 @@ class LoadDeferredColumns(object):
         query = session.query(localparent)
         if not self.optimizing_statement:
             ident = self.instance._instance_key[1]
-            query._get(None, ident=ident, only_load_props=group, refresh_instance=self.instance._state)
+            state = attributes.state_getter(self.instance)
+            query._get(None, ident=ident, only_load_props=group,
+                       refresh_instance=state)
         else:
             statement, params = self.optimizing_statement(self.instance)
-            query.from_statement(statement).params(params)._get(None, only_load_props=group, refresh_instance=self.instance._state)
+            state = attributes.state_getter(self.instance)
+            query.from_statement(statement).params(params)._get(
+                None, only_load_props=group, refresh_instance=state)
         return attributes.ATTR_WAS_SET
 
 class DeferredOption(StrategizedOption):
@@ -229,9 +234,9 @@ class AbstractRelationLoader(LoaderStrategy):
         
     def _init_instance_attribute(self, instance, callable_=None):
         if callable_:
-            instance._state.set_callable(self.key, callable_)
+            attributes.state_getter(instance).set_callable(self.key, callable_)
         else:
-            instance._state.initialize(self.key)
+            attributes.state_getter(instance).initialize(self.key)
         
     def _register_attribute(self, class_, callable_=None, **kwargs):
         self.logger.info("register managed %s attribute %s on class %s" % ((self.uselist and "list-holding" or "scalar"), self.key, self.parent.class_.__name__))
@@ -358,7 +363,7 @@ class LazyLoader(AbstractRelationLoader):
                     # so that the class-level lazy loader is executed when next referenced on this instance.
                     # this usually is not needed unless the constructor of the object referenced the attribute before we got 
                     # to load data into it.
-                    instance._state.reset(self.key)
+                    attributes.state_getter(instance).reset(self.key)
             return (new_execute, None, None)
 
     def _create_lazy_clause(cls, prop, reverse_direction=False):
@@ -617,26 +622,28 @@ class EagerLoader(AbstractRelationLoader):
                         # parent object, bypassing InstrumentedAttribute
                         # event handlers.
                         #
-                        instance._state.dict[self.key] = self.select_mapper._instance(selectcontext, decorated_row, None)
+                        attributes.state_getter(instance).dict[self.key] = (
+                            self.select_mapper._instance(
+                                selectcontext, decorated_row, None))
                     else:
                         # call _instance on the row, even though the object has been created,
                         # so that we further descend into properties
                         self.select_mapper._instance(selectcontext, decorated_row, None)
                 else:
-                    if isnew or self.key not in instance._state.appenders:
+                    if isnew or self.key not in attributes.state_getter(instance).appenders:
                         # appender_key can be absent from selectcontext.attributes with isnew=False
                         # when self-referential eager loading is used; the same instance may be present
                         # in two distinct sets of result columns
-                        
+
                         if self._should_log_debug:
                             self.logger.debug("initialize UniqueAppender on %s" % mapperutil.attribute_str(instance, self.key))
 
                         collection = attributes.init_collection(instance, self.key)
                         appender = util.UniqueAppender(collection, 'append_without_event')
 
-                        instance._state.appenders[self.key] = appender
-                    
-                    result_list = instance._state.appenders[self.key]
+                        attributes.state_getter(instance).appenders[self.key] = appender
+
+                    result_list = attributes.state_getter(instance).appenders[self.key]
                     if self._should_log_debug:
                         self.logger.debug("eagerload list instance on %s" % mapperutil.attribute_str(instance, self.key))
 

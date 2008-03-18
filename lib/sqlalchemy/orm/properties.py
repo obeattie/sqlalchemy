@@ -73,12 +73,13 @@ class ColumnProperty(StrategizedProperty):
         state.get_impl(self.key).set(state, value, None)
 
     def merge(self, session, source, dest, dont_load, _recursive):
-        value = attributes.get_as_list(source._state, self.key, passive=True)
+        value = attributes.get_as_list(attributes.state_getter(source),
+                                       self.key, passive=True)
         if value:
             setattr(dest, self.key, value[0])
         else:
             # TODO: lazy callable should merge to the new instance
-            dest._state.expire_attributes([self.key])
+            attributes.state_getter(dest).expire_attributes([self.key])
 
     def get_col_value(self, column, value):
         return value
@@ -386,16 +387,17 @@ class PropertyLoader(StrategizedProperty):
     def merge(self, session, source, dest, dont_load, _recursive):
         if not dont_load and self._reverse_property and (source, self._reverse_property) in _recursive:
             return
-            
+
         if not "merge" in self.cascade:
             # TODO: lazy callable should merge to the new instance
-            dest._state.expire_attributes([self.key])
+            attributes.state_getter(dest).expire_attributes([self.key])
             return
 
-        instances = attributes.get_as_list(source._state, self.key, passive=True)
+        instances = attributes.get_as_list(attributes.state_getter(source),
+                                           self.key, passive=True)
         if not instances:
             return
-        
+
         if self.uselist:
             dest_list = attributes.init_collection(dest, self.key)
             for current in instances:
@@ -433,7 +435,8 @@ class PropertyLoader(StrategizedProperty):
                     # cascade using the mapper local to this object, so that its individual properties are located
                     instance_mapper = object_mapper(c, entity_name=mapper.entity_name)
                     yield (c, instance_mapper)
-                    for (c2, m) in instance_mapper.cascade_iterator(type, c._state, recursive):
+                    state = attributes.state_getter(c)
+                    for (c2, m) in instance_mapper.cascade_iterator(type, state, recursive):
                         yield (c2, m)
 
     def _get_target_class(self):

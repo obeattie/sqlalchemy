@@ -150,45 +150,43 @@ class UnitOfWork(object):
 
         if hasattr(obj, '_instance_key'):
             raise exceptions.InvalidRequestError("Object '%s' already has an identity - it can't be registered as new" % repr(obj))
-        if obj._state not in self.new:
-            self.new[obj._state] = obj
-            obj._state.insert_order = len(self.new)
+        state = attributes.state_getter(obj)
+        if state not in self.new:
+            self.new[state] = obj
+            state.insert_order = len(self.new)
 
     def register_deleted(self, obj):
         """register the given persistent object as 'to be deleted' within this unit of work."""
-        
-        self.deleted[obj._state] = obj
+        self.deleted[attributes.state_getter(obj)] = obj
 
-    def locate_dirty(self):
-        """return a set of all persistent instances within this unit of work which 
+    def locate_dirty(self, ignore_deleted=True):
+        """Return a set of all persistent instances within this unit of work which
         either contain changes or are marked as deleted.
         """
-        
-        # a little bit of inlining for speed
-        return util.IdentitySet([x for x in self.identity_map.values() 
-            if x._state not in self.deleted 
-            and (
-                x._state.modified
-                or (x.__class__._class_state.has_mutable_scalars and x._state.is_modified())
-            )
-            ])
+        dirty = util.IdentitySet()
+        for state in self.identity_map.all_states():
+            if ignore_deleted and state in self.deleted:
+                continue
+            if not (state.modified or
+                    (attributes.class_state_getter(state.class_).has_mutable_scalars and
+                     state.is_modified())):
+                continue
+            dirty.add(state)
+        return dirty
 
     def flush(self, session, objects=None):
-        """create a dependency tree of all pending SQL operations within this unit of work and execute."""
-
-        dirty = [x for x in self.identity_map.all_states()
-            if x.modified
-            or (x.class_._class_state.has_mutable_scalars and x.is_modified())
-        ]
-        
+        """Create a dependency tree of all pending SQL operations within this
+        unit of work and execute.
+        """
+        dirty = self.locate_dirty(ignore_deleted=False)
         if not dirty and not self.deleted and not self.new:
             return
-        
+
         deleted = util.Set(self.deleted)
         new = util.Set(self.new)
-        
+
         dirty = util.Set(dirty).difference(deleted)
-        
+
         flush_context = UOWTransaction(self, session)
 
         if session.extension is not None:
@@ -303,16 +301,15 @@ class UOWTransaction(object):
             (added, unchanged, deleted) = attributes.get_history(state, key, passive=passive)
             self.attributes[hashkey] = (added, unchanged, deleted, passive)
 
-        if added is None:
+        if added is None or not state.get_impl(key).uses_objects:
             return (added, unchanged, deleted)
         else:
             return (
-                [getattr(c, '_state', c) for c in added],
-                [getattr(c, '_state', c) for c in unchanged],
-                [getattr(c, '_state', c) for c in deleted],
+                [c is not None and attributes.state_getter(c) or None for c in added],
+                [c is not None and attributes.state_getter(c) or None for c in unchanged],
+                [c is not None and attributes.state_getter(c) or None for c in deleted],
                 )
 
-        
     def register_object(self, state, isdelete = False, listonly = False, postupdate=False, post_update_cols=None, **kwargs):
         # if object is not in the overall session, do nothing
         if not self.uow._is_valid(state):
@@ -324,7 +321,7 @@ class UOWTransaction(object):
             self.logger.debug("register object for flush: %s isdelete=%s listonly=%s postupdate=%s" % (mapperutil.state_str(state), isdelete, listonly, postupdate))
 
         mapper = _state_mapper(state)
-        
+
         task = self.get_task_by_mapper(mapper)
         if postupdate:
             task.append_postupdate(state, post_update_cols)

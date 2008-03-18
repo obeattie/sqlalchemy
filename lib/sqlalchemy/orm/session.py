@@ -8,6 +8,7 @@
 
 
 import weakref
+import sqlalchemy.orm.attributes
 from sqlalchemy import util, exceptions, sql, engine
 from sqlalchemy.orm import unitofwork, query, attributes, util as mapperutil
 from sqlalchemy.orm.mapper import object_mapper as _object_mapper
@@ -818,9 +819,12 @@ class Session(object):
 
         self._validate_persistent(instance)
 
-        if self.query(_object_mapper(instance))._get(instance._instance_key, refresh_instance=instance._state, only_load_props=attribute_names) is None:
+        state = attributes.state_getter(instance)
+        if self.query(_object_mapper(instance))._get(
+                instance._instance_key, refresh_instance=state,
+                only_load_props=attribute_names) is None:
             raise exceptions.InvalidRequestError("Could not refresh instance '%s'" % mapperutil.instance_str(instance))
-    
+
     def expire_all(self):
         """Expires all persistent instances within this Session.  
         
@@ -840,19 +844,20 @@ class Session(object):
         of attribute names indicating a subset of attributes to be
         expired.
         """
-
+        state = attributes.state_getter(instance)
         if attribute_names:
             self._validate_persistent(instance)
-            _expire_state(instance._state, attribute_names=attribute_names)
+            _expire_state(state, attribute_names=attribute_names)
         else:
             # pre-fetch the full cascade since the expire is going to
             # remove associations
             cascaded = list(_cascade_iterator('refresh-expire', instance))
             self._validate_persistent(instance)
-            _expire_state(instance._state, None)
+            _expire_state(state, None)
             for (c, m) in cascaded:
                 self._validate_persistent(c)
-                _expire_state(c._state, None)
+                state = attributes.state_getter(c)
+                _expire_state(state, None)
 
     def prune(self):
         """Remove unreferenced instances cached in the identity map.
@@ -877,7 +882,8 @@ class Session(object):
         self._validate_persistent(instance)
         for c, m in [(instance, None)] + list(_cascade_iterator('expunge', instance)):
             if c in self:
-                self.uow._remove_deleted(c._state)
+                state = attributes.state_getter(c)
+                self.uow._remove_deleted(state)
                 self._unattach(c)
 
     def save(self, instance, entity_name=None):
@@ -967,7 +973,8 @@ class Session(object):
             if key in self.identity_map:
                 merged = self.identity_map[key]
             elif dont_load:
-                if instance._state.modified:
+                state = attributes.state_getter(instance)
+                if state.modified:
                     raise exceptions.InvalidRequestError("merge() with dont_load=True option does not support objects marked as 'dirty'.  flush() all changes on mapped instances before merging with dont_load=True.")
 
                 merged = attributes.new_instance(mapper.class_)
@@ -984,7 +991,8 @@ class Session(object):
         if key is None:
             self.save(merged, entity_name=mapper.entity_name)
         elif dont_load:
-            merged._state.commit_all()
+            state = attributes.state_getter(merged)
+            state.commit_all()
         return merged
 
     def identity_key(cls, *args, **kwargs):
@@ -1126,8 +1134,9 @@ class Session(object):
         The instance may be pending or persistent within the Session for a
         result of True.
         """
-
-        return instance._state in self.uow.new or (hasattr(instance, '_instance_key') and self.identity_map.get(instance._instance_key) is instance)
+        state = attributes.state_getter(instance)
+        return state in self.uow.new or (hasattr(instance, '_instance_key') and
+                                         self.identity_map.get(instance._instance_key) is instance)
 
     def __iter__(self):
         """Return an iterator of all instances which are pending or persistent within this Session."""
@@ -1206,7 +1215,8 @@ _sessions = weakref.WeakValueDictionary()
 
 def _cascade_iterator(cascade, instance, **kwargs):
     mapper = _object_mapper(instance)
-    for (o, m) in mapper.cascade_iterator(cascade, instance._state, **kwargs):
+    state = sqlalchemy.orm.attributes.state_getter(instance)
+    for (o, m) in mapper.cascade_iterator(cascade, state, **kwargs):
         yield o, m
 
 def object_session(instance):

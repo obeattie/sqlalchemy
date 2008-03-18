@@ -13,6 +13,7 @@ class QueryTest(FixtureTest):
     keep_mappers = True
     keep_data = True
 
+
     def setup_mappers(self):
         mapper(User, users, properties={
             'addresses':relation(Address, backref='user'),
@@ -263,6 +264,7 @@ class OperatorTest(QueryTest):
 
 
 class CompileTest(QueryTest):
+        
     def test_deferred(self):
         session = create_session()
         s = session.query(User).filter(and_(addresses.c.email_address == bindparam('emailad'), Address.user_id==User.id)).compile()
@@ -384,6 +386,7 @@ class FilterTest(QueryTest):
         assert [User(name='chuck')] == sess.query(User).filter_by(addresses = None).all()
 
 class AggregateTest(QueryTest):
+
     def test_sum(self):
         sess = create_session()
         orders = sess.query(Order).filter(Order.id.in_([2, 3, 4]))

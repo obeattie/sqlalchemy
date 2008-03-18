@@ -885,6 +885,7 @@ class SelfReferentialM2MEagerTest(ORMTest):
         assert [Widget(name='w1', children=[Widget(name='w2')])] == sess.query(Widget).filter(Widget.name==u'w1').all()
 
 class CyclicalInheritingEagerTest(ORMTest):
+
     def define_tables(self, metadata):
         global t1, t2
         t1 = Table('t1', metadata,

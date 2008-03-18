@@ -90,7 +90,7 @@ class UserDefinedExtensionTest(TestBase):
             u.email_address = 'lala@123.com'
 
             self.assert_(u.user_id == 7 and u.user_name == 'john' and u.email_address == 'lala@123.com')
-            u._state.commit_all()
+            attributes.state_getter(u).commit_all()
             self.assert_(u.user_id == 7 and u.user_name == 'john' and u.email_address == 'lala@123.com')
 
             u.user_name = 'heythere'
@@ -104,7 +104,7 @@ class UserDefinedExtensionTest(TestBase):
             data = {'a':'this is a', 'b':12}
             def loader(instance, keys):
                 for k in keys:
-                    instance._state.dict[k] = data[k]
+                    attributes.state_getter(instance).dict[k] = data[k]
                 return attributes.ATTR_WAS_SET
 
             attributes.register_class(Foo, deferred_scalar_loader=loader)
@@ -112,21 +112,21 @@ class UserDefinedExtensionTest(TestBase):
             attributes.register_attribute(Foo, 'b', uselist=False, useobject=False)
 
             f = Foo()
-            f._state.expire_attributes(None)
+            attributes.state_getter(f).expire_attributes(None)
             self.assertEquals(f.a, "this is a")
             self.assertEquals(f.b, 12)
 
             f.a = "this is some new a"
-            f._state.expire_attributes(None)
+            attributes.state_getter(f).expire_attributes(None)
             self.assertEquals(f.a, "this is a")
             self.assertEquals(f.b, 12)
 
-            f._state.expire_attributes(None)
+            attributes.state_getter(f).expire_attributes(None)
             f.a = "this is another new a"
             self.assertEquals(f.a, "this is another new a")
             self.assertEquals(f.b, 12)
 
-            f._state.expire_attributes(None)
+            attributes.state_getter(f).expire_attributes(None)
             self.assertEquals(f.a, "this is a")
             self.assertEquals(f.b, 12)
 
@@ -134,7 +134,7 @@ class UserDefinedExtensionTest(TestBase):
             self.assertEquals(f.a, None)
             self.assertEquals(f.b, 12)
 
-            f._state.commit_all()
+            attributes.state_getter(f).commit_all()
             self.assertEquals(f.a, None)
             self.assertEquals(f.b, 12)
 
@@ -217,27 +217,27 @@ class UserDefinedExtensionTest(TestBase):
             f1 = Foo()
             f1.name = 'f1'
             
-            self.assertEquals(attributes.get_history(f1._state, 'name'), (['f1'], [], []))
+            self.assertEquals(attributes.get_history(attributes.state_getter(f1), 'name'), (['f1'], [], []))
             
             b1 = Bar()
             b1.name = 'b1'
             f1.bars.append(b1)
-            self.assertEquals(attributes.get_history(f1._state, 'bars'), ([b1], [], []))
+            self.assertEquals(attributes.get_history(attributes.state_getter(f1), 'bars'), ([b1], [], []))
             
-            f1._state.commit_all()
-            b1._state.commit_all()
+            attributes.state_getter(f1).commit_all()
+            attributes.state_getter(b1).commit_all()
             
-            self.assertEquals(attributes.get_history(f1._state, 'name'), ([], ['f1'], []))
-            self.assertEquals(attributes.get_history(f1._state, 'bars'), ([], [b1], []))
+            self.assertEquals(attributes.get_history(attributes.state_getter(f1), 'name'), ([], ['f1'], []))
+            self.assertEquals(attributes.get_history(attributes.state_getter(f1), 'bars'), ([], [b1], []))
             
             f1.name = 'f1mod'
             b2 = Bar()
             b2.name = 'b2'
             f1.bars.append(b2)
-            self.assertEquals(attributes.get_history(f1._state, 'name'), (['f1mod'], [], ['f1']))
-            self.assertEquals(attributes.get_history(f1._state, 'bars'), ([b2], [b1], []))
+            self.assertEquals(attributes.get_history(attributes.state_getter(f1), 'name'), (['f1mod'], [], ['f1']))
+            self.assertEquals(attributes.get_history(attributes.state_getter(f1), 'bars'), ([b2], [b1], []))
             f1.bars.remove(b1)
-            self.assertEquals(attributes.get_history(f1._state, 'bars'), ([b2], [], [b1]))
+            self.assertEquals(attributes.get_history(attributes.state_getter(f1), 'bars'), ([b2], [], [b1]))
     
     def test_null_instrumentation(self):
         class Foo(MyBaseClass):
@@ -246,8 +246,8 @@ class UserDefinedExtensionTest(TestBase):
         attributes.register_attribute(Foo, "name", uselist=False, useobject=False)
         attributes.register_attribute(Foo, "bars", uselist=True, trackparent=True, useobject=True)
         
-        assert Foo.name == Foo._class_state.get_inst('name')
-        assert Foo.bars == Foo._class_state.get_inst('bars')
+        assert Foo.name == attributes.class_state_getter(Foo).get_inst('name')
+        assert Foo.bars == attributes.class_state_getter(Foo).get_inst('bars')
         
 
 if __name__ == '__main__':
