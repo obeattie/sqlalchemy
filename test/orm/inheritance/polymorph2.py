@@ -562,7 +562,7 @@ class RelationTest7(ORMTest):
 
         class Car(PersistentObject):
             def __repr__(self):
-                return "Car number %d, name %s" % i(self.car_id, self.name)
+                return "Car number %d, name %s" % (self.car_id, self.name)
 
         class Offraod_Car(Car):
             def __repr__(self):
