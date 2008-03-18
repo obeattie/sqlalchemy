@@ -4,7 +4,13 @@ CHANGES
 
 0.4.5
 =====
+
 - orm
+
+    - Added hooks `class_state_getter` and `state_getter` to
+      sqlalchemy.orm.attributes which can be overridden to customize storage
+      and access of the previous `_state` and `_class_state` attributes.
+
     - Added comparable_property(), adds query Comparator behavior
       to regular, unmanaged Python properties
 

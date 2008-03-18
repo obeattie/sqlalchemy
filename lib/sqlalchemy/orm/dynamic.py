@@ -6,6 +6,7 @@ from sqlalchemy.orm import attributes, object_session, util as mapperutil
 from sqlalchemy.orm.query import Query
 from sqlalchemy.orm.mapper import has_identity, object_mapper
 
+
 class DynamicAttributeImpl(attributes.AttributeImpl):
     uses_objects = True
     
@@ -110,14 +111,18 @@ class AppenderQuery(Query):
     def __getitem__(self, index):
         sess = self.__session()
         if sess is None:
-            return self.attr._get_collection(self.instance._state, passive=True).added_items.__getitem__(index)
+            return self.attr._get_collection(
+                attributes.state_getter(self.instance),
+                passive=True).added_items.__getitem__(index)
         else:
             return self._clone(sess).__getitem__(index)
     
     def count(self):
         sess = self.__session()
         if sess is None:
-            return len(self.attr._get_collection(self.instance._state, passive=True).added_items)
+            return len(self.attr._get_collection(
+                attributes.state_getter(self.instance),
+                passive=True).added_items)
         else:
             return self._clone(sess).count()
     
