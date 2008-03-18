@@ -2,6 +2,69 @@
 CHANGES
 =======
 
+0.4.5
+=====
+- orm
+    - Added comparable_property(), adds query Comparator behavior
+      to regular, unmanaged Python properties
+
+    - When attributes are expired on a pending instance, an error
+      will not be raised when the "refresh" action is triggered
+      and returns no result
+
+    - Fixed/covered case when using a False value as a polymorphic
+      discriminator
+
+    - Fixed bug which was preventing synonym() attributes from
+      being used with inheritance
+
+    - Session.execute can now find binds from metadata
+
+    - assorted "cascade deletes" fixes:
+        - Fixed "cascade delete" operation of dynamic
+          relations, which had only been implemented for
+          foreign-key nulling behavior in 0.4.2 and not actual
+          cascading deletes [ticket:895]
+    
+        - delete cascade without delete-orphan cascade on a
+          many-to-one will not delete orphans which were
+          disconnected from the parent before session.delete()
+          is called on the parent (one-to-many already had
+          this).
+      
+        - delete cascade with delete-orphan will delete
+          orphans whether or not it remains attached to its
+          also-deleted parent.
+    
+    - fixed order_by calculation in Query to properly alias
+      mapper-config'ed order_by when using select_from()
+
+- sql
+    - 'name' is no longer a required constructor argument for
+      Column().  It (and .key) may now be deferred until the column
+      is added to a Table.
+
+- extensions
+    - The "synonym" function is now directly usable with
+      "declarative".  Pass in the decorated property using the
+      "descriptor" keyword argument, e.g.: somekey =
+      synonym('_somekey', descriptor=property(g, s))
+    
+    - the "deferred" function is usable with "declarative".
+      Simplest usage is to declare deferred and Column together,
+      e.g.:  data = deferred(Column(Text))
+      
+    - Declarative also gained @synonym_for(...) and
+      @comparable_using(...), front-ends for synonym and
+      comparable_property.
+
+    - Declarative will complete setup for Columns lacking names,
+      allows a more DRY syntax.
+
+        class Foo(Base):
+            __tablename__ = 'foos'
+            id = Column(Integer, primary_key=True)
+
 0.4.4
 ------
 - sql

@@ -26,7 +26,7 @@ class DynamicAttributeImpl(attributes.AttributeImpl):
         state.modified = True
 
         if self.trackparent and value is not None:
-            self.sethasparent(value._state, True)
+            self.sethasparent(attributes.state_getter(value), True)
         instance = state.obj()
         for ext in self.extensions:
             ext.append(instance, value, initiator or self)
@@ -35,7 +35,7 @@ class DynamicAttributeImpl(attributes.AttributeImpl):
         state.modified = True
 
         if self.trackparent and value is not None:
-            self.sethasparent(value._state, False)
+            self.sethasparent(attributes.state_getter(value), False)
 
         instance = state.obj()
         for ext in self.extensions:
@@ -101,7 +101,9 @@ class AppenderQuery(Query):
     def __iter__(self):
         sess = self.__session()
         if sess is None:
-            return iter(self.attr._get_collection(self.instance._state, passive=True).added_items)
+            return iter(self.attr._get_collection(
+                attributes.state_getter(self.instance),
+                passive=True).added_items)
         else:
             return iter(self._clone(sess))
 
@@ -140,14 +142,14 @@ class AppenderQuery(Query):
             oldlist = list(self)
         else:
             oldlist = []
-        self.attr._get_collection(self.instance._state, passive=True).replace(oldlist, collection)
+        self.attr._get_collection(attributes.state_getter(self.instance), passive=True).replace(oldlist, collection)
         return oldlist
         
     def append(self, item):
-        self.attr.append(self.instance._state, item, None)
+        self.attr.append(attributes.state_getter(self.instance), item, None)
 
     def remove(self, item):
-        self.attr.remove(self.instance._state, item, None)
+        self.attr.remove(attributes.state_getter(self.instance), item, None)
 
             
 class CollectionHistory(object): 

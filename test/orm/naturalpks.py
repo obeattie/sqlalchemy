@@ -1,6 +1,7 @@
 import testenv; testenv.configure_for_tests()
 from sqlalchemy import *
 from sqlalchemy.orm import *
+from sqlalchemy.orm import attributes
 from sqlalchemy import exceptions
 
 from testlib.fixtures import *
@@ -154,7 +155,7 @@ class NaturalPKTest(ORMTest):
         u1.username = 'ed'
 
         print id(a1), id(a2), id(u1)
-        print u1._state.parents
+        print attributes.state_getter(u1).parents
         def go():
             sess.flush()
         if passive_updates:

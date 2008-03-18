@@ -2,7 +2,8 @@ import UserDict
 import weakref
 import threading
 
-import sqlalchemy.orm.attributes
+from sqlalchemy.orm import attributes
+
 
 class WeakInstanceDict(UserDict.UserDict):
     """similar to WeakValueDictionary, but wired towards 'state' objects."""
@@ -47,7 +48,7 @@ class WeakInstanceDict(UserDict.UserDict):
                     self.data[key].instance_dict = None
             finally:
                 self._mutex.release()
-        state = self.data[key] = sqlalchemy.orm.attributes.state_getter(value)
+        state = self.data[key] = attributes.state_getter(value)
         state.instance_dict = self._wr
 
     def __delitem__(self, key):
@@ -125,4 +126,4 @@ class WeakInstanceDict(UserDict.UserDict):
 
 class StrongInstanceDict(dict):
     def all_states(self):
-        return [o._state for o in self.values()]
+        return [attributes.state_getter(o) for o in self.values()]

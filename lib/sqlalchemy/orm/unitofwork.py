@@ -159,17 +159,33 @@ class UnitOfWork(object):
         """register the given persistent object as 'to be deleted' within this unit of work."""
         self.deleted[attributes.state_getter(obj)] = obj
 
-    def locate_dirty(self, ignore_deleted=True):
-        """Return a set of all persistent instances within this unit of work which
-        either contain changes or are marked as deleted.
+    def locate_dirty(self):
+        """Return a set of all persistent instances considered dirty.
+
+        Instances are considered dirty when they were modified but not
+        deleted.
+
+        """
+        dirty = util.IdentitySet()
+        for state in self.locate_dirty_states():
+            if state in self.deleted:
+                continue
+            dirty.add(state.obj())
+        return dirty
+
+    def locate_dirty_states(self):
+        """Return a set of all persistent states considered dirty.
+
+        This method returns all states that were modified including those that
+        were possibly deleted.
+
         """
         dirty = util.IdentitySet()
         for state in self.identity_map.all_states():
-            if ignore_deleted and state in self.deleted:
+            if (attributes.class_state_getter(state.class_).has_mutable_scalars
+                    and not state.is_modified()):
                 continue
-            if not (state.modified or
-                    (attributes.class_state_getter(state.class_).has_mutable_scalars and
-                     state.is_modified())):
+            if not state.modified:
                 continue
             dirty.add(state)
         return dirty
@@ -178,7 +194,7 @@ class UnitOfWork(object):
         """Create a dependency tree of all pending SQL operations within this
         unit of work and execute.
         """
-        dirty = self.locate_dirty(ignore_deleted=False)
+        dirty = self.locate_dirty_states()
         if not dirty and not self.deleted and not self.new:
             return
 
@@ -195,7 +211,7 @@ class UnitOfWork(object):
         # create the set of all objects we want to operate upon
         if objects:
             # specific list passed in
-            objset = util.Set([o._state for o in objects])
+            objset = util.Set([attributes.state_getter(o) for o in objects])
         else:
             # or just everything
             objset = util.Set(self.identity_map.all_states()).union(new)
@@ -339,16 +355,6 @@ class UOWTransaction(object):
         taskelement = task._objects[state]
         taskelement.isdelete = "rowswitch"
         
-    def unregister_object(self, obj):
-        """remove an object from its parent UOWTask.
-        
-        called by mapper._save_obj() when an 'identity switch' is detected, so that
-        no further operations occur upon the instance."""
-        mapper = object_mapper(obj)
-        task = self.get_task_by_mapper(mapper)
-        if obj._state in task._objects:
-            task.delete(obj._state)
-
     def is_deleted(self, state):
         """return true if the given state is marked as deleted within this UOWTransaction."""
         
@@ -580,11 +586,6 @@ class UOWTask(object):
         # convert post_update_cols list to a Set so that __hashcode__ is used to compare columns
         # instead of __eq__
         self.mapper._save_obj([state], self.uowtransaction, postupdate=True, post_update_cols=util.Set(post_update_cols))
-
-    def delete(self, obj):
-        """remove the given object from this UOWTask, if present."""
-
-        self._objects.pop(obj._state, None)
 
     def __contains__(self, state):
         """return True if the given object is contained within this UOWTask or inheriting tasks."""
