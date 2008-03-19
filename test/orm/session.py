@@ -997,8 +997,8 @@ class ScopedMapperTest(TestBase):
 
     def setUp(self):
         global SomeObject, SomeOtherObject
-        class SomeObject(object):pass
-        class SomeOtherObject(object):pass
+        class SomeObject(fixtures.Base):pass
+        class SomeOtherObject(fixtures.Base):pass
 
         global Session
 
@@ -1050,7 +1050,7 @@ class ScopedMapperTest(TestBase):
         s2 = SomeObject(someid=12)
         s3 = SomeOtherObject(someid=123, bogus=345)
 
-        class ValidatedOtherObject(object):pass
+        class ValidatedOtherObject(object): pass
         Session.mapper(ValidatedOtherObject, table2, validate=True)
 
         v1 = ValidatedOtherObject(someid=12)

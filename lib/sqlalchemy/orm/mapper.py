@@ -754,13 +754,15 @@ class Mapper(object):
                     "remove *all* current mappers from all classes." %
                     (self.class_, self.entity_name))
 
-        def extra_init(class_, oldinit, instance, args, kwargs):
+        def extra_init(class_, oldinit, instance, *args, **kwargs):
             self.compile()
             if 'init_instance' in self.extension.methods:
-                self.extension.init_instance(self, class_, oldinit, instance, args, kwargs)
+                self.extension.init_instance(
+                    self, class_, oldinit, instance, args, kwargs)
 
-        def on_exception(class_, oldinit, instance, args, kwargs):
-            util.warn_exception(self.extension.init_failed, self, class_, oldinit, instance, args, kwargs)
+        def on_exception(class_, oldinit, instance, *args, **kwargs):
+            util.warn_exception(self.extension.init_failed, self, class_,
+                                oldinit, instance, args, kwargs)
 
         attributes.register_class(self.class_, extra_init=extra_init, on_exception=on_exception, deferred_scalar_loader=_load_scalar_attributes)
 
@@ -1360,6 +1362,7 @@ class Mapper(object):
         if identitykey in session_identity_map:
             instance = session_identity_map[identitykey]
             state = attributes.state_getter(instance)
+            loaded = False
 
             if self.__should_log_debug:
                 self.__log_debug("_instance(): using existing instance %s identity %s" % (instance_str(instance), str(identitykey)))
@@ -1377,6 +1380,7 @@ class Mapper(object):
             instance = state.obj()
             isnew = state.runid != context.runid
             currentload = True
+            loaded = False
         else:
             if self.__should_log_debug:
                 self.__log_debug("_instance(): identity key %s not in session" % str(identitykey))
@@ -1392,6 +1396,7 @@ class Mapper(object):
                     return None
             isnew = True
             currentload = True
+            loaded = True
 
             if 'create_instance' in extension.methods:
                 instance = extension.create_instance(self, context, row, self.class_)
@@ -1437,6 +1442,9 @@ class Mapper(object):
 
         if result is not None and ('append_result' not in extension.methods or extension.append_result(self, context, row, instance, result, instancekey=identitykey, isnew=isnew) is EXT_CONTINUE):
             result.append(instance)
+
+        if loaded:
+            state.XXX_reconstitution_notification(instance)
 
         return instance
 

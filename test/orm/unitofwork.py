@@ -29,8 +29,10 @@ class HistoryTest(ORMTest):
 
     def test_backref(self):
         s = Session()
-        class User(object):pass
-        class Address(object):pass
+        class User(object):
+            def __init__(self, **kw): pass
+        class Address(object):
+            def __init__(self, _sa_session=None): pass
         am = mapper(Address, addresses)
         m = mapper(User, users, properties = dict(
             addresses = relation(am, backref='user', lazy=False))
@@ -60,14 +62,19 @@ class VersioningTest(ORMTest):
     @engines.close_open_connections
     def test_basic(self):
         s = Session(scope=None)
-        class Foo(object):pass
+        class Foo(object):
+            def __init__(self, value, _sa_session=None):
+                self.value = value
         mapper(Foo, version_table, version_id_col=version_table.c.version_id)
         f1 = Foo(value='f1', _sa_session=s)
         f2 = Foo(value='f2', _sa_session=s)
+        version_table.bind.echo = True
         s.commit()
 
         f1.value='f1rev2'
         s.commit()
+        version_table.bind.echo = False
+
         s2 = Session()
         f1_s = s2.query(Foo).get(f1.id)
         f1_s.value='f1rev3'
@@ -109,9 +116,11 @@ class VersioningTest(ORMTest):
     def test_versioncheck(self):
         """test that query.with_lockmode performs a 'version check' on an already loaded instance"""
         s1 = Session(scope=None)
-        class Foo(object):pass
+        class Foo(object):
+            def __init__(self, _sa_session=None): pass
         mapper(Foo, version_table, version_id_col=version_table.c.version_id)
-        f1s1 =Foo(value='f1', _sa_session=s1)
+        f1s1 = Foo(_sa_session=s1)
+        f1s1.value = 'f1 value'
         s1.commit()
         s2 = Session()
         f1s2 = s2.query(Foo).get(f1s1.id)
@@ -136,9 +145,11 @@ class VersioningTest(ORMTest):
     def test_noversioncheck(self):
         """test that query.with_lockmode works OK when the mapper has no version id col"""
         s1 = Session()
-        class Foo(object):pass
+        class Foo(object):
+            def __init__(self, _sa_session=None): pass
         mapper(Foo, version_table)
-        f1s1 =Foo(value='f1', _sa_session=s1)
+        f1s1 =Foo(_sa_session=s1)
+        f1s1.value = 'foo'
         f1s1.version_id=0
         s1.commit()
         s2 = Session()
@@ -518,8 +529,7 @@ class ClauseAttributesTest(ORMTest):
             Column('counter', Integer, default=1))
 
     def test_update(self):
-        class User(object):
-            pass
+        class User(fixtures.Base): pass
         mapper(User, users_table)
         u = User(name='test')
         sess = Session()
@@ -533,8 +543,7 @@ class ClauseAttributesTest(ORMTest):
         self.assert_sql_count(testing.db, go, 1)
 
     def test_multi_update(self):
-        class User(object):
-            pass
+        class User(fixtures.Base): pass
         mapper(User, users_table)
         u = User(name='test')
         sess = Session()
@@ -556,8 +565,7 @@ class ClauseAttributesTest(ORMTest):
 
     @testing.unsupported('mssql')
     def test_insert(self):
-        class User(object):
-            pass
+        class User(fixtures.Base): pass
         mapper(User, users_table)
         u = User(name='test', counter=select([5]))
         sess = Session()
@@ -718,7 +726,7 @@ class DefaultTest(ORMTest):
             secondary_table.append_column(Column('hoho', hohotype, ForeignKey('default_test.hoho')))
 
     def test_insert(self):
-        class Hoho(object):pass
+        class Hoho(fixtures.Base): pass
         mapper(Hoho, default_table)
 
         h1 = Hoho(hoho=althohoval)
@@ -772,7 +780,7 @@ class DefaultTest(ORMTest):
 
     def test_insert_nopostfetch(self):
         # populates the PassiveDefaults explicitly so there is no "post-update"
-        class Hoho(object):pass
+        class Hoho(fixtures.Base): pass
         mapper(Hoho, default_table)
 
         h1 = Hoho(hoho="15", counter="15")
@@ -785,7 +793,7 @@ class DefaultTest(ORMTest):
         self.assert_sql_count(testing.db, go, 0)
 
     def test_update(self):
-        class Hoho(object):pass
+        class Hoho(fixtures.Base): pass
         mapper(Hoho, default_table)
         h1 = Hoho()
         Session.commit()

@@ -1,8 +1,8 @@
+import inspect, types
 from sqlalchemy.util import ScopedRegistry, to_list, get_cls_kwargs
 from sqlalchemy.orm import MapperExtension, EXT_CONTINUE, object_session, class_mapper
 from sqlalchemy.orm.session import Session
 from sqlalchemy import exceptions
-import types
 
 __all__ = ['ScopedSession']
 
@@ -121,6 +121,7 @@ class _ScopedExt(MapperExtension):
         self.context = context
         self.validate = validate
         self.save_on_init = save_on_init
+        self.set_kwargs_on_init = None
     
     def validating(self):
         return _ScopedExt(self.context, validate=True)
@@ -140,25 +141,38 @@ class _ScopedExt(MapperExtension):
 
         if not 'query' in class_.__dict__: 
             class_.query = query()
-        
+
+        if self.set_kwargs_on_init is None:
+            self.set_kwargs_on_init = class_.__init__ is object.__init__
+        if self.set_kwargs_on_init:
+            def __init__(self, **kwargs):
+                pass
+            class_.__init__ = __init__
+
     def init_instance(self, mapper, class_, oldinit, instance, args, kwargs):
         if self.save_on_init:
             entity_name = kwargs.pop('_sa_entity_name', None)
             session = kwargs.pop('_sa_session', None)
-        if not isinstance(oldinit, types.MethodType):
+
+        if self.set_kwargs_on_init:
             for key, value in kwargs.items():
                 if self.validate:
-                    if not mapper.get_property(key, resolve_synonyms=False, raiseerr=False):
-                        raise exceptions.ArgumentError("Invalid __init__ argument: '%s'" % key)
+                    if not mapper.get_property(key, resolve_synonyms=False,
+                                               raiseerr=False):
+                        raise exceptions.ArgumentError(
+                            "Invalid __init__ argument: '%s'" % key)
                 setattr(instance, key, value)
             kwargs.clear()
+
         if self.save_on_init:
             session = session or self.context.registry()
             session._save_impl(instance, entity_name=entity_name)
         return EXT_CONTINUE
 
     def init_failed(self, mapper, class_, oldinit, instance, args, kwargs):
-        object_session(instance).expunge(instance)
+        sess = object_session(instance)
+        if sess:
+            sess.expunge(instance)
         return EXT_CONTINUE
 
     def dispose_class(self, mapper, class_):

@@ -122,7 +122,7 @@ class MapperTest(MapperSuperTest):
     def test_badconstructor(self):
         """test that if the construction of a mapped class fails, the instnace does not get placed in the session"""
         class Foo(object):
-            def __init__(self, one, two):
+            def __init__(self, one, two, _sa_session=None):
                 pass
         mapper(Foo, users)
         sess = create_session()
@@ -144,7 +144,7 @@ class MapperTest(MapperSuperTest):
         sess = create_session()
 
         class Foo(object):
-            def __init__(self):
+            def __init__(self, **kw):
                 raise ex
         mapper(Foo, users)
 

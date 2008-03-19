@@ -55,8 +55,12 @@ class EntityTest(TestBase, AssertsExecutionResults):
         """tests a pair of one-to-many mapper structures, establishing that both
         parent and child objects honor the "entity_name" attribute attached to the object
         instances."""
-        class User(object):pass
-        class Address(object):pass
+        class User(object):
+            def __init__(self, **kw):
+                pass
+        class Address(object):
+            def __init__(self, **kw):
+                pass
 
         a1mapper = mapper(Address, address1, entity_name='address1', extension=ctx.mapper_extension)
         a2mapper = mapper(Address, address2, entity_name='address2', extension=ctx.mapper_extension)
@@ -142,9 +146,15 @@ class EntityTest(TestBase, AssertsExecutionResults):
 
     def testpolymorphic(self):
         """tests that entity_name can be used to have two kinds of relations on the same class."""
-        class User(object):pass
-        class Address1(object):pass
-        class Address2(object):pass
+        class User(object):
+            def __init__(self, **kw):
+                pass
+        class Address1(object):
+            def __init__(self, **kw):
+                pass
+        class Address2(object):
+            def __init__(self, **kw):
+                pass
 
         a1mapper = mapper(Address1, address1, extension=ctx.mapper_extension)
         a2mapper = mapper(Address2, address2, extension=ctx.mapper_extension)
@@ -186,7 +196,9 @@ class EntityTest(TestBase, AssertsExecutionResults):
 
     def testpolymorphic_deferred(self):
         """test that deferred columns load properly using entity names"""
-        class User(object):pass
+        class User(object):
+            def __init__(self, **kwargs):
+                pass
         u1mapper = mapper(User, user1, entity_name='user1', properties ={
             'name':deferred(user1.c.name)
         }, extension=ctx.mapper_extension)

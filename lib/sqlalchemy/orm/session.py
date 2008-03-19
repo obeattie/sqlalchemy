@@ -965,10 +965,12 @@ class Session(object):
             return _recursive[instance]
 
         state = attributes.state_getter(instance)
+        new_instance = False
         if state.key is None:
             if dont_load:
                 raise exceptions.InvalidRequestError("merge() with dont_load=True option does not support objects transient (i.e. unpersisted) objects.  flush() all changes on mapped instances before merging with dont_load=True.")
             merged = mapper._class_state.new_instance()
+            new_instance = True
         else:
             if state.key in self.identity_map:
                 merged = self.identity_map[state.key]
@@ -982,6 +984,7 @@ class Session(object):
                 merged_state.key = state.key
                 merged_state.entity_name = entity_name
                 self._update_impl(merged, entity_name=mapper.entity_name)
+                new_instance = True
             else:
                 merged = self.get(mapper.class_, state.key[1])
                 if merged is None:
@@ -994,6 +997,10 @@ class Session(object):
         elif dont_load:
             state = attributes.state_getter(merged)
             state.commit_all()
+
+        if new_instance:
+            merged_state = attributes.state_getter(merged)
+            merged_state.XXX_reconstitution_notification(merged)
         return merged
 
     def identity_key(cls, *args, **kwargs):

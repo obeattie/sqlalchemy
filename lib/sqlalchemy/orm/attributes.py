@@ -4,7 +4,7 @@
 # This module is part of SQLAlchemy and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
-import operator, weakref
+import inspect, operator, new, weakref
 from itertools import chain
 from sqlalchemy import util
 from sqlalchemy.orm import interfaces, collections
@@ -770,6 +770,9 @@ class InstanceState(object):
         else:
             return False
 
+    def XXX_reconstitution_notification(self, instance=None):
+        pass
+
     def __resurrect(self, instance_dict):
         if self.is_modified():
             # store strong ref'ed version of the object; will revert
@@ -778,8 +781,10 @@ class InstanceState(object):
             obj = class_state.new_instance(state=self)
             self.obj = weakref.ref(obj, self.__cleanup)
             self._strong_obj = obj
+            # todo: revisit this wrt user-defined-state
             obj.__dict__.update(self.dict)
             self.dict = obj.__dict__
+            self.XXX_reconstitution_notification(obj)
             return obj
         else:
             del instance_dict[self.key]
@@ -934,10 +939,12 @@ class ClassState(dict):
         self.mappers = {}
         self.has_mutable_scalars = False
         self.local_attrs = {}
+        self.originals = {}
         for base in class_.__mro__[-2:0:-1]:   # reverse, skipping 1st and last
             cls_state = get_class_state(base, create=False)
             if cls_state:
                 self.update(cls_state)
+        self.registered = False
 
     def instrument_attribute(self, key, inst, propagated=False):
         if propagated:
@@ -968,12 +975,22 @@ class ClassState(dict):
             if key in self.local_attrs:
                 self.uninstrument_attribute(key)
         delattr(self.class_, CLASS_STATE_ATTR)
+        self.registered = False
 
     def install_descriptor(self, key, inst):
         setattr(self.class_, key, inst)
 
     def uninstall_descriptor(self, key):
         delattr(self.class_, key)
+
+    def install_method(self, key, implementation):
+        self.originals.setdefault(key, getattr(self.class_, key, None))
+        setattr(self.class_, key, implementation)
+
+    def uninstall_method(self, key):
+        original = self.originals.pop(key)
+        if original is not None:
+            setattr(self.class_, key, original)
 
     def instrument_collection_class(self, key, collection_class):
         return collections.prepare_instrumentation(collection_class)
@@ -1193,65 +1210,23 @@ def register_class(class_, extra_init=None, on_exception=None, deferred_scalar_l
     for key in dir(class_):
         getattr(class_, key, None)
 
-    get_class_state(class_).deferred_scalar_loader=deferred_scalar_loader
+    class_state = get_class_state(class_)
+    class_state.deferred_scalar_loader = deferred_scalar_loader
 
-    oldinit = None
-    doinit = False
-
-    def init(instance, *args, **kwargs):
-        class_state_getter(instance).manage(instance)
-
-        if extra_init:
-            extra_init(class_, oldinit, instance, args, kwargs)
-
-        try:
-            if doinit:
-                oldinit(instance, *args, **kwargs)
-            elif args or kwargs:
-                # simulate error message raised by object(), but don't copy
-                # the text verbatim
-                raise TypeError("default constructor for object() takes no parameters")
-        except:
-            if on_exception:
-                on_exception(class_, oldinit, instance, args, kwargs)
-            raise
-
-
-    # override oldinit
-    oldinit = class_.__init__
-    if oldinit is None or not hasattr(oldinit, '_oldinit'):
-        init._oldinit = oldinit
-        class_.__init__ = init
-    # if oldinit is already one of our 'init' methods, replace it
-    elif hasattr(oldinit, '_oldinit'):
-        init._oldinit = oldinit._oldinit
-        class_.__init = init
-        oldinit = oldinit._oldinit
-
-    if oldinit is not None:
-        doinit = oldinit is not object.__init__
-        try:
-            init.__name__ = oldinit.__name__
-            init.__doc__ = oldinit.__doc__
-        except:
-            # cant set __name__ in py 2.3 !
-            pass
+    new_init = _generate_init(class_, class_state, extra_init, on_exception)
+    class_state.install_method('__init__', new_init)
+    class_state.registered = True
 
 def unregister_class(class_):
-    if hasattr(class_, '__init__') and hasattr(class_.__init__, '_oldinit'):
-        if class_.__init__._oldinit is not None:
-            class_.__init__ = class_.__init__._oldinit
-        else:
-            delattr(class_, '__init__')
-
-
     try:
         state = class_state_getter(class_)
     except AttributeError:
         # The class doesn't seem to be mapped. We silently ignore this. This
         # is mainly to support the unit tests anyway.
         return
-    state.unregister()
+    if state.registered:
+        state.uninstall_method('__init__')
+        state.unregister()
 
 def register_attribute(class_, key, uselist, useobject, callable_=None, proxy_property=None, mutable_scalars=False, **kwargs):
 
@@ -1299,3 +1274,67 @@ def del_attribute(instance, key):
 
 def is_instrumented(instance, key):
     return class_state_getter(instance).is_instrumented(key, search=True)
+
+def _generate_init(class_, class_state, extra_init, on_exception):
+    """Build an __init__ decorator."""
+
+    # Go through some effort here to not slow down user's constructors
+    # nor change their calling signature.
+    if on_exception:
+        func_body = """\
+def __init__%(args)s:
+    class_state.manage(%(self_arg)s)
+    %(extra_init)s
+    try:
+        return original__init__%(unbound)s
+    except:
+        %(on_exception)s
+        raise
+"""
+    else:
+        func_body = """\
+def __init__%(args)s:
+    class_state.manage(%(self_arg)s)
+    %(extra_init)s
+    return original__init__%(unbound)s
+"""
+
+    func_vars = {'extra_init': '', 'on_exception': ''}
+    if extra_init:
+        func_vars['extra_init'] = 'extra_init%(as_callback)s'
+    if on_exception:
+        func_vars['on_exception'] = 'on_exception%(as_callback)s'
+
+    original__init__ = class_.__init__
+    assert original__init__
+    try:
+        spec = inspect.getargspec(original__init__)
+        args = inspect.formatargspec(*spec)
+        self_arg = spec[0][0]
+        unbound = inspect.formatargspec(spec[0], spec[1], spec[2],
+                                        spec[0][0-len(spec[3]):],
+                                        formatvalue=lambda x: '=' + x)
+        as_callback = '(class_, original__init__, %s' % unbound[1:]
+        del spec
+    except TypeError:
+        self_arg = 'self'
+        if original__init__ is object.__init__:
+            args = unbound = '(self)'
+            as_callback = '(class_, original__init__, self)'
+        else:
+            args = unbound = '(self, *args, **kwargs)'
+            as_callback = '(class_, original__init__, self, *args, **kwargs)'
+    func_vars['args'] = args
+    func_vars['self_arg'] = self_arg
+    func_vars['unbound'] = unbound
+    func_vars['as_callback'] = as_callback
+
+    func_text = (func_body % func_vars) % func_vars
+
+    exec func_text in locals(), locals()
+    try:
+        __init__.__doc__ = original__init__.__doc__
+        __init__.__name__ = original__init__.__name__
+    except AttributeError:
+        pass
+    return __init__

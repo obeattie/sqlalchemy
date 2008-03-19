@@ -6,6 +6,11 @@ CHANGES
 =====
 
 - orm
+    - The "__init__" trigger/decorator added by mapper now
+      attempts to exactly mirror the argument signature of the
+      original __init__.  The pass-through for '_sa_session' is
+      no longer implicit- you must allow for this keyword
+      argument in your constructor.
 
     - Added hooks `class_state_getter` and `state_getter` to
       sqlalchemy.orm.attributes which can be overridden to customize storage
