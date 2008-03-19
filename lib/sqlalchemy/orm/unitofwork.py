@@ -106,14 +106,14 @@ class UnitOfWork(object):
         self.logger = logging.instance_logger(self, echoflag=session.echo_uow)
 
     def _remove_deleted(self, state):
-        if '_instance_key' in state.dict:
-            del self.identity_map[state.dict['_instance_key']]
+        if state.key is not None:
+            del self.identity_map[state.key]
         self.deleted.pop(state, None)
         self.new.pop(state, None)
 
     def _is_valid(self, state):
-        if '_instance_key' in state.dict:
-            return state.dict['_instance_key'] in self.identity_map
+        if state.key is not None:
+            return state.key in self.identity_map
         else:
             return state in self.new
 
@@ -123,34 +123,34 @@ class UnitOfWork(object):
 
         mapper = _state_mapper(state)
         instance_key = mapper._identity_key_from_state(state)
-        
-        if '_instance_key' not in state.dict:
-            state.dict['_instance_key'] = instance_key
-            
-        elif state.dict['_instance_key'] != instance_key:
+
+        if state.key is None:
+            state.key = instance_key
+        elif state.key != instance_key:
             # primary key switch
-            del self.identity_map[state.dict['_instance_key']]
-            state.dict['_instance_key'] = instance_key
-            
+            del self.identity_map[state.key]
+            state.key = instance_key
+
         if hasattr(state, 'insert_order'):
             delattr(state, 'insert_order')
-        
-        o = state.obj()
+
+        obj = state.obj()
         # prevent against last minute dereferences of the object
         # TODO: identify a code path where state.obj() is None
-        if o is not None:
-            self.identity_map[state.dict['_instance_key']] = o
+        if obj is not None:
+            self.identity_map[state.key] = obj
             state.commit_all()
-        
+
         # remove from new last, might be the last strong ref
         self.new.pop(state, None)
 
     def register_new(self, obj):
         """register the given object as 'new' (i.e. unsaved) within this unit of work."""
-
-        if hasattr(obj, '_instance_key'):
-            raise exceptions.InvalidRequestError("Object '%s' already has an identity - it can't be registered as new" % repr(obj))
         state = attributes.state_getter(obj)
+        if state.key is not None:
+            raise exceptions.InvalidRequestError(
+                "Object '%s' already has an identity - it can't be registered "
+                "as new" % repr(obj))
         if state not in self.new:
             self.new[state] = obj
             state.insert_order = len(self.new)

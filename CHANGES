@@ -11,6 +11,9 @@ CHANGES
       sqlalchemy.orm.attributes which can be overridden to customize storage
       and access of the previous `_state` and `_class_state` attributes.
 
+    - Moved _entity_name, __sa_session_id__, and _instance_key from the
+      instance object to the instance state.
+
     - Added comparable_property(), adds query Comparator behavior
       to regular, unmanaged Python properties
 

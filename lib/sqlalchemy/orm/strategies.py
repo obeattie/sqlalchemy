@@ -196,14 +196,13 @@ class LoadDeferredColumns(object):
             raise exceptions.UnboundExecutionError("Parent instance %s is not bound to a Session; deferred load operation of attribute '%s' cannot proceed" % (self.instance.__class__, self.key))
 
         query = session.query(localparent)
+        state = attributes.state_getter(self.instance)
         if not self.optimizing_statement:
-            ident = self.instance._instance_key[1]
-            state = attributes.state_getter(self.instance)
+            ident = state.key[1]
             query._get(None, ident=ident, only_load_props=group,
                        refresh_instance=state)
         else:
             statement, params = self.optimizing_statement(self.instance)
-            state = attributes.state_getter(self.instance)
             query.from_statement(statement).params(params)._get(
                 None, only_load_props=group, refresh_instance=state)
         return attributes.ATTR_WAS_SET

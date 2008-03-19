@@ -4,6 +4,7 @@ import testenv; testenv.configure_for_tests()
 import sets
 from sqlalchemy import *
 from sqlalchemy.orm import *
+from sqlalchemy.orm import attributes
 from testlib import *
 
 
@@ -146,7 +147,8 @@ class InsertOrderTest(PolymorphTest):
         session.clear()
         c = session.query(Company).get(c.company_id)
         for e in c.employees:
-            print e, e._instance_key, e.company
+            state = attributes.state_getter(e)
+            print e, state.key, e.company
 
         assert [e.get_name() for e in c.employees] == ['pointy haired boss', 'dilbert', 'joesmith', 'wally', 'jsmith']
 
@@ -284,8 +286,9 @@ def generate_round_trip_test(include_base=False, lazy_relation=True, redefine_co
         def go():
             c = session.query(Company).get(id)
             for e in c.employees:
-                print e, e._instance_key, e.company
-                assert e._instance_key[0] == Person
+                state = attributes.state_getter(e)
+                print e, state.key, e.company
+                assert state.key[0] == Person
             if include_base:
                 assert sets.Set([(e.get_name(), getattr(e, 'status', None)) for e in c.employees]) == sets.Set([('pointy haired boss', 'AAB'), ('dilbert', 'BBA'), ('joesmith', None), ('wally', 'CGG'), ('jsmith', 'ABA')])
             else:
@@ -337,7 +340,8 @@ def generate_round_trip_test(include_base=False, lazy_relation=True, redefine_co
 
         c = session.query(Company).get(id)
         for e in c.employees:
-            print e, e._instance_key
+            state = attributes.state_getter(e)
+            print e, state.key
 
         session.delete(c)
         session.flush()

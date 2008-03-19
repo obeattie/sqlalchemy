@@ -2,7 +2,7 @@ import testenv; testenv.configure_for_tests()
 from sqlalchemy import *
 from sqlalchemy import exceptions
 from sqlalchemy.orm import *
-from sqlalchemy.orm import mapperlib
+from sqlalchemy.orm import mapperlib, attributes
 from testlib import *
 from testlib import fixtures
 from testlib.tables import *
@@ -339,7 +339,8 @@ class MergeTest(TestBase, AssertsExecutionResults):
         u2 = sess2.merge(u, dont_load=True)
         assert not sess2.dirty
         # assert merged instance has a mapper and lazy load proceeds
-        assert hasattr(u2, '_entity_name')
+        state = attributes.state_getter(u2)
+        assert state.entity_name is not attributes.NO_ENTITY_NAME
         assert mapperlib.has_mapper(u2)
         def go():
             assert u2.addresses != []

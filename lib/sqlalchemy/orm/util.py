@@ -250,9 +250,11 @@ def attribute_str(instance, attribute):
 def identity_equal(a, b):
     if a is b:
         return True
-    id_a = getattr(a, '_instance_key', None)
-    id_b = getattr(b, '_instance_key', None)
-    if id_a is None or id_b is None:
+    key_a = attributes.state_attribute_getter(a, 'key')
+    key_b = attributes.state_attribute_getter(b, 'key')
+    if key_a is None or key_b is None:
         return False
-    return id_a == id_b
+    return key_a == key_b
 
+# TODO: Avoid circular import.
+from sqlalchemy.orm import attributes

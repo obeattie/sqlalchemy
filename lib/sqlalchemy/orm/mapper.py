@@ -1,4 +1,3 @@
-# orm/mapper.py
 # Copyright (C) 2005, 2006, 2007, 2008 Michael Bayer mike_mp@zzzcomputing.com
 #
 # This module is part of SQLAlchemy and is released under
@@ -221,7 +220,7 @@ class Mapper(object):
     compiled = property(lambda self:self.__props_init, doc="return True if this mapper is compiled")
 
     def dispose(self):
-        # disaable any attribute-based compilation
+        # Disable any attribute-based compilation.
         self.__props_init = True
 
         if hasattr(self.class_, 'c') and self.class_.c is self.c:
@@ -891,8 +890,9 @@ class Mapper(object):
         """Return the identity key for the given instance, based on
         its primary key attributes.
 
-        This value is typically also found on the instance itself
-        under the attribute name `_instance_key`.
+        This value is typically also found on the instance state under the
+        attribute name `key`.
+
         """
         return self.identity_key_from_primary_key(self.primary_key_from_instance(instance))
 
@@ -1176,9 +1176,10 @@ class Mapper(object):
 
         if deferred_props:
             if self.eager_defaults:
-                _instance_key = self._identity_key_from_state(state)
-                state.dict['_instance_key'] = _instance_key
-                uowtransaction.session.query(self)._get(_instance_key, refresh_instance=state, only_load_props=deferred_props)
+                state.key = self._identity_key_from_state(state)
+                uowtransaction.session.query(self)._get(
+                    state.key, refresh_instance=state,
+                    only_load_props=deferred_props)
             else:
                 _expire_state(state, deferred_props)
 
@@ -1321,13 +1322,14 @@ class Mapper(object):
 
         # determine identity key
         if refresh_instance:
-            try:
-                identitykey = refresh_instance.dict['_instance_key']
-            except KeyError:
+            # TODO: refresh_instance seems to be named wrongly -- it is always an instance state.
+            refresh_state = refresh_instance
+            identitykey = refresh_state.key
+            if identitykey is None:
                 # super-rare condition; a refresh is being called
                 # on a non-instance-key instance; this is meant to only
-                # occur wihtin a flush()
-                identitykey = self._identity_key_from_state(refresh_instance)
+                # occur within a flush()
+                identitykey = self._identity_key_from_state(refresh_state)
         else:
             identitykey = self.identity_key_from_row(row)
 
@@ -1382,9 +1384,9 @@ class Mapper(object):
                 self.__log_debug("_instance(): created new instance %s identity %s" % (instance_str(instance), str(identitykey)))
 
             state = attributes.state_getter(instance)
-            instance._entity_name = self.entity_name
-            instance._instance_key = identitykey
-            instance._sa_session_id = context.session.hash_key
+            state.entity_name = self.entity_name
+            state.key = identitykey
+            state.session_id = context.session.hash_key
             session_identity_map[identitykey] = instance
 
         if currentload or context.populate_existing or self.always_refresh:
@@ -1575,17 +1577,18 @@ Mapper.logger = logging.class_logger(Mapper)
 
 
 def has_identity(object):
-    return hasattr(object, '_instance_key')
+    state = attributes.state_getter(object)
+    return _state_has_identity(state)
 
 def _state_has_identity(state):
-    return '_instance_key' in state.dict
+    return bool(state.key)
 
 def has_mapper(object):
     """Return True if the given object has had a mapper association
     set up, either through loading, or via insertion in a session.
     """
-
-    return hasattr(object, '_entity_name')
+    state = attributes.state_getter(object)
+    return state.entity_name is not attributes.NO_ENTITY_NAME
 
 object_session = None
 
@@ -1603,15 +1606,19 @@ def _load_scalar_attributes(instance, attribute_names):
             raise exceptions.UnboundExecutionError("Instance %s is not bound to a Session, and no contextual session is established; attribute refresh operation cannot proceed" % (instance.__class__))
 
     state = attributes.state_getter(instance)
-    if '_instance_key' in state.dict:
-        identity_key = state.dict['_instance_key']
-    else:
+    identity_key = state.key
+    if identity_key is None:
         identity_key = mapper._identity_key_from_state(state)
     if session.query(mapper)._get(identity_key, refresh_instance=state, only_load_props=attribute_names) is None:
         raise exceptions.InvalidRequestError("Could not refresh instance '%s'" % instance_str(instance))
 
 def _state_mapper(state, entity_name=None):
-    return attributes.class_state_getter(state.class_).mappers[state.dict.get('_entity_name', entity_name)]
+    if state.entity_name is not attributes.NO_ENTITY_NAME:
+        # Override the given entity name if the object is not transient.
+        entity_name = state.entity_name
+    class_state = attributes.class_state_getter(state.class_)
+    return class_state.mappers[entity_name]
+
 
 def object_mapper(object, entity_name=None, raiseerror=True):
     """Given an object, return the primary Mapper associated with the object instance.
@@ -1629,33 +1636,33 @@ def object_mapper(object, entity_name=None, raiseerror=True):
             be located.  If False, return None.
 
     """
-    try:
-        class_state = attributes.class_state_getter(object)
-        mapper = class_state.mappers[getattr(object, '_entity_name', entity_name)]
-    except (KeyError, AttributeError):
-        if raiseerror:
-            raise exceptions.InvalidRequestError("Class '%s' entity name '%s' has no mapper associated with it" % (object.__class__.__name__, getattr(object, '_entity_name', entity_name)))
-        else:
-            return None
-    return mapper
+    state = attributes.state_getter(object)
+    if state.entity_name is not attributes.NO_ENTITY_NAME:
+        # Override the given entity name if the object is not transient.
+        entity_name = state.entity_name
+    return class_mapper(
+        object, entity_name=entity_name, compile=False, raiseerror=raiseerror)
+
 
 def class_mapper(class_, entity_name=None, compile=True, raiseerror=True):
-    """Given a class and optional entity_name, return the primary Mapper associated with the key.
+    """Given a class (or an object) and optional entity_name, return the primary Mapper associated with the key.
 
     If no mapper can be located, raises ``InvalidRequestError``.
+
     """
     try:
         class_state = attributes.class_state_getter(class_)
         mapper = class_state.mappers[entity_name]
     except (KeyError, AttributeError):
-        if raiseerror:
-            raise exceptions.InvalidRequestError("Class '%s' entity name '%s' has no mapper associated with it" % (class_.__name__, entity_name))
-        else:
-            return None
+        if not raiseerror:
+            return
+        raise exceptions.InvalidRequestError(
+            "Class '%s' entity name '%s' has no mapper associated with it" %
+            (class_state.class_.__name__, entity_name))
     if compile:
-        return mapper.compile()
-    else:
-        return mapper
+        mapper = mapper.compile()
+    return mapper
+
 
 def _class_to_mapper(class_or_mapper, entity_name=None, compile=True):
     if isinstance(class_or_mapper, type):

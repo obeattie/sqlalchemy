@@ -1,6 +1,7 @@
 # can't be imported until the path is setup; be sure to configure
 # first if covering.
 from sqlalchemy import *
+from sqlalchemy.orm import attributes
 from sqlalchemy import util
 from testlib import *
 
@@ -32,10 +33,11 @@ class Base(object):
         _recursion_stack.add(self)
         try:
             # pick the entity thats not SA persisted as the source
+            key = attributes.state_attribute_getter(self, 'key')
             if other is None:
                 a = self
                 b = other
-            elif hasattr(self, '_instance_key'):
+            elif key is not None:
                 a = other
                 b = self
             else:

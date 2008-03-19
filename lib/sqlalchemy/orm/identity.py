@@ -81,7 +81,7 @@ class WeakInstanceDict(UserDict.UserDict):
         for state in self.data.itervalues():
             value = state.obj()
             if value is not None:
-                yield value._instance_key, value
+                yield state.key, value
 
     def iterkeys(self):
         return self.data.iterkeys()

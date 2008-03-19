@@ -11,16 +11,47 @@ from sqlalchemy.orm import interfaces, collections
 from sqlalchemy.orm.util import identity_equal
 from sqlalchemy import exceptions
 
+
+# Instance and class attribute access
+#
+# The following functions can be patched to customize SAs way of accessing
+# attributes on instance objects. This can be used to e.g.  avoid SA storing
+# anything on the instances or to wrap or unwrap objects before SA interacts
+# with them.
+
+# These functions are module-level globals and rather specific low-level due to
+# performance reasons.
+
+# The actual names of the attributes that SA uses.
 CLASS_STATE_ATTR = '_fooclass_state'
 STATE_ATTR = '_foostate'
 
+# These are the methods that any customizing party is required to implement.
 class_state_getter = operator.attrgetter(CLASS_STATE_ATTR)
 state_getter = operator.attrgetter(STATE_ATTR)
+def has_state(instance):
+    return STATE_ATTR in instance.__dict__
+
+# This method leverages the state_getter but can be overridden for better
+# performance.
+def state_attribute_getter(instance, attribute_name, default=None):
+    """Return the named attribute from the state of the given instance.
+
+    Uses the `state_getter` to get the instance's state.
+
+    """
+    try:
+        state = state_getter(instance)
+    except AttributeError:
+        return default
+    return getattr(state, attribute_name, default)
+
 
 PASSIVE_NORESULT = util.symbol('PASSIVE_NORESULT')
 ATTR_WAS_SET = util.symbol('ATTR_WAS_SET')
 NO_VALUE = util.symbol('NO_VALUE')
 NEVER_SET = util.symbol('NEVER_SET')
+NO_ENTITY_NAME = util.symbol('NO_ENTITY_NAME')
 
 
 class InstrumentedAttribute(interfaces.PropComparator):
@@ -679,7 +710,8 @@ class InstanceState(object):
         self.appenders = {}
         self.instance_dict = None
         self.runid = None
-        self.key = self.sessionid = self.entity_name = None
+        self.key = self.session_id = None
+        self.entity_name = NO_ENTITY_NAME
 
     def __cleanup(self, ref):
         # tiptoe around Python GC unpredictableness
@@ -750,17 +782,27 @@ class InstanceState(object):
             self.dict = obj.__dict__
             return obj
         else:
-            del instance_dict[self.dict['_instance_key']]
+            del instance_dict[self.key]
             return None
 
     def __getstate__(self):
-        return {'key':self.key, 'sessionid':self.sessionid, 'entity_name':self.entity_name, 'committed_state':self.committed_state, 'pending':self.pending, 'parents':self.parents, 'modified':self.modified, 'instance':self.obj(), 'expired_attributes':getattr(self, 'expired_attributes', None), 'callables':self.callables}
+        return {'key': self.key,
+                'session_id': self.session_id,
+                'entity_name': self.entity_name,
+                'committed_state': self.committed_state,
+                'pending': self.pending,
+                'parents': self.parents,
+                'modified': self.modified,
+                'instance': self.obj(),
+                'expired_attributes': 
+                    getattr(self, 'expired_attributes', None),
+                'callables': self.callables}
 
     def __setstate__(self, state):
         self.committed_state = state['committed_state']
         self.parents = state['parents']
         self.key = state['key']
-        self.sessionid = state['sessionid']
+        self.session_id = state['session_id']
         self.entity_name = state['entity_name']
         self.pending = state['pending']
         self.modified = state['modified']
@@ -954,14 +996,11 @@ class ClassState(dict):
     get_inst = dict.__getitem__
 
     def manage(self, instance, state=None):
-        try:
-            # We may get called although a state is already set. In this case
-            # we do nothing.
-            state_getter(instance)
-        except AttributeError:
-            if state is None:
-                state = InstanceState(instance)
-            setattr(instance, STATE_ATTR, state)
+        if has_state(instance):
+            return
+        if state is None:
+            state = InstanceState(instance)
+        setattr(instance, STATE_ATTR, state)
 
     def new_instance(self, state=None):
         instance = self.class_.__new__(self.class_)

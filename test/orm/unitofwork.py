@@ -7,6 +7,7 @@ import pickleable
 from sqlalchemy import *
 from sqlalchemy import exceptions, sql
 from sqlalchemy.orm import *
+from sqlalchemy.orm import attributes
 from testlib import *
 from testlib.tables import *
 from testlib import engines, tables, fixtures
@@ -440,7 +441,10 @@ class PKTest(ORMTest):
         Session.commit()
         Session.close()
         e2 = Query(Entry).get((e.multi_id, 2))
-        self.assert_(e is not e2 and e._instance_key == e2._instance_key)
+        self.assert_(e is not e2)
+        state = attributes.state_getter(e)
+        state2 = attributes.state_getter(e2)
+        self.assert_(state.key == state2.key)
 
     # this one works with sqlite since we are manually setting up pk values
     def test_manualpk(self):
@@ -959,7 +963,10 @@ class OneToManyTest(ORMTest):
         Session.commit()
         Session.delete(u)
         Session.commit()
-        self.assert_(a.address_id is not None and a.user_id is None and u._instance_key not in Session.identity_map and a._instance_key in Session.identity_map)
+        self.assert_(a.address_id is not None)
+        self.assert_(a.user_id is None)
+        self.assert_(attributes.state_getter(a).key in Session.identity_map)
+        self.assert_(attributes.state_getter(u).key not in Session.identity_map)
 
     def test_onetoone(self):
         m = mapper(User, users, properties = dict(

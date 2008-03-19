@@ -3,7 +3,7 @@ import datetime
 from sqlalchemy import *
 from sqlalchemy import exceptions, types
 from sqlalchemy.orm import *
-from sqlalchemy.orm import collections
+from sqlalchemy.orm import collections, attributes
 from sqlalchemy.orm.collections import collection
 from testlib import *
 
@@ -277,7 +277,9 @@ class RelationTest3(TestBase):
                 self.pagename = pagename
                 self.currentversion = PageVersion(self, 1)
             def __repr__(self):
-                return "Page jobno:%s pagename:%s %s" % (self.jobno, self.pagename, getattr(self, '_instance_key', None))
+                key = attributes.state_attribute_getter(self, 'key')
+                return ("Page jobno:%s pagename:%s %s" %
+                        (self.jobno, self.pagename, key))
             def add_version(self):
                 self.currentversion = PageVersion(self, self.currentversion.version+1)
                 comment = self.add_comment()

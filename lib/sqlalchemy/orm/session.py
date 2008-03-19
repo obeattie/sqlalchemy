@@ -821,7 +821,7 @@ class Session(object):
 
         state = attributes.state_getter(instance)
         if self.query(_object_mapper(instance))._get(
-                instance._instance_key, refresh_instance=state,
+                state.key, refresh_instance=state,
                 only_load_props=attribute_names) is None:
             raise exceptions.InvalidRequestError("Could not refresh instance '%s'" % mapperutil.instance_str(instance))
 
@@ -918,10 +918,10 @@ class Session(object):
     def save_or_update(self, instance, entity_name=None):
         """Save or update the given instance into this ``Session``.
 
-        The presence of an `_instance_key` attribute on the instance
-        determines whether to ``save()`` or ``update()`` the instance.
-        """
+        The non-None state `key` on the instance's state determines whether
+        to ``save()`` or ``update()`` the instance.
 
+        """
         self._save_or_update_impl(instance, entity_name=entity_name)
         self._cascade_save_or_update(instance)
 
@@ -964,31 +964,32 @@ class Session(object):
         if instance in _recursive:
             return _recursive[instance]
 
-        key = getattr(instance, '_instance_key', None)
-        if key is None:
+        state = attributes.state_getter(instance)
+        if state.key is None:
             if dont_load:
                 raise exceptions.InvalidRequestError("merge() with dont_load=True option does not support objects transient (i.e. unpersisted) objects.  flush() all changes on mapped instances before merging with dont_load=True.")
             merged = mapper._class_state.new_instance()
         else:
-            if key in self.identity_map:
-                merged = self.identity_map[key]
+            if state.key in self.identity_map:
+                merged = self.identity_map[state.key]
             elif dont_load:
                 state = attributes.state_getter(instance)
                 if state.modified:
                     raise exceptions.InvalidRequestError("merge() with dont_load=True option does not support objects marked as 'dirty'.  flush() all changes on mapped instances before merging with dont_load=True.")
 
                 merged = mapper._class_state.new_instance()
-                merged._instance_key = key
-                merged._entity_name = entity_name
+                merged_state = attributes.state_getter(merged)
+                merged_state.key = state.key
+                merged_state.entity_name = entity_name
                 self._update_impl(merged, entity_name=mapper.entity_name)
             else:
-                merged = self.get(mapper.class_, key[1])
+                merged = self.get(mapper.class_, state.key[1])
                 if merged is None:
                     raise exceptions.AssertionError("Instance %s has an instance key but is not persisted" % mapperutil.instance_str(instance))
         _recursive[instance] = merged
         for prop in mapper.iterate_properties:
             prop.merge(self, instance, merged, dont_load, _recursive)
-        if key is None:
+        if state.key is None:
             self.save(merged, entity_name=mapper.entity_name)
         elif dont_load:
             state = attributes.state_getter(merged)
@@ -1066,27 +1067,36 @@ class Session(object):
     object_session = classmethod(object_session)
 
     def _save_impl(self, instance, **kwargs):
-        if hasattr(instance, '_instance_key'):
-            raise exceptions.InvalidRequestError("Instance '%s' is already persistent" % mapperutil.instance_str(instance))
-        else:
-            # TODO: consolidate the steps here
-            attributes.manage(instance)
-            instance._entity_name = kwargs.get('entity_name', None)
-            self._attach(instance)
-            self.uow.register_new(instance)
+        key = attributes.state_attribute_getter(instance, 'key')
+        if key is not None:
+            raise exceptions.InvalidRequestError(
+                "Instance '%s' is already persistent" %
+                mapperutil.instance_str(instance))
+        # TODO: consolidate the steps here
+        attributes.manage(instance)
+        state = attributes.state_getter(instance)
+        state.entity_name = kwargs.get('entity_name', None)
+        self._attach(instance)
+        self.uow.register_new(instance)
 
     def _update_impl(self, instance, **kwargs):
         if instance in self and instance not in self.deleted:
             return
-        if not hasattr(instance, '_instance_key'):
-            raise exceptions.InvalidRequestError("Instance '%s' is not persisted" % mapperutil.instance_str(instance))
-        elif self.identity_map.get(instance._instance_key, instance) is not instance:
-            raise exceptions.InvalidRequestError("Could not update instance '%s', identity key %s; a different instance with the same identity key already exists in this session." % (mapperutil.instance_str(instance), instance._instance_key))
+        state = attributes.state_getter(instance)
+        if state.key is None:
+            raise exceptions.InvalidRequestError(
+                "Instance '%s' is not persisted" %
+                mapperutil.instance_str(instance))
+        if self.identity_map.get(state.key, instance) is not instance:
+            raise exceptions.InvalidRequestError(
+                "Could not update instance '%s', identity key %s; a different "
+                "instance with the same identity key already exists in this "
+                "session." % (mapperutil.instance_str(instance), state.key))
         self._attach(instance)
 
     def _save_or_update_impl(self, instance, entity_name=None):
-        key = getattr(instance, '_instance_key', None)
-        if key is None:
+        state = attributes.state_getter(instance)
+        if state.key is None:
             self._save_impl(instance, entity_name=entity_name)
         else:
             self._update_impl(instance, entity_name=entity_name)
@@ -1094,32 +1104,39 @@ class Session(object):
     def _delete_impl(self, instance, ignore_transient=False):
         if instance in self and instance in self.deleted:
             return
-        if not hasattr(instance, '_instance_key'):
+        state = attributes.state_getter(instance)
+        if state.key is None:
             if ignore_transient:
                 return
             else:
                 raise exceptions.InvalidRequestError("Instance '%s' is not persisted" % mapperutil.instance_str(instance))
-        if self.identity_map.get(instance._instance_key, instance) is not instance:
-            raise exceptions.InvalidRequestError("Instance '%s' is with key %s already persisted with a different identity" % (mapperutil.instance_str(instance), instance._instance_key))
+        if self.identity_map.get(state.key, instance) is not instance:
+            raise exceptions.InvalidRequestError(
+                "Instance '%s' is with key %s already persisted with a "
+                "different identity" % (mapperutil.instance_str(instance),
+                                        state.key))
         self._attach(instance)
         self.uow.register_deleted(instance)
 
     def _attach(self, instance):
-        old_id = getattr(instance, '_sa_session_id', None)
-        if old_id != self.hash_key:
-            if old_id is not None and old_id in _sessions and instance in _sessions[old_id]:
-                raise exceptions.InvalidRequestError("Object '%s' is already attached "
-                                                     "to session '%s' (this is '%s')" %
-                                                     (mapperutil.instance_str(instance), old_id, id(self)))
-
-            key = getattr(instance, '_instance_key', None)
-            if key is not None:
-                self.identity_map[key] = instance
-            instance._sa_session_id = self.hash_key
+        state = attributes.state_getter(instance)
+        old_id = state.session_id
+        if old_id == self.hash_key:
+            return
+        if (old_id is not None and old_id in _sessions and
+            instance in _sessions[old_id]):
+            raise exceptions.InvalidRequestError(
+                "Object '%s' is already attached to session '%s' "
+                "(this is '%s')" % (mapperutil.instance_str(instance),
+                                    old_id, id(self)))
+        if state.key is not None:
+            self.identity_map[state.key] = instance
+        state.session_id = self.hash_key
 
     def _unattach(self, instance):
-        if instance._sa_session_id == self.hash_key:
-            del instance._sa_session_id
+        state = attributes.state_getter(instance)
+        if state.session_id == self.hash_key:
+            state.session_id = None
 
     def _validate_persistent(self, instance):
         """Validate that the given instance is persistent within this
@@ -1133,10 +1150,14 @@ class Session(object):
 
         The instance may be pending or persistent within the Session for a
         result of True.
+
         """
         state = attributes.state_getter(instance)
-        return state in self.uow.new or (hasattr(instance, '_instance_key') and
-                                         self.identity_map.get(instance._instance_key) is instance)
+        if state in self.uow.new:
+            return True
+        if self.identity_map.get(state.key) is instance:
+            return True
+        return False
 
     def __iter__(self):
         """Return an iterator of all instances which are pending or persistent within this Session."""
@@ -1221,13 +1242,12 @@ def _cascade_iterator(cascade, instance, **kwargs):
 
 def object_session(instance):
     """Return the ``Session`` to which the given instance is bound, or ``None`` if none."""
-
-    hashkey = getattr(instance, '_sa_session_id', None)
-    if hashkey is not None:
-        sess = _sessions.get(hashkey)
-        if sess is not None and instance in sess:
-            return sess
-    return None
+    state = attributes.state_getter(instance)
+    if state.session_id is None:
+        return
+    session = _sessions.get(state.session_id)
+    if session is not None and instance in session:
+        return session
 
 # Lazy initialization to avoid circular imports
 unitofwork.object_session = object_session

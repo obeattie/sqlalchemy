@@ -86,11 +86,11 @@ class ExpireTest(FixtureTest):
 
         sess.expire(u, attribute_names=['name'])
         sess.expunge(u)
-        del u._instance_key
+        attributes.state_getter(u).key = None
         assert 'name' not in u.__dict__
         sess.save(u)
         assert u.name == 'jack'
-        
+
     def test_expire_preserves_changes(self):
         """test that the expire load operation doesn't revert post-expire changes"""
 
