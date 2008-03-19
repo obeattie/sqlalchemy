@@ -45,7 +45,36 @@ class MapperTest(MapperSuperTest):
             assert False
         except NotImplementedError, uoe:
             assert str(uoe) == "Public collection of MapperProperty objects is provided by the get_property() and iterate_properties accessors."
-
+    
+    @testing.uses_deprecated(
+        'Call to deprecated function _instance_key', 
+        'Call to deprecated function _sa_session_id', 
+        'Call to deprecated function entity_name')
+    def test_legacy_accesors(self):
+        u1 = User()
+        assert not hasattr(u1, '_instance_key')
+        assert not hasattr(u1, '_sa_session_id')
+        assert not hasattr(u1, 'entity_name')
+        
+        mapper(User, users)
+        u1 = User()
+        assert not hasattr(u1, '_instance_key')
+        assert not hasattr(u1, '_sa_session_id')
+        assert u1.entity_name is None
+        
+        sess = create_session()
+        sess.save(u1)
+        assert not hasattr(u1, '_instance_key')
+        assert u1._sa_session_id == sess.hash_key
+        assert u1.entity_name is None
+        
+        sess.flush()
+        assert u1._instance_key == class_mapper(u1).identity_key_from_instance(u1)
+        assert u1._sa_session_id == sess.hash_key
+        assert u1.entity_name is None
+        sess.delete(u1)
+        sess.flush()
+        
     def test_badcascade(self):
         mapper(Address, addresses)
         try:
@@ -362,6 +391,7 @@ class MapperTest(MapperSuperTest):
             have = set([n for n in dir(cls) if not n.startswith('_')])
             want = set(want)
             want.add('c')
+            want.add('entity_name')
             self.assert_(have == want, repr(have) + " " + repr(want))
 
         assert_props(Person, ['id', 'name', 'type'])

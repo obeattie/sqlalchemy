@@ -732,12 +732,6 @@ class Mapper(object):
         auto-session attachment logic.
         """
 
-        # XXX
-        #def hello(self):
-        #    raise Exception("Bah")
-        #self.class_._state = property(hello)
-        #self.class_._class_state = property(hello)
-
         if self.non_primary:
             self._class_state = attributes.class_state_getter(self.class_)
             _mapper_registry[self] = True
@@ -778,6 +772,34 @@ class Mapper(object):
         if self.entity_name is None:
             self.class_.c = self.c
 
+        @util.deprecated
+        def _instance_key(self):
+            state = attributes.state_getter(self)
+            if state.key is not None:
+                return state.key
+            else:
+                raise AttributeEror("_instance_key")
+        self.class_._instance_key = property(_instance_key)
+        
+        @util.deprecated
+        def _sa_session_id(self):
+            state = attributes.state_getter(self)
+            if state.session_id is not None:
+                return state.session_id
+            else:
+                raise AttributeError("_sa_session_id")
+        self.class_._sa_session_id = property(_sa_session_id)
+
+        @util.deprecated
+        def entity_name(self):
+            state = attributes.state_getter(self)
+            if state.entity_name is attributes.NO_ENTITY_NAME:
+                return None
+            else:
+                return state.entity_name
+        self.class_.entity_name = property(entity_name)
+        
+        
     def common_parent(self, other):
         """Return true if the given mapper shares a common inherited parent as this mapper."""
 
