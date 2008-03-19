@@ -313,6 +313,9 @@ class ScalarAttributeImpl(AttributeImpl):
         del state.dict[self.key]
         state.modified=True
 
+    def rollback_to_savepoint(self, state, savepoint):
+        state.dict[self.key] = savepoint[self.key]
+
     def get_history(self, state, passive=False):
         return _create_history(self, state, state.dict.get(self.key, NO_VALUE))
 
@@ -349,7 +352,12 @@ class MutableScalarAttributeImpl(ScalarAttributeImpl):
 
     def commit_to_state(self, state, value):
         state.committed_state[self.key] = self.copy(value)
-
+    
+    def rollback_to_savepoint(self, state, savepoint):
+        # dont need to copy here since the savepoint dict is 
+        # discarded after this step
+        state.dict[self.key] = savepoint[self.key]
+    
     def check_mutable_modified(self, state):
         (added, unchanged, deleted) = self.get_history(state, passive=True)
         if added or deleted:
@@ -403,6 +411,9 @@ class ScalarObjectAttributeImpl(ScalarAttributeImpl):
                 return (None, None, None)
             else:
                 return _create_history(self, state, current)
+
+    def rollback_to_savepoint(self, state, savepoint):
+        state.dict[self.key] = savepoint[self.key]
 
     def set(self, state, value, initiator):
         """Set a value on the given InstanceState.
@@ -515,7 +526,11 @@ class CollectionAttributeImpl(AttributeImpl):
         instance = state.obj()
         for ext in self.extensions:
             ext.remove(instance, value, initiator or self)
-
+    
+    def rollback_to_savepoint(self, state, savepoint):
+        # TODO: this is wrong, need to initialize a proper collection
+        state.dict[self.key] = savepoint[self.key]
+        
     def get_history(self, state, passive=False):
         current = self.get(state, passive=passive)
         if current is PASSIVE_NORESULT:
@@ -708,6 +723,7 @@ class InstanceState(object):
         self.parents = {}
         self.pending = {}
         self.appenders = {}
+        self.savepoints = []
         self.instance_dict = None
         self.runid = None
         self.key = self.session_id = None
@@ -762,7 +778,7 @@ class InstanceState(object):
         if self.modified:
             return True
         elif class_state_getter(self.class_).has_mutable_scalars:
-            for attr in _managed_attributes(self.class_):
+            for attr in class_state_getter(self.class_).attributes:
                 if hasattr(attr.impl, 'check_mutable_modified') and attr.impl.check_mutable_modified(self):
                     return True
             else:
@@ -815,6 +831,7 @@ class InstanceState(object):
         self.class_ = self.obj().__class__
         self.dict = self.obj().__dict__
         self.callables = state['callables']
+        self.savepoints = []
         self.runid = None
         self.appenders = {}
         if state['expired_attributes'] is not None:
@@ -835,8 +852,9 @@ class InstanceState(object):
         instance = self.obj()
         
         unmodified = self.unmodified
-        class_state_getter(self.class_).deferred_scalar_loader(instance, [
-            attr.impl.key for attr in _managed_attributes(self.class_) if 
+        class_state = class_state_getter(self.class_)
+        class_state.deferred_scalar_loader(instance, [
+            attr.impl.key for attr in class_state.attributes if 
                 attr.impl.accepts_scalar_loader and 
                 attr.impl.key in self.expired_attributes and 
                 attr.impl.key in unmodified
@@ -860,8 +878,9 @@ class InstanceState(object):
         if not hasattr(self, 'expired_attributes'):
             self.expired_attributes = util.Set()
 
+        class_state = class_state_getter(self.class_)
         if attribute_names is None:
-            for attr in _managed_attributes(self.class_):
+            for attr in class_state.attributes:
                 self.dict.pop(attr.impl.key, None)
                 self.expired_attributes.add(attr.impl.key)
                 if attr.impl.accepts_scalar_loader:
@@ -873,7 +892,7 @@ class InstanceState(object):
                 self.dict.pop(key, None)
                 self.committed_state.pop(key, None)
                 self.expired_attributes.add(key)
-                if class_state_getter(self.class_).get_impl(key).accepts_scalar_loader:
+                if class_state.get_impl(key).accepts_scalar_loader:
                     self.callables[key] = self
 
     def reset(self, key):
@@ -896,9 +915,10 @@ class InstanceState(object):
         which were refreshed from the database.
         """
 
-        if class_state_getter(self.class_).has_mutable_scalars:
+        class_state = class_state_getter(self.class_)
+        if class_state.has_mutable_scalars:
             for key in keys:
-                attr = class_state_getter(self.class_).get_impl(key)
+                attr = class_state.get_impl(key)
                 if hasattr(attr, 'commit_to_state') and attr.key in self.dict:
                     attr.commit_to_state(self, self.dict[attr.key])
                 else:
@@ -910,7 +930,32 @@ class InstanceState(object):
                 self.committed_state.pop(key, None)
                 self.pending.pop(key, None)
                 self.appenders.pop(key, None)
+    
+    def set_savepoint(self):
+        self.savepoints.append(self.committed_state)
+        self.committed_state = {}
 
+    def remove_savepoint(self):
+        self.committed_state = self.savepoints.pop()
+    
+    def rollback(self):
+        savepoint = self.committed_state
+            
+        class_state = class_state_getter(self.class_)
+        for attr in class_state.attributes:
+            if attr.impl.key in savepoint:
+                if savepoint[attr.impl.key] is NO_VALUE:
+                    del self.dict[attr.impl.key]
+                else:
+                    attr.impl.rollback_to_savepoint(self, savepoint)
+            else:
+                pass
+        
+        if self.savepoints:
+            self.committed_state = self.savepoints.pop()
+        else:
+            self.committed_state = {}
+            
     def commit_all(self):
         """commit all attributes unconditionally.
 
@@ -922,9 +967,11 @@ class InstanceState(object):
         self.modified = False
         self.pending = {}
         self.appenders = {}
-
-        if class_state_getter(self.class_).has_mutable_scalars:
-            for attr in _managed_attributes(self.class_):
+        self.savepoints = []
+        
+        class_state = class_state_getter(self.class_)
+        if class_state.has_mutable_scalars:
+            for attr in class_state.attributes:
                 if hasattr(attr.impl, 'commit_to_state') and attr.impl.key in self.dict:
                     attr.impl.commit_to_state(self, self.dict[attr.impl.key])
 
@@ -1011,7 +1058,11 @@ class ClassState(dict):
         return self[key].impl
 
     get_inst = dict.__getitem__
-
+    
+    def attributes(self):
+        return self.itervalues()
+    attributes = property(attributes)
+    
     def manage(self, instance, state=None):
         if has_state(instance):
             return
@@ -1082,8 +1133,14 @@ class InstrumentClass(object):
 
 
 def _create_history(attr, state, current):
-    original = state.committed_state.get(attr.key, NEVER_SET)
-
+    
+    for committed_state in state.savepoints:
+        if attr.key in committed_state:
+            original = committed_state[attr.key]
+            break
+    else:
+        original = state.committed_state.get(attr.key, NEVER_SET)
+        
     if hasattr(attr, 'get_collection'):
         current = attr.get_collection(state, current)
         if original is NO_VALUE:
@@ -1135,7 +1192,7 @@ class PendingCollection(object):
 
 def _managed_attributes(class_):
     """return all InstrumentedAttributes associated with the given class_ and its superclasses."""
-    return get_class_state(class_).itervalues()
+    return get_class_state(class_).attributes
 
 def get_history(state, key, **kwargs):
     return state.get_history(key, **kwargs)
@@ -1264,13 +1321,16 @@ def init_collection(instance, key):
     return attr.get_collection(state, user_data)
 
 def set_attribute(instance, key, value):
-    state_getter(instance).get_impl(key).set(state_getter(instance), value, None)
+    state = state_getter(instance)
+    state.get_impl(key).set(state, value, None)
     
 def get_attribute(instance, key):
-    return state_getter(instance).get_impl(key).get(state_getter(instance))
+    state = state_getter(instance)
+    return state.get_impl(key).get(state)
     
 def del_attribute(instance, key):
-    state_getter(instance).get_impl(key).delete(state_getter(instance))
+    state = state_getter(instance)
+    state.get_impl(key).delete(state)
 
 def is_instrumented(instance, key):
     return class_state_getter(instance).is_instrumented(key, search=True)
