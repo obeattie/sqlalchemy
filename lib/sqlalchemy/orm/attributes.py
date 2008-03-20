@@ -528,8 +528,11 @@ class CollectionAttributeImpl(AttributeImpl):
             ext.remove(instance, value, initiator or self)
 
     def rollback_to_savepoint(self, state, savepoint):
+
+        new_values = savepoint[self.key]
+
         new_collection, user_data = self._initialize_collection(state)
-        for item in savepoint[self.key]:
+        for item in new_values:
             new_collection.append_without_event(item)
         state.dict[self.key] = user_data
 
@@ -935,11 +938,13 @@ class InstanceState(object):
                 self.appenders.pop(key, None)
 
     def set_savepoint(self):
-        self.savepoints.append(self.committed_state)
+        self.savepoints.append((self.committed_state, self.parents, self.pending))
         self.committed_state = {}
+        self.parents = self.parents.copy()
+        self.pending = self.pending.copy()
 
     def remove_savepoint(self):
-        self.committed_state = self.savepoints.pop()
+        (self.committed_state, self.parents, self.pending) = self.savepoints.pop()
 
     def rollback(self):
         savepoint = self.committed_state
@@ -954,10 +959,12 @@ class InstanceState(object):
                 pass
 
         if self.savepoints:
-            self.committed_state = self.savepoints.pop()
+            (self.committed_state, self.parents, self.pending) = self.savepoints.pop()
         else:
             self.committed_state = {}
-
+            # TODO: parents/pending can't really rollback if a savepoint wasn't set.
+            # so, maybe we require savepoint to be set in order to call rollback().
+        
     def commit_all(self):
         """commit all attributes unconditionally.
 
@@ -1136,7 +1143,7 @@ class InstrumentClass(object):
 
 def _create_history(attr, state, current):
 
-    for committed_state in state.savepoints:
+    for committed_state, parents, pending in state.savepoints:
         if attr.key in committed_state:
             original = committed_state[attr.key]
             break
