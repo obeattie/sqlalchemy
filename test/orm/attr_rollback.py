@@ -17,6 +17,7 @@ class AttrTestBase(object):
 
         f = Foo()
         assert attributes.get_history(f._foostate, 'x') == ([], emptyhist, [])
+        f._foostate.set_savepoint()
         f.x = data1
         assert attributes.get_history(f._foostate, 'x') == (hist1, [], [])
         f._foostate.rollback()
@@ -25,10 +26,16 @@ class AttrTestBase(object):
         assert f.x == empty
         #assert attributes.get_history(f._foostate, 'x') == ([], [None], []) # this is idiosyncratic of scalar attributes
     
+    def test_needs_savepoint(self):
+        f = Foo()
+        f.x = data1
+        self.assertRaises(exceptions.InvalidRequestError, f._foostate.rollback)
+        
     def test_rback_to_set(self):
         f = Foo()
         f.x = data1
         f._foostate.commit_all()
+        f._foostate.set_savepoint()
         f.x = empty
         f._foostate.rollback()
         assert attributes.get_history(f._foostate, 'x') == ([], hist1, [])
@@ -46,6 +53,7 @@ class AttrTestBase(object):
         f = Foo()
         f.x = data1
         f._foostate.commit_all()
+        f._foostate.set_savepoint()
         assert attributes.get_history(f._foostate, 'x') == ([], hist1, [])
 
         f._foostate.rollback()
@@ -57,6 +65,7 @@ class AttrTestBase(object):
         f._foostate.commit_all()
         assert attributes.get_history(f._foostate, 'x') == ([], hist1, [])
 
+        f._foostate.set_savepoint()
         f.x = data2
         assert attributes.get_history(f._foostate, 'x') == (hist2, [], hist1)
         f._foostate.set_savepoint()
@@ -95,6 +104,9 @@ class AttrTestBase(object):
         f = Foo()
         f.x = data1
         f._foostate.commit_all()
+        
+        f._foostate.set_savepoint()
+        
         assert attributes.get_history(f._foostate, 'x') == ([], hist1, [])
 
         f.x = data2
@@ -107,9 +119,9 @@ class AttrTestBase(object):
         assert attributes.get_history(f._foostate, 'x') == (hist3, [], hist1)
 
         f._foostate.remove_savepoint()
-        assert not f._foostate.savepoints
 
         f._foostate.rollback()
+        assert not f._foostate.savepoints
         assert attributes.get_history(f._foostate, 'x') == ([], hist1, [])
         assert f.x == data1
         
@@ -160,6 +172,9 @@ class CollectionTestBase(AttrTestBase):
     def test_collection_rback_savepoint_rback_to_empty(self):
         b1, b2, b3, b4, b5 = Bar(), Bar(), Bar(), Bar(), Bar()
         f = Foo()
+
+        f._foostate.set_savepoint()
+        
         f.x.append(b2)
         f.x.append(b3)
         assert attributes.get_history(f._foostate, 'x') == ([b2, b3], [], [])

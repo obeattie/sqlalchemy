@@ -947,6 +947,9 @@ class InstanceState(object):
         (self.committed_state, self.parents, self.pending) = self.savepoints.pop()
 
     def rollback(self):
+        if not self.savepoints:
+            raise exceptions.InvalidRequestError("No savepoints are set; can't rollback.")
+            
         savepoint = self.committed_state
 
         for attr in self.class_state.attributes:
@@ -958,12 +961,7 @@ class InstanceState(object):
             else:
                 pass
 
-        if self.savepoints:
-            (self.committed_state, self.parents, self.pending) = self.savepoints.pop()
-        else:
-            self.committed_state = {}
-            # TODO: parents/pending can't really rollback if a savepoint wasn't set.
-            # so, maybe we require savepoint to be set in order to call rollback().
+        (self.committed_state, self.parents, self.pending) = self.savepoints.pop()
         
     def commit_all(self):
         """commit all attributes unconditionally.
