@@ -64,8 +64,19 @@ class MyClass(object):
     def __setattr__(self, key, value):
         if is_instrumented(self, key):
             set_attribute(self, key, value)
+        # fixme: needs the pluggable attributes.has_state
+        elif key == attributes.STATE_ATTR:
+            self.__dict__[key] = value
         else:
             self._goofy_dict[key] = value
+
+    def __hasattr__(self, key):
+        if is_instrumented(self, key):
+            return True
+        elif key == attributes.STATE_ATTR:
+            return key in self.__dict__
+        else:
+            return key in self._goofy_dict
 
     def __delattr__(self, key):
         if is_instrumented(self, key):
@@ -164,7 +175,7 @@ class UserDefinedExtensionTest(TestBase):
             x = Foo()
             y = Bar()
             assert x.element == 'this is the foo attr'
-            assert y.element == 'this is the bar attr'
+            assert y.element == 'this is the bar attr', y.element
             assert x.element2 == 'this is the shared attr'
             assert y.element2 == 'this is the shared attr'
 

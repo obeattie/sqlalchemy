@@ -1646,9 +1646,7 @@ def _state_mapper(state, entity_name=None):
     if state.entity_name is not attributes.NO_ENTITY_NAME:
         # Override the given entity name if the object is not transient.
         entity_name = state.entity_name
-    class_state = attributes.class_state_getter(state.class_)
-    return class_state.mappers[entity_name]
-
+    return state.class_state.mappers[entity_name]
 
 def object_mapper(object, entity_name=None, raiseerror=True):
     """Given an object, return the primary Mapper associated with the object instance.

@@ -304,7 +304,7 @@ class ScalarAttributeImpl(AttributeImpl):
 
     accepts_scalar_loader = True
     uses_objects = False
-    
+
     def delete(self, state):
         if self.key not in state.committed_state:
             state.committed_state[self.key] = state.dict.get(self.key, NO_VALUE)
@@ -352,12 +352,12 @@ class MutableScalarAttributeImpl(ScalarAttributeImpl):
 
     def commit_to_state(self, state, value):
         state.committed_state[self.key] = self.copy(value)
-    
+
     def rollback_to_savepoint(self, state, savepoint):
-        # dont need to copy here since the savepoint dict is 
+        # dont need to copy here since the savepoint dict is
         # discarded after this step
         state.dict[self.key] = savepoint[self.key]
-    
+
     def check_mutable_modified(self, state):
         (added, unchanged, deleted) = self.get_history(state, passive=True)
         if added or deleted:
@@ -526,11 +526,11 @@ class CollectionAttributeImpl(AttributeImpl):
         instance = state.obj()
         for ext in self.extensions:
             ext.remove(instance, value, initiator or self)
-    
+
     def rollback_to_savepoint(self, state, savepoint):
         # TODO: this is wrong, need to initialize a proper collection
         state.dict[self.key] = savepoint[self.key]
-        
+
     def get_history(self, state, passive=False):
         current = self.get(state, passive=passive)
         if current is PASSIVE_NORESULT:
@@ -713,8 +713,9 @@ class GenericBackrefExtension(interfaces.AttributeExtension):
 class InstanceState(object):
     """tracks state information at the instance level."""
 
-    def __init__(self, obj):
+    def __init__(self, obj, class_state):
         self.class_ = obj.__class__
+        self.class_state = class_state
         self.obj = weakref.ref(obj, self.__cleanup)
         self.dict = obj.__dict__
         self.committed_state = {}
@@ -761,14 +762,14 @@ class InstanceState(object):
             instance_dict._mutex.release()
 
     def get_history(self, key, **kwargs):
-        return class_state_getter(self.class_).get_impl(key).get_history(self, **kwargs)
-    
+        return self.class_state.get_impl(key).get_history(self, **kwargs)
+
     def get_impl(self, key):
-        return class_state_getter(self.class_).get_impl(key)
-    
+        return self.class_state.get_impl(key)
+
     def get_inst(self, key):
-        return class_state_getter(self.class_).get_inst(key)
-        
+        return self.class_state.get_inst(key)
+
     def get_pending(self, key):
         if key not in self.pending:
             self.pending[key] = PendingCollection()
@@ -777,8 +778,8 @@ class InstanceState(object):
     def is_modified(self):
         if self.modified:
             return True
-        elif class_state_getter(self.class_).has_mutable_scalars:
-            for attr in class_state_getter(self.class_).attributes:
+        elif self.class_state.has_mutable_scalars:
+            for attr in self.class_state.attributes:
                 if hasattr(attr.impl, 'check_mutable_modified') and attr.impl.check_mutable_modified(self):
                     return True
             else:
@@ -793,8 +794,7 @@ class InstanceState(object):
         if self.is_modified():
             # store strong ref'ed version of the object; will revert
             # to weakref when changes are persisted
-            class_state = class_state_getter(self.class_)
-            obj = class_state.new_instance(state=self)
+            obj = self.class_state.new_instance(state=self)
             self.obj = weakref.ref(obj, self.__cleanup)
             self._strong_obj = obj
             # todo: revisit this wrt user-defined-state
@@ -815,7 +815,7 @@ class InstanceState(object):
                 'parents': self.parents,
                 'modified': self.modified,
                 'instance': self.obj(),
-                'expired_attributes': 
+                'expired_attributes':
                     getattr(self, 'expired_attributes', None),
                 'callables': self.callables}
 
@@ -829,6 +829,7 @@ class InstanceState(object):
         self.modified = state['modified']
         self.obj = weakref.ref(state['instance'])
         self.class_ = self.obj().__class__
+        self.class_state = class_state_getter(self.class_)
         self.dict = self.obj().__dict__
         self.callables = state['callables']
         self.savepoints = []
@@ -838,7 +839,7 @@ class InstanceState(object):
             self.expire_attributes(state['expired_attributes'])
 
     def initialize(self, key):
-        class_state_getter(self.class_).get_impl(key).initialize(self)
+        self.class_state.get_impl(key).initialize(self)
 
     def set_callable(self, key, callable_):
         self.dict.pop(key, None)
@@ -850,13 +851,13 @@ class InstanceState(object):
         serializable.
         """
         instance = self.obj()
-        
+
         unmodified = self.unmodified
-        class_state = class_state_getter(self.class_)
+        class_state = self.class_state
         class_state.deferred_scalar_loader(instance, [
-            attr.impl.key for attr in class_state.attributes if 
-                attr.impl.accepts_scalar_loader and 
-                attr.impl.key in self.expired_attributes and 
+            attr.impl.key for attr in class_state.attributes if
+                attr.impl.accepts_scalar_loader and
+                attr.impl.key in self.expired_attributes and
                 attr.impl.key in unmodified
             ])
         for k in self.expired_attributes:
@@ -870,7 +871,8 @@ class InstanceState(object):
         return util.Set([
             attr.impl.key for attr in _managed_attributes(self.class_) if
             attr.impl.key not in self.committed_state
-            and (not hasattr(attr.impl, 'commit_to_state') or not attr.impl.check_mutable_modified(self))
+            and (not hasattr(attr.impl, 'commit_to_state') or
+                 not attr.impl.check_mutable_modified(self))
         ])
     unmodified = property(unmodified)
 
@@ -878,9 +880,8 @@ class InstanceState(object):
         if not hasattr(self, 'expired_attributes'):
             self.expired_attributes = util.Set()
 
-        class_state = class_state_getter(self.class_)
         if attribute_names is None:
-            for attr in class_state.attributes:
+            for attr in self.class_state.attributes:
                 self.dict.pop(attr.impl.key, None)
                 self.expired_attributes.add(attr.impl.key)
                 if attr.impl.accepts_scalar_loader:
@@ -892,7 +893,7 @@ class InstanceState(object):
                 self.dict.pop(key, None)
                 self.committed_state.pop(key, None)
                 self.expired_attributes.add(key)
-                if class_state.get_impl(key).accepts_scalar_loader:
+                if self.class_state.get_impl(key).accepts_scalar_loader:
                     self.callables[key] = self
 
     def reset(self, key):
@@ -930,19 +931,18 @@ class InstanceState(object):
                 self.committed_state.pop(key, None)
                 self.pending.pop(key, None)
                 self.appenders.pop(key, None)
-    
+
     def set_savepoint(self):
         self.savepoints.append(self.committed_state)
         self.committed_state = {}
 
     def remove_savepoint(self):
         self.committed_state = self.savepoints.pop()
-    
+
     def rollback(self):
         savepoint = self.committed_state
-            
-        class_state = class_state_getter(self.class_)
-        for attr in class_state.attributes:
+
+        for attr in self.class_state.attributes:
             if attr.impl.key in savepoint:
                 if savepoint[attr.impl.key] is NO_VALUE:
                     del self.dict[attr.impl.key]
@@ -950,12 +950,12 @@ class InstanceState(object):
                     attr.impl.rollback_to_savepoint(self, savepoint)
             else:
                 pass
-        
+
         if self.savepoints:
             self.committed_state = self.savepoints.pop()
         else:
             self.committed_state = {}
-            
+
     def commit_all(self):
         """commit all attributes unconditionally.
 
@@ -968,11 +968,11 @@ class InstanceState(object):
         self.pending = {}
         self.appenders = {}
         self.savepoints = []
-        
-        class_state = class_state_getter(self.class_)
-        if class_state.has_mutable_scalars:
-            for attr in class_state.attributes:
-                if hasattr(attr.impl, 'commit_to_state') and attr.impl.key in self.dict:
+
+        if self.class_state.has_mutable_scalars:
+            for attr in self.class_state.attributes:
+                if (hasattr(attr.impl, 'commit_to_state') and
+                    attr.impl.key in self.dict):
                     attr.impl.commit_to_state(self, self.dict[attr.impl.key])
 
         # remove strong ref
@@ -1058,16 +1058,16 @@ class ClassState(dict):
         return self[key].impl
 
     get_inst = dict.__getitem__
-    
+
     def attributes(self):
         return self.itervalues()
     attributes = property(attributes)
-    
+
     def manage(self, instance, state=None):
         if has_state(instance):
             return
         if state is None:
-            state = InstanceState(instance)
+            state = InstanceState(instance, self)
         setattr(instance, STATE_ATTR, state)
 
     def new_instance(self, state=None):
@@ -1078,11 +1078,11 @@ class ClassState(dict):
 
 class _ClassStateAdapter(ClassState):
     """adapts a user-defined InstrumentClass instance to ClassState"""
-    
+
     def __init__(self, class_):
         ClassState.__init__(self, class_)
         self._instrument = class_.__sa_instrument_class__()
-        
+
     def instrument_attribute(self, key, inst, propagated=False):
         ClassState.instrument_attribute(self, key, inst, propagated)
         if not propagated:
@@ -1112,7 +1112,7 @@ class _ClassStateAdapter(ClassState):
 
 class InstrumentClass(object):
     """User-defined class instrumentation extension."""
-    
+
     def instrument_attribute(self, class_, key, inst):
         pass
 
@@ -1133,14 +1133,14 @@ class InstrumentClass(object):
 
 
 def _create_history(attr, state, current):
-    
+
     for committed_state in state.savepoints:
         if attr.key in committed_state:
             original = committed_state[attr.key]
             break
     else:
         original = state.committed_state.get(attr.key, NEVER_SET)
-        
+
     if hasattr(attr, 'get_collection'):
         current = attr.get_collection(state, current)
         if original is NO_VALUE:
@@ -1239,10 +1239,10 @@ def manage(instance):
     return instance
 
 def new_instance(class_, state=None):
-    """create a new instance of class_ without its __init__() method being called.
+    """Create a new instance of class_ without calling __init__().
 
-    Also initializes an InstanceState on the new instance.
     """
+    # Also initializes an InstanceState on the new instance.
 
     return class_state_getter(type(instance)).new_instance(state)
 
@@ -1271,7 +1271,8 @@ def register_class(class_, extra_init=None, on_exception=None, deferred_scalar_l
     class_state.deferred_scalar_loader = deferred_scalar_loader
 
     new_init = _generate_init(class_, class_state, extra_init, on_exception)
-    class_state.install_method('__init__', new_init)
+    if new_init:
+        class_state.install_method('__init__', new_init)
     class_state.registered = True
 
 def unregister_class(class_):
@@ -1299,7 +1300,7 @@ def register_attribute(class_, key, uselist, useobject, callable_=None, proxy_pr
         typecallable = cs.instrument_collection_class(key, factory or list)
     else:
         typecallable = kwargs.pop('typecallable', None)
-        
+
     comparator = kwargs.pop('comparator', None)
 
     if proxy_property:
@@ -1323,11 +1324,11 @@ def init_collection(instance, key):
 def set_attribute(instance, key, value):
     state = state_getter(instance)
     state.get_impl(key).set(state, value, None)
-    
+
 def get_attribute(instance, key):
     state = state_getter(instance)
     return state.get_impl(key).get(state)
-    
+
 def del_attribute(instance, key):
     state = state_getter(instance)
     state.get_impl(key).delete(state)
@@ -1338,13 +1339,17 @@ def is_instrumented(instance, key):
 def _generate_init(class_, class_state, extra_init, on_exception):
     """Build an __init__ decorator."""
 
+    original__init__ = class_.__init__
+    assert original__init__
+
     # Go through some effort here to not slow down user's constructors
     # nor change their calling signature.
     if on_exception:
         func_body = """\
 def __init__%(args)s:
-    class_state.manage(%(self_arg)s)
-    %(extra_init)s
+    if not has_state(%(self_arg)s):
+        class_state.manage(%(self_arg)s)
+        %(extra_init)s
     try:
         return original__init__%(unbound)s
     except:
@@ -1354,8 +1359,9 @@ def __init__%(args)s:
     else:
         func_body = """\
 def __init__%(args)s:
-    class_state.manage(%(self_arg)s)
-    %(extra_init)s
+    if not has_state(%(self_arg)s):
+        class_state.manage(%(self_arg)s)
+        %(extra_init)s
     return original__init__%(unbound)s
 """
 
@@ -1391,7 +1397,10 @@ def __init__%(args)s:
 
     func_text = (func_body % func_vars) % func_vars
 
-    exec func_text in locals(), locals()
+    env = locals().copy()
+    env['has_state'] = has_state
+    exec func_text in env
+    __init__ = env['__init__']
     try:
         __init__.__doc__ = original__init__.__doc__
         __init__.__name__ = original__init__.__name__
