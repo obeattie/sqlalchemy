@@ -528,8 +528,10 @@ class CollectionAttributeImpl(AttributeImpl):
             ext.remove(instance, value, initiator or self)
 
     def rollback_to_savepoint(self, state, savepoint):
-        # TODO: this is wrong, need to initialize a proper collection
-        state.dict[self.key] = savepoint[self.key]
+        new_collection, user_data = self._initialize_collection(state)
+        for item in savepoint[self.key]:
+            new_collection.append_without_event(item)
+        state.dict[self.key] = user_data
 
     def get_history(self, state, passive=False):
         current = self.get(state, passive=passive)

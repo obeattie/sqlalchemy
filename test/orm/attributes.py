@@ -6,8 +6,6 @@ from sqlalchemy import exceptions
 from testlib import *
 from testlib import fixtures
 
-ROLLBACK_SUPPORTED=False
-
 # these test classes defined at the module
 # level to support pickling
 class MyTest(object):pass

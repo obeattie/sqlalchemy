@@ -8,6 +8,7 @@ def suite():
     modules_to_test = (
     'orm.attributes',
     'orm.extendedattr', 
+    'orm.attr_rollback',
         'orm.query',
         'orm.lazy_relations',
         'orm.eager_relations',
