@@ -1101,6 +1101,12 @@ class _ClassStateAdapter(ClassState):
     def uninstall_descriptor(self, key):
         self._instrument.uninstall_descriptor(self.class_, key)
 
+    def install_method(self, key, implementation):
+        self._instrument.install_method(self.class_, key, implementation)
+
+    def uninstall_method(self, key):
+        self._instrument.uninstall_method(self.class_, key)
+
     def instrument_collection_class(self, key, collection_class):
         return self._instrument.instrument_collection_class(self.class_, key, collection_class)
 
@@ -1127,6 +1133,12 @@ class InstrumentClass(object):
         setattr(class_, key, inst)
 
     def uninstall_descriptor(self, class_, key):
+        delattr(class_, key)
+
+    def install_method(self, class_, key, implementation):
+        setattr(class_, key, implementation)
+
+    def uninstall_method(self, class_, key):
         delattr(class_, key)
 
     def instrument_collection_class(self, class_, key, collection_class):
