@@ -2,6 +2,7 @@ import testenv; testenv.configure_for_tests()
 import pickle
 import sqlalchemy.orm.attributes as attributes
 from sqlalchemy.orm.collections import collection
+from sqlalchemy.orm.interfaces import AttributeExtension
 from sqlalchemy import exceptions
 from testlib import *
 from testlib import fixtures
@@ -184,6 +185,45 @@ class AttributesTest(TestBase):
         u.addresses.append(a)
         self.assert_(u.user_id == 7 and u.user_name == 'heythere' and u.addresses[0].email_address == 'lala@123.com' and u.addresses[1].email_address == 'foo@bar.com')
 
+    def test_scalar_listener(self):
+        # listeners on ScalarAttributeImpl and MutableScalarAttributeImpl aren't used normally.
+        # test that they work for the benefit of user extensions
+        class Foo(object):
+            pass
+        
+        results = []
+        class ReceiveEvents(AttributeExtension):
+            def append(self, obj, child, initiator):
+                assert False
+
+            def remove(self, obj, child, initiator):
+                results.append(("remove", obj, child))
+
+            def set(self, obj, child, oldchild, initiator):
+                results.append(("set", obj, child, oldchild))
+        
+        attributes.register_class(Foo)
+        attributes.register_attribute(Foo, 'x', uselist=False, mutable_scalars=False, useobject=False, extension=ReceiveEvents())
+        attributes.register_attribute(Foo, 'y', uselist=False, mutable_scalars=True, useobject=False, copy_function=lambda x:x, extension=ReceiveEvents())
+        
+        f = Foo()
+        f.x = 5
+        f.x = 17
+        del f.x
+        f.y = [1,2,3]
+        f.y = [4,5,6]
+        del f.y
+        
+        self.assertEquals(results, [
+            ('set', f, 5, None),
+            ('set', f, 17, 5),
+            ('remove', f, 17),
+            ('set', f, [1,2,3], None),
+            ('set', f, [4,5,6], [1,2,3]),
+            ('remove', f, [4,5,6])
+        ])
+        
+        
     def test_lazytrackparent(self):
         """test that the "hasparent" flag works properly when lazy loaders and backrefs are used"""
 

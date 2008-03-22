@@ -310,7 +310,12 @@ class ScalarAttributeImpl(AttributeImpl):
             state.committed_state[self.key] = state.dict.get(self.key, NO_VALUE)
 
         # TODO: catch key errors, convert to attributeerror?
-        del state.dict[self.key]
+        if self.extensions:
+            old = self.get(state)
+            del state.dict[self.key]
+            self.fire_remove_event(state, old, None)
+        else:
+            del state.dict[self.key]
         state.modified=True
 
     def rollback_to_savepoint(self, state, savepoint):
@@ -326,8 +331,23 @@ class ScalarAttributeImpl(AttributeImpl):
         if self.key not in state.committed_state:
             state.committed_state[self.key] = state.dict.get(self.key, NO_VALUE)
 
-        state.dict[self.key] = value
+        if self.extensions:
+            old = self.get(state)
+            state.dict[self.key] = value
+            self.fire_replace_event(state, value, old, initiator)
+        else:
+            state.dict[self.key] = value
         state.modified=True
+
+    def fire_replace_event(self, state, value, previous, initiator):
+        instance = state.obj()
+        for ext in self.extensions:
+            ext.set(instance, value, previous, initiator or self)
+
+    def fire_remove_event(self, state, value, initiator):
+        instance = state.obj()
+        for ext in self.extensions:
+            ext.remove(instance, value, initiator or self)
 
     def type(self):
         self.property.columns[0].type
@@ -350,8 +370,8 @@ class MutableScalarAttributeImpl(ScalarAttributeImpl):
     def get_history(self, state, passive=False):
         return _create_history(self, state, state.dict.get(self.key, NO_VALUE))
 
-    def commit_to_state(self, state, value):
-        state.committed_state[self.key] = self.copy(value)
+    def commit_to_state(self, state, value, dest):
+        dest[self.key] = self.copy(value)
 
     def rollback_to_savepoint(self, state, savepoint):
         # dont need to copy here since the savepoint dict is
@@ -376,7 +396,12 @@ class MutableScalarAttributeImpl(ScalarAttributeImpl):
             else:
                 state.committed_state[self.key] = NO_VALUE
 
-        state.dict[self.key] = value
+        if self.extensions:
+            old = self.get(state)
+            state.dict[self.key] = value
+            self.fire_replace_event(state, value, old, initiator)
+        else:
+            state.dict[self.key] = value
         state.modified=True
 
 
@@ -907,10 +932,15 @@ class InstanceState(object):
         self.callables.pop(key, None)
 
     def commit_attr(self, attr, value):
-        if hasattr(attr, 'commit_to_state'):
-            attr.commit_to_state(self, value)
+        if self.savepoints:
+            committed_state = self.savepoints[0][0]
         else:
-            self.committed_state.pop(attr.key, None)
+            committed_state = self.committed_state
+            
+        if hasattr(attr, 'commit_to_state'):
+            attr.commit_to_state(self, value, committed_state)
+        else:
+            committed_state.pop(attr.key, None)
         self.pending.pop(attr.key, None)
         self.appenders.pop(attr.key, None)
 
@@ -921,25 +951,36 @@ class InstanceState(object):
         which were refreshed from the database.
         """
 
+        if self.savepoints:
+            committed_state = self.savepoints[0][0]
+        else:
+            committed_state = self.committed_state
         class_state = class_state_getter(self.class_)
         if class_state.has_mutable_scalars:
             for key in keys:
                 attr = class_state.get_impl(key)
                 if hasattr(attr, 'commit_to_state') and attr.key in self.dict:
-                    attr.commit_to_state(self, self.dict[attr.key])
+                    attr.commit_to_state(self, self.dict[attr.key], committed_state)
                 else:
-                    self.committed_state.pop(attr.key, None)
+                    committed_state.pop(attr.key, None)
                 self.pending.pop(key, None)
                 self.appenders.pop(key, None)
         else:
             for key in keys:
-                self.committed_state.pop(key, None)
+                committed_state.pop(key, None)
                 self.pending.pop(key, None)
                 self.appenders.pop(key, None)
 
     def set_savepoint(self):
         self.savepoints.append((self.committed_state, self.parents, self.pending))
         self.committed_state = {}
+        
+        if self.class_state.has_mutable_scalars:
+            for attr in self.class_state.attributes:
+                if (hasattr(attr.impl, 'commit_to_state') and
+                    attr.impl.key in self.dict):
+                    attr.impl.commit_to_state(self, self.dict[attr.impl.key], self.committed_state)
+                    
         self.parents = self.parents.copy()
         self.pending = self.pending.copy()
 
@@ -970,17 +1011,19 @@ class InstanceState(object):
         to mark committed all populated attributes.
         """
 
-        self.committed_state = {}
+        (committed_state, pending) = self.committed_state, self.pending
+        committed_state.clear()
+        pending.clear()
+
         self.modified = False
-        self.pending = {}
         self.appenders = {}
-        self.savepoints = []
 
         if self.class_state.has_mutable_scalars:
             for attr in self.class_state.attributes:
                 if (hasattr(attr.impl, 'commit_to_state') and
                     attr.impl.key in self.dict):
-                    attr.impl.commit_to_state(self, self.dict[attr.impl.key])
+                    for s in [sp[0] for sp in self.savepoints] + [committed_state]:
+                        attr.impl.commit_to_state(self, self.dict[attr.impl.key], s)
 
         # remove strong ref
         self._strong_obj = None
