@@ -52,8 +52,7 @@ class DependencyProcessor(object):
         ``DependencyProecssor``.
         """
 
-        return attributes.class_state_getter(self.parent.class_).get_impl(self.key)
-        return getattr(self.parent.class_, self.key)
+        return self.parent._class_state.get_impl(self.key)
 
     def hasparent(self, state):
         """return True if the given object instance has a parent,

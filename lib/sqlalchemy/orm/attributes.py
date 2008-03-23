@@ -115,9 +115,9 @@ class ProxiedAttribute(InstrumentedAttribute):
             self.key = key
 
     def __init__(self, key, user_prop, comparator=None):
+        self.key = key
         self.user_prop = user_prop
         self._comparator = comparator
-        self.key = key
         self.impl = ProxiedAttribute.ProxyImpl(key)
 
     def comparator(self):
@@ -141,7 +141,7 @@ class ProxiedAttribute(InstrumentedAttribute):
 class AttributeImpl(object):
     """internal implementation for instrumented attributes."""
 
-    def __init__(self, class_, key, callable_, trackparent=False, extension=None, compare_function=None, **kwargs):
+    def __init__(self, class_, key, callable_, class_state, trackparent=False, extension=None, compare_function=None, **kwargs):
         """Construct an AttributeImpl.
 
         class_
@@ -173,6 +173,7 @@ class AttributeImpl(object):
         self.class_ = class_
         self.key = key
         self.callable_ = callable_
+        self.class_state = class_state
         self.trackparent = trackparent
         if compare_function is None:
             self.is_equal = operator.eq
@@ -360,9 +361,9 @@ class MutableScalarAttributeImpl(ScalarAttributeImpl):
 
     uses_objects = False
 
-    def __init__(self, class_, key, callable_, copy_function=None, compare_function=None, **kwargs):
-        super(ScalarAttributeImpl, self).__init__(class_, key, callable_, compare_function=compare_function, **kwargs)
-        class_state_getter(class_).has_mutable_scalars = True
+    def __init__(self, class_, key, callable_, class_state, copy_function=None, compare_function=None, **kwargs):
+        super(ScalarAttributeImpl, self).__init__(class_, key, callable_, class_state, compare_function=compare_function, **kwargs)
+        class_state.has_mutable_scalars = True
         if copy_function is None:
             raise exceptions.ArgumentError("MutableScalarAttributeImpl requires a copy function")
         self.copy = copy_function
@@ -414,9 +415,9 @@ class ScalarObjectAttributeImpl(ScalarAttributeImpl):
     accepts_scalar_loader = False
     uses_objects = True
 
-    def __init__(self, class_, key, callable_, trackparent=False, extension=None, copy_function=None, compare_function=None, **kwargs):
+    def __init__(self, class_, key, callable_, class_state, trackparent=False, extension=None, copy_function=None, compare_function=None, **kwargs):
         super(ScalarObjectAttributeImpl, self).__init__(class_, key,
-          callable_, trackparent=trackparent, extension=extension,
+          callable_, class_state, trackparent=trackparent, extension=extension,
           compare_function=compare_function, **kwargs)
         if compare_function is None:
             self.is_equal = identity_equal
@@ -496,10 +497,10 @@ class CollectionAttributeImpl(AttributeImpl):
     accepts_scalar_loader = False
     uses_objects = True
 
-    def __init__(self, class_, key, callable_, typecallable=None, trackparent=False, extension=None, copy_function=None, compare_function=None, **kwargs):
+    def __init__(self, class_, key, callable_, class_state, typecallable=None, trackparent=False, extension=None, copy_function=None, compare_function=None, **kwargs):
         super(CollectionAttributeImpl, self).__init__(class_,
-          key, callable_, trackparent=trackparent, extension=extension,
-          compare_function=compare_function, **kwargs)
+          key, callable_, class_state, trackparent=trackparent,
+          extension=extension, compare_function=compare_function, **kwargs)
 
         if copy_function is None:
             copy_function = self.__copy
@@ -587,7 +588,7 @@ class CollectionAttributeImpl(AttributeImpl):
         return user_data
 
     def _initialize_collection(self, state):
-        return class_state_getter(state.class_).initialize_collection(
+        return state.class_state.initialize_collection(
             self.key, state, self.collection_factory)
 
     def append(self, state, value, initiator, passive=False):
@@ -725,20 +726,24 @@ class GenericBackrefExtension(interfaces.AttributeExtension):
         if oldchild is not None:
             # With lazy=None, there's no guarantee that the full collection is
             # present when updating via a backref.
-            impl = state_getter(oldchild).get_impl(self.key)
+            old_state = state_getter(oldchild)
+            impl = old_state.get_impl(self.key)
             try:
-                impl.remove(state_getter(oldchild), instance, initiator, passive=True)
+                impl.remove(old_state, instance, initiator, passive=True)
             except (ValueError, KeyError, IndexError):
                 pass
         if child is not None:
-            state_getter(child).get_impl(self.key).append(state_getter(child), instance, initiator, passive=True)
+            new_state = state_getter(child)
+            new_state.get_impl(self.key).append(new_state, instance, initiator, passive=True)
 
     def append(self, instance, child, initiator):
-        state_getter(child).get_impl(self.key).append(state_getter(child), instance, initiator, passive=True)
+        state = state_getter(child)
+        state.get_impl(self.key).append(state, instance, initiator, passive=True)
 
     def remove(self, instance, child, initiator):
         if child is not None:
-            state_getter(child).get_impl(self.key).remove(state_getter(child), instance, initiator, passive=True)
+            state = state_getter(child)
+            state.get_impl(self.key).remove(state, instance, initiator, passive=True)
 
 class InstanceState(object):
     """tracks state information at the instance level."""
@@ -1125,6 +1130,11 @@ class ClassState(dict):
         self.manage(instance, state)
         return instance
 
+    def has_state(self, instance):
+        return has_state(instance)
+
+    def state_of(self, instance):
+        return state_getter(instance)
 
 class _ClassStateAdapter(ClassState):
     """adapts a user-defined InstrumentClass instance to ClassState"""
@@ -1282,18 +1292,23 @@ def get_as_list(state, key, passive=False):
 def has_parent(class_, instance, key, optimistic=False):
     return class_state_getter(class_).get_impl(key).hasparent(state_getter(instance), optimistic=optimistic)
 
-def _create_prop(class_, key, uselist, callable_, typecallable, useobject, mutable_scalars, **kwargs):
+def _create_prop(class_, key, uselist, callable_, class_state, typecallable, useobject, mutable_scalars, **kwargs):
     if kwargs.pop('dynamic', False):
         from sqlalchemy.orm import dynamic
-        return dynamic.DynamicAttributeImpl(class_, key, typecallable, **kwargs)
+        return dynamic.DynamicAttributeImpl(class_, key, typecallable, class_state=class_state, **kwargs)
     elif uselist:
-        return CollectionAttributeImpl(class_, key, callable_, typecallable, **kwargs)
+        return CollectionAttributeImpl(class_, key, callable_,
+                                       typecallable=typecallable,
+                                       class_state=class_state, **kwargs)
     elif useobject:
-        return ScalarObjectAttributeImpl(class_, key, callable_,**kwargs)
+        return ScalarObjectAttributeImpl(class_, key, callable_,
+                                         class_state=class_state, **kwargs)
     elif mutable_scalars:
-        return MutableScalarAttributeImpl(class_, key, callable_, **kwargs)
+        return MutableScalarAttributeImpl(class_, key, callable_,
+                                          class_state=class_state, **kwargs)
     else:
-        return ScalarAttributeImpl(class_, key, callable_, **kwargs)
+        return ScalarAttributeImpl(class_, key, callable_,
+                                   class_state=class_state, **kwargs)
 
 def manage(instance):
     """initialize an InstanceState on the given instance."""
@@ -1368,8 +1383,14 @@ def register_attribute(class_, key, uselist, useobject, callable_=None, proxy_pr
     if proxy_property:
         inst = ProxiedAttribute(key, proxy_property, comparator=comparator)
     else:
-        inst = InstrumentedAttribute(_create_prop(class_, key, uselist, callable_, useobject=useobject,
-                                       typecallable=typecallable, mutable_scalars=mutable_scalars, **kwargs), comparator=comparator)
+        inst = InstrumentedAttribute(
+            _create_prop(class_, key, uselist, callable_,
+                         class_state=cs,
+                         useobject=useobject,
+                         typecallable=typecallable,
+                         mutable_scalars=mutable_scalars,
+                         **kwargs),
+            comparator=comparator)
 
     cs.instrument_attribute(key, inst)
 

@@ -182,8 +182,8 @@ class UnitOfWork(object):
         """
         dirty = util.IdentitySet()
         for state in self.identity_map.all_states():
-            if (attributes.class_state_getter(state.class_).has_mutable_scalars
-                    and not state.is_modified()):
+            if (state.class_state.has_mutable_scalars and
+                not state.is_modified()):
                 continue
             if not state.modified:
                 continue
