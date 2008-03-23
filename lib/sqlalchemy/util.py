@@ -991,6 +991,94 @@ class symbol(object):
             symbol._lock.release()
 
 
+class WeakIdentityMapping(weakref.WeakKeyDictionary):
+    """A WeakKeyDictionary with an object identity index.
+
+    Adds a .by_id dictionary to a regular WeakKeyDictionary.  Trades
+    performance during mutation operations for accelerated lookups by id().
+
+    The usual cautions about weak dictionaries and iteration also apply to
+    this subclass.
+
+    """
+    _none = symbol('none')
+
+    def __init__(self):
+        weakref.WeakKeyDictionary.__init__(self)
+        self.by_id = {}
+        self._weakrefs = {}
+
+    def __setitem__(self, object, value):
+        oid = id(object)
+        self.by_id[oid] = value
+        if oid not in self._weakrefs:
+            self._weakrefs[oid] = self._ref(object)
+        weakref.WeakKeyDictionary.__setitem__(self, object, value)
+
+    def __delitem__(self, object):
+        del self._weakrefs[id(object)]
+        del self.by_id[id(object)]
+        weakref.WeakKeyDictionary.__delitem__(self, object)
+
+    def setdefault(self, object, default=None):
+        value = weakref.WeakKeyDictionary.setdefault(self, object, default)
+        oid = id(object)
+        if value is default:
+            self.by_id[oid] = default
+        if oid not in self._weakrefs:
+            self._weakrefs[oid] = self._ref(object)
+        return value
+
+    def pop(self, object, default=_none):
+        if default is self._none:
+            value = weakref.WeakKeyDictionary.pop(self, object)
+        else:
+            value = weakref.WeakKeyDictionary.pop(self, object, default)
+        if id(object) in self.by_id:
+            del self._weakrefs[id(object)]
+            del self.by_id[id(object)]
+        return value
+
+    def popitem(self):
+        item = weakref.WeakKeyDictionary.popitem(self)
+        oid = id(item[0])
+        del self._weakrefs[oid]
+        del self.by_id[oid]
+        return item
+
+    def clear(self):
+        self._weakrefs.clear()
+        self.by_id.clear()
+        weakref.WeakKeyDictionary.clear(self)
+
+    def update(self, *a, **kw):
+        raise NotImplementedError
+
+    def _cleanup(self, wr, key=None):
+        if key is None:
+            key=wr.key
+        try:
+            del self._weakrefs[key]
+        except (KeyError, AttributeError):  # pragma: no cover
+            pass                            # pragma: no cover
+        try:
+            del self.by_id[key]
+        except (KeyError, AttributeError):  # pragma: no cover
+            pass                            # pragma: no cover
+    if sys.version_info < (2, 4):           # pragma: no cover
+        def _ref(self, object):
+            oid = id(object)
+            return weakref.ref(object, lambda wr: self._cleanup(wr, oid))
+    else:
+        class _keyed_weakref(weakref.ref):
+            def __init__(self, object, callback):
+                weakref.ref.__init__(self, object, callback)
+                self.key = id(object)
+
+        def _ref(self, object):
+            return self._keyed_weakref(object, self._cleanup)
+
+
 def warn(msg):
     if isinstance(msg, basestring):
         warnings.warn(msg, exceptions.SAWarning, stacklevel=3)

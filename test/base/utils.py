@@ -1,5 +1,5 @@
 import testenv; testenv.configure_for_tests()
-import unittest
+import threading, time, unittest
 from sqlalchemy import util, sql, exceptions
 from testlib import *
 from testlib import sorted
@@ -418,6 +418,195 @@ class SymbolTest(TestBase):
             rt = util.pickle.loads(serial)
             assert rt is sym1
             assert rt is sym2
+
+class WeakIdentityMappingTest(TestBase):
+    class Data(object):
+        pass
+
+    def _some_data(self, some=20):
+        return [self.Data() for _ in xrange(some)]
+
+    def _fixture(self, some=20):
+        data = self._some_data()
+        wim = util.WeakIdentityMapping()
+        for idx, obj in enumerate(data):
+            wim[obj] = idx
+        return data, wim
+
+    def test_delitem(self):
+        data, wim = self._fixture()
+        needle = data[-1]
+
+        assert needle in wim
+        assert id(needle) in wim.by_id
+        assert wim[needle] == wim.by_id[id(needle)]
+
+        del wim[needle]
+
+        assert needle not in wim
+        assert id(needle) not in wim.by_id
+        assert len(wim) == (len(data) - 1)
+
+        data.remove(needle)
+
+        assert needle not in wim
+        assert id(needle) not in wim.by_id
+        assert len(wim) == len(data)
+
+    def test_setitem(self):
+        data, wim = self._fixture()
+
+        o1, oid1 = data[-1], id(data[-1])
+
+        assert o1 in wim
+        assert oid1 in wim.by_id
+        assert wim[o1] == wim.by_id[oid1]
+        id_keys = set(wim.by_id.keys())
+
+        wim[o1] = 1234
+        assert o1 in wim
+        assert oid1 in wim.by_id
+        assert wim[o1] == wim.by_id[oid1]
+        assert set(wim.by_id.keys()) == id_keys
+
+        o2 = self.Data()
+        oid2 = id(o2)
+
+        wim[o2] = 5678
+        assert o2 in wim
+        assert oid2 in wim.by_id
+        assert wim[o2] == wim.by_id[oid2]
+
+    def test_pop(self):
+        data, wim = self._fixture()
+        needle = data[-1]
+
+        needle = data.pop()
+        assert needle in wim
+        assert id(needle) in wim.by_id
+        assert wim[needle] == wim.by_id[id(needle)]
+        assert len(wim) == (len(data) + 1)
+
+        wim.pop(needle)
+        assert needle not in wim
+        assert id(needle) not in wim.by_id
+        assert len(wim) == len(data)
+
+    def test_pop_default(self):
+        data, wim = self._fixture()
+        needle = data[-1]
+
+        value = wim[needle]
+        x = wim.pop(needle, 123)
+        assert x != 123
+        assert x == value
+        assert needle not in wim
+        assert id(needle) not in wim.by_id
+        assert len(data) == (len(wim) + 1)
+
+        n2 = self.Data()
+        y = wim.pop(n2, 456)
+        assert y == 456
+        assert n2 not in wim
+        assert id(n2) not in wim.by_id
+        assert len(data) == (len(wim) + 1)
+
+    def test_popitem(self):
+        data, wim = self._fixture()
+        (needle, idx) = wim.popitem()
+
+        assert needle in data
+        assert len(data) == (len(wim) + 1)
+        assert id(needle) not in wim.by_id
+
+    def test_setdefault(self):
+        data, wim = self._fixture()
+
+        o1 = self.Data()
+        oid1 = id(o1)
+
+        assert o1 not in wim
+
+        res1 = wim.setdefault(o1, 123)
+        assert o1 in wim
+        assert oid1 in wim.by_id
+        assert res1 == 123
+        id_keys = set(wim.by_id.keys())
+
+        res2 = wim.setdefault(o1, 456)
+        assert o1 in wim
+        assert oid1 in wim.by_id
+        assert res2 == 123
+        assert set(wim.by_id.keys()) == id_keys
+
+        del wim[o1]
+        assert o1 not in wim
+        assert oid1 not in wim.by_id
+        assert set(wim.by_id.keys()) != id_keys
+
+        res3 = wim.setdefault(o1, 789)
+        assert o1 in wim
+        assert oid1 in wim.by_id
+        assert res3 == 789
+        assert set(wim.by_id.keys()) == id_keys
+
+    def test_clear(self):
+        data, wim = self._fixture()
+
+        assert len(data) == len(wim) == len(wim.by_id)
+        wim.clear()
+
+        assert wim == {}
+        assert wim.by_id == {}
+
+    def test_update(self):
+        data, wim = self._fixture()
+        self.assertRaises(NotImplementedError, wim.update)
+
+    def test_weak_clear(self):
+        data, wim = self._fixture()
+
+        assert len(data) == len(wim) == len(wim.by_id)
+
+        del data[:]
+        assert wim == {}
+        assert wim.by_id == {}
+        assert wim._weakrefs == {}
+
+    def test_weak_single(self):
+        data, wim = self._fixture()
+
+        assert len(data) == len(wim) == len(wim.by_id)
+
+        oid = id(data[0])
+        del data[0]
+
+        assert len(data) == len(wim) == len(wim.by_id)
+
+        assert oid not in wim.by_id
+
+    def test_weak_threadhop(self):
+        data, wim = self._fixture()
+        data = set(data)
+
+        cv = threading.Condition()
+
+        def empty(obj):
+            cv.acquire()
+            obj.clear()
+            cv.notify()
+            cv.release()
+
+        th = threading.Thread(target=empty, args=(data,))
+
+        cv.acquire()
+        th.start()
+        cv.wait()
+        cv.release()
+
+        assert wim == {}
+        assert wim.by_id == {}
+        assert wim._weakrefs == {}
 
 
 if __name__ == "__main__":
