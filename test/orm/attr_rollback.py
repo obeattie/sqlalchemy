@@ -2,7 +2,7 @@ import testenv; testenv.configure_for_tests()
 import pickle
 import sqlalchemy.orm.attributes as attributes
 from sqlalchemy.orm.collections import collection
-from sqlalchemy import exceptions
+from sqlalchemy import exceptions, util
 from testlib import *
 from testlib import fixtures
 
@@ -84,21 +84,24 @@ class AttrTestBase(object):
         f = Foo()
         f.x = data1
         f._foostate.commit_all()
-        assert attributes.get_history(f._foostate, 'x') == ([], hist1, [])
+
+        aeq = self.assertEquals
+
+        aeq(attributes.get_history(f._foostate, 'x'), ([], hist1, []))
 
         f.x = data2
-        assert attributes.get_history(f._foostate, 'x') == (hist2, [], hist1)
+        aeq(attributes.get_history(f._foostate, 'x'), (hist2, [], hist1))
         f._foostate.set_savepoint()
-        assert attributes.get_history(f._foostate, 'x') == (hist2, [], hist1)
+        aeq(attributes.get_history(f._foostate, 'x'), (hist2, [], hist1))
 
         f.x = data3
-        assert attributes.get_history(f._foostate, 'x') == (hist3, [], hist1)
+        aeq(attributes.get_history(f._foostate, 'x'), (hist3, [], hist1))
 
         f._foostate.rollback()
-        assert attributes.get_history(f._foostate, 'x') == (hist2, [], hist1)
+        aeq(attributes.get_history(f._foostate, 'x'), (hist2, [], hist1))
 
         f._foostate.commit_all()
-        assert attributes.get_history(f._foostate, 'x') == ([], hist2, [])
+        aeq(attributes.get_history(f._foostate, 'x'), ([], hist2, []))
 
     def test_commit_savepoint_rback_tocommitted(self):
         f = Foo()
@@ -327,13 +330,13 @@ class ListTest(CollectionTestBase, TestBase):
 
 class SetTest(CollectionTestBase, TestBase):
     def setUpAll(self):
-        global Foo, data1, data2, data3, hist1, hist2, hist3, empty, Bar, make_collection
+        global Foo, data1, data2, data3, hist1, hist2, hist3, empty, emptyhist, Bar, make_collection
         class Bar(object):pass
 
         class Foo(object):pass
         attributes.register_class(Foo)
         attributes.register_class(Bar)
-        class myset(set):
+        class myset(util.OrderedSet):
             def append(self, item):
                 self.add(item)
         make_collection = myset
@@ -346,6 +349,7 @@ class SetTest(CollectionTestBase, TestBase):
         hist2 = list(data2)
         hist3 = list(data3)
         empty = make_collection([])
+        emptyhist = []
 
     
 if __name__ == "__main__":
