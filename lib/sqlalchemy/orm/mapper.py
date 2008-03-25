@@ -207,9 +207,12 @@ class Mapper(object):
         return self.__props.itervalues()
     iterate_properties = property(iterate_properties, doc="returns an iterator of all MapperProperty objects.")
 
-    def _with_polymorphic_mappers(self, spec=None, selectable=None):
-        if not spec and self.with_polymorphic:
-            spec = self.with_polymorphic[0]
+    def _with_polymorphic_mappers(self, spec=None, selectable=False):
+        if self.with_polymorphic:
+            if not spec:
+                spec = self.with_polymorphic[0]
+            if selectable is False:
+                selectable = self.with_polymorphic[1]
         
         # TODO: when using default spec, this whole collection should be cached    
         if spec == '*':
@@ -235,7 +238,7 @@ class Mapper(object):
             return mappers, selectable
 
         
-    def _iterate_polymorphic_properties(self, spec=None, selectable=None):
+    def _iterate_polymorphic_properties(self, spec=None, selectable=False):
         cls_or_mappers, from_obj = self._with_polymorphic_mappers(spec, selectable)
         props = util.Set()
         for m in [self] + cls_or_mappers:
@@ -646,6 +649,10 @@ class Mapper(object):
 
             self._compile_property(column_key, column, init=False, setparent=True)
 
+        if self.polymorphic_on and self.polymorphic_on not in self._columntoproperty: 
+            col = self.mapped_table.corresponding_column(self.polymorphic_on) or self.polymorphic_on
+            self._compile_property(col.key, ColumnProperty(col), init=False, setparent=True)
+            
     def _adapt_inherited_property(self, key, prop):
         if not self.concrete:
             self._compile_property(key, prop, init=False, setparent=False)
@@ -717,7 +724,7 @@ class Mapper(object):
 
         if init:
             prop.init(key, self)
-
+        
         for mapper in self._inheriting_mappers:
             mapper._adapt_inherited_property(key, prop)
 
@@ -1443,10 +1450,10 @@ class Mapper(object):
             # row translators are cached based on target mapper
             return self._row_translators[tomapper](row)
         else:
-            #mappers, from_obj = self._with_polymorphic_mappers()
-            #translator = create_row_adapter(from_obj, tomapper.mapped_table, equivalent_columns=self._equivalent_columns)
+            mappers, from_obj = self._with_polymorphic_mappers()
+            translator = create_row_adapter(from_obj, tomapper.mapped_table, equivalent_columns=self._equivalent_columns)
             #translator = create_row_adapter(self.mapped_table, tomapper.mapped_table, equivalent_columns=self._equivalent_columns)
-            translator = lambda r: r
+            #translator = lambda r: r
             self._row_translators[tomapper] = translator
             return translator(row)
 

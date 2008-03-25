@@ -194,7 +194,7 @@ class ClauseAdapter(visitors.ClauseVisitor):
         if not clone:
             raise exceptions.ArgumentError("ClauseAdapter 'clone' argument must be True")
         return visitors.ClauseVisitor.traverse(self, obj, clone=True)
-        
+    
     def copy_and_chain(self, adapter):
         """create a copy of this adapter and chain to the given adapter.
 

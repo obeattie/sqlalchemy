@@ -554,7 +554,7 @@ class EagerLoader(AbstractRelationLoader):
                 context.eager_order_by += clauses.secondary.default_order_by()
         else:
             context.eager_joins = towrap.outerjoin(clauses.alias, clauses.primaryjoin)
-
+            print "OK EAGER JOINS IS " + str(clauses.primaryjoin)
             # ensure all the cols on the parent side are actually in the
             # columns clause (i.e. are not deferred), so that aliasing applied by the Query propagates 
             # those columns outward.  This has the effect of "undefering" those columns.

@@ -381,6 +381,11 @@ class RelationTest4(ORMTest):
         session.flush()
 
         session.clear()
+    
+        def go():
+            testcar = session.query(Car).options(eagerload('employee')).get(car1.car_id)
+            assert str(testcar.employee) == "Engineer E4, status X"
+        self.assert_sql_count(testing.db, go, 1)
 
         print "----------------------------"
         car1 = session.query(Car).get(car1.car_id)
