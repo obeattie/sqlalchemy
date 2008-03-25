@@ -312,7 +312,7 @@ def make_test(select_type):
                 ])
                 ]
                 )
-            self.assert_sql_count(testing.db, go, 1)
+            self.assert_sql_count(testing.db, go, 2)  # extra q for the "boss" table
             
         def test_join_to_subclass(self):
             sess = create_session()

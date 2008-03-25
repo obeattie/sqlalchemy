@@ -101,41 +101,39 @@ def row_adapter(from_, to, equivalent_columns=None):
     adapter class itself *is* fairly expensive so caching should be used to prevent
     repeated calls to this function.
     """
-    print "CERATE ROW ADAPTER FOR", from_, "\n\nTO", to
-    print "ALL DONE\n\n"
-    map = {}
-    for c in to.c:
-        corr = from_.corresponding_column(c)
-        if corr:
-            map[c] = corr
-        elif equivalent_columns:
-            if c in equivalent_columns:
-                for c2 in equivalent_columns[c]:
-                    corr = from_.corresponding_column(c2)
-                    if corr:
-                        map[c] = corr
-                        break
-
-    class AliasedRow(object):
+    
+    if equivalent_columns is None:
+        equivalent_columns = {}
+    def locate_col(col):
+        c = from_.corresponding_column(col)
+        if c:
+            return c
+        elif col in equivalent_columns:
+            for c2 in equivalent_columns[col]:
+                corr = from_.corresponding_column(c2)
+                if corr:
+                    return corr
+        return col
+        
+    map = util.PopulateDict(locate_col)
+                        
+    class AliasedRow(util.defaultdict):
+        
         def __init__(self, row):
             self.row = row
-        def dump_map(self):
-            for k, v in map.iteritems():
-                print k._label, v._label
-            
+        
         def __contains__(self, key):
-            if key in map:
-                return map[key] in self.row
-            else:
-                return key in self.row
+            return map[key] in self.row
+
         def has_key(self, key):
             return key in self
+
         def __getitem__(self, key):
-            if key in map:
-                key = map[key]
-            return self.row[key]
+            return self.row[map[key]]
+
         def keys(self):
-            return map.keys()
+            return self.row.keys()
+
     AliasedRow.map = map
     return AliasedRow
 

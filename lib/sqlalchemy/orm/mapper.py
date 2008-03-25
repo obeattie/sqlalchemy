@@ -1331,15 +1331,12 @@ class Mapper(object):
                 row = ret
 
         if not refresh_instance and not skip_polymorphic and self.polymorphic_on:
-#            print "OK HERES THE ROW", type(row)
-#            row.dump_map()
             discriminator = row[self.polymorphic_on]
             if discriminator:
                 mapper = self.polymorphic_map[discriminator]
                 if mapper is not self:
                     if ('polymorphic_fetch', mapper) not in context.attributes:
                         context.attributes[('polymorphic_fetch', mapper)] = (self, [t for t in mapper.tables if t not in self.tables])
-                    row = self.translate_row(mapper, row)
                     return mapper._instance(context, row, result=result, skip_polymorphic=True)
 
         # determine identity key
@@ -1437,25 +1434,6 @@ class Mapper(object):
             result.append(instance)
 
         return instance
-
-    def translate_row(self, tomapper, row):
-        """Translate the column keys of a row into a new or proxied
-        row that can be understood by another mapper.
-
-        This can be used in conjunction with populate_instance to
-        populate an instance using an alternate mapper.
-        """
-
-        if tomapper in self._row_translators:
-            # row translators are cached based on target mapper
-            return self._row_translators[tomapper](row)
-        else:
-            mappers, from_obj = self._with_polymorphic_mappers()
-            translator = create_row_adapter(from_obj, tomapper.mapped_table, equivalent_columns=self._equivalent_columns)
-            #translator = create_row_adapter(self.mapped_table, tomapper.mapped_table, equivalent_columns=self._equivalent_columns)
-            #translator = lambda r: r
-            self._row_translators[tomapper] = translator
-            return translator(row)
 
     def populate_instance(self, selectcontext, instance, row, ispostselect=None, isnew=False, only_load_props=None, **flags):
         """populate an instance from a result row."""

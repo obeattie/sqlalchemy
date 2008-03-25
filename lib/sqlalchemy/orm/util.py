@@ -143,28 +143,21 @@ class AliasedClauses(object):
     """Creates aliases of a mapped tables for usage in ORM queries.
     """
 
-    def __init__(self, mapped_table, alias=None, equivalents=None):
-        if alias:
-            self.alias = alias
-        else:
-            self.alias = mapped_table.alias()
-        self.mapped_table = mapped_table
+    def __init__(self, alias, equivalents=None, chain_to=None):
+        self.alias = alias
         self.equivalents = equivalents
         self.row_decorator = self._create_row_adapter()
         self.adapter = sql_util.ClauseAdapter(self.alias, equivalents=equivalents)
-        
+        if chain_to:
+            self.adapter.chain(chain_to.adapter)
+            
     def aliased_column(self, column):
-        """return the aliased version of the given column, creating a new label for it if not already
-        present in this AliasedClauses."""
-
+        
         conv = self.alias.corresponding_column(column)
         if conv:
             return conv
-
+            
         aliased_column = column
-        # for column-level subqueries, swap out its selectable with our
-        # eager version as appropriate, and manually build the 
-        # "correlation" list of the subquery.  
         class ModifySubquery(visitors.ClauseVisitor):
             def visit_select(s, select):
                 select._should_correlate = False
@@ -181,16 +174,7 @@ class AliasedClauses(object):
         return self.adapter.copy_and_process(clauses)
         
     def _create_row_adapter(self):
-        """Return a callable which, 
-        when passed a RowProxy, will return a new dict-like object
-        that translates Column objects to that of this object's Alias before calling upon the row.
-
-        This allows a regular Table to be used to target columns in a row that was in reality generated from an alias
-        of that table, in such a way that the row can be passed to logic which knows nothing about the aliased form
-        of the table.
-        """
-        print "ADAPTER, ALIAS", repr(self.alias), "MT", repr(self.mapped_table)
-        return create_row_adapter(self.alias, self.mapped_table, equivalent_columns=self.equivalents)
+        return create_row_adapter(self.alias, None, equivalent_columns=self.equivalents)
 
 
 class PropertyAliasedClauses(AliasedClauses):
@@ -198,10 +182,12 @@ class PropertyAliasedClauses(AliasedClauses):
     
     def __init__(self, prop, primaryjoin, secondaryjoin, parentclauses=None, alias=None):
         
-        mapper = prop.mapper
-        mappers, from_obj = mapper._with_polymorphic_mappers()
         
-        super(PropertyAliasedClauses, self).__init__(from_obj, alias=alias, equivalents=mapper._equivalent_columns)
+        mapper = prop.mapper
+        if not alias:
+            mappers, from_obj = mapper._with_polymorphic_mappers()
+            alias = from_obj.alias()
+        super(PropertyAliasedClauses, self).__init__(alias, equivalents=mapper._equivalent_columns, chain_to=parentclauses)
             
         self.parentclauses = parentclauses
 

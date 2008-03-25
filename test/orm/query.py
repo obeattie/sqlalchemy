@@ -64,6 +64,7 @@ class GetTest(QueryTest):
         """test that get()/load() does not use preexisting filter/etc. criterion"""
 
         s = create_session()
+        
         try:
             s.query(User).join('addresses').filter(Address.user_id==8).get(7)
             assert False

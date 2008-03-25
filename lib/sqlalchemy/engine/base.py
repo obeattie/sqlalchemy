@@ -1479,7 +1479,6 @@ class ResultProxy(object):
 
             if isinstance(key, basestring):
                 key = key.lower()
-
             try:
                 rec = props[key]
 #                print "KEY", id(key), key, "IN RESULT: YES!"
