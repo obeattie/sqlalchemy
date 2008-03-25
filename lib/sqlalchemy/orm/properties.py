@@ -87,12 +87,12 @@ class ColumnProperty(StrategizedProperty):
         def clause_element(self):
             return self.prop.columns[0]
 
-        def operate(self, op, *other):
-            return op(self.prop.columns[0], *other)
+        def operate(self, op, *other, **kwargs):
+            return op(self.prop.columns[0], *other, **kwargs)
 
-        def reverse_operate(self, op, other):
+        def reverse_operate(self, op, other, **kwargs):
             col = self.prop.columns[0]
-            return op(col._bind_param(other), col)
+            return op(col._bind_param(other), col, **kwargs)
 
 ColumnProperty.logger = logging.class_logger(ColumnProperty)
 
@@ -734,7 +734,7 @@ class PropertyLoader(StrategizedProperty):
         return self.parent.mapped_table is self.target or self.parent.select_table is self.target
     
     def _is_self_referential(self):
-        return self.mapper.isa(self.parent)
+        return self.mapper.common_parent(self.parent)
         
     def primary_join_against(self, mapper, selectable=None, toselectable=None):
         return self.__cached_join_against(mapper, selectable, toselectable, True, False)

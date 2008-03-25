@@ -496,6 +496,8 @@ class Query(object):
             adapt_against = self.table
         elif start.select_table is not start.mapped_table: # in the middle of a join, look for a polymorphic mapper
             adapt_against = start.select_table
+        elif self._aliases:  # joining against aliases
+            adapt_against = self._aliases.alias
         else:
             adapt_against = None
 
@@ -1204,10 +1206,12 @@ class Query(object):
             if adapter:
                 # TODO: make usage of the ClauseAdapter here to create row adapter, list
                 # of primary columns ?
-#                context.primary_columns = adapter.copy_and_process(context.primary_columns) #[from_obj.corresponding_column(c) or c for c in context.primary_columns]
+                context.primary_columns = adapter.copy_and_process(context.primary_columns) #[from_obj.corresponding_column(c) or c for c in context.primary_columns]
 #                context.row_adapter = adapter.row_adapter(self.table) #mapperutil.create_row_adapter(from_obj, self.table)
-
-                context.primary_columns = [from_obj.corresponding_column(c) or c for c in context.primary_columns]
+#                print "SELECATBLE", repr(adapter.selectable)
+#                print "FROM OBJ", from_obj
+#                assert adapter.selectable is from_obj
+#                context.primary_columns = [from_obj.corresponding_column(c) or c for c in context.primary_columns]
                 context.row_adapter = mapperutil.create_row_adapter(from_obj, self.table, equivalent_columns=self.mapper._equivalent_columns)
 
                 order_by = adapter.copy_and_process(order_by)
