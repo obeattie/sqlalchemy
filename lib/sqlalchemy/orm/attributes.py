@@ -7,6 +7,7 @@
 import inspect, operator, new, weakref
 from itertools import chain
 from sqlalchemy import util
+from sqlalchemy.util import attrgetter
 from sqlalchemy.orm import interfaces, collections
 from sqlalchemy.orm.util import identity_equal
 from sqlalchemy import exceptions
@@ -27,8 +28,8 @@ CLASS_STATE_ATTR = '_fooclass_state'
 STATE_ATTR = '_foostate'
 
 # These are the methods that any customizing party is required to implement.
-class_state_getter = operator.attrgetter(CLASS_STATE_ATTR)
-state_getter = operator.attrgetter(STATE_ATTR)
+class_state_getter = attrgetter(CLASS_STATE_ATTR)
+state_getter = attrgetter(STATE_ATTR)
 def has_state(instance):
     return STATE_ATTR in instance.__dict__
 
@@ -1487,6 +1488,6 @@ def __init__%(args)s:
     try:
         __init__.__doc__ = original__init__.__doc__
         __init__.__name__ = original__init__.__name__
-    except AttributeError:
+    except TypeError:
         pass
     return __init__
