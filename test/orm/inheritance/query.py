@@ -313,9 +313,6 @@ def make_test(select_type):
                 ]
                 )
             self.assert_sql_count(testing.db, go, 1)
-
-
-            
             
         def test_join_to_subclass(self):
             sess = create_session()

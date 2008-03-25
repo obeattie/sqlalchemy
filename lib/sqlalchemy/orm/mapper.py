@@ -1445,8 +1445,8 @@ class Mapper(object):
         else:
             #mappers, from_obj = self._with_polymorphic_mappers()
             #translator = create_row_adapter(from_obj, tomapper.mapped_table, equivalent_columns=self._equivalent_columns)
-            translator = create_row_adapter(self.mapped_table, tomapper.mapped_table, equivalent_columns=self._equivalent_columns)
-            #translator = lambda r: r
+            #translator = create_row_adapter(self.mapped_table, tomapper.mapped_table, equivalent_columns=self._equivalent_columns)
+            translator = lambda r: r
             self._row_translators[tomapper] = translator
             return translator(row)
 
