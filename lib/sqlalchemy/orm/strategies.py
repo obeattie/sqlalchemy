@@ -76,6 +76,7 @@ class ColumnLoader(LoaderStrategy):
             def new_execute(instance, row, **flags):
                 if self._should_log_debug:
                     self.logger.debug("populating %s with %s/%s" % (mapperutil.attribute_str(instance, self.key), row.__class__.__name__, self.columns[0].key))
+                print "data is", row[self.columns[0]]
                 instance.__dict__[self.key] = row[self.columns[0]]
             if self._should_log_debug:
                 self.logger.debug("Returning active column fetcher for %s %s" % (mapper, self.key))
@@ -554,7 +555,6 @@ class EagerLoader(AbstractRelationLoader):
                 context.eager_order_by += clauses.secondary.default_order_by()
         else:
             context.eager_joins = towrap.outerjoin(clauses.alias, clauses.primaryjoin)
-            print "OK EAGER JOINS IS " + str(clauses.primaryjoin)
             # ensure all the cols on the parent side are actually in the
             # columns clause (i.e. are not deferred), so that aliasing applied by the Query propagates 
             # those columns outward.  This has the effect of "undefering" those columns.
@@ -605,6 +605,7 @@ class EagerLoader(AbstractRelationLoader):
     def create_row_processor(self, selectcontext, mapper, row):
 
         row_decorator = self._create_row_decorator(selectcontext, row, selectcontext.path)
+        pathstr = ','.join(str(x) for x in selectcontext.path)
         if row_decorator is not None:
             def execute(instance, row, isnew, **flags):
                 decorated_row = row_decorator(row)
@@ -639,7 +640,8 @@ class EagerLoader(AbstractRelationLoader):
                     result_list = instance._state.appenders[self.key]
                     if self._should_log_debug:
                         self.logger.debug("eagerload list instance on %s" % mapperutil.attribute_str(instance, self.key))
-
+                    
+                    print "PATH", pathstr, "MAPPER INSTANCE", repr(decorated_row)
                     self.select_mapper._instance(selectcontext, decorated_row, result_list)
 
             if self._should_log_debug:

@@ -1,3 +1,7 @@
+"""this is a test suite consisting mainly of end-user test cases, testing all kinds of painful
+inheritance setups for which we maintain compatibility.
+"""
+
 import testenv; testenv.configure_for_tests()
 from sqlalchemy import *
 from sqlalchemy import exceptions, util
@@ -617,6 +621,8 @@ class RelationTest7(ORMTest):
         for p in r:
             assert p.car_id == p.car.car_id
 
+        
+        
 class GenerativeTest(TestBase, AssertsExecutionResults):
     def setUpAll(self):
         #  cars---owned by---  people (abstract) --- has a --- status

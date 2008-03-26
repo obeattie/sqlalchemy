@@ -124,7 +124,8 @@ class Mapper(object):
         self._row_translators = {}
         self._dependency_processors = []
         self._clause_adapter = None
-
+        self._requires_row_aliasing = False
+        
         # our 'polymorphic identity', a string name that when located in a result set row
         # indicates this Mapper should be used to construct the object instance for that row.
         self.polymorphic_identity = polymorphic_identity
@@ -240,7 +241,7 @@ class Mapper(object):
         
     def _iterate_polymorphic_properties(self, spec=None, selectable=False):
         cls_or_mappers, from_obj = self._with_polymorphic_mappers(spec, selectable)
-        props = util.Set()
+        props = util.OrderedSet()
         for m in [self] + cls_or_mappers:
             for value in m.iterate_properties:
                 props.add(value)
@@ -365,8 +366,11 @@ class Mapper(object):
                 self.single = True
             if not self.local_table is self.inherits.local_table:
                 if self.concrete:
-                    self._synchronizer= None
+                    self._synchronizer = None
                     self.mapped_table = self.local_table
+                    for mapper in self.iterate_to_root():
+                        if mapper.polymorphic_on:
+                            mapper._requires_row_aliasing = True
                 else:
                     if self.inherit_condition is None:
                         # figure out inherit condition from our table to the immediate table
@@ -428,7 +432,7 @@ class Mapper(object):
                     raise exceptions.ArgumentError("Mapper '%s' specifies a polymorphic_identity of '%s', but no mapper in it's hierarchy specifies the 'polymorphic_on' column argument" % (str(self), self.polymorphic_identity))
                 self.polymorphic_map[self.polymorphic_identity] = self
             self._identity_class = self.class_
-
+        
         if self.mapped_table is None:
             raise exceptions.ArgumentError("Mapper '%s' does not have a mapped_table specified.  (Are you using the return value of table.create()?  It no longer has a return value.)" % str(self))
 
@@ -1350,7 +1354,7 @@ class Mapper(object):
                 identitykey = self._identity_key_from_state(refresh_instance)
         else:
             identitykey = self.identity_key_from_row(row)
-
+        
         session_identity_map = context.session.identity_map
 
         if identitykey in session_identity_map:

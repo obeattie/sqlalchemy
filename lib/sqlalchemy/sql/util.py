@@ -93,6 +93,31 @@ def reduce_columns(columns, *clauses):
 
     return expression.ColumnSet(columns.difference(omit))
 
+class AliasedRow(object):
+    
+    def __init__(self, row, map):
+        # AliasedRow objects don't nest, so un-nest
+        # if another AliasedRow was passed
+        if isinstance(row, AliasedRow):
+            self.row = row.row
+        else:
+            self.row = row
+        self.map = map
+        
+    def __contains__(self, key):
+#        print "CONVERTING", key._label, "TO", self.map[key]._label
+        return self.map[key] in self.row
+
+    def has_key(self, key):
+        return key in self
+
+    def __getitem__(self, key):
+#        print "CONVERTING", key._label, "TO", self.map[key]._label
+        return self.row[self.map[key]]
+
+    def keys(self):
+        return self.row.keys()
+
 def row_adapter(from_, to, equivalent_columns=None):
     """create a row adapter between two selectables.
 
@@ -116,26 +141,10 @@ def row_adapter(from_, to, equivalent_columns=None):
         return col
         
     map = util.PopulateDict(locate_col)
-                        
-    class AliasedRow(util.defaultdict):
-        
-        def __init__(self, row):
-            self.row = row
-        
-        def __contains__(self, key):
-            return map[key] in self.row
-
-        def has_key(self, key):
-            return key in self
-
-        def __getitem__(self, key):
-            return self.row[map[key]]
-
-        def keys(self):
-            return self.row.keys()
-
-    AliasedRow.map = map
-    return AliasedRow
+    
+    def adapt(row):
+        return AliasedRow(row, map)
+    return adapt
 
 class ColumnsInClause(visitors.ClauseVisitor):
     """Given a selectable, visit clauses and determine if any columns

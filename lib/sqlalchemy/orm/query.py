@@ -1205,10 +1205,6 @@ class Query(object):
             
             if adapter:
                 context.primary_columns = adapter.adapt_list(context.primary_columns)
-#                print "SELECATBLE", repr(adapter.selectable)
-#                print "FROM OBJ", from_obj
-#                assert adapter.selectable is from_obj
-#                context.primary_columns = [from_obj.corresponding_column(c) or c for c in context.primary_columns]
                 context.row_adapter = mapperutil.create_row_adapter(adapter.alias, self.table, equivalent_columns=self.mapper._equivalent_columns)
 
                 order_by = adapter.adapt_list(order_by)
@@ -1234,6 +1230,11 @@ class Query(object):
                     context.eager_order_by = adapter.adapt_list(context.eager_order_by)
                 statement.append_order_by(*context.eager_order_by)
 
+        # polymorphic mappers which have concrete tables in their hierarchy usually
+        # require row aliasing unconditionally.  
+        if not context.row_adapter and self.mapper._requires_row_aliasing:
+            context.row_adapter = mapperutil.create_row_adapter(self.table, None, equivalent_columns=self.mapper._equivalent_columns)
+            
         context.statement = statement
 
         return context

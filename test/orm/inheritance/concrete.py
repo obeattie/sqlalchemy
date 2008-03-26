@@ -51,6 +51,8 @@ class ConcreteTest(ORMTest):
             'engineer':engineers_table
         }, 'type', 'pjoin')
 
+        print pjoin.corresponding_column(managers_table.c.employee_id)
+        
         employee_mapper = mapper(Employee, pjoin, polymorphic_on=pjoin.c.type)
         manager_mapper = mapper(Manager, managers_table, inherits=employee_mapper, concrete=True, polymorphic_identity='manager')
         engineer_mapper = mapper(Engineer, engineers_table, inherits=employee_mapper, concrete=True, polymorphic_identity='engineer')

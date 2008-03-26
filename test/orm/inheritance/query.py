@@ -78,7 +78,7 @@ def make_test(select_type):
             clear_mappers()
             
             mapper(Company, companies, properties={
-                'employees':relation(Person)
+                'employees':relation(Person, order_by=people.c.person_id)
             })
 
             mapper(Machine, machines)
@@ -160,6 +160,19 @@ def make_test(select_type):
             all_employees = [e1, e2, b1, m1, e3]
             c1_employees = [e1, e2, b1, m1]
             c2_employees = [e3]
+        
+        def test_loads_at_once(self):
+            """test that all objects load from the full query, when with_polymorphic is used"""
+            
+            sess = create_session()
+            def go():
+                self.assertEquals(sess.query(Person).all(), all_employees)
+            if select_type == '':
+                count = 14   # load 5 person rows; load one row for each of five people; load 8 lazy loaded collections
+            else:
+                count = 10   # load 5 person rows; load one row for "boss" since we didn't include it in select_table; load 8 lazy loaded collections
+            self.assert_sql_count(testing.db, go, count)
+            
             
         def test_get(self):
             sess = create_session()
@@ -299,6 +312,8 @@ def make_test(select_type):
 
             sess = create_session()
             def go():
+                # currently, it doesn't matter if we say Company.employees, or Company.employees.of_type(Engineer).  eagerloader doesn't
+                # pick up on the "of_type()" as of yet.
                 self.assertEquals(sess.query(Company).options(eagerload_all([Company.employees.of_type(Engineer), Engineer.machines])).all(), 
                 [
                 Company(name="MegaCorp, Inc.", employees=[
@@ -312,7 +327,13 @@ def make_test(select_type):
                 ])
                 ]
                 )
-            self.assert_sql_count(testing.db, go, 2)  # extra q for the "boss" table
+            
+            if select_type == '':
+                count = 7   # the eagerload doesn't take in this case; it eagerloads company->people, then a load for each of 5 rows, then lazyload of "machines"
+            else:
+                count = 2   # load everything, plus one extrq q for the "boss" table
+            
+            self.assert_sql_count(testing.db, go, count)
             
         def test_join_to_subclass(self):
             sess = create_session()

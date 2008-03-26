@@ -164,7 +164,7 @@ class AliasedClauses(object):
                 select.append_correlation(self.alias)
         aliased_column = sql_util.ClauseAdapter(self.alias, equivalents=self.equivalents).chain(ModifySubquery()).traverse(aliased_column, clone=True)
         aliased_column = aliased_column.label(None)
-        self.row_decorator.map[column] = aliased_column
+        self.row_decorator({}).map[column] = aliased_column
         return aliased_column
 
     def adapt_clause(self, clause):
