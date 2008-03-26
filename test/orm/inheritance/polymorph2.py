@@ -361,9 +361,6 @@ class RelationTest4(ORMTest):
         manager_mapper  = mapper(Manager, managers, inherits=person_mapper, polymorphic_identity='manager')
         car_mapper      = mapper(Car, cars, properties= {'employee':relation(person_mapper)})
 
-        print class_mapper(Person).primary_key
-        print person_mapper.get_select_mapper().primary_key
-
         session = create_session()
 
         # creating 5 managers named from M1 to E5
@@ -941,7 +938,6 @@ class CustomPKTest(ORMTest):
         mapper(T1, t1, polymorphic_on=t1.c.type, polymorphic_identity='t1', select_table=pjoin)
         mapper(T2, t2, inherits=T1, polymorphic_identity='t2')
         assert len(class_mapper(T1).primary_key) == 1
-        assert len(class_mapper(T1).get_select_mapper().compile().primary_key) == 1
 
         print [str(c) for c in class_mapper(T1).primary_key]
         ot1 = T1()

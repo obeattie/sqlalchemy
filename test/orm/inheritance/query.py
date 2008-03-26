@@ -302,20 +302,8 @@ def make_test(select_type):
                 self.assertEquals(sess.query(Person).with_polymorphic(Person).all(), emps_without_relations)
             self.assert_sql_count(testing.db, go, 6)
         
-        def test_with_polymorphic_eagerload(self):
-            sess = create_session()
-            def go():
-                self.assertEquals(sess.query(Person).with_polymorphic('*').options(eagerload([Engineer.machines])).filter(Person.name=='dilbert').all(), 
-                [Engineer(name="dilbert", engineer_name="dilbert", primary_language="java", status="regular engineer", machines=[Machine(name="IBM ThinkPad"), Machine(name="IPhone")])]
-                )
-            self.assert_sql_count(testing.db, go, 1)
-
-            sess = create_session()
-            def go():
-                # currently, it doesn't matter if we say Company.employees, or Company.employees.of_type(Engineer).  eagerloader doesn't
-                # pick up on the "of_type()" as of yet.
-                self.assertEquals(sess.query(Company).options(eagerload_all([Company.employees.of_type(Engineer), Engineer.machines])).all(), 
-                [
+        def test_relation_to_polymorphic(self):
+            assert_result = [
                 Company(name="MegaCorp, Inc.", employees=[
                     Engineer(name="dilbert", engineer_name="dilbert", primary_language="java", status="regular engineer", machines=[Machine(name="IBM ThinkPad"), Machine(name="IPhone")]),
                     Engineer(name="wally", engineer_name="wally", primary_language="c++", status="regular engineer"),
@@ -325,8 +313,23 @@ def make_test(select_type):
                 Company(name="Elbonia, Inc.", employees=[
                     Engineer(name="vlad", engineer_name="vlad", primary_language="cobol", status="elbonian engineer")
                 ])
-                ]
-                )
+            ]
+            
+            sess = create_session()
+            def go():
+                # test load Companies with lazy load to 'employees'
+                self.assertEquals(sess.query(Company).all(), assert_result)
+            if select_type == '':
+                count = 9
+            else:
+                count = 5
+            self.assert_sql_count(testing.db, go, count)
+        
+            sess = create_session()
+            def go():
+                # currently, it doesn't matter if we say Company.employees, or Company.employees.of_type(Engineer).  eagerloader doesn't
+                # pick up on the "of_type()" as of yet.
+                self.assertEquals(sess.query(Company).options(eagerload_all([Company.employees.of_type(Engineer), Engineer.machines])).all(), assert_result)
             
             if select_type == '':
                 count = 7   # the eagerload doesn't take in this case; it eagerloads company->people, then a load for each of 5 rows, then lazyload of "machines"
@@ -334,6 +337,15 @@ def make_test(select_type):
                 count = 2   # load everything, plus one extrq q for the "boss" table
             
             self.assert_sql_count(testing.db, go, count)
+
+        def test_eagerload_on_subclass(self):
+            sess = create_session()
+            def go():
+                # test load People with eagerload to engineers + machines
+                self.assertEquals(sess.query(Person).with_polymorphic('*').options(eagerload([Engineer.machines])).filter(Person.name=='dilbert').all(), 
+                [Engineer(name="dilbert", engineer_name="dilbert", primary_language="java", status="regular engineer", machines=[Machine(name="IBM ThinkPad"), Machine(name="IPhone")])]
+                )
+            self.assert_sql_count(testing.db, go, 1)
             
         def test_join_to_subclass(self):
             sess = create_session()
@@ -360,7 +372,6 @@ def make_test(select_type):
             # here's the new way
             self.assertEquals(sess.query(Company).join(Company.employees.of_type(Engineer)).filter(Engineer.primary_language=='java').all(), [c1])
             self.assertEquals(sess.query(Company).join([Company.employees.of_type(Engineer), 'machines']).filter(Machine.name.ilike("%thinkpad%")).all(), [c1])
-
 
         def test_join_through_polymorphic(self):
 

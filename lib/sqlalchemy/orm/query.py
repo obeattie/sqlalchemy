@@ -62,12 +62,11 @@ class Query(object):
 
         self._init_mapper(_class_to_mapper(class_or_mapper, entity_name=entity_name))
     
-    def _init_mapper(self, mapper, select_mapper=None):
+    def _init_mapper(self, mapper):
         """populate all instance variables derived from this Query's mapper."""
         
         self.mapper = mapper
-        self.select_mapper = select_mapper or self.mapper.get_select_mapper().compile()
-        self.table = self._from_obj = self.select_mapper.mapped_table
+        self.table = self._from_obj = self.mapper.mapped_table
         self._eager_loaders = util.Set(chain(*[mp._eager_loaders for mp in [m for m in self.mapper.iterate_to_root()]]))
         self._extension = self.mapper.extension
         self._aliases_head = self._aliases_tail = None
@@ -125,7 +124,7 @@ class Query(object):
         q._statement = q._criterion = None
         q._order_by = q._group_by = q._distinct = False
         q._aliases_tail = q._aliases_head
-        q.table = q._from_obj = q.select_mapper.mapped_table
+        q.table = q._from_obj = q.mapper.mapped_table
         if q.mapper.with_polymorphic:
             q._set_with_polymorphic(*q.mapper.with_polymorphic)
 
@@ -153,7 +152,7 @@ class Query(object):
         else:
             return self._session
 
-    primary_key_columns = property(lambda s:s.select_mapper.primary_key)
+    primary_key_columns = property(lambda s:s.mapper.primary_key)
     session = property(_get_session)
 
     def _with_current_path(self, path):
@@ -169,12 +168,6 @@ class Query(object):
         criterion to be used against those tables.  The resulting 
         instances will also have those columns already loaded so that
         no "post fetch" of those columns will be required.
-        
-        If this Query's mapper has a ``select_table`` argument, 
-        with_polymorphic() overrides it; the FROM clause will be against
-        the local table of the base mapper outer joined with the local
-        tables of each specified descendant mapper (unless ``selectable``
-        is specified).
         
         ``cls_or_mappers`` is a single class or mapper, or list of class/mappers,
         which inherit from this Query's mapper.  Alternatively, it
@@ -521,7 +514,7 @@ class Query(object):
                     if use_selectable:
                         raise exceptions.InvalidRequestError("Can't specify use_selectable along with polymorphic property created via of_type().")
                     of_type = key._of_type
-                    use_selectable = key._of_type.select_table
+                    use_selectable = key._of_type.mapped_table
             else:
                 prop = mapper.get_property(key, resolve_synonyms=True)
 
@@ -538,7 +531,7 @@ class Query(object):
             if prop._is_self_referential() and not create_aliases and not use_selectable:
                 raise exceptions.InvalidRequestError("Self-referential query on '%s' property requires aliased=True argument." % str(prop))
 
-            if prop.select_table not in currenttables or create_aliases or use_selectable:
+            if prop.table not in currenttables or create_aliases or use_selectable:
                 if prop.secondary:
                     if use_selectable or create_aliases:
                         alias = mapperutil.PropertyAliasedClauses(prop,
@@ -552,7 +545,7 @@ class Query(object):
                     else:
                         crit = prop.primary_join_against(mapper, adapt_against)
                         clause = clause.join(prop.secondary, crit, isouter=outerjoin)
-                        clause = clause.join(prop.select_table, prop.secondary_join_against(mapper), isouter=outerjoin)
+                        clause = clause.join(prop.table, prop.secondary_join_against(mapper), isouter=outerjoin)
                 else:
                     if use_selectable or create_aliases:
                         alias = mapperutil.PropertyAliasedClauses(prop,
@@ -565,7 +558,7 @@ class Query(object):
                         clause = clause.join(alias.alias, crit, isouter=outerjoin)
                     else:
                         crit = prop.primary_join_against(mapper, adapt_against)
-                        clause = clause.join(prop.select_table, crit, isouter=outerjoin)
+                        clause = clause.join(prop.table, crit, isouter=outerjoin)
             elif not create_aliases and prop.secondary is not None and prop.secondary not in currenttables:
                 # TODO: this check is not strong enough for different paths to the same endpoint which
                 # does not use secondary tables
@@ -575,8 +568,6 @@ class Query(object):
 
             if use_selectable:
                 adapt_against = use_selectable
-            elif mapper.select_table is not mapper.mapped_table:
-                adapt_against = mapper.select_table
 
         return (clause, mapper, alias)
 
@@ -940,19 +931,19 @@ class Query(object):
         # for with_polymorphic, instruct descendant mappers that they
         # don't need to post-fetch anything
         for m in self._with_polymorphic:
-            context.attributes[('polymorphic_fetch', m)] = (self.select_mapper, [])
+            context.attributes[('polymorphic_fetch', m)] = (self.mapper, [])
 
         mappers_or_columns = tuple(self._entities) + mappers_or_columns
         tuples = bool(mappers_or_columns)
 
         if context.row_adapter:
             def main(context, row):
-                return self.select_mapper._instance(context, context.row_adapter(row), None,
+                return self.mapper._instance(context, context.row_adapter(row), None,
                     extension=context.extension, only_load_props=context.only_load_props, refresh_instance=context.refresh_instance
                 )
         else:
             def main(context, row):
-                return self.select_mapper._instance(context, row, None,
+                return self.mapper._instance(context, row, None,
                     extension=context.extension, only_load_props=context.only_load_props, refresh_instance=context.refresh_instance
                 )
 
@@ -1042,13 +1033,13 @@ class Query(object):
         q = self
         
         # dont use 'polymorphic' mapper if we are refreshing an instance
-        if refresh_instance and q.select_mapper is not q.mapper:
+        if refresh_instance and q.mapper is not q.mapper:
             q = q._new_base_mapper(q.mapper, '_get')
 
         if ident is not None:
             q = q._no_criterion('get')
             params = {}
-            (_get_clause, _get_params) = q.select_mapper._get_clause
+            (_get_clause, _get_params) = q.mapper._get_clause
             q = q.filter(_get_clause)
             for i, primary_key in enumerate(q.primary_key_columns):
                 try:
@@ -1127,7 +1118,7 @@ class Query(object):
         order_by = self._order_by
         
         if order_by is False:
-            order_by = self.select_mapper.order_by
+            order_by = self.mapper.order_by
         if order_by is False:
             order_by = from_obj.default_order_by()
             if order_by is None:
@@ -1143,15 +1134,15 @@ class Query(object):
             
         # if single-table inheritance mapper, add "typecol IN (polymorphic)" criterion so
         # that we only load the appropriate types
-        if self.select_mapper.single and self.select_mapper.inherits is not None and self.select_mapper.polymorphic_on is not None and self.select_mapper.polymorphic_identity is not None:
-            whereclause = sql.and_(whereclause, self.select_mapper.polymorphic_on.in_([m.polymorphic_identity for m in self.select_mapper.polymorphic_iterator()]))
+        if self.mapper.single and self.mapper.inherits is not None and self.mapper.polymorphic_on is not None and self.mapper.polymorphic_identity is not None:
+            whereclause = sql.and_(whereclause, self.mapper.polymorphic_on.in_([m.polymorphic_identity for m in self.mapper.polymorphic_iterator()]))
 
         context.from_clause = from_obj
 
-        for value in self.select_mapper._iterate_polymorphic_properties(self._with_polymorphic, from_obj):
+        for value in self.mapper._iterate_polymorphic_properties(self._with_polymorphic, from_obj):
             if self._only_load_props and value.key not in self._only_load_props:
                 continue
-            context.exec_with_path(self.select_mapper, value.key, value.setup, context, only_load_props=self._only_load_props)
+            context.exec_with_path(self.mapper, value.key, value.setup, context, only_load_props=self._only_load_props)
 
         # additional entities/columns, add those to selection criterion
         for tup in self._entities:

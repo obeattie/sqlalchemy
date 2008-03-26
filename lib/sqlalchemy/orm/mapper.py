@@ -152,10 +152,6 @@ class Mapper(object):
         # a set of all mappers which inherit from this one.
         self._inheriting_mappers = util.Set()
 
-        # a second mapper that is used for selecting, if the "select_table" argument
-        # was sent to this mapper.
-        self.__surrogate_mapper = None
-
         self.__props_init = False
 
         self.__should_log_info = logging.is_info_enabled(self.logger)
@@ -167,7 +163,6 @@ class Mapper(object):
         self._compile_tables()
         self._compile_properties()
         self._compile_pks()
-        self._compile_selectable()
         global __new_mappers
         __new_mappers = True
         self.__log("constructed")
@@ -440,14 +435,7 @@ class Mapper(object):
         # summary of the various Selectable units:
         # mapped_table - the Selectable that represents a join of the underlying Tables to be saved (or just the Table)
         # local_table - the Selectable that was passed to this Mapper's constructor, if any
-        # select_table - the Selectable that will be used during queries.  if this is specified
-        # as a constructor keyword argument, it takes precendence over mapped_table, otherwise its mapped_table
-        # this is either select_table if it was given explicitly, or in the case of a mapper that inherits
-        # its local_table
         # tables - a collection of underlying Table objects pulled from mapped_table
-
-        if self.select_table is None:
-            self.select_table = self.mapped_table
 
         # locate all tables contained within the "table" passed in, which
         # may be a join or other construct
@@ -731,40 +719,6 @@ class Mapper(object):
         
         for mapper in self._inheriting_mappers:
             mapper._adapt_inherited_property(key, prop)
-
-    def _compile_selectable(self):
-        """If the 'select_table' keyword argument was specified, set
-        up a second *surrogate mapper* that will be used for select
-        operations.
-
-        The columns of `select_table` should encompass all the columns
-        of the `mapped_table` either directly or through proxying
-        relationships. Currently, non-column properties are **not**
-        copied.  This implies that a polymorphic mapper can't do any
-        eager loading right now.
-        """
-
-        if self.select_table is not self.mapped_table:
-            # turn a straight join into an aliased selectable
-            if isinstance(self.select_table, sql.Join):
-                self.select_table = self.select_table.select(use_labels=True).alias()
-
-            self.__surrogate_mapper = Mapper(self.class_, self.select_table, non_primary=True, _polymorphic_map=self.polymorphic_map, polymorphic_on=_corresponding_column_or_error(self.select_table, self.polymorphic_on), primary_key=self.primary_key_argument)
-            adapter = sqlutil.ClauseAdapter(self.select_table, equivalents=self.__surrogate_mapper._equivalent_columns)
-
-            if self.order_by:
-                order_by = [expression._literal_as_text(o) for o in util.to_list(self.order_by) or []]
-                order_by = adapter.copy_and_process(order_by)
-                self.__surrogate_mapper.order_by=order_by
-
-            if self._init_properties:
-                for key, prop in self._init_properties.iteritems():
-                    if expression.is_column(prop):
-                        self.__surrogate_mapper.add_property(key, _corresponding_column_or_error(self.select_table, prop))
-                    elif (isinstance(prop, list) and expression.is_column(prop[0])):
-                        self.__surrogate_mapper.add_property(key, [_corresponding_column_or_error(self.select_table, c) for c in prop])
-
-            self.__surrogate_mapper._clause_adapter = adapter
 
     def _compile_class(self):
         """If this mapper is to be a primary mapper (i.e. the
@@ -1315,15 +1269,6 @@ class Mapper(object):
         for prop in self.__props.values():
             for (c, m) in prop.cascade_iterator(type, state, recursive, halt_on=halt_on):
                 yield (c, m)
-
-    def get_select_mapper(self):
-        """Return the mapper used for issuing selects.
-
-        This mapper is the same mapper as `self` unless the
-        select_table argument was specified for this mapper.
-        """
-
-        return self.__surrogate_mapper or self
 
     def _instance(self, context, row, result=None, skip_polymorphic=False, extension=None, only_load_props=None, refresh_instance=None):
         if not extension:

@@ -228,7 +228,7 @@ class PropertyAliasedClauses(AliasedClauses):
             self.order_by = None
     
     mapper = property(lambda self:self.prop.mapper)
-    table = property(lambda self:self.prop.select_table)
+    table = property(lambda self:self.prop.table)
     
 
 def instance_str(instance):

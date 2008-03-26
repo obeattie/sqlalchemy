@@ -76,7 +76,6 @@ class ColumnLoader(LoaderStrategy):
             def new_execute(instance, row, **flags):
                 if self._should_log_debug:
                     self.logger.debug("populating %s with %s/%s" % (mapperutil.attribute_str(instance, self.key), row.__class__.__name__, self.columns[0].key))
-                print "data is", row[self.columns[0]]
                 instance.__dict__[self.key] = row[self.columns[0]]
             if self._should_log_debug:
                 self.logger.debug("Returning active column fetcher for %s %s" % (mapper, self.key))
@@ -224,7 +223,7 @@ class UndeferGroupOption(MapperOption):
 class AbstractRelationLoader(LoaderStrategy):
     def init(self):
         super(AbstractRelationLoader, self).init()
-        for attr in ['primaryjoin', 'secondaryjoin', 'secondary', 'foreign_keys', 'mapper', 'select_mapper', 'target', 'select_table', 'loads_polymorphic', 'uselist', 'cascade', 'attributeext', 'order_by', 'remote_side', 'polymorphic_primaryjoin', 'polymorphic_secondaryjoin', 'direction']:
+        for attr in ['primaryjoin', 'secondaryjoin', 'secondary', 'foreign_keys', 'mapper', 'target', 'table', 'uselist', 'cascade', 'attributeext', 'order_by', 'remote_side', 'direction']:
             setattr(self, attr, getattr(self.parent_property, attr))
         self._should_log_debug = logging.is_debug_enabled(self.logger)
         
@@ -363,7 +362,7 @@ class LazyLoader(AbstractRelationLoader):
             return (new_execute, None, None)
 
     def _create_lazy_clause(cls, prop, reverse_direction=False):
-        (primaryjoin, secondaryjoin, remote_side) = (prop.polymorphic_primaryjoin, prop.polymorphic_secondaryjoin, prop.remote_side)
+        (primaryjoin, secondaryjoin, remote_side) = (prop.primaryjoin, prop.secondaryjoin, prop.remote_side)
         
         binds = {}
         equated_columns = {}
@@ -462,7 +461,7 @@ class LoadLazyAttribute(object):
         if strategy.use_get:
             ident = []
             allnulls = True
-            for primary_key in prop.select_mapper.primary_key: 
+            for primary_key in prop.mapper.primary_key: 
                 val = instance_mapper._get_committed_attr_by_column(instance, strategy.equated_columns[primary_key])
                 allnulls = allnulls and val is None
                 ident.append(val)
@@ -538,7 +537,7 @@ class EagerLoader(AbstractRelationLoader):
         try:
             clauses = self.clauses[path]
         except KeyError:
-            clauses = mapperutil.PropertyAliasedClauses(self.parent_property, self.parent_property.polymorphic_primaryjoin, self.parent_property.polymorphic_secondaryjoin, parentclauses)
+            clauses = mapperutil.PropertyAliasedClauses(self.parent_property, self.parent_property.primaryjoin, self.parent_property.secondaryjoin, parentclauses)
             self.clauses[path] = clauses
 
         # place the "row_decorator" from the AliasedClauses into the QueryContext, where it will
@@ -568,8 +567,8 @@ class EagerLoader(AbstractRelationLoader):
         if clauses.order_by:
             context.eager_order_by += util.to_list(clauses.order_by)
         
-        for value in self.select_mapper._iterate_polymorphic_properties():
-            context.exec_with_path(self.select_mapper, value.key, value.setup, context, parentclauses=clauses, parentmapper=self.select_mapper)
+        for value in self.mapper._iterate_polymorphic_properties():
+            context.exec_with_path(self.mapper, value.key, value.setup, context, parentclauses=clauses, parentmapper=self.mapper)
         
     def _create_row_decorator(self, selectcontext, row, path):
         """Create a *row decorating* function that will apply eager
@@ -593,7 +592,7 @@ class EagerLoader(AbstractRelationLoader):
         try:
             decorated_row = decorator(row)
             # check for identity key
-            identity_key = self.select_mapper.identity_key_from_row(decorated_row)
+            identity_key = self.mapper.identity_key_from_row(decorated_row)
             # and its good
             return decorator
         except KeyError, k:
@@ -618,11 +617,11 @@ class EagerLoader(AbstractRelationLoader):
                         # parent object, bypassing InstrumentedAttribute
                         # event handlers.
                         #
-                        instance.__dict__[self.key] = self.select_mapper._instance(selectcontext, decorated_row, None)
+                        instance.__dict__[self.key] = self.mapper._instance(selectcontext, decorated_row, None)
                     else:
                         # call _instance on the row, even though the object has been created,
                         # so that we further descend into properties
-                        self.select_mapper._instance(selectcontext, decorated_row, None)
+                        self.mapper._instance(selectcontext, decorated_row, None)
                 else:
                     if isnew or self.key not in instance._state.appenders:
                         # appender_key can be absent from selectcontext.attributes with isnew=False
@@ -641,8 +640,7 @@ class EagerLoader(AbstractRelationLoader):
                     if self._should_log_debug:
                         self.logger.debug("eagerload list instance on %s" % mapperutil.attribute_str(instance, self.key))
                     
-                    print "PATH", pathstr, "MAPPER INSTANCE", repr(decorated_row)
-                    self.select_mapper._instance(selectcontext, decorated_row, result_list)
+                    self.mapper._instance(selectcontext, decorated_row, result_list)
 
             if self._should_log_debug:
                 self.logger.debug("Returning eager instance loader for %s" % str(self))
