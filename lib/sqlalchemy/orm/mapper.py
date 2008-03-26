@@ -640,10 +640,12 @@ class Mapper(object):
             column_key = (self.column_prefix or '') + column.key
 
             self._compile_property(column_key, column, init=False, setparent=True)
-
+        
+        # do a special check for the "discriminiator" column, as it may only be present
+        # in the 'with_polymorphic' selectable but we need it for the base mapper
         if self.polymorphic_on and self.polymorphic_on not in self._columntoproperty: 
-            col = self.mapped_table.corresponding_column(self.polymorphic_on) or self.polymorphic_on
-            self._compile_property(col.key, ColumnProperty(col), init=False, setparent=True)
+           col = self.mapped_table.corresponding_column(self.polymorphic_on) or self.polymorphic_on
+           self._compile_property(col.key, ColumnProperty(col), init=False, setparent=True)
             
     def _adapt_inherited_property(self, key, prop):
         if not self.concrete:

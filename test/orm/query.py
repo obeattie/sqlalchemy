@@ -981,12 +981,7 @@ class InstancesTest(QueryTest):
             assert sess.query(User).add_column(add_col).all() == expected
             sess.clear()
 
-        try:
-            sess.query(User).add_column(object()).all()
-            assert False
-        except exceptions.InvalidRequestError, e:
-            assert "Invalid column expression" in str(e)
-
+        self.assertRaises(exceptions.InvalidRequestError, sess.query(User).add_column, object())
 
     def test_multi_columns_2(self):
         """test aliased/nonalised joins with the usage of add_column()"""

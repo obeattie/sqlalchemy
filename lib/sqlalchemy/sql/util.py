@@ -105,30 +105,23 @@ class AliasedRow(object):
         self.map = map
         
     def __contains__(self, key):
-#        print "CONVERTING", key._label, "TO", self.map[key]._label
         return self.map[key] in self.row
 
     def has_key(self, key):
         return key in self
 
     def __getitem__(self, key):
-#        print "CONVERTING", key._label, "TO", self.map[key]._label
         return self.row[self.map[key]]
 
     def keys(self):
         return self.row.keys()
 
-def row_adapter(from_, to, equivalent_columns=None):
-    """create a row adapter between two selectables.
-
-    The returned adapter is a class that can be instantiated repeatedly for any number
-    of rows; this is an inexpensive process.  However, the creation of the row
-    adapter class itself *is* fairly expensive so caching should be used to prevent
-    repeated calls to this function.
-    """
+def row_adapter(from_, equivalent_columns=None):
+    """create a row adapter against a selectable."""
     
     if equivalent_columns is None:
         equivalent_columns = {}
+    assert isinstance(equivalent_columns, dict)
     def locate_col(col):
         c = from_.corresponding_column(col)
         if c:

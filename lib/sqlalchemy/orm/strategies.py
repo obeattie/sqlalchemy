@@ -689,22 +689,6 @@ class EagerLazyOption(StrategizedOption):
 
 EagerLazyOption.logger = logging.class_logger(EagerLazyOption)
 
-# TODO: enable FetchMode option.  currently 
-# this class does nothing.  will require Query
-# to swich between using its "polymorphic" selectable
-# and its regular selectable in order to make decisions
-# (therefore might require that FetchModeOperation is performed
-# only as the first operation on a Query.)
-class FetchModeOption(PropertyOption):
-    def __init__(self, key, type):
-        super(FetchModeOption, self).__init__(key)
-        if type not in ('join', 'select'):
-            raise exceptions.ArgumentError("Fetchmode must be one of 'join' or 'select'")
-        self.type = type
-        
-    def process_query_property(self, query, properties):
-        query.attributes[('fetchmode', properties[-1])] = self.type
-        
 class RowDecorateOption(PropertyOption):
     def __init__(self, key, decorator=None, alias=None):
         super(RowDecorateOption, self).__init__(key)
@@ -719,7 +703,7 @@ class RowDecorateOption(PropertyOption):
             if isinstance(self.alias, basestring):
                 self.alias = prop.target.alias(self.alias)
 
-            self.decorator = mapperutil.create_row_adapter(self.alias, prop.target)
+            self.decorator = mapperutil.create_row_adapter(self.alias)
         query._attributes[("eager_row_processor", paths[-1])] = self.decorator
 
 RowDecorateOption.logger = logging.class_logger(RowDecorateOption)

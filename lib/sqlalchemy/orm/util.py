@@ -174,24 +174,23 @@ class AliasedClauses(object):
         return self.adapter.copy_and_process(clauses)
         
     def _create_row_adapter(self):
-        return create_row_adapter(self.alias, None, equivalent_columns=self.equivalents)
+        return create_row_adapter(self.alias, equivalent_columns=self.equivalents)
 
 
 class PropertyAliasedClauses(AliasedClauses):
     """extends AliasedClauses to add support for primary/secondary joins on a relation()."""
     
     def __init__(self, prop, primaryjoin, secondaryjoin, parentclauses=None, alias=None):
-        
-        
-        mapper = prop.mapper
-        if not alias:
-            mappers, from_obj = mapper._with_polymorphic_mappers()
-            alias = from_obj.alias()
-        super(PropertyAliasedClauses, self).__init__(alias, equivalents=mapper._equivalent_columns, chain_to=parentclauses)
-            
+        self.prop = prop
+        self.mapper = self.prop.mapper
+        self.table = self.prop.table
         self.parentclauses = parentclauses
 
-        self.prop = prop
+        if not alias:
+            mappers, from_obj = self.mapper._with_polymorphic_mappers()
+            alias = from_obj.alias()
+
+        super(PropertyAliasedClauses, self).__init__(alias, equivalents=self.mapper._equivalent_columns, chain_to=parentclauses)
         
         if prop.secondary:
             self.secondary = prop.secondary.alias()
@@ -226,10 +225,6 @@ class PropertyAliasedClauses(AliasedClauses):
                 
         else:
             self.order_by = None
-    
-    mapper = property(lambda self:self.prop.mapper)
-    table = property(lambda self:self.prop.table)
-    
 
 def instance_str(instance):
     """Return a string describing an instance."""
