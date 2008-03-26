@@ -1,26 +1,29 @@
 from sqlalchemy import *
 from sqlalchemy.orm import *
 
-from sqlalchemy.orm.attributes import InstrumentClass, set_attribute, get_attribute, del_attribute, is_instrumented
+from sqlalchemy.orm.attributes import set_attribute, get_attribute, del_attribute, is_instrumented
 from sqlalchemy.orm.collections import collection_adapter
 
-class MyClassState(InstrumentClass):
-    
+
+class MyClassState(InstrumentationManager):
+    def __init__(self):
+        self.states = {}
+
     def instrument_attribute(self, class_, key, attr):
         pass
-        
+
     def install_descriptor(self, class_, key, attr):
         pass
-        
+
     def uninstall_descriptor(self, class_, key, attr):
         pass
-        
+
     def instrument_collection_class(self, class_, key, collection_class):
         return MyCollection
-    
+
     def get_instance_dict(self, instance):
         return instance._goofy_dict
-        
+
     def initialize_instance_dict(self, instance):
         instance.__dict__['_goofy_dict'] = {}
 
@@ -28,13 +31,21 @@ class MyClassState(InstrumentClass):
         data = factory()
         return MyCollectionAdapter(key, state, data), data
 
+    def install_state(self, class_, instance, state):
+        self.states[id(instance)] = state
+
+    def state_getter(self, class_):
+        def find(instance):
+            return self.states[id(instance)]
+        return find
+
 class MyClass(object):
-    __sa_instrument_class__ = MyClassState
+    __sa_instrumentation_manager__ = MyClassState
 
     def __init__(self, **kwargs):
         for k in kwargs:
             setattr(self, k, kwargs[k])
-            
+
     def __getattr__(self, key):
         if is_instrumented(self, key):
             return get_attribute(self, key)
@@ -57,7 +68,7 @@ class MyClass(object):
             del self._goofy_dict[key]
 
 class MyCollectionAdapter(object):
-    """An wholly alternative instrumetnation implementation."""
+    """An wholly alternative instrumentation implementation."""
     def __init__(self, key, state, collection):
         self.key = key
         self.state = state
@@ -131,16 +142,16 @@ if __name__ == '__main__':
 
     class A(MyClass):
         pass
-    
+
     class B(MyClass):
         pass
-    
+
     mapper(A, table1, properties={
         'bs':relation(B)
     })
-    
+
     mapper(B, table2)
-    
+
     a1 = A(name='a1', bs=[B(name='b1'), B(name='b2')])
 
     assert a1.name == 'a1'

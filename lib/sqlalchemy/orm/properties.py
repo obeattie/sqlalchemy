@@ -73,8 +73,8 @@ class ColumnProperty(StrategizedProperty):
         state.get_impl(self.key).set(state, value, None)
 
     def merge(self, session, source, dest, dont_load, _recursive):
-        value = attributes.get_as_list(attributes.state_getter(source),
-                                       self.key, passive=True)
+        value = attributes.state_getter(source).value_as_iterable(
+            self.key, passive=True)
         if value:
             setattr(dest, self.key, value[0])
         else:
@@ -301,7 +301,7 @@ class PropertyLoader(StrategizedProperty):
                 j = self.prop.full_join_against(self.prop.parent, None, toselectable=to_selectable)
 
             for k in kwargs:
-                crit = self.prop.mapper._class_state.get_inst(k) == kwargs[k]
+                crit = self.prop.mapper.class_manager.get_inst(k) == kwargs[k]
                 if criterion is None:
                     criterion = crit
                 else:
@@ -393,8 +393,8 @@ class PropertyLoader(StrategizedProperty):
             attributes.state_getter(dest).expire_attributes([self.key])
             return
 
-        instances = attributes.get_as_list(attributes.state_getter(source),
-                                           self.key, passive=True)
+        state = attributes.state_getter(source)
+        instances = state.value_as_iterable(self.key, passive=True)
         if not instances:
             return
 
@@ -424,7 +424,7 @@ class PropertyLoader(StrategizedProperty):
             return
         passive = type != 'delete' or self.passive_deletes
         mapper = self.mapper.primary_mapper()
-        instances = attributes.get_as_list(state, self.key, passive=passive)
+        instances = state.value_as_iterable(self.key, passive=passive)
         if instances:
             for c in instances:
                 if c is not None and c not in recursive and (halt_on is None or not halt_on(c)):

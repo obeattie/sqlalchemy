@@ -93,6 +93,7 @@ class Mapper(object):
                 raise exceptions.ArgumentError("Mapping against a Select object requires that it has a name.  Use an alias to give it a name, i.e. s = select(...).alias('myselect')")
 
         self.class_ = class_
+        self.class_manager = None
         self.entity_name = entity_name
         self.primary_key_argument = primary_key
         self.non_primary = non_primary
@@ -226,9 +227,10 @@ class Mapper(object):
         if hasattr(self.class_, 'c') and self.class_.c is self.c:
             del self.class_.c
 
-        if not self.non_primary and self.entity_name in self._class_state.mappers:
-            del self._class_state.mappers[self.entity_name]
-        if not self._class_state.mappers:
+        mappers = self.class_manager.mappers
+        if not self.non_primary and self.entity_name in mappers:
+            del mappers[self.entity_name]
+        if not mappers:
             attributes.unregister_class(self.class_)
 
     def compile(self):
@@ -679,8 +681,8 @@ class Mapper(object):
             prop.set_parent(self)
 
             if not self.non_primary:
-                self._class_state.install_descriptor(key, Mapper._CompileOnAttr(self.class_, key))
-
+                self.class_manager.install_descriptor(
+                    key, Mapper._CompileOnAttr(self.class_, key))
         if init:
             prop.init(key, self)
 
@@ -733,19 +735,15 @@ class Mapper(object):
         """
 
         if self.non_primary:
-            self._class_state = attributes.class_state_getter(self.class_)
+            self.class_manager = attributes.manager_of_class(self.class_)
             _mapper_registry[self] = True
             return
 
         if not self.non_primary:
-            try:
-                state = attributes.class_state_getter(self.class_)
-            except AttributeError:
+            state = attributes.manager_of_class(self.class_)
+            if state and state.class_ is not self.class_:
+                # Avoid inheritance chain to kick in.
                 state = None
-            else:
-                if state.class_ is not self.class_:
-                    # Avoid inheritance chain to kick in.
-                    state = None
             if state is not None and self.entity_name in state.mappers:
                 raise exceptions.ArgumentError(
                     "Class '%s' already has a primary mapper defined "
@@ -753,6 +751,18 @@ class Mapper(object):
                     "create a non primary Mapper.  clear_mappers() will "
                     "remove *all* current mappers from all classes." %
                     (self.class_, self.entity_name))
+
+        # TODO: overhaul all of __init__, move into a managed method of
+        # ClassManager along the lines of::
+        #
+        #   def initialize_instance(self, *args, **kw):
+        #       instance = args[0]
+        #       entity_name = kw.get('entity_name', None)
+        #       for hook in self.on_initialize[entity_name]:
+        #           hook(*args, **kw)
+        #
+        # Install the add-ons below via manager.install_member, and only once
+        # per cls.
 
         def extra_init(class_, oldinit, instance, *args, **kwargs):
             self.compile()
@@ -766,10 +776,10 @@ class Mapper(object):
 
         attributes.register_class(self.class_, extra_init=extra_init, on_exception=on_exception, deferred_scalar_loader=_load_scalar_attributes)
 
-        self._class_state = attributes.class_state_getter(self.class_)
+        self.class_manager = attributes.manager_of_class(self.class_)
         _mapper_registry[self] = True
 
-        self._class_state.mappers[self.entity_name] = self
+        self.class_manager.mappers[self.entity_name] = self
 
         if self.entity_name is None:
             self.class_.c = self.c
@@ -861,7 +871,7 @@ class Mapper(object):
 
     def primary_mapper(self):
         """Return the primary mapper corresponding to this mapper's class key (class + entity_name)."""
-        return self._class_state.mappers[self.entity_name]
+        return self.class_manager.mappers[self.entity_name]
 
     def get_session(self):
         """Return the contextual session provided by the mapper
@@ -1400,11 +1410,14 @@ class Mapper(object):
             if 'create_instance' in extension.methods:
                 instance = extension.create_instance(self, context, row, self.class_)
                 if instance is EXT_CONTINUE:
-                    instance = self._class_state.new_instance()
+                    instance = self.class_manager.new_instance()
                 else:
-                    attributes.manage(instance)
+                    manager = attributes.manager_for_cls(instance.__class__)
+                    # TODO: if manager is None, raise a friendly error about
+                    # returning instances of unmapped types
+                    manager.setup_instance(instance)
             else:
-                instance = self._class_state.new_instance()
+                instance = self.class_manager.new_instance()
 
             if self.__should_log_debug:
                 self.__log_debug("_instance(): created new instance %s identity %s" % (instance_str(instance), str(identitykey)))
@@ -1634,6 +1647,7 @@ def _load_scalar_attributes(instance, attribute_names):
         except exceptions.InvalidRequestError:
             raise exceptions.UnboundExecutionError("Instance %s is not bound to a Session, and no contextual session is established; attribute refresh operation cannot proceed" % (instance.__class__))
 
+    # fixme: entity_name?
     state = attributes.state_getter(instance)
     identity_key = state.key
     if identity_key is None:
@@ -1645,7 +1659,7 @@ def _state_mapper(state, entity_name=None):
     if state.entity_name is not attributes.NO_ENTITY_NAME:
         # Override the given entity name if the object is not transient.
         entity_name = state.entity_name
-    return state.class_state.mappers[entity_name]
+    return state.manager.mappers[entity_name]
 
 def object_mapper(object, entity_name=None, raiseerror=True):
     """Given an object, return the primary Mapper associated with the object instance.
@@ -1668,7 +1682,8 @@ def object_mapper(object, entity_name=None, raiseerror=True):
         # Override the given entity name if the object is not transient.
         entity_name = state.entity_name
     return class_mapper(
-        object, entity_name=entity_name, compile=False, raiseerror=raiseerror)
+        type(object), entity_name=entity_name,
+        compile=False, raiseerror=raiseerror)
 
 
 def class_mapper(class_, entity_name=None, compile=True, raiseerror=True):
@@ -1677,15 +1692,17 @@ def class_mapper(class_, entity_name=None, compile=True, raiseerror=True):
     If no mapper can be located, raises ``InvalidRequestError``.
 
     """
+    if not isinstance(class_, type):
+        class_ = type(class_)
     try:
-        class_state = attributes.class_state_getter(class_)
-        mapper = class_state.mappers[entity_name]
+        class_manager = attributes.manager_of_class(class_)
+        mapper = class_manager.mappers[entity_name]
     except (KeyError, AttributeError):
         if not raiseerror:
             return
         raise exceptions.InvalidRequestError(
             "Class '%s' entity name '%s' has no mapper associated with it" %
-            (class_state.class_.__name__, entity_name))
+            (class_.__name__, entity_name))
     if compile:
         mapper = mapper.compile()
     return mapper

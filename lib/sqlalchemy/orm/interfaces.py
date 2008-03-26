@@ -16,13 +16,16 @@ ORM.
 from itertools import chain
 from sqlalchemy import exceptions, logging, util
 from sqlalchemy.sql import expression
+
 class_mapper = None
+collections = None
 
 __all__ = ['EXT_CONTINUE', 'EXT_STOP', 'EXT_PASS', 'MapperExtension',
            'MapperProperty', 'PropComparator', 'StrategizedProperty',
            'build_path', 'MapperOption',
            'ExtensionOption', 'PropertyOption',
-           'AttributeExtension', 'StrategizedOption', 'LoaderStrategy' ]
+           'AttributeExtension', 'StrategizedOption', 'LoaderStrategy',
+           'InstrumentationManager']
 
 EXT_CONTINUE = EXT_PASS = util.symbol('EXT_CONTINUE')
 EXT_STOP = util.symbol('EXT_STOP')
@@ -43,6 +46,9 @@ class MapperExtension(object):
     EXT_PASS is a synonym for EXT_CONTINUE and is provided for backward
     compatibility.
     """
+
+    def elect_instrumentation_manager(self, mapper, class_):
+        return EXT_CONTINUE
 
     def instrument_class(self, mapper, class_):
         return EXT_CONTINUE
@@ -717,3 +723,40 @@ class LoaderStrategy(object):
         """
 
         raise NotImplementedError()
+
+
+class InstrumentationManager(object):
+    """User-defined class instrumentation extension."""
+
+    def instrument_attribute(self, class_, key, inst):
+        pass
+
+    def install_descriptor(self, class_, key, inst):
+        setattr(class_, key, inst)
+
+    def uninstall_descriptor(self, class_, key):
+        delattr(class_, key)
+
+    def install_member(self, class_, key, implementation):
+        setattr(class_, key, implementation)
+
+    def uninstall_member(self, class_, key):
+        delattr(class_, key)
+
+    def instrument_collection_class(self, class_, key, collection_class):
+        global collections
+        if collections is None:
+            from sqlalchemy.orm import collections
+        return collections.prepare_instrumentation(collection_class)
+
+    def get_instance_dict(self, instance):
+        return instance.__dict__
+
+    def initialize_instance_dict(self, instance):
+        pass
+
+    def install_state(self, class_, instance, state):
+        setattr(instance, '_default_state', state)
+
+    def state_getter(self, class_):
+        return lambda instance: getattr(instance, '_default_state')

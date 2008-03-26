@@ -13,7 +13,7 @@ documentation for an overview of how this module is used.
 
 from sqlalchemy import util as sautil
 from sqlalchemy.orm.mapper import Mapper, object_mapper, class_mapper, _mapper_registry
-from sqlalchemy.orm.interfaces import MapperExtension, EXT_CONTINUE, EXT_STOP, EXT_PASS, ExtensionOption, PropComparator
+from sqlalchemy.orm.interfaces import MapperExtension, EXT_CONTINUE, EXT_STOP, EXT_PASS, ExtensionOption, PropComparator, InstrumentationManager
 from sqlalchemy.orm.properties import SynonymProperty, PropertyLoader, ColumnProperty, CompositeProperty, BackRef
 from sqlalchemy.orm import mapper as mapperlib
 from sqlalchemy.orm import strategies
@@ -32,7 +32,7 @@ __all__ = [ 'relation', 'column_property', 'composite', 'backref', 'eagerload',
             'polymorphic_union',
             'create_session', 'synonym', 'contains_alias', 'Query',
             'contains_eager', 'EXT_CONTINUE', 'EXT_STOP', 'EXT_PASS',
-            'object_session', 'PropComparator' ]
+            'object_session', 'PropComparator', 'InstrumentationManager' ]
 
 
 def scoped_session(session_factory, scopefunc=None):

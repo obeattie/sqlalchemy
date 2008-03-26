@@ -2,30 +2,37 @@ import testenv; testenv.configure_for_tests()
 import pickle
 import sqlalchemy.orm.attributes as attributes
 from sqlalchemy.orm.collections import collection
-from sqlalchemy.orm.attributes import InstrumentClass, set_attribute, get_attribute, del_attribute, is_instrumented
+from sqlalchemy.orm.attributes import set_attribute, get_attribute, del_attribute, is_instrumented
+from sqlalchemy.orm import InstrumentationManager
 
 from sqlalchemy import exceptions
 from testlib import *
 
-class MyClassState(InstrumentClass):
-    
+class MyTypesManager(InstrumentationManager):
+
     def instrument_attribute(self, class_, key, attr):
         pass
-        
+
     def install_descriptor(self, class_, key, attr):
         pass
-        
+
     def uninstall_descriptor(self, class_, key):
         pass
-        
+
     def instrument_collection_class(self, class_, key, collection_class):
         return MyListLike
-    
+
     def get_instance_dict(self, instance):
         return instance._goofy_dict
-        
+
     def initialize_instance_dict(self, instance):
         instance.__dict__['_goofy_dict'] = {}
+
+    def install_state(self, class_, instance, state):
+        instance.__dict__['_my_state'] = state
+
+    def state_getter(self, class_):
+        return lambda instance: instance.__dict__['_my_state']
 
 class MyListLike(list):
     # add @appender, @remover decorators as needed
@@ -43,15 +50,15 @@ class MyListLike(list):
     remove = _sa_remover
 
 class MyBaseClass(object):
-    __sa_instrument_class__ = InstrumentClass
-    
+    __sa_instrumentation_manager__ = InstrumentationManager
+
 class MyClass(object):
-    __sa_instrument_class__ = MyClassState
+    __sa_instrumentation_manager__ = MyTypesManager
 
     def __init__(self, **kwargs):
         for k in kwargs:
             setattr(self, k, kwargs[k])
-            
+
     def __getattr__(self, key):
         if is_instrumented(self, key):
             return get_attribute(self, key)
@@ -64,17 +71,12 @@ class MyClass(object):
     def __setattr__(self, key, value):
         if is_instrumented(self, key):
             set_attribute(self, key, value)
-        # fixme: needs the pluggable attributes.has_state
-        elif key == attributes.STATE_ATTR:
-            self.__dict__[key] = value
         else:
             self._goofy_dict[key] = value
 
     def __hasattr__(self, key):
         if is_instrumented(self, key):
             return True
-        elif key == attributes.STATE_ATTR:
-            return key in self.__dict__
         else:
             return key in self._goofy_dict
 
@@ -217,30 +219,30 @@ class UserDefinedExtensionTest(TestBase):
                 pass
             class Bar(base):
                 pass
-            
+
             attributes.register_class(Foo)
             attributes.register_class(Bar)
             attributes.register_attribute(Foo, "name", uselist=False, useobject=False)
             attributes.register_attribute(Foo, "bars", uselist=True, trackparent=True, useobject=True)
             attributes.register_attribute(Bar, "name", uselist=False, useobject=False)
-            
-            
+
+
             f1 = Foo()
             f1.name = 'f1'
-            
+
             self.assertEquals(attributes.get_history(attributes.state_getter(f1), 'name'), (['f1'], [], []))
-            
+
             b1 = Bar()
             b1.name = 'b1'
             f1.bars.append(b1)
             self.assertEquals(attributes.get_history(attributes.state_getter(f1), 'bars'), ([b1], [], []))
-            
+
             attributes.state_getter(f1).commit_all()
             attributes.state_getter(b1).commit_all()
-            
+
             self.assertEquals(attributes.get_history(attributes.state_getter(f1), 'name'), ([], ['f1'], []))
             self.assertEquals(attributes.get_history(attributes.state_getter(f1), 'bars'), ([], [b1], []))
-            
+
             f1.name = 'f1mod'
             b2 = Bar()
             b2.name = 'b2'
@@ -249,17 +251,17 @@ class UserDefinedExtensionTest(TestBase):
             self.assertEquals(attributes.get_history(attributes.state_getter(f1), 'bars'), ([b2], [b1], []))
             f1.bars.remove(b1)
             self.assertEquals(attributes.get_history(attributes.state_getter(f1), 'bars'), ([b2], [], [b1]))
-    
+
     def test_null_instrumentation(self):
         class Foo(MyBaseClass):
             pass
         attributes.register_class(Foo)
         attributes.register_attribute(Foo, "name", uselist=False, useobject=False)
         attributes.register_attribute(Foo, "bars", uselist=True, trackparent=True, useobject=True)
-        
-        assert Foo.name == attributes.class_state_getter(Foo).get_inst('name')
-        assert Foo.bars == attributes.class_state_getter(Foo).get_inst('bars')
-        
+
+        assert Foo.name == attributes.manager_of_class(Foo).get_inst('name')
+        assert Foo.bars == attributes.manager_of_class(Foo).get_inst('bars')
+
 
 if __name__ == '__main__':
     testing.main()

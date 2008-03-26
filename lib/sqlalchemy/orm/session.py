@@ -969,7 +969,7 @@ class Session(object):
         if state.key is None:
             if dont_load:
                 raise exceptions.InvalidRequestError("merge() with dont_load=True option does not support objects transient (i.e. unpersisted) objects.  flush() all changes on mapped instances before merging with dont_load=True.")
-            merged = mapper._class_state.new_instance()
+            merged = mapper.class_manager.new_instance()
             new_instance = True
         else:
             if state.key in self.identity_map:
@@ -979,7 +979,7 @@ class Session(object):
                 if state.modified:
                     raise exceptions.InvalidRequestError("merge() with dont_load=True option does not support objects marked as 'dirty'.  flush() all changes on mapped instances before merging with dont_load=True.")
 
-                merged = mapper._class_state.new_instance()
+                merged = mapper.class_manager.new_instance()
                 merged_state = attributes.state_getter(merged)
                 merged_state.key = state.key
                 merged_state.entity_name = entity_name
@@ -1074,15 +1074,19 @@ class Session(object):
     object_session = classmethod(object_session)
 
     def _save_impl(self, instance, **kwargs):
-        key = attributes.state_attribute_getter(instance, 'key')
-        if key is not None:
-            raise exceptions.InvalidRequestError(
-                "Instance '%s' is already persistent" %
-                mapperutil.instance_str(instance))
-        # TODO: consolidate the steps here
-        attributes.manage(instance)
-        state = attributes.state_getter(instance)
+        manager = attributes.manager_of_class(instance.__class__)
+        if manager is None:
+            raise "FIXME unmapped instance"
+        if manager.has_state(instance):
+            state = manager.state_of(instance)
+            if state.key is not None:
+                raise exceptions.InvalidRequestError(
+                    "Instance '%s' is already persistent" %
+                    mapperutil.instance_str(instance))
+        else:
+            state = manager.setup_instance(instance)
         state.entity_name = kwargs.get('entity_name', None)
+
         self._attach(instance)
         self.uow.register_new(instance)
 
@@ -1188,7 +1192,7 @@ class Session(object):
         not be loaded in the course of performing this test.
         """
 
-        for attr in attributes._managed_attributes(instance.__class__):
+        for attr in attributes.manager_of_class(instance.__class__).attributes:
             if not include_collections and hasattr(attr.impl, 'get_collection'):
                 continue
             (added, unchanged, deleted) = attr.get_history(instance)

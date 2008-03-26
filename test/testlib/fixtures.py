@@ -33,7 +33,11 @@ class Base(object):
         _recursion_stack.add(self)
         try:
             # pick the entity thats not SA persisted as the source
-            key = attributes.state_attribute_getter(self, 'key')
+            try:
+                state = attributes.state_of(self)
+                key = state.key
+            except (KeyError, AttributeError):
+                key = None
             if other is None:
                 a = self
                 b = other
