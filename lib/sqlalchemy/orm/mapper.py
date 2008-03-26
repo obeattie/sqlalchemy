@@ -69,6 +69,7 @@ class Mapper(object):
                  polymorphic_fetch=None,
                  concrete=False,
                  select_table=None,
+                 with_polymorphic=None,
                  allow_null_pks=False,
                  batch=True,
                  column_prefix=None,
@@ -84,14 +85,6 @@ class Mapper(object):
         if not issubclass(class_, object):
             raise exceptions.ArgumentError("Class '%s' is not a new-style class" % class_.__name__)
 
-        for table in (local_table, select_table):
-            if table and isinstance(table, expression._SelectBaseMixin):
-                # some db's, noteably postgres, dont want to select from a select
-                # without an alias.  also if we make our own alias internally, then
-                # the configured properties on the mapper are not matched against the alias
-                # we make, theres workarounds but it starts to get really crazy (its crazy enough
-                # the SQL that gets generated) so just require an alias
-                raise exceptions.ArgumentError("Mapping against a Select object requires that it has a name.  Use an alias to give it a name, i.e. s = select(...).alias('myselect')")
             
         self.class_ = class_
         self.entity_name = entity_name
@@ -106,8 +99,8 @@ class Mapper(object):
         if select_table:
             self.with_polymorphic = ('*', select_table)
         else:
-            self.with_polymorphic = None
-        self.select_table = None #select_table
+            self.with_polymorphic = with_polymorphic
+
         self.local_table = local_table
         self.inherit_condition = inherit_condition
         self.inherit_foreign_keys = inherit_foreign_keys
@@ -125,7 +118,14 @@ class Mapper(object):
         self._dependency_processors = []
         self._clause_adapter = None
         self._requires_row_aliasing = False
-        
+
+        check_tables = [self.local_table]
+        if self.with_polymorphic:
+            check_tables.append(self.with_polymorphic[1])
+        for table in check_tables:
+            if table and isinstance(table, expression._SelectBaseMixin):
+                raise exceptions.ArgumentError("Mapping against a Select object requires that it has a name.  Use an alias to give it a name, i.e. s = select(...).alias('myselect')")
+
         # our 'polymorphic identity', a string name that when located in a result set row
         # indicates this Mapper should be used to construct the object instance for that row.
         self.polymorphic_identity = polymorphic_identity
@@ -232,7 +232,6 @@ class Mapper(object):
             tables = util.Set(sqlutil.find_tables(selectable))
             mappers = [m for m in mappers if m.local_table in tables]
             return mappers, selectable
-
         
     def _iterate_polymorphic_properties(self, spec=None, selectable=False):
         cls_or_mappers, from_obj = self._with_polymorphic_mappers(spec, selectable)

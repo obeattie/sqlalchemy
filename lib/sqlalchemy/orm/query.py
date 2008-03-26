@@ -72,9 +72,10 @@ class Query(object):
         self._aliases_head = self._aliases_tail = None
         self._alias_ids = {}
         self._joinpoint = self.mapper
-        self._with_polymorphic = []
         if self.mapper.with_polymorphic:
             self._set_with_polymorphic(*self.mapper.with_polymorphic)
+        else:
+            self._with_polymorphic = []
 
     def _generate_alias_ids(self):
         aid = self._alias_ids
@@ -429,8 +430,7 @@ class Query(object):
 
         q = self._clone()
         if len(args) == 1:
-            d = args[0]
-            kwargs.update(d)
+            kwargs.update(args[0])
         elif len(args) > 0:
             raise exceptions.ArgumentError("params() takes zero or one positional argument, which is a dictionary.")
         q._params = q._params.copy()
@@ -467,151 +467,6 @@ class Query(object):
 
         return self.filter(sql.and_(*clauses))
 
-    def _get_joinable_tables(self):
-        if not self._joinable_tables or self._joinable_tables[0] is not self._from_obj:
-            currenttables = [self._from_obj]
-            def visit_join(join):
-                currenttables.append(join.left)
-                currenttables.append(join.right)
-            visitors.traverse(self._from_obj, visit_join=visit_join, traverse_options={'column_collections':False, 'aliased_selectables':False})
-            self._joinable_tables = (self._from_obj, currenttables)
-            return currenttables
-        else:
-            return self._joinable_tables[1]
-
-    def _join_to(self, keys, outerjoin=False, start=None, create_aliases=True):
-        if start is None:
-            start = self._joinpoint
-
-        clause = self._from_obj
-
-        currenttables = self._get_joinable_tables()
-
-        # determine if generated joins need to be aliased on the left
-        # hand side.
-        if self._aliases_head is self._aliases_tail is not None:
-            adapt_against = self._aliases_tail.alias
-        elif start is not self.mapper and self._aliases_tail:
-            adapt_against = self._aliases_tail.alias
-        else:
-            adapt_against = None
-
-        mapper = start
-        alias = self._aliases_tail
-        
-        if not isinstance(keys, list):
-            keys = [keys]
-        for key in keys:
-            use_selectable = None
-            of_type = None
-
-            if isinstance(key, tuple):
-                key, use_selectable = key
-
-            if isinstance(key, interfaces.PropComparator):
-                prop = key.property
-                if getattr(key, '_of_type', None):
-                    if use_selectable:
-                        raise exceptions.InvalidRequestError("Can't specify use_selectable along with polymorphic property created via of_type().")
-                    of_type = key._of_type
-                    use_selectable = key._of_type.mapped_table
-            else:
-                prop = mapper.get_property(key, resolve_synonyms=True)
-
-            if use_selectable:
-                if not use_selectable.is_derived_from(prop.mapper.mapped_table):
-                    raise exceptions.InvalidRequestError("Selectable '%s' is not derived from '%s'" % (use_selectable.description, prop.mapper.mapped_table.description))
-                if not isinstance(use_selectable, expression.Alias):
-                    use_selectable = use_selectable.alias()
-            elif prop.mapper.with_polymorphic:
-                mappers, use_selectable = prop.mapper._with_polymorphic_mappers()
-                if not isinstance(use_selectable, expression.Alias):
-                    use_selectable = use_selectable.alias()
-            
-            if prop._is_self_referential() and not create_aliases and not use_selectable:
-                raise exceptions.InvalidRequestError("Self-referential query on '%s' property requires aliased=True argument." % str(prop))
-
-            if prop.table not in currenttables or create_aliases or use_selectable:
-                if prop.secondary:
-                    if use_selectable or create_aliases:
-                        alias = mapperutil.PropertyAliasedClauses(prop,
-                            prop.primary_join_against(mapper, adapt_against),
-                            prop.secondary_join_against(mapper, toselectable=use_selectable),
-                            alias,
-                            alias=use_selectable
-                        )
-                        crit = alias.primaryjoin
-                        clause = clause.join(alias.secondary, crit, isouter=outerjoin).join(alias.alias, alias.secondaryjoin, isouter=outerjoin)
-                    else:
-                        crit = prop.primary_join_against(mapper, adapt_against)
-                        clause = clause.join(prop.secondary, crit, isouter=outerjoin)
-                        clause = clause.join(prop.table, prop.secondary_join_against(mapper), isouter=outerjoin)
-                else:
-                    if use_selectable or create_aliases:
-                        alias = mapperutil.PropertyAliasedClauses(prop,
-                            prop.primary_join_against(mapper, adapt_against, toselectable=use_selectable),
-                            None,
-                            alias,
-                            alias=use_selectable
-                        )
-                        crit = alias.primaryjoin
-                        clause = clause.join(alias.alias, crit, isouter=outerjoin)
-                    else:
-                        crit = prop.primary_join_against(mapper, adapt_against)
-                        clause = clause.join(prop.table, crit, isouter=outerjoin)
-            elif not create_aliases and prop.secondary is not None and prop.secondary not in currenttables:
-                # TODO: this check is not strong enough for different paths to the same endpoint which
-                # does not use secondary tables
-                raise exceptions.InvalidRequestError("Can't join to property '%s'; a path to this table along a different secondary table already exists.  Use the `alias=True` argument to `join()`." % prop.key)
-
-            mapper = of_type or prop.mapper
-
-            if use_selectable:
-                adapt_against = use_selectable
-
-        return (clause, mapper, alias)
-
-    def _generative_col_aggregate(self, col, func):
-        """apply the given aggregate function to the query and return the newly
-        resulting ``Query``.
-        """
-        if self._column_aggregate is not None:
-            raise exceptions.InvalidRequestError("Query already contains an aggregate column or function")
-        q = self._no_statement("aggregate")
-        q._column_aggregate = (col, func)
-        return q
-
-    def apply_min(self, col):
-        """apply the SQL ``min()`` function against the given column to the
-        query and return the newly resulting ``Query``.
-        
-        DEPRECATED.
-        """
-        return self._generative_col_aggregate(col, sql.func.min)
-
-    def apply_max(self, col):
-        """apply the SQL ``max()`` function against the given column to the
-        query and return the newly resulting ``Query``.
-
-        DEPRECATED.
-        """
-        return self._generative_col_aggregate(col, sql.func.max)
-
-    def apply_sum(self, col):
-        """apply the SQL ``sum()`` function against the given column to the
-        query and return the newly resulting ``Query``.
-
-        DEPRECATED.
-        """
-        return self._generative_col_aggregate(col, sql.func.sum)
-
-    def apply_avg(self, col):
-        """apply the SQL ``avg()`` function against the given column to the
-        query and return the newly resulting ``Query``.
-
-        DEPRECATED.
-        """
-        return self._generative_col_aggregate(col, sql.func.avg)
 
     def _col_aggregate(self, col, func):
         """Execute ``func()`` function against the given column.
@@ -761,6 +616,111 @@ class Query(object):
         if id:
             q._alias_ids[id] = aliases
         return q
+
+    def _get_joinable_tables(self):
+        if not self._joinable_tables or self._joinable_tables[0] is not self._from_obj:
+            currenttables = [self._from_obj]
+            def visit_join(join):
+                currenttables.append(join.left)
+                currenttables.append(join.right)
+            visitors.traverse(self._from_obj, visit_join=visit_join, traverse_options={'column_collections':False, 'aliased_selectables':False})
+            self._joinable_tables = (self._from_obj, currenttables)
+            return currenttables
+        else:
+            return self._joinable_tables[1]
+
+    def _join_to(self, keys, outerjoin=False, start=None, create_aliases=True):
+        if start is None:
+            start = self._joinpoint
+
+        clause = self._from_obj
+
+        currenttables = self._get_joinable_tables()
+
+        # determine if generated joins need to be aliased on the left
+        # hand side.
+        if self._aliases_head is self._aliases_tail is not None:
+            adapt_against = self._aliases_tail.alias
+        elif start is not self.mapper and self._aliases_tail:
+            adapt_against = self._aliases_tail.alias
+        else:
+            adapt_against = None
+
+        mapper = start
+        alias = self._aliases_tail
+
+        if not isinstance(keys, list):
+            keys = [keys]
+        for key in keys:
+            use_selectable = None
+            of_type = None
+
+            if isinstance(key, tuple):
+                key, use_selectable = key
+
+            if isinstance(key, interfaces.PropComparator):
+                prop = key.property
+                if getattr(key, '_of_type', None):
+                    if use_selectable:
+                        raise exceptions.InvalidRequestError("Can't specify use_selectable along with polymorphic property created via of_type().")
+                    of_type = key._of_type
+                    use_selectable = key._of_type.mapped_table
+            else:
+                prop = mapper.get_property(key, resolve_synonyms=True)
+
+            if use_selectable:
+                if not use_selectable.is_derived_from(prop.mapper.mapped_table):
+                    raise exceptions.InvalidRequestError("Selectable '%s' is not derived from '%s'" % (use_selectable.description, prop.mapper.mapped_table.description))
+                if not isinstance(use_selectable, expression.Alias):
+                    use_selectable = use_selectable.alias()
+            elif prop.mapper.with_polymorphic:
+                mappers, use_selectable = prop.mapper._with_polymorphic_mappers()
+                if not isinstance(use_selectable, expression.Alias):
+                    use_selectable = use_selectable.alias()
+
+            if prop._is_self_referential() and not create_aliases and not use_selectable:
+                raise exceptions.InvalidRequestError("Self-referential query on '%s' property requires aliased=True argument." % str(prop))
+
+            if prop.table not in currenttables or create_aliases or use_selectable:
+                if prop.secondary:
+                    if use_selectable or create_aliases:
+                        alias = mapperutil.PropertyAliasedClauses(prop,
+                            prop.primary_join_against(mapper, adapt_against),
+                            prop.secondary_join_against(mapper, toselectable=use_selectable),
+                            alias,
+                            alias=use_selectable
+                        )
+                        crit = alias.primaryjoin
+                        clause = clause.join(alias.secondary, crit, isouter=outerjoin).join(alias.alias, alias.secondaryjoin, isouter=outerjoin)
+                    else:
+                        crit = prop.primary_join_against(mapper, adapt_against)
+                        clause = clause.join(prop.secondary, crit, isouter=outerjoin)
+                        clause = clause.join(prop.table, prop.secondary_join_against(mapper), isouter=outerjoin)
+                else:
+                    if use_selectable or create_aliases:
+                        alias = mapperutil.PropertyAliasedClauses(prop,
+                            prop.primary_join_against(mapper, adapt_against, toselectable=use_selectable),
+                            None,
+                            alias,
+                            alias=use_selectable
+                        )
+                        crit = alias.primaryjoin
+                        clause = clause.join(alias.alias, crit, isouter=outerjoin)
+                    else:
+                        crit = prop.primary_join_against(mapper, adapt_against)
+                        clause = clause.join(prop.table, crit, isouter=outerjoin)
+            elif not create_aliases and prop.secondary is not None and prop.secondary not in currenttables:
+                # TODO: this check is not strong enough for different paths to the same endpoint which
+                # does not use secondary tables
+                raise exceptions.InvalidRequestError("Can't join to property '%s'; a path to this table along a different secondary table already exists.  Use the `alias=True` argument to `join()`." % prop.key)
+
+            mapper = of_type or prop.mapper
+
+            if use_selectable:
+                adapt_against = use_selectable
+
+        return (clause, mapper, alias)
+
 
     def reset_joinpoint(self):
         """return a new Query reset the 'joinpoint' of this Query reset
@@ -1280,6 +1240,48 @@ class Query(object):
         return str(self.compile())
 
     # DEPRECATED LAND !
+
+    def _generative_col_aggregate(self, col, func):
+        """apply the given aggregate function to the query and return the newly
+        resulting ``Query``. (deprecated)
+        """
+        if self._column_aggregate is not None:
+            raise exceptions.InvalidRequestError("Query already contains an aggregate column or function")
+        q = self._no_statement("aggregate")
+        q._column_aggregate = (col, func)
+        return q
+
+    def apply_min(self, col):
+        """apply the SQL ``min()`` function against the given column to the
+        query and return the newly resulting ``Query``.
+        
+        DEPRECATED.
+        """
+        return self._generative_col_aggregate(col, sql.func.min)
+
+    def apply_max(self, col):
+        """apply the SQL ``max()`` function against the given column to the
+        query and return the newly resulting ``Query``.
+
+        DEPRECATED.
+        """
+        return self._generative_col_aggregate(col, sql.func.max)
+
+    def apply_sum(self, col):
+        """apply the SQL ``sum()`` function against the given column to the
+        query and return the newly resulting ``Query``.
+
+        DEPRECATED.
+        """
+        return self._generative_col_aggregate(col, sql.func.sum)
+
+    def apply_avg(self, col):
+        """apply the SQL ``avg()`` function against the given column to the
+        query and return the newly resulting ``Query``.
+
+        DEPRECATED.
+        """
+        return self._generative_col_aggregate(col, sql.func.avg)
 
     def list(self): #pragma: no cover
         """DEPRECATED.  use all()"""

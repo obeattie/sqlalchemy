@@ -103,7 +103,7 @@ def make_test(select_type):
 
             # testing a order_by here as well; the surrogate mapper has to adapt it
             mapper(Person, people, 
-                select_table=person_join, 
+                with_polymorphic=person_join and ('*', person_join) or None, 
                 polymorphic_on=people.c.type, polymorphic_identity='person', order_by=people.c.person_id, 
                 properties={
                     'paperwork':relation(Paperwork)
@@ -111,7 +111,8 @@ def make_test(select_type):
             mapper(Engineer, engineers, inherits=Person, polymorphic_identity='engineer', properties={
                     'machines':relation(Machine)
                 })
-            mapper(Manager, managers, select_table=manager_join, inherits=Person, polymorphic_identity='manager')
+            mapper(Manager, managers, with_polymorphic=manager_join and ('*', manager_join) or None, 
+                        inherits=Person, polymorphic_identity='manager')
             mapper(Boss, boss, inherits=Manager, polymorphic_identity='boss')
             mapper(Paperwork, paperwork)
         
@@ -170,7 +171,7 @@ def make_test(select_type):
             if select_type == '':
                 count = 14   # load 5 person rows; load one row for each of five people; load 8 lazy loaded collections
             else:
-                count = 10   # load 5 person rows; load one row for "boss" since we didn't include it in select_table; load 8 lazy loaded collections
+                count = 10   # load 5 person rows; load one row for "boss" since we didn't include it in with_polymorphic; load 8 lazy loaded collections
             self.assert_sql_count(testing.db, go, count)
             
             
