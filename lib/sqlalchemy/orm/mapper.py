@@ -36,9 +36,11 @@ NO_ATTRIBUTE = util.symbol('NO_ATTRIBUTE')
 # lock used to synchronize the "mapper compile" step
 _COMPILE_MUTEX = util.threading.Lock()
 
-# initialize these two lazily
+# initialize these lazily
 ColumnProperty = None
 SynonymProperty = None
+ComparableProperty = None
+
 
 class Mapper(object):
     """Define the correlation of class attributes to database table
@@ -85,7 +87,6 @@ class Mapper(object):
         if not issubclass(class_, object):
             raise exceptions.ArgumentError("Class '%s' is not a new-style class" % class_.__name__)
 
-            
         self.class_ = class_
         self.entity_name = entity_name
         self.primary_key_argument = primary_key
@@ -571,7 +572,7 @@ class Mapper(object):
     _equivalent_columns = property(_equivalent_columns)
 
     class _CompileOnAttr(PropComparator):
-        """placeholder class attribute which fires mapper compilation on access"""
+        """A placeholder descriptor which triggers compilation on access."""
 
         def __init__(self, class_, key):
             self.class_ = class_
@@ -691,20 +692,34 @@ class Mapper(object):
             # columns (included in zblog tests)
             if col is None:
                 col = prop.columns[0]
+            else:
+                # if column is coming in after _cols_by_table was initialized, ensure the col is in the 
+                # right set
+                if hasattr(self, '_cols_by_table') and col.table in self._cols_by_table and col not in self._cols_by_table[col.table]:
+                    self._cols_by_table[col.table].add(col)
 
             self.columns[key] = col
             for col in prop.columns:
                 for col in col.proxy_set:
                     self._columntoproperty[col] = prop
+            
+                
         elif isinstance(prop, SynonymProperty) and setparent:
-            if prop.instrument is None:
-                prop.instrument = getattr(self.class_, key, None)
-                if isinstance(prop.instrument, Mapper._CompileOnAttr):
-                    prop.instrument = object.__getattribute__(prop.instrument, 'existing_prop')
+            if prop.descriptor is None:
+                prop.descriptor = getattr(self.class_, key, None)
+                if isinstance(prop.descriptor, Mapper._CompileOnAttr):
+                    prop.descriptor = object.__getattribute__(prop.descriptor, 'existing_prop')
             if prop.map_column:
                 if not key in self.mapped_table.c:
                     raise exceptions.ArgumentError("Can't compile synonym '%s': no column on table '%s' named '%s'"  % (prop.name, self.mapped_table.description, key))
                 self._compile_property(prop.name, ColumnProperty(self.mapped_table.c[key]), init=init, setparent=setparent)
+        elif isinstance(prop, ComparableProperty) and setparent:
+            # refactor me
+            if prop.descriptor is None:
+                prop.descriptor = getattr(self.class_, key, None)
+                if isinstance(prop.descriptor, Mapper._CompileOnAttr):
+                    prop.descriptor = object.__getattribute__(prop.descriptor,
+                                                              'existing_prop')
         self.__props[key] = prop
 
         if setparent:

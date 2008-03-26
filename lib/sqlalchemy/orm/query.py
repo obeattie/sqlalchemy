@@ -490,7 +490,6 @@ class Query(object):
 
         return self.filter(sql.and_(*clauses))
 
-
     def _col_aggregate(self, col, func):
         """Execute ``func()`` function against the given column.
 
@@ -1181,7 +1180,6 @@ class Query(object):
             if adapter:
                 context.primary_columns = adapter.adapt_list(context.primary_columns)
                 context.row_adapter = mapperutil.create_row_adapter(adapter.alias, self.table, equivalent_columns=self.mapper._equivalent_columns)
-
                 order_by = adapter.adapt_list(order_by)
 
             if self._distinct:

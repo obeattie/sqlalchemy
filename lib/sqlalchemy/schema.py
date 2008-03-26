@@ -403,14 +403,16 @@ class Column(SchemaItem, expression._ColumnClause):
     ``TableClause``/``Table``.
     """
 
-    def __init__(self, name, type_, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         """Construct a new ``Column`` object.
 
         Arguments are:
 
         name
           The name of this column.  This should be the identical name as it
-          appears, or will appear, in the database.
+          appears, or will appear, in the database.  Name may be omitted at
+          construction time but must be assigned before adding a Column
+          instance to a Table.
 
         type\_
           The ``TypeEngine`` for this column.  This can be any subclass of
@@ -428,8 +430,10 @@ class Column(SchemaItem, expression._ColumnClause):
           Keyword arguments include:
 
           key
-            Defaults to None: an optional *alias name* for this column.  The
-            column will then be identified everywhere in an application,
+            Defaults to the column name: a Python-only *alias name* for this
+            column.
+
+            The column will then be identified everywhere in an application,
             including the column list on its Table, by this key, and not the
             given name.  Generated SQL, however, will still reference the
             column by its actual name.
@@ -495,6 +499,24 @@ class Column(SchemaItem, expression._ColumnClause):
             auto-detect conditions where quoting is required.
         """
 
+        name = kwargs.pop('name', None)
+        type_ = kwargs.pop('type_', None)
+        if args:
+            args = list(args)
+            if isinstance(args[0], basestring):
+                if name is not None:
+                    raise exceptions.ArgumentError(
+                        "May not pass name positionally and as a keyword.")
+                name = args.pop(0)
+        if args:
+            if (isinstance(args[0], types.AbstractType) or
+                (isinstance(args[0], type) and
+                 issubclass(args[0], types.AbstractType))):
+                if type_ is not None:
+                    raise exceptions.ArgumentError(
+                        "May not pass type_ positionally and as a keyword.")
+                type_ = args.pop(0)
+
         super(Column, self).__init__(name, None, type_)
         self.args = args
         self.key = kwargs.pop('key', name)
@@ -559,6 +581,12 @@ class Column(SchemaItem, expression._ColumnClause):
             ["%s=%s" % (k, repr(getattr(self, k))) for k in kwarg])
 
     def _set_parent(self, table):
+        if self.name is None:
+            raise exceptions.ArgumentError(
+                "Column must be constructed with a name or assign .name "
+                "before adding to a Table.")
+        if self.key is None:
+            self.key = self.name
         self.metadata = table.metadata
         if getattr(self, 'table', None) is not None:
             raise exceptions.ArgumentError("this Column already has a table!")
