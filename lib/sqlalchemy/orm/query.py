@@ -109,7 +109,7 @@ class Query(object):
             self._aliases_head = self._aliases_tail = None
 
     def _set_with_polymorphic(self, cls_or_mappers, selectable=None):
-        mappers, from_obj = self.mapper._with_polymorphic_mappers(cls_or_mappers, selectable)
+        mappers, from_obj = self.mapper._with_polymorphic_args(cls_or_mappers, selectable)
         self._with_polymorphic = mappers
         self._set_select_from(from_obj)
 
@@ -693,7 +693,7 @@ class Query(object):
                 if not isinstance(use_selectable, expression.Alias):
                     use_selectable = use_selectable.alias()
             elif prop.mapper.with_polymorphic:
-                mappers, use_selectable = prop.mapper._with_polymorphic_mappers()
+                use_selectable = prop.mapper._with_polymorphic_selectable()
                 if not isinstance(use_selectable, expression.Alias):
                     use_selectable = use_selectable.alias()
 

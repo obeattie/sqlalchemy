@@ -187,7 +187,7 @@ class PropertyAliasedClauses(AliasedClauses):
         self.parentclauses = parentclauses
 
         if not alias:
-            mappers, from_obj = self.mapper._with_polymorphic_mappers()
+            from_obj = self.mapper._with_polymorphic_selectable()
             alias = from_obj.alias()
 
         super(PropertyAliasedClauses, self).__init__(alias, equivalents=self.mapper._equivalent_columns, chain_to=parentclauses)

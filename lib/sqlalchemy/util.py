@@ -1018,7 +1018,36 @@ class symbol(object):
             return sym
         finally:
             symbol._lock.release()
+            
+def conditional_cache_decorator(func):
+    """apply conditional caching to the return value of a function."""
 
+    return cache_decorator(func, conditional=True)
+
+def cache_decorator(func, conditional=False):
+    """apply caching to the return value of a function."""
+
+    name = '_cached_' + func.__name__
+    
+    def do_with_cache(self, *args, **kwargs):
+        if conditional:
+            cache = kwargs.pop('cache', False)
+            if not cache:
+                return func(self, *args, **kwargs)
+        try:
+            return getattr(self, name)
+        except AttributeError:
+            value = func(self, *args, **kwargs)
+            setattr(self, name, value)
+            return value
+    return do_with_cache
+    
+def reset_cached(instance, name):
+    try:
+        delattr(instance, '_cached_' + name)
+    except AttributeError:
+        pass
+    
 def warn(msg):
     if isinstance(msg, basestring):
         warnings.warn(msg, exceptions.SAWarning, stacklevel=3)
