@@ -138,7 +138,9 @@ class _ScopedExt(MapperExtension):
                 return getattr(self.context.registry().query(class_), key)
             def __call__(s):
                 return self.context.registry().query(class_)
-
+            def __get__(self, instance, cls):
+                return self
+                
         if not 'query' in class_.__dict__: 
             class_.query = query()
 
