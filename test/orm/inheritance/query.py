@@ -173,6 +173,21 @@ def make_test(select_type):
             else:
                 count = 10   # load 5 person rows; load one row for "boss" since we didn't include it in with_polymorphic; load 8 lazy loaded collections
             self.assert_sql_count(testing.db, go, count)
+
+        def test_primary_eager_aliasing(self):
+            sess = create_session()
+            def go():
+                self.assertEquals(sess.query(Person).options(eagerload(Engineer.machines))[1:3].all(), all_employees[1:3])
+            if select_type == '':
+                count = 6  # the eagerload actualy fails here since "engineers" is not in the mix
+            else:
+                count = 4   
+            self.assert_sql_count(testing.db, go, count)
+
+            sess = create_session()
+            def go():
+                self.assertEquals(sess.query(Person).with_polymorphic('*').options(eagerload(Engineer.machines))[1:3].all(), all_employees[1:3])
+            self.assert_sql_count(testing.db, go, 3)
             
             
         def test_get(self):

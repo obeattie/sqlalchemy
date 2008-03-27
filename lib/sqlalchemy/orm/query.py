@@ -1092,16 +1092,15 @@ class Query(object):
                     cf.update(sql_util.find_columns(o))
 
             if adapter:
-                # TODO: make usage of the ClauseAdapter here to create the list
-                # of primary columns ?
-                context.primary_columns = [from_obj.corresponding_column(c) or c for c in context.primary_columns]
-                cf = [from_obj.corresponding_column(c) or c for c in cf]
+                context.primary_columns = adapter.adapt_list(context.primary_columns)
+                cf = adapter.adapt_list(cf)
+                order_by = adapter.adapt_list(order_by)
 
             s2 = sql.select(context.primary_columns + list(cf), context.whereclause, from_obj=context.from_clause, use_labels=True, correlate=False, order_by=util.to_list(order_by), **self._select_args)
 
             s3 = s2.alias()
 
-            context.row_adapter = mapperutil.create_row_adapter(s3)
+            context.row_adapter = mapperutil.create_row_adapter(s3, equivalent_columns=self.mapper._equivalent_columns)
 
             statement = sql.select([s3] + context.secondary_columns, for_update=for_update, use_labels=True)
 
