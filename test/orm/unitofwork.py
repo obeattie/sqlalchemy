@@ -68,12 +68,10 @@ class VersioningTest(ORMTest):
         mapper(Foo, version_table, version_id_col=version_table.c.version_id)
         f1 = Foo(value='f1', _sa_session=s)
         f2 = Foo(value='f2', _sa_session=s)
-        version_table.bind.echo = True
         s.commit()
 
         f1.value='f1rev2'
         s.commit()
-        version_table.bind.echo = False
 
         s2 = Session()
         f1_s = s2.query(Foo).get(f1.id)

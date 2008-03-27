@@ -1424,7 +1424,7 @@ class Mapper(object):
             state.entity_name = self.entity_name
             state.key = identitykey
             state.session_id = context.session.hash_key
-            session_identity_map[identitykey] = instance
+            session_identity_map.add(state)
 
         if currentload or context.populate_existing or self.always_refresh:
             if isnew:

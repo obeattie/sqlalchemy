@@ -678,21 +678,18 @@ class SessionTest(TestBase, AssertsExecutionResults):
         del user
         gc.collect()
         assert len(s.identity_map) == 0
-        assert len(s.identity_map.data) == 0
 
         user = s.query(User).one()
         user.user_name = 'fred'
         del user
         gc.collect()
         assert len(s.identity_map) == 1
-        assert len(s.identity_map.data) == 1
         assert len(s.dirty) == 1
 
         s.flush()
         gc.collect()
         assert not s.dirty
         assert not s.identity_map
-        assert not s.identity_map.data
 
         user = s.query(User).one()
         assert user.user_name == 'fred'

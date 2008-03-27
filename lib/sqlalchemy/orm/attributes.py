@@ -837,7 +837,7 @@ class InstanceState(object):
             self.XXX_reconstitution_notification(obj)
             return obj
         else:
-            del instance_dict[self.key]
+            instance_dict.remove(self)
             return None
 
     def __getstate__(self):

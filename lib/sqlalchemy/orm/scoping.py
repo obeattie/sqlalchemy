@@ -166,7 +166,7 @@ class _ScopedExt(MapperExtension):
 
         if self.save_on_init:
             session = session or self.context.registry()
-            session._save_impl(instance, entity_name=entity_name)
+            session._save_without_cascade(instance, entity_name=entity_name)
         return EXT_CONTINUE
 
     def init_failed(self, mapper, class_, oldinit, instance, args, kwargs):

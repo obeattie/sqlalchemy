@@ -104,22 +104,36 @@ class UnitOfWork(object):
         self.new = {}   # InstanceState->object, strong refs object
         self.deleted = {}  # same
         self.logger = logging.instance_logger(self, echoflag=session.echo_uow)
-
-    def _remove_deleted(self, state):
-        if state.key is not None:
-            del self.identity_map[state.key]
+    
+    def remove_persistent(self, state):
+        self.identity_map.remove(state)
         self.deleted.pop(state, None)
-        self.new.pop(state, None)
+    
+    def remove_pending(self, state):
+        self.new.pop(state)
+        
+    def add_persistent(self, state):
+        self.identity_map.add(state)
 
-    def _is_valid(self, state):
+    def add_pending(self, state):
+        if state.key is not None:
+            raise exceptions.InvalidRequestError(
+                "Object '%s' already has an identity - it can't be registered "
+                "as pending" % repr(obj))
+        if state not in self.new:
+            self.new[state] = state.obj()
+            state.insert_order = len(self.new)
+
+    def add_deleted(self, state):
+        self.deleted[state] = state.obj()
+        
+    def _contains_state(self, state):
         if state.key is not None:
             return state.key in self.identity_map
         else:
             return state in self.new
 
-    def _register_clean(self, state):
-        """register the given object as 'clean' (i.e. persistent) within this unit of work, after
-        a save operation has taken place."""
+    def _register_newly_persistent(self, state):
 
         mapper = _state_mapper(state)
         instance_key = mapper._identity_key_from_state(state)
@@ -128,7 +142,7 @@ class UnitOfWork(object):
             state.key = instance_key
         elif state.key != instance_key:
             # primary key switch
-            del self.identity_map[state.key]
+            self.identity_map.remove(state)
             state.key = instance_key
 
         if hasattr(state, 'insert_order'):
@@ -138,26 +152,11 @@ class UnitOfWork(object):
         # prevent against last minute dereferences of the object
         # TODO: identify a code path where state.obj() is None
         if obj is not None:
-            self.identity_map[state.key] = obj
+            self.identity_map.add(state)
             state.commit_all()
 
         # remove from new last, might be the last strong ref
         self.new.pop(state, None)
-
-    def register_new(self, obj):
-        """register the given object as 'new' (i.e. unsaved) within this unit of work."""
-        state = attributes.state_getter(obj)
-        if state.key is not None:
-            raise exceptions.InvalidRequestError(
-                "Object '%s' already has an identity - it can't be registered "
-                "as new" % repr(obj))
-        if state not in self.new:
-            self.new[state] = obj
-            state.insert_order = len(self.new)
-
-    def register_deleted(self, obj):
-        """register the given persistent object as 'to be deleted' within this unit of work."""
-        self.deleted[attributes.state_getter(obj)] = obj
 
     def locate_dirty(self):
         """Return a set of all persistent instances considered dirty.
@@ -328,7 +327,7 @@ class UOWTransaction(object):
 
     def register_object(self, state, isdelete = False, listonly = False, postupdate=False, post_update_cols=None, **kwargs):
         # if object is not in the overall session, do nothing
-        if not self.uow._is_valid(state):
+        if not self.uow._contains_state(state):
             if self._should_log_debug:
                 self.logger.debug("object %s not part of session, not registering for flush" % (mapperutil.state_str(state)))
             return
@@ -470,9 +469,9 @@ class UOWTransaction(object):
                 if elem.state is None:
                     continue
                 if elem.isdelete:
-                    self.uow._remove_deleted(elem.state)
+                    self.uow.remove_persistent(elem.state)
                 else:
-                    self.uow._register_clean(elem.state)
+                    self.uow._register_newly_persistent(elem.state)
 
     def _sort_dependencies(self):
         nodes = topological.sort_with_cycles(self.dependencies, 

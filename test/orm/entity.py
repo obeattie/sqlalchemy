@@ -70,7 +70,7 @@ class EntityTest(TestBase, AssertsExecutionResults):
         u2mapper =mapper(User, user2, entity_name='user2', properties={
             'addresses':relation(a2mapper)
         }, extension=ctx.mapper_extension)
-
+        
         u1 = User(_sa_entity_name='user1')
         u1.name = 'this is user 1'
         a1 = Address(_sa_entity_name='address1')

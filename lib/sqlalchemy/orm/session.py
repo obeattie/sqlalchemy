@@ -13,6 +13,7 @@ from sqlalchemy import util, exceptions, sql, engine
 from sqlalchemy.orm import unitofwork, query, attributes, util as mapperutil
 from sqlalchemy.orm.mapper import object_mapper as _object_mapper
 from sqlalchemy.orm.mapper import class_mapper as _class_mapper
+from sqlalchemy.orm.mapper import _state_mapper
 from sqlalchemy.orm.mapper import Mapper
 
 
@@ -645,8 +646,8 @@ class Session(object):
         this ``Session``.
         """
         
-        for instance in self:
-            self._unattach(instance)
+        for state in self.identity_map.all_states() + list(self.uow.new):
+            self._unattach(state)
         self.uow = unitofwork.UnitOfWork(self)
         self.identity_map = self.uow.identity_map
 
@@ -817,8 +818,6 @@ class Session(object):
         refreshed.
         """
 
-        self._validate_persistent(instance)
-
         state = attributes.state_getter(instance)
         if self.query(_object_mapper(instance))._get(
                 state.key, refresh_instance=state,
@@ -846,17 +845,13 @@ class Session(object):
         """
         state = attributes.state_getter(instance)
         if attribute_names:
-            self._validate_persistent(instance)
             _expire_state(state, attribute_names=attribute_names)
         else:
             # pre-fetch the full cascade since the expire is going to
             # remove associations
-            cascaded = list(_cascade_iterator('refresh-expire', instance))
-            self._validate_persistent(instance)
+            cascaded = list(_cascade_state_iterator('refresh-expire', state))
             _expire_state(state, None)
-            for (c, m) in cascaded:
-                self._validate_persistent(c)
-                state = attributes.state_getter(c)
+            for (state, m) in cascaded:
                 _expire_state(state, None)
 
     def prune(self):
@@ -879,12 +874,13 @@ class Session(object):
         Cascading will be applied according to the *expunge* cascade
         rule.
         """
-        self._validate_persistent(instance)
-        for c, m in [(instance, None)] + list(_cascade_iterator('expunge', instance)):
-            if c in self:
-                state = attributes.state_getter(c)
-                self.uow._remove_deleted(state)
-                self._unattach(c)
+        state = attributes.state_getter(instance)
+        for s, m in [(state, None)] + list(_cascade_state_iterator('expunge', state)):
+            if s in self.uow.new:
+                self.uow.remove_pending(s)
+            elif self.identity_map.contains_state(s):
+                self.uow.remove_persistent(s)
+            self._unattach(s)
 
     def save(self, instance, entity_name=None):
         """Add a transient (unsaved) instance to this ``Session``.
@@ -895,10 +891,18 @@ class Session(object):
 
         The `entity_name` keyword argument will further qualify the
         specific ``Mapper`` used to handle this instance.
+        
         """
-        self._save_impl(instance, entity_name=entity_name)
-        self._cascade_save_or_update(instance)
-
+        state = _state_for_unsaved_instance(instance, entity_name)
+        self._save_impl(state)
+        self._cascade_save_or_update(state, entity_name)
+    
+    def _save_without_cascade(self, instance, entity_name=None):
+        """used by scoping.py to save on init without cascade."""
+        
+        state = _state_for_unsaved_instance(instance, entity_name)
+        self._save_impl(state)
+        
     def update(self, instance, entity_name=None):
         """Bring the given detached (saved) instance into this
         ``Session``.
@@ -910,10 +914,11 @@ class Session(object):
         This operation cascades the `save_or_update` method to
         associated instances if the relation is mapped with
         ``cascade="save-update"``.
+        
         """
-
-        self._update_impl(instance, entity_name=entity_name)
-        self._cascade_save_or_update(instance)
+        state = attributes.state_getter(instance)
+        self._update_impl(state)
+        self._cascade_save_or_update(state, entity_name)
 
     def save_or_update(self, instance, entity_name=None):
         """Save or update the given instance into this ``Session``.
@@ -922,12 +927,13 @@ class Session(object):
         to ``save()`` or ``update()`` the instance.
 
         """
-        self._save_or_update_impl(instance, entity_name=entity_name)
-        self._cascade_save_or_update(instance)
+        state = _state_for_unknown_persistence_instance(instance, entity_name)
+        self._save_or_update_impl(state)
+        self._cascade_save_or_update(state, entity_name)
 
-    def _cascade_save_or_update(self, instance):
-        for obj, mapper in _cascade_iterator('save-update', instance, halt_on=lambda c:c in self):
-            self._save_or_update_impl(obj, mapper.entity_name)
+    def _cascade_save_or_update(self, state, entity_name):
+        for state, mapper in _cascade_unknown_state_iterator('save-update', state, halt_on=lambda c:c in self):
+            self._save_or_update_impl(state)
 
     def delete(self, instance):
         """Mark the given instance as deleted.
@@ -935,9 +941,10 @@ class Session(object):
         The delete operation occurs upon ``flush()``.
         """
 
-        self._delete_impl(instance)
-        for c, m in _cascade_iterator('delete', instance):
-            self._delete_impl(c, ignore_transient=True)
+        state = attributes.state_getter(instance)
+        self._delete_impl(state)
+        for state, m in _cascade_state_iterator('delete', state):
+            self._delete_impl(state, ignore_transient=True)
 
 
     def merge(self, instance, entity_name=None, dont_load=False, _recursive=None):
@@ -983,7 +990,7 @@ class Session(object):
                 merged_state = attributes.state_getter(merged)
                 merged_state.key = state.key
                 merged_state.entity_name = entity_name
-                self._update_impl(merged, entity_name=mapper.entity_name)
+                self._update_impl(merged_state)
                 new_instance = True
             else:
                 merged = self.get(mapper.class_, state.key[1])
@@ -1073,88 +1080,66 @@ class Session(object):
         return object_session(instance)
     object_session = classmethod(object_session)
 
-    def _save_impl(self, instance, **kwargs):
-        manager = attributes.manager_of_class(instance.__class__)
-        if manager is None:
-            raise "FIXME unmapped instance"
-        if manager.has_state(instance):
-            state = manager.state_of(instance)
-            if state.key is not None:
-                raise exceptions.InvalidRequestError(
-                    "Instance '%s' is already persistent" %
-                    mapperutil.instance_str(instance))
-        else:
-            state = manager.setup_instance(instance)
-        state.entity_name = kwargs.get('entity_name', None)
+            
+    def _save_impl(self, state):
+        self._attach(state)
+        self.uow.add_pending(state)
 
-        self._attach(instance)
-        self.uow.register_new(instance)
-
-    def _update_impl(self, instance, **kwargs):
-        if instance in self and instance not in self.deleted:
+    def _update_impl(self, state):
+        if self.identity_map.contains_state(state) and state not in self.uow.deleted:
             return
-        state = attributes.state_getter(instance)
+
         if state.key is None:
             raise exceptions.InvalidRequestError(
                 "Instance '%s' is not persisted" %
-                mapperutil.instance_str(instance))
-        if self.identity_map.get(state.key, instance) is not instance:
+                mapperutil.state_str(state))
+                
+        if state.key in self.identity_map and not self.identity_map.contains_state(state):
             raise exceptions.InvalidRequestError(
                 "Could not update instance '%s', identity key %s; a different "
                 "instance with the same identity key already exists in this "
-                "session." % (mapperutil.instance_str(instance), state.key))
-        self._attach(instance)
-
-    def _save_or_update_impl(self, instance, entity_name=None):
-        state = attributes.state_getter(instance)
+                "session." % (mapperutil.state_str(state), state.key))
+        self._attach(state)
+        self.uow.add_persistent(state)
+        
+    def _save_or_update_impl(self, state):
         if state.key is None:
-            self._save_impl(instance, entity_name=entity_name)
+            self._save_impl(state)
         else:
-            self._update_impl(instance, entity_name=entity_name)
+            self._update_impl(state)
 
-    def _delete_impl(self, instance, ignore_transient=False):
-        if instance in self and instance in self.deleted:
+    def _delete_impl(self, state, ignore_transient=False):
+        if self.identity_map.contains_state(state) and state in self.uow.deleted:
             return
-        state = attributes.state_getter(instance)
+            
         if state.key is None:
             if ignore_transient:
                 return
             else:
-                raise exceptions.InvalidRequestError("Instance '%s' is not persisted" % mapperutil.instance_str(instance))
-        if self.identity_map.get(state.key, instance) is not instance:
+                raise exceptions.InvalidRequestError("Instance '%s' is not persisted" % mapperutil.state_str(state))
+        if state.key in self.identity_map and not self.identity_map.contains_state(state):
             raise exceptions.InvalidRequestError(
                 "Instance '%s' is with key %s already persisted with a "
-                "different identity" % (mapperutil.instance_str(instance),
+                "different identity" % (mapperutil.state_str(state),
                                         state.key))
-        self._attach(instance)
-        self.uow.register_deleted(instance)
+        self._attach(state)
+        self.uow.add_deleted(state)
 
-    def _attach(self, instance):
-        state = attributes.state_getter(instance)
+    def _attach(self, state):
         old_id = state.session_id
         if old_id == self.hash_key:
             return
         if (old_id is not None and old_id in _sessions and
-            instance in _sessions[old_id]):
+            _sessions[old_id]._contains_state(state)):
             raise exceptions.InvalidRequestError(
                 "Object '%s' is already attached to session '%s' "
-                "(this is '%s')" % (mapperutil.instance_str(instance),
+                "(this is '%s')" % (mapperutil.state_str(state),
                                     old_id, id(self)))
-        if state.key is not None:
-            self.identity_map[state.key] = instance
         state.session_id = self.hash_key
 
-    def _unattach(self, instance):
-        state = attributes.state_getter(instance)
+    def _unattach(self, state):
         if state.session_id == self.hash_key:
             state.session_id = None
-
-    def _validate_persistent(self, instance):
-        """Validate that the given instance is persistent within this
-        ``Session``.
-        """
-
-        return instance in self
 
     def __contains__(self, instance):
         """Return True if the given instance is associated with this session.
@@ -1163,13 +1148,15 @@ class Session(object):
         result of True.
 
         """
-        state = attributes.state_getter(instance)
+        return self._contains_state(attributes.state_getter(instance))
+    
+    def _contains_state(self, state):
         if state in self.uow.new:
             return True
-        if self.identity_map.get(state.key) is instance:
+        if self.identity_map.contains_state(state):
             return True
         return False
-
+        
     def __iter__(self):
         """Return an iterator of all instances which are pending or persistent within this Session."""
 
@@ -1245,11 +1232,38 @@ register_attribute = unitofwork.register_attribute
 
 _sessions = weakref.WeakValueDictionary()
 
-def _cascade_iterator(cascade, instance, **kwargs):
-    mapper = _object_mapper(instance)
-    state = sqlalchemy.orm.attributes.state_getter(instance)
+def _cascade_state_iterator(cascade, state, **kwargs):
+    mapper = _state_mapper(state)
     for (o, m) in mapper.cascade_iterator(cascade, state, **kwargs):
-        yield o, m
+        yield attributes.state_getter(o), m
+
+def _cascade_unknown_state_iterator(cascade, state, **kwargs):
+    mapper = _state_mapper(state)
+    for (o, m) in mapper.cascade_iterator(cascade, state, **kwargs):
+        yield _state_for_unknown_persistence_instance(o, m.entity_name), m
+
+def _state_for_unsaved_instance(instance, entity_name):
+    manager = attributes.manager_of_class(instance.__class__)
+    if manager is None:
+        raise "FIXME unmapped instance"
+    if manager.has_state(instance):
+        state = manager.state_of(instance)
+        if state.key is not None:
+            raise exceptions.InvalidRequestError(
+                "Instance '%s' is already persistent" %
+                mapperutil.state_str(state))
+    else:
+        state = manager.setup_instance(instance)
+    state.entity_name = entity_name
+    return state
+
+def _state_for_unknown_persistence_instance(instance, entity_name):
+    try:
+        state = attributes.state_getter(instance)
+        state.entity_name = entity_name
+        return state
+    except AttributeError:
+        return self._state_for_unsaved_instance(instance, entity_name)
 
 def object_session(instance):
     """Return the ``Session`` to which the given instance is bound, or ``None`` if none."""
