@@ -609,5 +609,109 @@ class WeakIdentityMappingTest(TestBase):
         assert wim._weakrefs == {}
 
 
+class TestFormatArgspec(TestBase):
+    def assert_plus_equals(self, fn, wanted):
+        parsed = util.format_argspec_plus(fn)
+        self.assertEquals(parsed, wanted)
+
+    def assert_init_equals(self, fn, wanted):
+        parsed = util.format_argspec_init(fn)
+        self.assertEquals(parsed, wanted)
+
+    def test_specs(self):
+        eq = self.assert_plus_equals
+
+        eq(lambda: None,
+           {'args': '()', 'self_arg': None,
+            'apply_kw': '()', 'apply_pos': '()' })
+
+        eq(lambda self: None,
+           {'args': '(self)', 'self_arg': 'self',
+            'apply_kw': '(self)', 'apply_pos': '(self)' })
+
+        eq(lambda *a: None,
+           {'args': '(*a)', 'self_arg': None,
+            'apply_kw': '(*a)', 'apply_pos': '(*a)' })
+
+        eq(lambda **kw: None,
+           {'args': '(**kw)', 'self_arg': None,
+            'apply_kw': '(**kw)', 'apply_pos': '(**kw)' })
+
+        eq(lambda *a, **kw: None,
+           {'args': '(*a, **kw)', 'self_arg': None,
+            'apply_kw': '(*a, **kw)', 'apply_pos': '(*a, **kw)' })
+
+        eq(lambda a, *b: None,
+           {'args': '(a, *b)', 'self_arg': 'a',
+            'apply_kw': '(a, *b)', 'apply_pos': '(a, *b)' })
+
+        eq(lambda a, **b: None,
+           {'args': '(a, **b)', 'self_arg': 'a',
+            'apply_kw': '(a, **b)', 'apply_pos': '(a, **b)' })
+
+        eq(lambda a, *b, **c: None,
+           {'args': '(a, *b, **c)', 'self_arg': 'a',
+            'apply_kw': '(a, *b, **c)', 'apply_pos': '(a, *b, **c)' })
+
+        eq(lambda a, b=1, **c: None,
+           {'args': '(a, b=1, **c)', 'self_arg': 'a',
+            'apply_kw': '(a, b=b, **c)', 'apply_pos': '(a, b, **c)' })
+
+        eq(lambda a=1, b=2: None,
+           {'args': '(a=1, b=2)', 'self_arg': 'a',
+            'apply_kw': '(a=a, b=b)', 'apply_pos': '(a, b)' })
+
+    def test_init_spec(self):
+        eq = self.assert_init_equals
+
+        object_spec = {
+            'args': '(self)', 'self_arg': 'self',
+            'apply_pos': '(self)', 'apply_kw': '(self)'}
+        wrapper_spec = {
+            'args': '(self, *args, **kwargs)', 'self_arg': 'self',
+            'apply_pos': '(self, *args, **kwargs)',
+            'apply_kw': '(self, *args, **kwargs)'}
+        custom_spec = {
+            'args': '(slef, a=123)', 'self_arg': 'slef', # yes, slef
+            'apply_pos': '(slef, a)', 'apply_kw': '(slef, a=a)'}
+
+        class O(object): pass
+
+        eq(O.__init__, object_spec)
+
+        class O(object):
+            def __init__(self):
+                pass
+
+        eq(O.__init__, object_spec)
+
+        class O(object):
+            def __init__(slef, a=123):
+                pass
+
+        eq(O.__init__, custom_spec)
+
+        class O(list): pass
+
+        eq(O.__init__, wrapper_spec)
+
+        class O(list):
+            def __init__(self, *args, **kwargs):
+                pass
+
+        eq(O.__init__, wrapper_spec)
+
+        class O(list):
+            def __init__(self):
+                pass
+
+        eq(O.__init__, object_spec)
+
+        class O(list):
+            def __init__(slef, a=123):
+                pass
+
+        eq(O.__init__, custom_spec)
+
 if __name__ == "__main__":
     testenv.main()

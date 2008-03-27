@@ -1546,7 +1546,7 @@ def __init__%(args)s:
         class_manager.setup_instance(%(self_arg)s)
         %(extra_init)s
     try:
-        return original__init__%(unbound)s
+        return original__init__%(apply_kw)s
     except:
         %(on_exception)s
         raise
@@ -1557,7 +1557,7 @@ def __init__%(args)s:
     if not class_manager.has_state(%(self_arg)s):
         class_manager.setup_instance(%(self_arg)s)
         %(extra_init)s
-    return original__init__%(unbound)s
+    return original__init__%(apply_kw)s
 """
 
     func_vars = {'extra_init': '', 'on_exception': ''}
@@ -1568,29 +1568,10 @@ def __init__%(args)s:
 
     original__init__ = class_.__init__
     assert original__init__
-    # TODO: util'ize this, it's generally useful.
-    try:
-        spec = inspect.getargspec(original__init__)
-        args = inspect.formatargspec(*spec)
-        self_arg = spec[0][0]
-        unbound = inspect.formatargspec(spec[0], spec[1], spec[2],
-                                        spec[0][0-len(spec[3]):],
-                                        formatvalue=lambda x: '=' + x)
-        as_callback = '(class_, original__init__, %s' % unbound[1:]
-        del spec
-    except TypeError:
-        self_arg = 'self'
-        if original__init__ is object.__init__:
-            args = unbound = '(self)'
-            as_callback = '(class_, original__init__, self)'
-        else:
-            args = unbound = '(self, *args, **kwargs)'
-            as_callback = '(class_, original__init__, self, *args, **kwargs)'
-    func_vars['args'] = args
-    func_vars['self_arg'] = self_arg
-    func_vars['unbound'] = unbound
-    func_vars['as_callback'] = as_callback
 
+    func_vars.update(util.format_argspec_init(original__init__))
+    func_vars['as_callback'] = '(class_, original__init__, %s' % (
+      func_vars['apply_kw'][1:])
     func_text = (func_body % func_vars) % func_vars
 
     env = locals().copy()
