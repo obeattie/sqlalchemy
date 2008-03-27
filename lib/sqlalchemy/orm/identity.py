@@ -2,6 +2,7 @@ import weakref
 import threading
 
 from sqlalchemy.orm import attributes
+from sqlalchemy import exceptions
 
 class IdentityMap(dict):
     def __init__(self):
@@ -26,6 +27,10 @@ class IdentityMap(dict):
         if state.manager.has_mutable_scalars:
             self._mutable_attrs[state] = True
     
+    def _manage_removed_state(self, state):
+        if state in self._mutable_attrs:
+            del self._mutable_attrs[state]
+            
     def modified(self):
         """return True if any InstanceStates present have been marked as 'modified'."""
         
@@ -97,20 +102,22 @@ class WeakInstanceDict(IdentityMap):
         
     def add(self, state):
         if state.key in self:
-            self._mutex.acquire()
-            try:
-                if state.key in self:
-                    dict.__getitem__(self, state.key).instance_dict = None
-            finally:
-                self._mutex.release()
-        dict.__setitem__(self, state.key, state)
-        state.instance_dict = self._wr
-        self._manage_incoming_state(state)
-
+            if dict.__getitem__(self, state.key) is not state:
+                raise exceptions.AssertionError("A conflicting state is already present in the identity map for key %r" % state.key)
+        else:
+            dict.__setitem__(self, state.key, state)
+            state.instance_dict = self._wr
+            self._manage_incoming_state(state)
+    
+    def remove_key(self, key):
+        state = dict.__getitem__(self, key)
+        self.remove(state)
+        
     def remove(self, state):
         state.instance_dict = None
         dict.__delitem__(self, state.key)
-    
+        self._manage_removed_state(state)
+        
     def get(self, key, default=None):
         try:
             return self[key]
@@ -154,6 +161,11 @@ class StrongInstanceDict(IdentityMap):
     
     def remove(self, state):
         dict.__delitem__(self, state.key)
+        self._manage_removed_state(state)
+
+    def remove_key(self, key):
+        state = dict.__getitem__(self, key)
+        self.remove(state)
 
     def prune(self):
         """prune unreferenced, non-dirty states."""

@@ -144,14 +144,16 @@ class UnitOfWork(object):
             # primary key switch
             self.identity_map.remove(state)
             state.key = instance_key
-
+            
         if hasattr(state, 'insert_order'):
             delattr(state, 'insert_order')
-
+        
         obj = state.obj()
         # prevent against last minute dereferences of the object
         # TODO: identify a code path where state.obj() is None
         if obj is not None:
+            if state.key in self.identity_map and not self.identity_map.contains_state(state):
+                self.identity_map.remove_key(state.key)
             self.identity_map.add(state)
             state.commit_all()
 
