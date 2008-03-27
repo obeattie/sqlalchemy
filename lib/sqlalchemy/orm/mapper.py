@@ -151,7 +151,7 @@ class Mapper(object):
         # was sent to this mapper.
         self.__surrogate_mapper = None
 
-        self.__props_init = False
+        self.compiled = False
 
         self.__should_log_info = logging.is_info_enabled(self.logger)
         self.__should_log_debug = logging.is_debug_enabled(self.logger)
@@ -218,11 +218,9 @@ class Mapper(object):
         raise NotImplementedError("Public collection of MapperProperty objects is provided by the get_property() and iterate_properties accessors.")
     properties = property(properties)
 
-    compiled = property(lambda self:self.__props_init, doc="return True if this mapper is compiled")
-
     def dispose(self):
         # Disable any attribute-based compilation.
-        self.__props_init = True
+        self.compiled = True
 
         if hasattr(self.class_, 'c') and self.class_.c is self.c:
             del self.class_.c
@@ -237,17 +235,17 @@ class Mapper(object):
         """Compile this mapper into its final internal format.
         """
 
-        if self.__props_init:
+        if self.compiled:
             return self
         _COMPILE_MUTEX.acquire()
         try:
             # double-check inside mutex
-            if self.__props_init:
+            if self.compiled:
                 return self
 
             # initialize properties on all mappers
             for mapper in list(_mapper_registry):
-                if not mapper.__props_init:
+                if not mapper.compiled:
                     mapper.__initialize_properties()
 
             return self
@@ -270,7 +268,7 @@ class Mapper(object):
             if getattr(prop, 'key', None) is None:
                 prop.init(key, self)
         self.__log("_initialize_properties() complete")
-        self.__props_init = True
+        self.compiled = True
 
 
     def _compile_extensions(self):
@@ -864,7 +862,7 @@ class Mapper(object):
         """
 
         self._init_properties[key] = prop
-        self._compile_property(key, prop, init=self.__props_init)
+        self._compile_property(key, prop, init=self.compiled)
 
     def __str__(self):
         return "Mapper|" + self.class_.__name__ + "|" + (self.entity_name is not None and "/%s" % self.entity_name or "") + (self.local_table and self.local_table.description or str(self.local_table)) + (self.non_primary and "|non-primary" or "")
