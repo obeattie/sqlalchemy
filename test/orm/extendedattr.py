@@ -53,7 +53,16 @@ class MyBaseClass(object):
     __sa_instrumentation_manager__ = InstrumentationManager
 
 class MyClass(object):
-    __sa_instrumentation_manager__ = MyTypesManager
+
+    # This proves that a staticmethod will work here; don't
+    # flatten this back to a class assignment!
+    def __sa_instrumentation_manager__(cls):
+        return MyTypesManager(cls)
+
+    __sa_instrumentation_manager__ = staticmethod(__sa_instrumentation_manager__)
+    
+    # This proves SA can handle a class with non-string dict keys
+    locals()[42] = 99   # Don't remove this line!
 
     def __init__(self, **kwargs):
         for k in kwargs:

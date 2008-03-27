@@ -1178,7 +1178,7 @@ class _ClassInstrumentationAdapter(ClassManager):
 
     def __init__(self, class_, override):
         ClassManager.__init__(self, class_)
-        self._adapted = override()
+        self._adapted = override
 
     def instrument_attribute(self, key, inst, propagated=False):
         ClassManager.instrument_attribute(self, key, inst, propagated)
@@ -1357,8 +1357,10 @@ def register_class(class_, extra_init=None, on_exception=None, deferred_scalar_l
     # do a sweep first, this also helps some attribute extensions
     # (like associationproxy) become aware of themselves at the
     # class level
-    for key in dir(class_):
-        getattr(class_, key, None)
+    for base in class_.__mro__:
+        for descr in base.__dict__.values():
+            if hasattr(descr, '__get__'):
+                descr.__get__(None, class_)
 
     manager = manager_of_class(class_)
     if manager is None:
@@ -1451,12 +1453,9 @@ class InstrumentationRegistry(object):
         if override is None:
             manager = ClassManager(class_)
         else:
-            if issubclass(override, ClassManager):
-                manager = override(class_)
-            elif isinstance(override, type):
-                manager = _ClassInstrumentationAdapter(class_, override)
-            else:
-                manager = override
+            manager = override(class_)
+            if not isinstance(manager, ClassManager):
+                manager = _ClassInstrumentationAdapter(class_, manager)
             if not self.extended:
                 self.extended = True
                 _install_lookup_strategy(self)

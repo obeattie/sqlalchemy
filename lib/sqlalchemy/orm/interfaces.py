@@ -728,6 +728,9 @@ class LoaderStrategy(object):
 class InstrumentationManager(object):
     """User-defined class instrumentation extension."""
 
+    def __init__(self, class_):
+        pass
+
     def instrument_attribute(self, class_, key, inst):
         pass
 
