@@ -37,11 +37,11 @@ class ClauseVisitor(object):
     traverse_chained = traverse_single
         
     def iterate(self, obj):
-        """traverse the given expression structure, and return an iterator of all elements."""
+        """traverse the given expression structure, returning an iterator of all elements."""
         
         stack = [obj]
         traversal = []
-        while len(stack) > 0:
+        while stack:
             t = stack.pop()
             yield t
             traversal.insert(0, t)
@@ -119,11 +119,8 @@ class ClauseVisitor(object):
         def clone(element):
             return self._clone_element(element, stop_on, cloned)
         elem._copy_internals(clone=clone)
-
-        for v in self._iterate_visitors:
-            meth = getattr(v, "visit_%s" % elem.__visit_name__, None)
-            if meth:
-                meth(elem)
+        
+        self.traverse_single(elem)
 
         for e in elem.get_children(**self.__traverse_options__):
             if e not in stop_on:
@@ -133,18 +130,8 @@ class ClauseVisitor(object):
     def _non_cloned_traversal(self, obj):
         """a non-recursive, non-cloning traversal."""
         
-        stack = [obj]
-        traversal = []
-        while len(stack) > 0:
-            t = stack.pop()
-            traversal.insert(0, t)
-            for c in t.get_children(**self.__traverse_options__):
-                stack.append(c)
-        for target in traversal:
-            for v in self._iterate_visitors:
-                meth = getattr(v, "visit_%s" % target.__visit_name__, None)
-                if meth:
-                    meth(target)
+        for target in self.iterate(obj):
+            self.traverse_single(target)
         return obj
 
     def _iterate_visitors(self):

@@ -47,11 +47,11 @@ class RelationTest1(ORMTest):
             'manager':relation(Manager, primaryjoin=people.c.manager_id==managers.c.person_id, uselist=False)
         })
         mapper(Manager, managers, inherits=Person, inherit_condition=people.c.person_id==managers.c.person_id)
-        try:
-            compile_mappers()
-        except exceptions.ArgumentError, ar:
-            assert str(ar) == "Can't determine relation direction for relationship 'Person.manager (Manager)' - foreign key columns are present in both the parent and the child's mapped tables.  Specify 'foreign_keys' argument.", str(ar)
 
+        self.assertRaisesMessage(exceptions.ArgumentError, 
+            r"Can't determine relation direction for relationship 'Person\.manager \(Manager\)' - foreign key columns are present in both the parent and the child's mapped tables\.  Specify 'foreign_keys' argument\.",
+            compile_mappers
+        )
         clear_mappers()
 
         mapper(Person, people, properties={

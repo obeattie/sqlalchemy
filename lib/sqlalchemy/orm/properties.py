@@ -469,8 +469,8 @@ class PropertyLoader(StrategizedProperty):
     def _get_target_class(self):
         """Return the target class of the relation, even if the
         property has not been initialized yet.
-        """
 
+        """
         if isinstance(self.argument, type):
             return self.argument
         else:
@@ -503,10 +503,6 @@ class PropertyLoader(StrategizedProperty):
                          "the same relation on inherited mapper '%s'; this "
                          "can cause dependency issues during flush") %
                         (self.key, self.parent, inheriting))
-
-        if self.association is not None:
-            if isinstance(self.association, type):
-                self.association = mapper.class_mapper(self.association, entity_name=self.entity_name, compile=False)
 
         self.target = self.mapper.mapped_table
         self.table = self.mapper.mapped_table
@@ -557,8 +553,9 @@ class PropertyLoader(StrategizedProperty):
         if self._legacy_foreignkey and not self._refers_to_parent_table():
             self.foreign_keys = self._legacy_foreignkey
 
+        self._opposite_side = util.Set()
+
         if self.foreign_keys:
-            self._opposite_side = util.Set()
             def visit_binary(binary):
                 if binary.operator != operators.eq or not isinstance(binary.left, schema.Column) or not isinstance(binary.right, schema.Column):
                     return
@@ -566,12 +563,8 @@ class PropertyLoader(StrategizedProperty):
                     self._opposite_side.add(binary.right)
                 if binary.right in self.foreign_keys:
                     self._opposite_side.add(binary.left)
-            visitors.traverse(self.primaryjoin, visit_binary=visit_binary)
-            if self.secondaryjoin is not None:
-                visitors.traverse(self.secondaryjoin, visit_binary=visit_binary)
         else:
             self.foreign_keys = util.Set()
-            self._opposite_side = util.Set()
             def visit_binary(binary):
                 if binary.operator != operators.eq or not isinstance(binary.left, schema.Column) or not isinstance(binary.right, schema.Column):
                     return
@@ -590,16 +583,18 @@ class PropertyLoader(StrategizedProperty):
                     if f.references(binary.left.table):
                         self.foreign_keys.add(binary.right)
                         self._opposite_side.add(binary.left)
-            visitors.traverse(self.primaryjoin, visit_binary=visit_binary)
 
-            if len(self.foreign_keys) == 0:
-                raise exceptions.ArgumentError(
-                    "Can't locate any foreign key columns in primary join "
-                    "condition '%s' for relationship '%s'.  Specify "
-                    "'foreign_keys' argument to indicate which columns in "
-                    "the join condition are foreign." %(str(self.primaryjoin), str(self)))
-            if self.secondaryjoin is not None:
-                visitors.traverse(self.secondaryjoin, visit_binary=visit_binary)
+        visitors.traverse(self.primaryjoin, visit_binary=visit_binary)
+
+        if not self.foreign_keys:
+            raise exceptions.ArgumentError(
+                "Can't locate any foreign key columns in primary join "
+                "condition '%s' for relationship '%s'.  Specify "
+                "'foreign_keys' argument to indicate which columns in "
+                "the join condition are foreign." %(str(self.primaryjoin), str(self)))
+
+        if self.secondaryjoin is not None:
+            visitors.traverse(self.secondaryjoin, visit_binary=visit_binary)
 
 
     def _determine_direction(self):
@@ -631,8 +626,8 @@ class PropertyLoader(StrategizedProperty):
                 self.direction = sync.ONETOMANY
         else:
             for mappedtable, parenttable in [(self.mapper.mapped_table, self.parent.mapped_table), (self.mapper.local_table, self.parent.local_table)]:
-                onetomany = len([c for c in self.foreign_keys if mappedtable.c.contains_column(c)])
-                manytoone = len([c for c in self.foreign_keys if parenttable.c.contains_column(c)])
+                onetomany = [c for c in self.foreign_keys if mappedtable.c.contains_column(c)]
+                manytoone = [c for c in self.foreign_keys if parenttable.c.contains_column(c)]
 
                 if not onetomany and not manytoone:
                     raise exceptions.ArgumentError(
