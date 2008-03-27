@@ -610,24 +610,31 @@ class WeakIdentityMappingTest(TestBase):
 
 
 class TestFormatArgspec(TestBase):
-    def assert_plus_equals(self, fn, wanted):
-        parsed = util.format_argspec_plus(fn)
-        self.assertEquals(parsed, wanted)
-
-    def assert_init_equals(self, fn, wanted):
-        parsed = util.format_argspec_init(fn)
-        self.assertEquals(parsed, wanted)
-
     def test_specs(self):
-        eq = self.assert_plus_equals
+        def eq(fn, wanted, grouped=None):
+            if grouped is None:
+                parsed = util.format_argspec_plus(fn)
+            else:
+                parsed = util.format_argspec_plus(fn, grouped=grouped)
+            self.assertEquals(parsed, wanted)
 
         eq(lambda: None,
            {'args': '()', 'self_arg': None,
             'apply_kw': '()', 'apply_pos': '()' })
 
+        eq(lambda: None,
+           {'args': '', 'self_arg': None,
+            'apply_kw': '', 'apply_pos': '' },
+           grouped=False)
+
         eq(lambda self: None,
            {'args': '(self)', 'self_arg': 'self',
             'apply_kw': '(self)', 'apply_pos': '(self)' })
+
+        eq(lambda self: None,
+           {'args': 'self', 'self_arg': 'self',
+            'apply_kw': 'self', 'apply_pos': 'self' },
+           grouped=False)
 
         eq(lambda *a: None,
            {'args': '(*a)', 'self_arg': None,
@@ -661,9 +668,12 @@ class TestFormatArgspec(TestBase):
            {'args': '(a=1, b=2)', 'self_arg': 'a',
             'apply_kw': '(a=a, b=b)', 'apply_pos': '(a, b)' })
 
-    def test_init_spec(self):
-        eq = self.assert_init_equals
+        eq(lambda a=1, b=2: None,
+           {'args': 'a=1, b=2', 'self_arg': 'a',
+            'apply_kw': 'a=a, b=b', 'apply_pos': 'a, b' },
+           grouped=False)
 
+    def test_init_grouped(self):
         object_spec = {
             'args': '(self)', 'self_arg': 'self',
             'apply_pos': '(self)', 'apply_kw': '(self)'}
@@ -674,6 +684,31 @@ class TestFormatArgspec(TestBase):
         custom_spec = {
             'args': '(slef, a=123)', 'self_arg': 'slef', # yes, slef
             'apply_pos': '(slef, a)', 'apply_kw': '(slef, a=a)'}
+
+        self._test_init(None, object_spec, wrapper_spec, custom_spec)
+        self._test_init(True, object_spec, wrapper_spec, custom_spec)
+
+    def test_init_bare(self):
+        object_spec = {
+            'args': 'self', 'self_arg': 'self',
+            'apply_pos': 'self', 'apply_kw': 'self'}
+        wrapper_spec = {
+            'args': 'self, *args, **kwargs', 'self_arg': 'self',
+            'apply_pos': 'self, *args, **kwargs',
+            'apply_kw': 'self, *args, **kwargs'}
+        custom_spec = {
+            'args': 'slef, a=123', 'self_arg': 'slef', # yes, slef
+            'apply_pos': 'slef, a', 'apply_kw': 'slef, a=a'}
+
+        self._test_init(False, object_spec, wrapper_spec, custom_spec)
+
+    def _test_init(self, grouped, object_spec, wrapper_spec, custom_spec):
+        def eq(fn, wanted):
+            if grouped is None:
+                parsed = util.format_argspec_init(fn)
+            else:
+                parsed = util.format_argspec_init(fn, grouped=grouped)
+            self.assertEquals(parsed, wanted)
 
         class O(object): pass
 

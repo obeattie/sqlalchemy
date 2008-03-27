@@ -252,11 +252,17 @@ def get_func_kwargs(func):
     """Return the full set of legal kwargs for the given `func`."""
     return inspect.getargspec(func)[0]
 
-def format_argspec_plus(fn):
+def format_argspec_plus(fn, grouped=True):
     """Returns a dictionary of formatted, introspected function arguments.
 
     A enhanced variant of inspect.formatargspec to support code generation.
-    Returns::
+
+    fn
+       An inspectable callable
+    grouped
+      Defaults to True; include (parens, around, argument) lists
+
+    Returns:
 
     args
       Full inspect.formatargspec for fn
@@ -284,10 +290,14 @@ def format_argspec_plus(fn):
     defaulted_vals = spec[3] is not None and spec[0][0-len(spec[3]):] or ()
     apply_kw = inspect.formatargspec(spec[0], spec[1], spec[2], defaulted_vals,
                                      formatvalue=lambda x: '=' + x)
-    return dict(args=args, self_arg=self_arg, apply_pos=apply_pos,
-                apply_kw=apply_kw)
+    if grouped:
+        return dict(args=args, self_arg=self_arg,
+                    apply_pos=apply_pos, apply_kw=apply_kw)
+    else:
+        return dict(args=args[1:-1], self_arg=self_arg,
+                    apply_pos=apply_pos[1:-1], apply_kw=apply_kw[1:-1])
 
-def format_argspec_init(method):
+def format_argspec_init(method, grouped=True):
     """format_argspec_plus with considerations for typical __init__ methods
 
     Wraps format_argspec_plus with error handling strategies for typical
@@ -298,13 +308,14 @@ def format_argspec_init(method):
 
     """
     try:
-        return format_argspec_plus(method)
+        return format_argspec_plus(method, grouped=grouped)
     except TypeError:
         self_arg = 'self'
         if method is object.__init__:
-            args = '(self)'
+            args = grouped and '(self)' or 'self'
         else:
-            args = '(self, *args, **kwargs)'
+            args = (grouped and '(self, *args, **kwargs)'
+                            or 'self, *args, **kwargs')
         return dict(self_arg='self', args=args, apply_pos=args, apply_kw=args)
 
 
