@@ -1080,7 +1080,6 @@ class Session(object):
         return object_session(instance)
     object_session = classmethod(object_session)
 
-            
     def _save_impl(self, state):
         self._attach(state)
         self.uow.add_pending(state)
@@ -1151,11 +1150,7 @@ class Session(object):
         return self._contains_state(attributes.state_getter(instance))
     
     def _contains_state(self, state):
-        if state in self.uow.new:
-            return True
-        if self.identity_map.contains_state(state):
-            return True
-        return False
+        return state in self.uow.new or self.identity_map.contains_state(state)
         
     def __iter__(self):
         """Return an iterator of all instances which are pending or persistent within this Session."""
