@@ -1,16 +1,48 @@
-import UserDict
 import weakref
 import threading
 
 from sqlalchemy.orm import attributes
 
 class IdentityMap(dict):
+    def __init__(self):
+        self._mutable_attrs = weakref.WeakKeyDictionary()
+        self._modified = False
+        
     def add(self, state):
         raise NotImplementedError()
     
     def remove(self, state):
         raise NotImplementedError()
-
+    
+    def update(self, dict):
+        raise NotImplementedError("IdentityMap uses add() to insert data")
+    
+    def clear(self):
+        raise NotImplementedError("IdentityMap uses remove() to remove data")
+        
+    def _manage_incoming_state(self, state):
+        if state.modified:
+            self._modified = True
+        if state.manager.has_mutable_scalars:
+            self._mutable_attrs[state] = True
+    
+    def modified(self):
+        """return True if any InstanceStates present have been marked as 'modified'."""
+        
+        if not self._modified:
+            for state in self._mutable_attrs:
+                if state.modified:
+                    return True
+            else:
+                return False
+        else:
+            return True
+            
+    def _set_modified(self, value):
+        self._modified = value
+    
+    modified = property(modified, _set_modified)
+    
     def has_key(self, key):
         return key in self
         
@@ -34,7 +66,8 @@ class IdentityMap(dict):
         
 class WeakInstanceDict(IdentityMap):
 
-    def __init__(self, *args, **kw):
+    def __init__(self):
+        IdentityMap.__init__(self)
         self._wr = weakref.ref(self)
         # RLock because the mutex is used by a cleanup
         # handler, which can be called at any time (including within an already mutexed block)
@@ -72,6 +105,7 @@ class WeakInstanceDict(IdentityMap):
                 self._mutex.release()
         dict.__setitem__(self, state.key, state)
         state.instance_dict = self._wr
+        self._manage_incoming_state(state)
 
     def remove(self, state):
         state.instance_dict = None
@@ -103,7 +137,10 @@ class WeakInstanceDict(IdentityMap):
 
     def all_states(self):
         return dict.values(self)
-
+    
+    def prune(self):
+        return 0
+        
 class StrongInstanceDict(IdentityMap):
     def all_states(self):
         return [attributes.state_getter(o) for o in self.values()]
@@ -113,8 +150,20 @@ class StrongInstanceDict(IdentityMap):
     
     def add(self, state):
         dict.__setitem__(self, state.key, state.obj())
+        self._manage_incoming_state(state)
     
     def remove(self, state):
         dict.__delitem__(self, state.key)
+
+    def prune(self):
+        """prune unreferenced, non-dirty states."""
+        
+        ref_count = len(self)
+        dirty = [s.obj() for s in self.all_states() if s.modified]
+        keepers = weakref.WeakValueDictionary(self)
+        dict.clear(self)
+        dict.update(self, keepers)
+        self._modified = bool(dirty)
+        return ref_count - len(self)
         
         

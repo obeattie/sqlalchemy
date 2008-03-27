@@ -865,7 +865,7 @@ class Session(object):
         Returns the number of objects pruned.
         """
 
-        return self.uow.prune_identity_map()
+        return self.uow.identity_map.prune()
 
     def expunge(self, instance):
         """Remove the given `instance` from this ``Session``.

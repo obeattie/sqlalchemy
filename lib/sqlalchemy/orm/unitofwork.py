@@ -165,12 +165,9 @@ class UnitOfWork(object):
         deleted.
 
         """
-        dirty = util.IdentitySet()
-        for state in self.locate_dirty_states():
-            if state in self.deleted:
-                continue
-            dirty.add(state.obj())
-        return dirty
+        return util.IdentitySet(
+            [state.obj() for state in self.locate_dirty_states() if state not in self.deleted]
+        )
 
     def locate_dirty_states(self):
         """Return a set of all persistent states considered dirty.
@@ -179,22 +176,20 @@ class UnitOfWork(object):
         were possibly deleted.
 
         """
-        dirty = util.IdentitySet()
-        for state in self.identity_map.all_states():
-            if (state.manager.has_mutable_scalars and
-                not state.is_modified()):
-                continue
-            if not state.modified:
-                continue
-            dirty.add(state)
-        return dirty
+        return util.IdentitySet(
+            [state for state in self.identity_map.all_states() if state.modified]
+        )
 
     def flush(self, session, objects=None):
         """Create a dependency tree of all pending SQL operations within this
         unit of work and execute.
+
         """
+        if not self.identity_map.modified and not self.deleted and not self.new:
+            return
         dirty = self.locate_dirty_states()
         if not dirty and not self.deleted and not self.new:
+            self.identity_map.modified = False
             return
 
         deleted = util.Set(self.deleted)
@@ -246,30 +241,12 @@ class UnitOfWork(object):
             raise
 
         flush_context.post_exec()
-
+        
+        if not objects:
+            self.identity_map.modified = False
+            
         if session.extension is not None:
             session.extension.after_flush_postexec(session, flush_context)
-
-    def prune_identity_map(self):
-        """Removes unreferenced instances cached in a strong-referencing identity map.
-
-        Note that this method is only meaningful if "weak_identity_map"
-        on the parent Session is set to False and therefore this UnitOfWork's
-        identity map is a regular dictionary
-        
-        Removes any object in the identity map that is not referenced
-        in user code or scheduled for a unit of work operation.  Returns
-        the number of objects pruned.
-        """
-
-        if isinstance(self.identity_map, identity.WeakInstanceDict):
-            return 0
-        ref_count = len(self.identity_map)
-        dirty = self.locate_dirty()
-        keepers = weakref.WeakValueDictionary(self.identity_map)
-        self.identity_map.clear()
-        self.identity_map.update(keepers)
-        return ref_count - len(self.identity_map)
 
 class UOWTransaction(object):
     """Handles the details of organizing and executing transaction

@@ -394,7 +394,7 @@ class AttributesTest(TestBase):
         x.element = ['one', 'two', 'three']
         attributes.state_getter(x).commit_all()
         x.element[1] = 'five'
-        assert attributes.state_getter(x).is_modified()
+        assert attributes.state_getter(x).modified
 
         attributes.unregister_class(Foo)
 
@@ -404,7 +404,7 @@ class AttributesTest(TestBase):
         x.element = ['one', 'two', 'three']
         attributes.state_getter(x).commit_all()
         x.element[1] = 'five'
-        assert not attributes.state_getter(x).is_modified()
+        assert not attributes.state_getter(x).modified
 
     def test_descriptorattributes(self):
         """changeset: 1633 broke ability to use ORM to map classes with unusual

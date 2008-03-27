@@ -358,11 +358,7 @@ class MutableScalarAttributeImpl(ScalarAttributeImpl):
 
     def check_mutable_modified(self, state):
         (added, unchanged, deleted) = self.get_history(state, passive=True)
-        if added or deleted:
-            state.modified = True
-            return True
-        else:
-            return False
+        return bool(added or deleted)
 
     def set(self, state, value, initiator):
         if initiator is self:
@@ -732,7 +728,7 @@ class InstanceState(object):
         self.obj = weakref.ref(obj, self.__cleanup)
         self.dict = obj.__dict__
         self.committed_state = {}
-        self.modified = False
+        self._modified = False
         self.callables = {}
         self.parents = {}
         self.pending = {}
@@ -742,7 +738,29 @@ class InstanceState(object):
         self.runid = None
         self.key = self.session_id = None
         self.entity_name = NO_ENTITY_NAME
+    
+    def modified(self):
+        if self._modified:
+            return True
+        elif self.manager.has_mutable_scalars:
+            for attr in self.manager.attributes:
+                if (hasattr(attr.impl, 'check_mutable_modified') and
+                    attr.impl.check_mutable_modified(self)):
+                    return True
+            else:
+                return False
+        else:
+            return False
 
+    def _set_modified(self, value):
+        self._modified = value
+        if value and self.instance_dict:
+            idict = self.instance_dict()
+            if idict is not None:
+                idict.modified = True
+                
+    modified = property(modified, _set_modified)
+    
     def __cleanup(self, ref):
         # tiptoe around Python GC unpredictableness
         instance_dict = self.instance_dict
@@ -808,24 +826,11 @@ class InstanceState(object):
         else:
             return [x]
 
-    def is_modified(self):
-        if self.modified:
-            return True
-        elif self.manager.has_mutable_scalars:
-            for attr in self.manager.attributes:
-                if (hasattr(attr.impl, 'check_mutable_modified') and
-                    attr.impl.check_mutable_modified(self)):
-                    return True
-            else:
-                return False
-        else:
-            return False
-
     def XXX_reconstitution_notification(self, instance=None):
         pass
 
     def __resurrect(self, instance_dict):
-        if self.is_modified():
+        if self.modified:
             # store strong ref'ed version of the object; will revert
             # to weakref when changes are persisted
             obj = self.manager.new_instance(state=self)
@@ -847,7 +852,7 @@ class InstanceState(object):
                 'committed_state': self.committed_state,
                 'pending': self.pending,
                 'parents': self.parents,
-                'modified': self.modified,
+                'modified': self._modified,
                 'instance': self.obj(),
                 'expired_attributes':
                     getattr(self, 'expired_attributes', None),
@@ -860,7 +865,7 @@ class InstanceState(object):
         self.session_id = state['session_id']
         self.entity_name = state['entity_name']
         self.pending = state['pending']
-        self.modified = state['modified']
+        self._modified = state['modified']
         self.obj = weakref.ref(state['instance'])
         self.class_ = self.obj().__class__
         self.manager = manager_of_class(self.class_)
@@ -869,6 +874,7 @@ class InstanceState(object):
         self.savepoints = []
         self.runid = None
         self.appenders = {}
+        self.instance_dict = None
         if state['expired_attributes'] is not None:
             self.expire_attributes(state['expired_attributes'])
 
@@ -883,6 +889,7 @@ class InstanceState(object):
         """__call__ allows the InstanceState to act as a deferred
         callable for loading expired attributes, which is also
         serializable.
+        
         """
         instance = self.obj()
 
@@ -905,9 +912,9 @@ class InstanceState(object):
         return util.Set([
             attr.impl.key for attr in self.manager.attributes if
             attr.impl.key not in self.committed_state
-            and (not hasattr(attr.impl, 'commit_to_state') or
+            and (not hasattr(attr.impl, 'check_mutable_modified') or
                  not attr.impl.check_mutable_modified(self))
-        ])
+        ])  # TODO: test coverage for 'unmodified' + mutable attributes present
     unmodified = property(unmodified)
 
     def expire_attributes(self, attribute_names):
@@ -1019,7 +1026,7 @@ class InstanceState(object):
         committed_state.clear()
         pending.clear()
 
-        self.modified = False
+        self._modified = False
         self.appenders = {}
 
         if self.manager.has_mutable_scalars:
