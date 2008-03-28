@@ -117,9 +117,21 @@ class Mapper(object):
 
         self.select_table = select_table
         if select_table:
+            if with_polymorphic:
+                raise exceptions.ArgumentError("select_table can't be used with with_polymorphic (they define conflicting settings)")
             self.with_polymorphic = ('*', select_table)
         else:
-            self.with_polymorphic = with_polymorphic
+            if with_polymorphic == '*':
+                self.with_polymorphic = ('*', None)
+            elif isinstance(with_polymorphic, (tuple, list)):
+                if isinstance(with_polymorphic[0], (basestring, tuple, list)):
+                    self.with_polymorphic = with_polymorphic
+                else:
+                    self.with_polymorphic = (with_polymorphic, None)
+            elif with_polymorphic is not None:
+                raise exceptions.ArgumentError("Invalid setting for with_polymorphic")
+            else:
+                self.with_polymorphic = None
 
         check_tables = [self.local_table]
         if self.with_polymorphic:
@@ -177,10 +189,13 @@ class Mapper(object):
             self.logger.debug("(" + self.class_.__name__ + "|" + (self.entity_name is not None and "/%s" % self.entity_name or "") + (self.local_table and self.local_table.description or str(self.local_table)) + (not self.non_primary and "|non-primary" or "") + ") " + msg)
 
     def _is_orphan(self, obj):
-        for (key,klass) in self.delete_orphans:
-            if attributes.has_parent(klass, obj, key, optimistic=has_identity(obj)):
-                return False
-        return bool(self.delete_orphans)
+        o = False
+        for mapper in self.iterate_to_root():
+            for (key,klass) in mapper.delete_orphans:
+                if attributes.has_parent(klass, obj, key, optimistic=has_identity(obj)):
+                    return False
+            o = o or bool(mapper.delete_orphans)
+        return o
 
     def get_property(self, key, resolve_synonyms=False, raiseerr=True):
         """return a MapperProperty associated with the given key."""

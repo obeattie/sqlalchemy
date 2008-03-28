@@ -85,6 +85,12 @@ def make_test(select_type):
 
             if select_type == '':
                 person_join = manager_join = None
+                person_with_polymorphic = None
+                manager_with_polymorphic = None
+            elif select_type == 'Polymorphic':
+                person_join = manager_join = None
+                person_with_polymorphic = '*'
+                manager_with_polymorphic = '*'
             elif select_type == 'Unions':
                 person_join = polymorphic_union(
                     {
@@ -93,17 +99,23 @@ def make_test(select_type):
                     }, None, 'pjoin')
 
                 manager_join = people.join(managers).outerjoin(boss)
+                person_with_polymorphic = ([Person, Manager, Engineer], person_join)
+                manager_with_polymorphic = ('*', manager_join)
             elif select_type == 'AliasedJoins':
                 person_join = people.outerjoin(engineers).outerjoin(managers).select(use_labels=True).alias('pjoin')
                 manager_join = people.join(managers).outerjoin(boss).select(use_labels=True).alias('mjoin')
+                person_with_polymorphic = ([Person, Manager, Engineer], person_join)
+                manager_with_polymorphic = ('*', manager_join)
             elif select_type == 'Joins':
                 person_join = people.outerjoin(engineers).outerjoin(managers)
                 manager_join = people.join(managers).outerjoin(boss)
+                person_with_polymorphic = ([Person, Manager, Engineer], person_join)
+                manager_with_polymorphic = ('*', manager_join)
 
 
             # testing a order_by here as well; the surrogate mapper has to adapt it
             mapper(Person, people, 
-                with_polymorphic=person_join and ('*', person_join) or None, 
+                with_polymorphic=person_with_polymorphic, 
                 polymorphic_on=people.c.type, polymorphic_identity='person', order_by=people.c.person_id, 
                 properties={
                     'paperwork':relation(Paperwork)
@@ -111,7 +123,7 @@ def make_test(select_type):
             mapper(Engineer, engineers, inherits=Person, polymorphic_identity='engineer', properties={
                     'machines':relation(Machine)
                 })
-            mapper(Manager, managers, with_polymorphic=manager_join and ('*', manager_join) or None, 
+            mapper(Manager, managers, with_polymorphic=manager_with_polymorphic, 
                         inherits=Person, polymorphic_identity='manager')
             mapper(Boss, boss, inherits=Manager, polymorphic_identity='boss')
             mapper(Paperwork, paperwork)
@@ -168,21 +180,13 @@ def make_test(select_type):
             sess = create_session()
             def go():
                 self.assertEquals(sess.query(Person).all(), all_employees)
-            if select_type == '':
-                count = 14   # load 5 person rows; load one row for each of five people; load 8 lazy loaded collections
-            else:
-                count = 10   # load 5 person rows; load one row for "boss" since we didn't include it in with_polymorphic; load 8 lazy loaded collections
-            self.assert_sql_count(testing.db, go, count)
+            self.assert_sql_count(testing.db, go, {'':14, 'Polymorphic':9}.get(select_type, 10))
 
         def test_primary_eager_aliasing(self):
             sess = create_session()
             def go():
                 self.assertEquals(sess.query(Person).options(eagerload(Engineer.machines))[1:3].all(), all_employees[1:3])
-            if select_type == '':
-                count = 6  # the eagerload actualy fails here since "engineers" is not in the mix
-            else:
-                count = 4   
-            self.assert_sql_count(testing.db, go, count)
+            self.assert_sql_count(testing.db, go, {'':6, 'Polymorphic':3}.get(select_type, 4))
 
             sess = create_session()
             def go():
@@ -335,11 +339,7 @@ def make_test(select_type):
             def go():
                 # test load Companies with lazy load to 'employees'
                 self.assertEquals(sess.query(Company).all(), assert_result)
-            if select_type == '':
-                count = 9
-            else:
-                count = 5
-            self.assert_sql_count(testing.db, go, count)
+            self.assert_sql_count(testing.db, go, {'':9, 'Polymorphic':4}.get(select_type, 5))
         
             sess = create_session()
             def go():
@@ -347,12 +347,9 @@ def make_test(select_type):
                 # pick up on the "of_type()" as of yet.
                 self.assertEquals(sess.query(Company).options(eagerload_all([Company.employees.of_type(Engineer), Engineer.machines])).all(), assert_result)
             
-            if select_type == '':
-                count = 7   # the eagerload doesn't take in this case; it eagerloads company->people, then a load for each of 5 rows, then lazyload of "machines"
-            else:
-                count = 2   # load everything, plus one extrq q for the "boss" table
-            
-            self.assert_sql_count(testing.db, go, count)
+            # in the case of select_type='', the eagerload doesn't take in this case; 
+            # it eagerloads company->people, then a load for each of 5 rows, then lazyload of "machines"            
+            self.assert_sql_count(testing.db, go, {'':7, 'Polymorphic':1}.get(select_type, 2))
 
         def test_eagerload_on_subclass(self):
             sess = create_session()
@@ -442,7 +439,7 @@ def make_test(select_type):
     PolymorphicQueryTest.__name__ = "Polymorphic%sTest" % select_type
     return PolymorphicQueryTest
 
-for select_type in ('', 'Unions', 'AliasedJoins', 'Joins'):
+for select_type in ('', 'Polymorphic', 'Unions', 'AliasedJoins', 'Joins'):
     testclass = make_test(select_type)
     exec("%s = testclass" % testclass.__name__)
     
