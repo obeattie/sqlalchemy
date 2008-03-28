@@ -1114,10 +1114,9 @@ class Query(object):
                 context.primary_columns = adapter.adapt_list(context.primary_columns)
                 context.row_adapter = mapperutil.create_row_adapter(adapter.alias, equivalent_columns=self.mapper._equivalent_columns)
 
-            if self._distinct:
-                if self._distinct and context.order_by:
-                    order_by_col_expr = list(chain(*[sql_util.find_columns(o) for o in context.order_by]))
-                    context.primary_columns += order_by_col_expr
+            if self._distinct and context.order_by:
+                order_by_col_expr = list(chain(*[sql_util.find_columns(o) for o in context.order_by]))
+                context.primary_columns += order_by_col_expr
 
             statement = sql.select(context.primary_columns + context.secondary_columns, context.whereclause, from_obj=from_obj, use_labels=True, for_update=for_update, order_by=context.order_by, **self._select_args)
 
