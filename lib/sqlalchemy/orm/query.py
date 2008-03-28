@@ -906,11 +906,6 @@ class Query(object):
 
         context.runid = _new_runid()
 
-        # for with_polymorphic, instruct descendant mappers that they
-        # don't need to post-fetch anything
-        for m in self._with_polymorphic:
-            context.attributes[('polymorphic_fetch', m)] = (self.mapper, [])
-
         entities = self._entities + [_QueryEntity.legacy_guess_type(mc) for mc in mappers_or_columns]
         should_unique = isinstance(entities[0], _PrimaryMapperEntity) and len(entities) == 1
         process = [query_entity.row_processor(self, context) for query_entity in entities]
@@ -1082,34 +1077,31 @@ class Query(object):
             # eager loaders are present, and the SELECT has limiting criterion
             # produce a "wrapped" selectable.
 
+            order_by = [expression._literal_as_text(o) for o in util.to_list(order_by) or []]
+            if adapter:
+                context.primary_columns = adapter.adapt_list(context.primary_columns)
+                order_by = adapter.adapt_list(order_by)
+            
             # locate all embedded Column clauses so they can be added to the
             # "inner" select statement where they'll be available to the enclosing
             # statement's "order by"
-            cf = util.Set()
-            if order_by:
-                order_by = [expression._literal_as_text(o) for o in util.to_list(order_by) or []]
-                for o in order_by:
-                    cf.update(sql_util.find_columns(o))
+            # TODO: this likely doesn't work with very involved ORDER BY expressions,
+            # such as those including subqueries
+            order_by_col_expr = list(chain(*[sql_util.find_columns(o) for o in order_by]))
+            
+            inner = sql.select(context.primary_columns + order_by_col_expr, context.whereclause, from_obj=context.from_clause, use_labels=True, correlate=False, order_by=util.to_list(order_by), **self._select_args).alias()
+            local_adapter = sql_util.ClauseAdapter(inner)
 
-            if adapter:
-                context.primary_columns = adapter.adapt_list(context.primary_columns)
-                cf = adapter.adapt_list(cf)
-                order_by = adapter.adapt_list(order_by)
+            context.row_adapter = mapperutil.create_row_adapter(inner, equivalent_columns=self.mapper._equivalent_columns)
 
-            s2 = sql.select(context.primary_columns + list(cf), context.whereclause, from_obj=context.from_clause, use_labels=True, correlate=False, order_by=util.to_list(order_by), **self._select_args)
-
-            s3 = s2.alias()
-
-            context.row_adapter = mapperutil.create_row_adapter(s3, equivalent_columns=self.mapper._equivalent_columns)
-
-            statement = sql.select([s3] + context.secondary_columns, for_update=for_update, use_labels=True)
+            statement = sql.select([inner] + context.secondary_columns, for_update=for_update, use_labels=True)
 
             if context.eager_joins:
-                eager_joins = sql_util.ClauseAdapter(s3).traverse(context.eager_joins)
+                eager_joins = local_adapter.traverse(context.eager_joins)
                 statement.append_from(eager_joins, _copy_collection=False)
 
             if order_by:
-                statement.append_order_by(*sql_util.ClauseAdapter(s3).copy_and_process(order_by))
+                statement.append_order_by(*local_adapter.copy_and_process(order_by))
 
             statement.append_order_by(*context.eager_order_by)
         else:
@@ -1121,7 +1113,6 @@ class Query(object):
                 order_by = adapter.adapt_list(order_by)
 
             if self._distinct:
-
                 if self._distinct and order_by:
                     cf = util.Set()
                     for o in order_by:

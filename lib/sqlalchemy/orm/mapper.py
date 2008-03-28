@@ -115,6 +115,7 @@ class Mapper(object):
         if not issubclass(class_, object):
             raise exceptions.ArgumentError("Class '%s' is not a new-style class" % class_.__name__)
 
+        self.select_table = select_table
         if select_table:
             self.with_polymorphic = ('*', select_table)
         else:
@@ -1304,7 +1305,7 @@ class Mapper(object):
             for (c, m) in prop.cascade_iterator(type, state, recursive, halt_on=halt_on):
                 yield (c, m)
 
-    def _instance(self, context, row, result=None, skip_polymorphic=False, extension=None, only_load_props=None, refresh_instance=None):
+    def _instance(self, context, row, result=None, polymorphic_from=None, extension=None, only_load_props=None, refresh_instance=None):
         if not extension:
             extension = self.extension
 
@@ -1313,14 +1314,22 @@ class Mapper(object):
             if ret is not EXT_CONTINUE:
                 row = ret
 
-        if not refresh_instance and not skip_polymorphic and self.polymorphic_on:
+        if polymorphic_from:
+            # if we are called from a base mapper doing a polymorphic load, figure out what tables,
+            # if any, will need to be "post-fetched" based on the tables present in the row,
+            # or from the options set up on the query
+            if ('polymorphic_fetch', self) not in context.attributes:
+                if self in context.query._with_polymorphic:
+                    context.attributes[('polymorphic_fetch', self)] = (polymorphic_from, [])
+                else:
+                    context.attributes[('polymorphic_fetch', self)] = (polymorphic_from, [t for t in self.tables if t not in polymorphic_from.tables])
+                
+        elif not refresh_instance and self.polymorphic_on:
             discriminator = row[self.polymorphic_on]
             if discriminator:
                 mapper = self.polymorphic_map[discriminator]
                 if mapper is not self:
-                    if ('polymorphic_fetch', mapper) not in context.attributes:
-                        context.attributes[('polymorphic_fetch', mapper)] = (self, [t for t in mapper.tables if t not in self.tables])
-                    return mapper._instance(context, row, result=result, skip_polymorphic=True)
+                    return mapper._instance(context, row, result=result, polymorphic_from=self)
 
         # determine identity key
         if refresh_instance:

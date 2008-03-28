@@ -40,14 +40,14 @@ class ClauseVisitor(object):
         """traverse the given expression structure, returning an iterator of all elements."""
         
         stack = [obj]
-        traversal = []
+        traversal = util.deque()
         while stack:
             t = stack.pop()
-            yield t
-            traversal.insert(0, t)
+            traversal.appendleft(t)
             for c in t.get_children(**self.__traverse_options__):
                 stack.append(c)
-    
+        return iter(traversal)
+        
     def traverse(self, obj, clone=False):
         """traverse and visit the given expression structure.
         
@@ -126,10 +126,10 @@ class ClauseVisitor(object):
             if e not in stop_on:
                 self._cloned_traversal_impl(e, stop_on, cloned)
         return elem
-        
+
     def _non_cloned_traversal(self, obj):
         """a non-recursive, non-cloning traversal."""
-        
+
         for target in self.iterate(obj):
             self.traverse_single(target)
         return obj
