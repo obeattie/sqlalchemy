@@ -361,7 +361,7 @@ class Query(object):
         q._entities = q._entities + [_MapperEntity(mapper=entity, alias=alias, id=id)]
         return q
 
-    def _values(self, columns):
+    def _values(self, *columns):
         """Turn this query into a 'columns only' query.
         
         The API for this method hasn't been decided yet and is subject to change.
@@ -523,31 +523,31 @@ class Query(object):
 
         return self._col_aggregate(col, sql.func.avg)
 
-    def order_by(self, criterion):
+    def order_by(self, *criterion):
         """apply one or more ORDER BY criterion to the query and return the newly resulting ``Query``"""
 
         q = self._no_statement("order_by")
 
         if self._aliases_tail:
-            criterion = [expression._literal_as_text(o) for o in util.to_list(criterion) or []]
+            criterion = [expression._literal_as_text(o) for o in util.starargs_as_list(*criterion)]
             criterion = self._aliases_tail.adapt_list(criterion)
 
         if q._order_by is False:
-            q._order_by = util.to_list(criterion)
+            q._order_by = util.starargs_as_list(*criterion)
         else:
-            q._order_by = q._order_by + util.to_list(criterion)
+            q._order_by = q._order_by + util.starargs_as_list(*criterion)
         return q
 
-    def group_by(self, criterion):
+    def group_by(self, *criterion):
         """apply one or more GROUP BY criterion to the query and return the newly resulting ``Query``"""
 
         q = self._no_statement("group_by")
         if q._group_by is False:
-            q._group_by = util.to_list(criterion)
+            q._group_by = util.starargs_as_list(*criterion)
         else:
-            q._group_by = q._group_by + util.to_list(criterion)
+            q._group_by = q._group_by + util.starargs_as_list(*criterion)
         return q
-
+    
     def having(self, criterion):
         """apply a HAVING criterion to the query and return the newly resulting ``Query``."""
 
@@ -1050,15 +1050,7 @@ class Query(object):
 
         from_obj = self._from_obj
         adapter = self._aliases_head
-        order_by = self._order_by
         
-        if order_by is False:
-            order_by = self.mapper.order_by
-        if order_by is False:
-            order_by = from_obj.default_order_by()
-            if order_by is None:
-                order_by = self.table.default_order_by()
-                
         if self._lockmode:
             try:
                 for_update = {'read':'read','update':True,'update_nowait':'nowait',None:False}[self._lockmode]
@@ -1069,6 +1061,7 @@ class Query(object):
             
         context.from_clause = from_obj
         context.whereclause = self._criterion
+        context.order_by = self._order_by
         
         for entity in self._entities:
             entity.setup_context(self, context)
@@ -1076,20 +1069,25 @@ class Query(object):
         if self._eager_loaders and self._should_nest_selectable:
             # eager loaders are present, and the SELECT has limiting criterion
             # produce a "wrapped" selectable.
-
-            order_by = [expression._literal_as_text(o) for o in util.to_list(order_by) or []]
+            
+            if context.order_by:
+                context.order_by = [expression._literal_as_text(o) for o in util.to_list(context.order_by) or []]
+                if adapter:
+                    context.order_by = adapter.adapt_list(context.order_by)
+                # locate all embedded Column clauses so they can be added to the
+                # "inner" select statement where they'll be available to the enclosing
+                # statement's "order by"
+                # TODO: this likely doesn't work with very involved ORDER BY expressions,
+                # such as those including subqueries
+                order_by_col_expr = list(chain(*[sql_util.find_columns(o) for o in context.order_by]))
+            else:
+                context.order_by = None
+                order_by_col_expr = []
+                
             if adapter:
                 context.primary_columns = adapter.adapt_list(context.primary_columns)
-                order_by = adapter.adapt_list(order_by)
             
-            # locate all embedded Column clauses so they can be added to the
-            # "inner" select statement where they'll be available to the enclosing
-            # statement's "order by"
-            # TODO: this likely doesn't work with very involved ORDER BY expressions,
-            # such as those including subqueries
-            order_by_col_expr = list(chain(*[sql_util.find_columns(o) for o in order_by]))
-            
-            inner = sql.select(context.primary_columns + order_by_col_expr, context.whereclause, from_obj=context.from_clause, use_labels=True, correlate=False, order_by=util.to_list(order_by), **self._select_args).alias()
+            inner = sql.select(context.primary_columns + order_by_col_expr, context.whereclause, from_obj=context.from_clause, use_labels=True, correlate=False, order_by=context.order_by, **self._select_args).alias()
             local_adapter = sql_util.ClauseAdapter(inner)
 
             context.row_adapter = mapperutil.create_row_adapter(inner, equivalent_columns=self.mapper._equivalent_columns)
@@ -1100,27 +1098,28 @@ class Query(object):
                 eager_joins = local_adapter.traverse(context.eager_joins)
                 statement.append_from(eager_joins, _copy_collection=False)
 
-            if order_by:
-                statement.append_order_by(*local_adapter.copy_and_process(order_by))
+            if context.order_by:
+                statement.append_order_by(*local_adapter.copy_and_process(context.order_by))
 
             statement.append_order_by(*context.eager_order_by)
         else:
-            order_by = [expression._literal_as_text(o) for o in util.to_list(order_by) or []]
+            if context.order_by:
+                context.order_by = [expression._literal_as_text(o) for o in util.to_list(context.order_by) or []]
+                if adapter:
+                    context.order_by = adapter.adapt_list(context.order_by)
+            else:
+                context.order_by = None
             
             if adapter:
                 context.primary_columns = adapter.adapt_list(context.primary_columns)
                 context.row_adapter = mapperutil.create_row_adapter(adapter.alias, equivalent_columns=self.mapper._equivalent_columns)
-                order_by = adapter.adapt_list(order_by)
 
             if self._distinct:
-                if self._distinct and order_by:
-                    cf = util.Set()
-                    for o in order_by:
-                        cf.update(sql_util.find_columns(o))
-                    for c in cf:
-                        context.primary_columns.append(c)
+                if self._distinct and context.order_by:
+                    order_by_col_expr = list(chain(*[sql_util.find_columns(o) for o in context.order_by]))
+                    context.primary_columns += order_by_col_expr
 
-            statement = sql.select(context.primary_columns + context.secondary_columns, context.whereclause, from_obj=from_obj, use_labels=True, for_update=for_update, order_by=util.to_list(order_by), **self._select_args)
+            statement = sql.select(context.primary_columns + context.secondary_columns, context.whereclause, from_obj=from_obj, use_labels=True, for_update=for_update, order_by=context.order_by, **self._select_args)
 
             if context.eager_joins:
                 if adapter:
@@ -1494,6 +1493,12 @@ class _PrimaryMapperEntity(_MapperEntity):
         if self.mapper.single and self.mapper.inherits is not None and self.mapper.polymorphic_on is not None and self.mapper.polymorphic_identity is not None:
             context.whereclause = sql.and_(context.whereclause, self.mapper.polymorphic_on.in_([m.polymorphic_identity for m in self.mapper.polymorphic_iterator()]))
         
+        if context.order_by is False:
+            if self.mapper.order_by:
+                context.order_by = self.mapper.order_by
+            elif context.from_clause.default_order_by():
+                context.order_by = context.from_clause.default_order_by()
+                
         for value in self.mapper._iterate_polymorphic_properties(query._with_polymorphic, context.from_clause):
             if query._only_load_props and value.key not in query._only_load_props:
                 continue

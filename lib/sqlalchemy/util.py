@@ -188,6 +188,16 @@ def to_list(x, default=None):
     else:
         return x
 
+def starargs_as_list(*args):
+    """interpret the given *args as either a list of *args, 
+    or detect if it's a single list and return that.
+    
+    """
+    if len(args) == 1:
+        return to_list(args[0], [])
+    else:
+        return list(args)
+    
 def to_set(x):
     if x is None:
         return Set()
