@@ -179,7 +179,7 @@ class UnitOfWork(object):
 
         """
         return util.IdentitySet(
-            [state for state in self.identity_map.all_states() if state.modified]
+            [state for state in self.identity_map.all_states() if state.check_modified()]
         )
 
     def flush(self, session, objects=None):
@@ -187,7 +187,7 @@ class UnitOfWork(object):
         unit of work and execute.
 
         """
-        if not self.identity_map.modified and not self.deleted and not self.new:
+        if not self.identity_map.check_modified() and not self.deleted and not self.new:
             return
         dirty = self.locate_dirty_states()
         if not dirty and not self.deleted and not self.new:

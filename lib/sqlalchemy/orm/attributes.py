@@ -230,7 +230,7 @@ class AttributeImpl(object):
             return state.dict[self.key]
         except KeyError:
             # if no history, check for lazy callables, etc.
-            if self.key not in state.committed_state:
+            if state.committed_state.get(self.key, NEVER_SET) is NEVER_SET:
                 callable_ = self._get_callable(state)
                 if callable_ is not None:
                     if passive:
@@ -269,7 +269,7 @@ class AttributeImpl(object):
     def set_committed_value(self, state, value):
         """set an attribute value on the given instance and 'commit' it."""
 
-        state.commit_attr(self, value)
+        state.commit_attr(self)
         # remove per-instance callable, if any
         state.callables.pop(self.key, None)
         state.dict[self.key] = value
@@ -282,8 +282,7 @@ class ScalarAttributeImpl(AttributeImpl):
     uses_objects = False
 
     def delete(self, state):
-        if self.key not in state.committed_state:
-            state.committed_state[self.key] = state.dict.get(self.key, NO_VALUE)
+        state.modified_event(self, False, state.dict.get(self.key, NO_VALUE))
 
         # TODO: catch key errors, convert to attributeerror?
         if self.extensions:
@@ -292,7 +291,6 @@ class ScalarAttributeImpl(AttributeImpl):
             self.fire_remove_event(state, old, None)
         else:
             del state.dict[self.key]
-        state.modified=True
 
     def rollback_to_savepoint(self, state, savepoint):
         state.dict[self.key] = savepoint[self.key]
@@ -305,8 +303,7 @@ class ScalarAttributeImpl(AttributeImpl):
         if initiator is self:
             return
 
-        if self.key not in state.committed_state:
-            state.committed_state[self.key] = state.dict.get(self.key, NO_VALUE)
+        state.modified_event(self, False, state.dict.get(self.key, NO_VALUE))
 
         if self.extensions:
             old = self.get(state)
@@ -314,7 +311,6 @@ class ScalarAttributeImpl(AttributeImpl):
             self.fire_replace_event(state, value, old, initiator)
         else:
             state.dict[self.key] = value
-        state.modified=True
 
     def fire_replace_event(self, state, value, previous, initiator):
         instance = state.obj()
@@ -348,8 +344,8 @@ class MutableScalarAttributeImpl(ScalarAttributeImpl):
         return History.from_attribute(
             self, state, state.dict.get(self.key, NO_VALUE))
 
-    def commit_to_state(self, state, value, dest):
-        dest[self.key] = self.copy(value)
+    def commit_to_state(self, state, dest):
+        dest[self.key] = self.copy(state.dict[self.key])
 
     def rollback_to_savepoint(self, state, savepoint):
         # dont need to copy here since the savepoint dict is
@@ -364,11 +360,7 @@ class MutableScalarAttributeImpl(ScalarAttributeImpl):
         if initiator is self:
             return
 
-        if self.key not in state.committed_state:
-            if self.key in state.dict:
-                state.committed_state[self.key] = self.copy(state.dict[self.key])
-            else:
-                state.committed_state[self.key] = NO_VALUE
+        state.modified_event(self, True, NEVER_SET)
 
         if self.extensions:
             old = self.get(state)
@@ -376,7 +368,6 @@ class MutableScalarAttributeImpl(ScalarAttributeImpl):
             self.fire_replace_event(state, value, old, initiator)
         else:
             state.dict[self.key] = value
-        state.modified=True
 
 
 class ScalarObjectAttributeImpl(ScalarAttributeImpl):
@@ -431,9 +422,7 @@ class ScalarObjectAttributeImpl(ScalarAttributeImpl):
         self.fire_replace_event(state, value, old, initiator)
 
     def fire_remove_event(self, state, value, initiator):
-        if self.key not in state.committed_state:
-            state.committed_state[self.key] = value
-        state.modified = True
+        state.modified_event(self, False, value)
 
         if self.trackparent and value is not None:
             self.sethasparent(state_getter(value), False)
@@ -443,9 +432,7 @@ class ScalarObjectAttributeImpl(ScalarAttributeImpl):
             ext.remove(instance, value, initiator or self)
 
     def fire_replace_event(self, state, value, previous, initiator):
-        if self.key not in state.committed_state:
-            state.committed_state[self.key] = previous
-        state.modified = True
+        state.modified_event(self, False, previous)
 
         if self.trackparent:
             if value is not None:
@@ -499,10 +486,7 @@ class CollectionAttributeImpl(AttributeImpl):
                 return History.from_attribute(self, state, current)
 
     def fire_append_event(self, state, value, initiator):
-        if self.key not in state.committed_state and self.key in state.dict:
-            state.committed_state[self.key] = self.copy(state.dict[self.key])
-
-        state.modified = True
+        state.modified_event(self, True, NEVER_SET, passive=True)
 
         if self.trackparent and value is not None:
             self.sethasparent(state_getter(value), True)
@@ -511,14 +495,10 @@ class CollectionAttributeImpl(AttributeImpl):
             ext.append(instance, value, initiator or self)
 
     def fire_pre_remove_event(self, state, initiator):
-        if self.key not in state.committed_state and self.key in state.dict:
-            state.committed_state[self.key] = self.copy(state.dict[self.key])
+        state.modified_event(self, True, NEVER_SET, passive=True)
 
     def fire_remove_event(self, state, value, initiator):
-        if self.key not in state.committed_state and self.key in state.dict:
-            state.committed_state[self.key] = self.copy(state.dict[self.key])
-
-        state.modified = True
+        state.modified_event(self, True, NEVER_SET, passive=True)
 
         if self.trackparent and value is not None:
             self.sethasparent(state_getter(value), False)
@@ -547,7 +527,7 @@ class CollectionAttributeImpl(AttributeImpl):
         if self.key not in state.dict:
             return
 
-        state.modified = True
+        state.modified_event(self, True, NEVER_SET)
 
         collection = self.get_collection(state)
         collection.clear_with_event()
@@ -612,8 +592,7 @@ class CollectionAttributeImpl(AttributeImpl):
         if old is value:
             return
 
-        if self.key not in state.committed_state:
-            state.committed_state[self.key] = self.copy(old)
+        state.modified_event(self, True, old)
 
         old_collection = self.get_collection(state, old)
 
@@ -629,7 +608,6 @@ class CollectionAttributeImpl(AttributeImpl):
                 new_collection.append_without_event(member)
 
         state.dict[self.key] = user_data
-        state.modified = True
 
         # mark all the orphaned elements as detached from the parent
         if old_collection:
@@ -638,10 +616,7 @@ class CollectionAttributeImpl(AttributeImpl):
             old_collection.unlink(old)
 
     def set_committed_value(self, state, value):
-        """Set an attribute value on the given instance and 'commit' it.
-
-        Loads the existing collection from lazy callables in all cases.
-        """
+        """Set an attribute value on the given instance and 'commit' it."""
 
         collection, user_data = self._initialize_collection(state)
 
@@ -662,10 +637,8 @@ class CollectionAttributeImpl(AttributeImpl):
             for item in removed:
                 collection.remove_without_event(item)
             del state.pending[self.key]
-        elif self.key in state.committed_state:
-            # no pending items.  remove committed state if any.
-            # (this can occur with an expired attribute)
-            del state.committed_state[self.key]
+        else:
+            state.commit_attr(self)
 
         return user_data
 
@@ -719,6 +692,9 @@ class GenericBackrefExtension(interfaces.AttributeExtension):
             state = state_getter(child)
             state.get_impl(self.key).remove(state, instance, initiator, passive=True)
 
+import sets
+_empty_set = sets.ImmutableSet()
+
 class InstanceState(object):
     """tracks state information at the instance level."""
 
@@ -728,7 +704,7 @@ class InstanceState(object):
         self.obj = weakref.ref(obj, self.__cleanup)
         self.dict = obj.__dict__
         self.committed_state = {}
-        self._modified = False
+        self.modified = False
         self.callables = {}
         self.parents = {}
         self.pending = {}
@@ -738,9 +714,10 @@ class InstanceState(object):
         self.runid = None
         self.key = self.session_id = None
         self.entity_name = NO_ENTITY_NAME
+        self.expired_attributes = _empty_set
     
-    def modified(self):
-        if self._modified:
+    def check_modified(self):
+        if self.modified:
             return True
         elif self.manager.has_mutable_scalars:
             for attr in self.manager.attributes:
@@ -752,15 +729,6 @@ class InstanceState(object):
         else:
             return False
 
-    def _set_modified(self, value):
-        self._modified = value
-        if value and self.instance_dict:
-            idict = self.instance_dict()
-            if idict is not None:
-                idict.modified = True
-                
-    modified = property(modified, _set_modified)
-    
     def __cleanup(self, ref):
         # tiptoe around Python GC unpredictableness
         instance_dict = self.instance_dict
@@ -830,7 +798,7 @@ class InstanceState(object):
         pass
 
     def __resurrect(self, instance_dict):
-        if self.modified:
+        if self.check_modified():
             # store strong ref'ed version of the object; will revert
             # to weakref when changes are persisted
             obj = self.manager.new_instance(state=self)
@@ -852,10 +820,9 @@ class InstanceState(object):
                 'committed_state': self.committed_state,
                 'pending': self.pending,
                 'parents': self.parents,
-                'modified': self._modified,
+                'modified': self.modified,
                 'instance': self.obj(),
-                'expired_attributes':
-                    getattr(self, 'expired_attributes', None),
+                'expired_attributes':self.expired_attributes,
                 'callables': self.callables}
 
     def __setstate__(self, state):
@@ -865,7 +832,7 @@ class InstanceState(object):
         self.session_id = state['session_id']
         self.entity_name = state['entity_name']
         self.pending = state['pending']
-        self._modified = state['modified']
+        self.modified = state['modified']
         self.obj = weakref.ref(state['instance'])
         self.class_ = self.obj().__class__
         self.manager = manager_of_class(self.class_)
@@ -875,8 +842,7 @@ class InstanceState(object):
         self.runid = None
         self.appenders = {}
         self.instance_dict = None
-        if state['expired_attributes'] is not None:
-            self.expire_attributes(state['expired_attributes'])
+        self.expired_attributes = state['expired_attributes']
 
     def initialize(self, key):
         self.manager.get_impl(key).initialize(self)
@@ -918,8 +884,7 @@ class InstanceState(object):
     unmodified = property(unmodified)
 
     def expire_attributes(self, attribute_names):
-        if not hasattr(self, 'expired_attributes'):
-            self.expired_attributes = util.Set()
+        self.expired_attributes = util.Set(self.expired_attributes)
 
         if attribute_names is None:
             for attr in self.manager.attributes:
@@ -927,7 +892,7 @@ class InstanceState(object):
                 self.expired_attributes.add(attr.impl.key)
                 if attr.impl.accepts_scalar_loader:
                     self.callables[attr.impl.key] = self
-
+            
             self.committed_state = {}
         else:
             for key in attribute_names:
@@ -939,19 +904,64 @@ class InstanceState(object):
 
     def reset(self, key):
         """remove the given attribute and any callables associated with it."""
+
         self.dict.pop(key, None)
         self.callables.pop(key, None)
+    
+    def debug(self):
+        return dict([(k, self.dict[k]) for k in self.manager if k in self.dict]), self.committed_state, self.savepoints
+    debug = property(debug)
+    
+    def modified_event(self, attr, should_copy, previous, passive=False):
+        needs_committed = attr.key not in self.committed_state
+        needs_savepoint = self.savepoints and attr.key not in self.savepoints[-1][0]
+        
+        if needs_committed or needs_savepoint:
+            if previous is NEVER_SET:
+                if passive:
+                    if attr.key in self.dict:
+                        previous = self.dict[attr.key]
+                else:
+                    previous = attr.get(self)
+                    
+            if should_copy and previous not in (None, NO_VALUE, NEVER_SET):
+                previous = attr.copy(previous)
+                
+            if needs_committed:
+                self.committed_state[attr.key] = previous
+            if needs_savepoint:
+                self.savepoints[-1][0][attr.key] = previous
+                
+        self.modified = True
+        if self.instance_dict:
+            idict = self.instance_dict()
+            if idict is not None:
+                idict.modified = True
 
-    def commit_attr(self, attr, value):
-        if self.savepoints:
-            committed_state = self.savepoints[0][0]
-        else:
-            committed_state = self.committed_state
+    def set_savepoint(self):
+        self.savepoints.append(({}, self.parents.copy(), self.pending.copy(), self.committed_state.copy()))
 
-        if hasattr(attr, 'commit_to_state'):
-            attr.commit_to_state(self, value, committed_state)
+    def remove_savepoint(self):
+        self.savepoints.pop()
+
+    def rollback(self):
+        if not self.savepoints:
+            raise exceptions.InvalidRequestError("No savepoints are set; can't rollback.")
+        
+        (savepoint, self.parents, self.pending, self.committed_state) = self.savepoints.pop()
+        
+        for attr in self.manager.attributes:
+            if attr.impl.key in savepoint:
+                if savepoint[attr.impl.key] in (NO_VALUE, NEVER_SET):
+                    del self.dict[attr.impl.key]
+                else:
+                    attr.impl.rollback_to_savepoint(self, savepoint)
+
+    def commit_attr(self, attr):
+        if hasattr(attr, 'commit_to_state') and attr.key in self.dict:
+            attr.commit_to_state(self, self.committed_state)
         else:
-            committed_state.pop(attr.key, None)
+            self.committed_state.pop(attr.key, None)
         self.pending.pop(attr.key, None)
         self.appenders.pop(attr.key, None)
 
@@ -962,82 +972,41 @@ class InstanceState(object):
         which were refreshed from the database.
         """
 
-        if self.savepoints:
-            committed_state = self.savepoints[0][0]
-        else:
-            committed_state = self.committed_state
         class_manager = manager_of_class(self.class_)
-        if class_manager.has_mutable_scalars:
-            for key in keys:
-                attr = class_manager.get_impl(key)
-                if hasattr(attr, 'commit_to_state') and attr.key in self.dict:
-                    attr.commit_to_state(self, self.dict[attr.key], committed_state)
-                else:
-                    committed_state.pop(attr.key, None)
-                self.pending.pop(key, None)
-                self.appenders.pop(key, None)
-        else:
-            for key in keys:
-                committed_state.pop(key, None)
-                self.pending.pop(key, None)
-                self.appenders.pop(key, None)
+        commit_attr = self.commit_attr
+        for key in keys:
+            commit_attr(class_manager[key].impl)
 
-    def set_savepoint(self):
-        self.savepoints.append((self.committed_state, self.parents, self.pending))
-        self.committed_state = {}
-        
-        if self.manager.has_mutable_scalars:
-            for attr in self.manager.attributes:
-                if (hasattr(attr.impl, 'commit_to_state') and
-                    attr.impl.key in self.dict):
-                    attr.impl.commit_to_state(self, self.dict[attr.impl.key], self.committed_state)
-                    
-        self.parents = self.parents.copy()
-        self.pending = self.pending.copy()
-
-    def remove_savepoint(self):
-        (self.committed_state, self.parents, self.pending) = self.savepoints.pop()
-
-    def rollback(self):
-        if not self.savepoints:
-            raise exceptions.InvalidRequestError("No savepoints are set; can't rollback.")
-            
-        savepoint = self.committed_state
-
-        for attr in self.manager.attributes:
-            if attr.impl.key in savepoint:
-                if savepoint[attr.impl.key] is NO_VALUE:
-                    del self.dict[attr.impl.key]
-                else:
-                    attr.impl.rollback_to_savepoint(self, savepoint)
-            else:
-                pass
-
-        (self.committed_state, self.parents, self.pending) = self.savepoints.pop()
-        
     def commit_all(self):
         """commit all attributes unconditionally.
 
-        This is used after a flush() or a regular instance load or refresh operation
-        to mark committed all populated attributes.
+        This is used after a flush() or a full load/refresh
+        to remove all pending state from the instance.
+        
+         - all attributes are marked as "committed"
+         - the "strong dirty reference" is removed
+         - the "modified" flag is set to False
+         - any "appenders" used for the load operation are removed
+         - any "expired" markers/callables are removed.
+
         """
+        self.committed_state = {}
 
-        (committed_state, pending) = self.committed_state, self.pending
-        committed_state.clear()
-        pending.clear()
-
-        self._modified = False
-        self.appenders = {}
+        # unexpire attributes which have loaded
+        for key in list(self.expired_attributes):
+            if key in self.dict:
+                self.expired_attributes.remove(key)
+                self.callables.pop(key, None)
 
         if self.manager.has_mutable_scalars:
             for attr in self.manager.attributes:
                 if (hasattr(attr.impl, 'commit_to_state') and
                     attr.impl.key in self.dict):
-                    for s in [sp[0] for sp in self.savepoints] + [committed_state]:
-                        attr.impl.commit_to_state(self, self.dict[attr.impl.key], s)
+                    attr.impl.commit_to_state(self, self.committed_state)
 
-        # remove strong ref
+        self.modified = False
         self._strong_obj = None
+        self.appenders = {}
 
 class ClassManager(dict):
     """tracks state information at the class level."""
@@ -1256,12 +1225,7 @@ class History(tuple):
         return tuple.__new__(cls, (added, unchanged, deleted))
 
     def from_attribute(cls, attribute, state, current):
-        for committed_state, parents, pending in state.savepoints:
-            if attribute.key in committed_state:
-                original = committed_state[attribute.key]
-                break
-        else:
-            original = state.committed_state.get(attribute.key, NEVER_SET)
+        original = state.committed_state.get(attribute.key, NEVER_SET)
 
         if hasattr(attribute, 'get_collection'):
             current = attribute.get_collection(state, current)

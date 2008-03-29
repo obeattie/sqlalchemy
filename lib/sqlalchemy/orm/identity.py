@@ -7,7 +7,7 @@ from sqlalchemy import exceptions
 class IdentityMap(dict):
     def __init__(self):
         self._mutable_attrs = weakref.WeakKeyDictionary()
-        self._modified = False
+        self.modified = False
         
     def add(self, state):
         raise NotImplementedError()
@@ -22,8 +22,8 @@ class IdentityMap(dict):
         raise NotImplementedError("IdentityMap uses remove() to remove data")
         
     def _manage_incoming_state(self, state):
-        if state.modified:
-            self._modified = True
+        if state.modified:  
+            self.modified = True
         if state.manager.has_mutable_scalars:
             self._mutable_attrs[state] = True
     
@@ -31,23 +31,18 @@ class IdentityMap(dict):
         if state in self._mutable_attrs:
             del self._mutable_attrs[state]
             
-    def modified(self):
+    def check_modified(self):
         """return True if any InstanceStates present have been marked as 'modified'."""
         
-        if not self._modified:
+        if not self.modified:
             for state in self._mutable_attrs:
-                if state.modified:
+                if state.check_modified():
                     return True
             else:
                 return False
         else:
             return True
             
-    def _set_modified(self, value):
-        self._modified = value
-    
-    modified = property(modified, _set_modified)
-    
     def has_key(self, key):
         return key in self
         
@@ -171,11 +166,11 @@ class StrongInstanceDict(IdentityMap):
         """prune unreferenced, non-dirty states."""
         
         ref_count = len(self)
-        dirty = [s.obj() for s in self.all_states() if s.modified]
+        dirty = [s.obj() for s in self.all_states() if s.check_modified()]
         keepers = weakref.WeakValueDictionary(self)
         dict.clear(self)
         dict.update(self, keepers)
-        self._modified = bool(dirty)
+        self.modified = bool(dirty)
         return ref_count - len(self)
         
         

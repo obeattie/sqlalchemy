@@ -24,7 +24,6 @@ class AttrTestBase(object):
         assert attributes.get_history(f._foostate, 'x') == ([], emptyhist, [])
 
         assert f.x == empty
-        #assert attributes.get_history(f._foostate, 'x') == ([], [None], []) # this is idiosyncratic of scalar attributes
     
     def test_needs_savepoint(self):
         f = Foo()
@@ -66,8 +65,10 @@ class AttrTestBase(object):
         assert attributes.get_history(f._foostate, 'x') == ([], hist1, [])
 
         f._foostate.set_savepoint()
+
         f.x = data2
         assert attributes.get_history(f._foostate, 'x') == (hist2, [], hist1)
+
         f._foostate.set_savepoint()
         assert attributes.get_history(f._foostate, 'x') == (hist2, [], hist1)
 
@@ -75,7 +76,7 @@ class AttrTestBase(object):
         assert attributes.get_history(f._foostate, 'x') == (hist3, [], hist1)
         
         f._foostate.rollback()
-        assert attributes.get_history(f._foostate, 'x') == (hist2, [], hist1), attributes.get_history(f._foostate, 'x')
+        assert attributes.get_history(f._foostate, 'x') == (hist2, [], hist1)
 
         f._foostate.rollback()
         assert attributes.get_history(f._foostate, 'x') == ([], hist1, [])
@@ -102,31 +103,6 @@ class AttrTestBase(object):
 
         f._foostate.commit_all()
         aeq(attributes.get_history(f._foostate, 'x'), ([], hist2, []))
-
-    def test_commit_savepoint_rback_tocommitted(self):
-        f = Foo()
-        f.x = data1
-        f._foostate.commit_all()
-        
-        f._foostate.set_savepoint()
-        
-        assert attributes.get_history(f._foostate, 'x') == ([], hist1, [])
-
-        f.x = data2
-        assert attributes.get_history(f._foostate, 'x') == (hist2, [], hist1)
-        f._foostate.set_savepoint()
-        assert attributes.get_history(f._foostate, 'x') == (hist2, [], hist1)
-        assert f.x == data2
-
-        f.x = data3
-        assert attributes.get_history(f._foostate, 'x') == (hist3, [], hist1)
-
-        f._foostate.remove_savepoint()
-
-        f._foostate.rollback()
-        assert not f._foostate.savepoints
-        assert attributes.get_history(f._foostate, 'x') == ([], hist1, [])
-        assert f.x == data1
         
     def test_commit_savepoint_commit(self):
         f = Foo()
@@ -147,19 +123,6 @@ class AttrTestBase(object):
         f._foostate.commit_all()
         assert attributes.get_history(f._foostate, 'x') == ([], hist3, [])
     
-    def test_rback_savepoint_rback_to_committed_nodata2(self):
-        f = Foo()
-        f.x = data1
-        f._foostate.commit_all()
-        assert attributes.get_history(f._foostate, 'x') == ([], hist1, [])
-        f._foostate.set_savepoint()
-        assert attributes.get_history(f._foostate, 'x') == ([], hist1, [])
-        f.x = data3
-        assert attributes.get_history(f._foostate, 'x') == (hist3, [], hist1)
-        f._foostate.rollback()
-        assert attributes.get_history(f._foostate, 'x') == ([], hist1, [])
-        assert f.x == data1
-
     def test_rback_savepoint_to_empty(self):
         f = Foo()
         assert attributes.get_history(f._foostate, 'x') == ([], emptyhist, [])
@@ -170,6 +133,148 @@ class AttrTestBase(object):
         f._foostate.rollback()
         assert attributes.get_history(f._foostate, 'x') == ([], emptyhist, [])
     
+    def test_commit_to_savepoint(self):
+        
+        f = Foo()
+        assert attributes.get_history(f._foostate, 'x') == ([], emptyhist, [])
+        f._foostate.set_savepoint()
+        f.x = data1
+        f._foostate.commit_all()
+        assert attributes.get_history(f._foostate, 'x') == ([], hist1, [])
+        f._foostate.rollback()
+        assert attributes.get_history(f._foostate, 'x') == ([], emptyhist, [])
+
+    def test_multiple_commit_to_savepoint_rback(self):
+
+        f = Foo()
+        assert attributes.get_history(f._foostate, 'x') == ([], emptyhist, [])
+
+        # load from DB
+        f.x = data1
+        
+        # mark as "committed".  this means, "it matches the DB"
+        f._foostate.commit_all()
+        
+        # data shows up as "unmodified" vs. DB
+        assert attributes.get_history(f._foostate, 'x') == ([], hist1, [])
+
+        # begin transaction
+        f._foostate.set_savepoint()
+        
+        # change things
+        f.x = data2
+
+        # flush to DB.  changes show up:
+        assert attributes.get_history(f._foostate, 'x') == (hist2, [], hist1)
+        
+        # write them to DB, then mark as "committed" 
+        f._foostate.commit_all()
+        
+        # shows up as "committed"
+        assert attributes.get_history(f._foostate, 'x') == ([], hist2, [])
+        
+        # change things again
+        f.x = data3
+
+        # flush to DB.  changes show up:
+        assert attributes.get_history(f._foostate, 'x') == (hist3, [], hist2)
+        
+        # write them to DB, then mark as "committed"
+        f._foostate.commit_all()
+        
+        # shows up as "committed"
+        assert attributes.get_history(f._foostate, 'x') == ([], hist3, [])
+        
+        # rollback transaction
+        f._foostate.rollback()
+        
+        # back to beginning
+        assert f.x == data1
+        assert attributes.get_history(f._foostate, 'x') == ([], hist1, [])
+
+    def test_multiple_commit_to_savepoint_commit(self):
+        f = Foo()
+        assert attributes.get_history(f._foostate, 'x') == ([], emptyhist, [])
+        f.x = data1
+        f._foostate.commit_all()
+        assert attributes.get_history(f._foostate, 'x') == ([], hist1, [])
+        f._foostate.set_savepoint()
+        f.x = data2
+        assert attributes.get_history(f._foostate, 'x') == (hist2, [], hist1)
+        f._foostate.commit_all()
+        assert attributes.get_history(f._foostate, 'x') == ([], hist2, [])
+        f.x = data3
+        assert attributes.get_history(f._foostate, 'x') == (hist3, [], hist2)
+        f._foostate.commit_all()
+        assert attributes.get_history(f._foostate, 'x') == ([], hist3, [])
+        
+        f._foostate.commit_all()
+        assert f.x == data3
+        assert attributes.get_history(f._foostate, 'x') == ([], hist3, [])
+
+    def test_multiple_commit_to_nested_savepoint_rback(self):
+
+        f = Foo()
+        assert attributes.get_history(f._foostate, 'x') == ([], emptyhist, [])
+        f.x = data1
+        f._foostate.commit_all()
+        assert attributes.get_history(f._foostate, 'x') == ([], hist1, [])
+        
+        f._foostate.set_savepoint()
+        
+        f.x = data2
+        assert attributes.get_history(f._foostate, 'x') == (hist2, [], hist1)
+        f._foostate.commit_all()
+        assert attributes.get_history(f._foostate, 'x') == ([], hist2, [])
+
+        f._foostate.set_savepoint()
+        
+        f.x = data3
+        assert attributes.get_history(f._foostate, 'x') == (hist3, [], hist2)
+        f._foostate.commit_all()
+        assert attributes.get_history(f._foostate, 'x') == ([], hist3, [])
+        
+        f._foostate.rollback()
+        
+        assert f.x == data2
+        assert attributes.get_history(f._foostate, 'x') == ([], hist2, [])
+        
+        f._foostate.rollback()
+        assert f.x == data1
+        assert attributes.get_history(f._foostate, 'x') == ([], hist1, [])
+
+    def test_multiple_commit_to_nested_savepoint_commit(self):
+
+        f = Foo()
+        assert attributes.get_history(f._foostate, 'x') == ([], emptyhist, [])
+        f.x = data1
+        f._foostate.commit_all()
+        assert attributes.get_history(f._foostate, 'x') == ([], hist1, [])
+
+        f._foostate.set_savepoint()
+
+        f.x = data2
+        assert attributes.get_history(f._foostate, 'x') == (hist2, [], hist1)
+        f._foostate.commit_all()
+        assert attributes.get_history(f._foostate, 'x') == ([], hist2, [])
+
+        f._foostate.set_savepoint()
+
+        f.x = data3
+        assert attributes.get_history(f._foostate, 'x') == (hist3, [], hist2)
+        f._foostate.commit_all()
+        assert attributes.get_history(f._foostate, 'x') == ([], hist3, [])
+
+        f._foostate.rollback()
+
+        assert f.x == data2
+        assert attributes.get_history(f._foostate, 'x') == ([], hist2, [])
+
+        f._foostate.commit_all()
+        assert f.x == data2
+        assert attributes.get_history(f._foostate, 'x') == ([], hist2, [])
+        
+        
 class CollectionTestBase(AttrTestBase):
 
     def test_collection_rback_savepoint_rback_to_empty(self):

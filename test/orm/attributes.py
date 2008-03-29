@@ -394,7 +394,7 @@ class AttributesTest(TestBase):
         x.element = ['one', 'two', 'three']
         attributes.state_getter(x).commit_all()
         x.element[1] = 'five'
-        assert attributes.state_getter(x).modified
+        assert attributes.state_getter(x).check_modified()
 
         attributes.unregister_class(Foo)
 
@@ -404,7 +404,7 @@ class AttributesTest(TestBase):
         x.element = ['one', 'two', 'three']
         attributes.state_getter(x).commit_all()
         x.element[1] = 'five'
-        assert not attributes.state_getter(x).modified
+        assert not attributes.state_getter(x).check_modified()
 
     def test_descriptorattributes(self):
         """changeset: 1633 broke ability to use ORM to map classes with unusual
@@ -587,6 +587,7 @@ class DeferredBackrefTest(TestBase):
 
         b = Blog("blog 1")
         p = Post("post 4")
+        
         p.blog = b
         p = Post("post 5")
         p.blog = b
@@ -595,6 +596,22 @@ class DeferredBackrefTest(TestBase):
 
         # calling backref calls the callable, populates extra posts
         assert b.posts == [p1, p2, p3, Post("post 4"), Post("post 5")]
+        assert called[0] == 1
+    
+    def test_lazy_history(self):
+        global lazy_load
+
+        p1, p2, p3 = Post("post 1"), Post("post 2"), Post("post 3")
+        lazy_load = [p1, p2, p3]
+        
+        b = Blog("blog 1")
+        p = Post("post 4")
+        p.blog = b
+        
+        p4 = Post("post 5")
+        p4.blog = b
+        assert called[0] == 0
+        self.assertEquals(attributes.state_getter(b).get_history('posts'), ([p, p4], [p1, p2, p3], []))
         assert called[0] == 1
 
     def test_lazy_remove(self):
@@ -700,7 +717,9 @@ class HistoryTest(TestBase):
         # no lazyload occurs so this allows overwrite operation to proceed
         f = Foo()
         self.assertEquals(attributes.get_history(attributes.state_getter(f), 'someattr'), ([], [], []))
+        print f._foostate.committed_state
         f.someattr = None
+        print f._foostate.committed_state, f._foostate.dict
         self.assertEquals(attributes.get_history(attributes.state_getter(f), 'someattr'), ([None], [], []))
 
         f = Foo()
@@ -709,6 +728,15 @@ class HistoryTest(TestBase):
         f.someattr = None
         self.assertEquals(attributes.get_history(attributes.state_getter(f), 'someattr'), ([None], [], ['new']))
 
+        # set same value twice
+        f = Foo()
+        attributes.state_getter(f).commit(['someattr'])
+        f.someattr = 'one'
+        self.assertEquals(attributes.get_history(attributes.state_getter(f), 'someattr'), (['one'], [], []))
+        f.someattr = 'two'
+        self.assertEquals(attributes.get_history(attributes.state_getter(f), 'someattr'), (['two'], [], []))
+        
+        
     def test_mutable_scalar(self):
         class Foo(fixtures.Base):
             pass
@@ -798,6 +826,14 @@ class HistoryTest(TestBase):
         self.assertEquals(attributes.get_history(attributes.state_getter(f), 'someattr'), ([], ['new'], []))
         f.someattr = None
         self.assertEquals(attributes.get_history(attributes.state_getter(f), 'someattr'), ([None], [], ['new']))
+
+        # set same value twice
+        f = Foo()
+        attributes.state_getter(f).commit(['someattr'])
+        f.someattr = 'one'
+        self.assertEquals(attributes.get_history(attributes.state_getter(f), 'someattr'), (['one'], [], []))
+        f.someattr = 'two'
+        self.assertEquals(attributes.get_history(attributes.state_getter(f), 'someattr'), (['two'], [], []))
 
     def test_object_collections_set(self):
         class Foo(fixtures.Base):
