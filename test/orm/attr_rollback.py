@@ -273,7 +273,34 @@ class AttrTestBase(object):
         f._foostate.commit_all()
         assert f.x == data2
         assert attributes.get_history(f._foostate, 'x') == ([], hist2, [])
+    
+    def test_savepoint_rback_restores_previous_dirty_state(self):
+        f = Foo()
+        f._foostate.commit_all()
+        f.x = data1
         
+        f._foostate.set_savepoint()
+        f.x = data2
+        f._foostate.rollback()
+        assert f.x == data1
+        assert attributes.get_history(f._foostate, 'x') == (hist1, [], [])
+
+    def test_savepoint_commit_removes_previous_dirty_state(self):
+        f = Foo()
+        f._foostate.commit_all()
+        f.x = data1
+        assert attributes.get_history(f._foostate, 'x') == (hist1, [], [])
+        
+        f._foostate.set_savepoint()
+        f.x = data2
+        assert attributes.get_history(f._foostate, 'x') == (hist2, [], [])
+        
+        f._foostate.remove_savepoint()
+        f._foostate.commit_all()
+
+        assert attributes.get_history(f._foostate, 'x') == ([], hist2, [])
+        
+    
         
 class CollectionTestBase(AttrTestBase):
 
