@@ -6,7 +6,7 @@ from sqlalchemy.orm.collections import collection_adapter
 
 
 class MyClassState(InstrumentationManager):
-    def __init__(self):
+    def __init__(self, cls):
         self.states = {}
 
     def instrument_attribute(self, class_, key, attr):
