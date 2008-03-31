@@ -32,10 +32,13 @@ class CompileTest(TestBase, AssertsCompiledSQL):
             else:
                 self.assert_compile(func.nosuchfunction(), "nosuchfunction()", dialect=dialect)
             self.assert_compile(func.char_length('foo'), "char_length(%s)" % bindtemplate % {'name':'param_1', 'position':1}, dialect=dialect)
-
+    
+    def test_underscores(self):
+        self.assert_compile(func.if_(), "if()")
+        
     def test_generic_now(self):
         assert isinstance(func.now().type, sqltypes.DateTime)
-        
+
         for ret, dialect in [
             ('CURRENT_TIMESTAMP', sqlite.dialect()),
             ('now()', postgres.dialect()),
@@ -43,7 +46,19 @@ class CompileTest(TestBase, AssertsCompiledSQL):
             ('CURRENT_TIMESTAMP', oracle.dialect())
         ]:
             self.assert_compile(func.now(), ret, dialect=dialect)
-            
+
+    def test_generic_random(self):
+        assert func.random().type == sqltypes.NULLTYPE
+        assert isinstance(func.random(type_=Integer).type, Integer)
+
+        for ret, dialect in [
+            ('random()', sqlite.dialect()),
+            ('random()', postgres.dialect()),
+            ('rand()', mysql.dialect()),
+            ('random()', oracle.dialect())
+        ]:
+            self.assert_compile(func.random(), ret, dialect=dialect)
+
     def test_constructor(self):
         try:
             func.current_timestamp('somearg')
@@ -79,7 +94,7 @@ class CompileTest(TestBase, AssertsCompiledSQL):
             'myothertable',
             column('otherid', Integer),
         )
-        
+
         # test an expression with a function
         self.assert_compile(func.lala(3, 4, literal("five"), table1.c.myid) * table2.c.otherid,
             "lala(:lala_1, :lala_2, :param_1, mytable.myid) * myothertable.otherid")

@@ -64,6 +64,60 @@ class O2MTest(ORMTest):
         self.assert_(compare == result)
         self.assert_(l[0].parent_foo.data == 'foo #1' and l[1].parent_foo.data == 'foo #1')
 
+class FalseDiscriminatorTest(ORMTest):
+    def define_tables(self, metadata):
+        global t1
+        t1 = Table('t1', metadata, Column('id', Integer, primary_key=True), Column('type', Integer, nullable=False))
+        
+    def test_false_discriminator(self):
+        class Foo(object):pass
+        class Bar(Foo):pass
+        mapper(Foo, t1, polymorphic_on=t1.c.type, polymorphic_identity=1)
+        mapper(Bar, inherits=Foo, polymorphic_identity=0)
+        sess = create_session()
+        f1 = Bar()
+        sess.save(f1)
+        sess.flush()
+        assert f1.type == 0
+        sess.clear()
+        assert isinstance(sess.query(Foo).one(), Bar)
+        
+class PolymorphicSynonymTest(ORMTest):
+    def define_tables(self, metadata):
+        global t1, t2
+        t1 = Table('t1', metadata,
+                   Column('id', Integer, primary_key=True),
+                   Column('type', String(10), nullable=False),
+                   Column('info', Text))
+        t2 = Table('t2', metadata,
+                   Column('id', Integer, ForeignKey('t1.id'), primary_key=True),
+                   Column('data', String(10), nullable=False))
+    
+    def test_polymorphic_synonym(self):
+        class T1(fixtures.Base):
+            def info(self):
+                return "THE INFO IS:" + self._info
+            def _set_info(self, x):
+                self._info = x
+            info = property(info, _set_info)
+            
+        class T2(T1):pass
+        
+        mapper(T1, t1, polymorphic_on=t1.c.type, polymorphic_identity='t1', properties={
+            'info':synonym('_info', map_column=True)
+        })
+        mapper(T2, t2, inherits=T1, polymorphic_identity='t2')
+        sess = create_session()
+        at1 = T1(info='at1')
+        at2 = T2(info='at2', data='t2 data')
+        sess.save(at1)
+        sess.save(at2)
+        sess.flush()
+        sess.clear()
+        self.assertEquals(sess.query(T2).filter(T2.info=='at2').one(), at2)
+        self.assertEquals(at2.info, "THE INFO IS:at2")
+        
+    
 class CascadeTest(ORMTest):
     """that cascades on polymorphic relations continue
     cascading along the path of the instance's mapper, not

@@ -1,6 +1,7 @@
 import testenv; testenv.configure_for_tests()
 import datetime
 from sqlalchemy import *
+from sqlalchemy.orm import *
 from sqlalchemy import exceptions
 from sqlalchemy.databases import postgres
 from sqlalchemy.engine.strategies import MockEngineStrategy
@@ -567,7 +568,31 @@ class MiscTest(TestBase, AssertsExecutionResults):
             self.assert_((subject.c.id==referer.c.ref).compare(subject.join(referer).onclause))
         finally:
             meta1.drop_all()
-
+    
+    def test_schema_roundtrips(self):
+        meta = MetaData(testing.db)
+        users = Table('users', meta, 
+            Column('id', Integer, primary_key=True),
+            Column('name', String(50)), schema='alt_schema')
+        users.create()
+        try:
+            users.insert().execute(id=1, name='name1')
+            users.insert().execute(id=2, name='name2')
+            users.insert().execute(id=3, name='name3')
+            users.insert().execute(id=4, name='name4')
+            
+            self.assertEquals(users.select().where(users.c.name=='name2').execute().fetchall(), [(2, 'name2')])
+            self.assertEquals(users.select(use_labels=True).where(users.c.name=='name2').execute().fetchall(), [(2, 'name2')])
+            
+            users.delete().where(users.c.id==3).execute()
+            self.assertEquals(users.select().where(users.c.name=='name3').execute().fetchall(), [])
+            
+            users.update().where(users.c.name=='name4').execute(name='newname')
+            self.assertEquals(users.select(use_labels=True).where(users.c.id==4).execute().fetchall(), [(4, 'newname')])
+            
+        finally:
+            users.drop()
+            
     def test_preexecute_passivedefault(self):
         """test that when we get a primary key column back
         from reflecting a table which has a default value on it, we pre-execute
@@ -704,6 +729,57 @@ class ArrayTest(TestBase, AssertsExecutionResults):
         self.assertEquals(results[0]['strarr'], [u'm\xe4\xe4', u'm\xf6\xf6'])
         self.assertEquals(results[1]['strarr'], [[u'm\xe4\xe4'], [u'm\xf6\xf6']])
         arrtable.delete().execute()
+
+    def test_array_mutability(self):
+        class Foo(object): pass
+        footable = Table('foo', metadata,
+            Column('id', Integer, primary_key=True),
+            Column('intarr', postgres.PGArray(Integer), nullable=True)
+        )
+        mapper(Foo, footable)
+        metadata.create_all()
+        sess = create_session()
+        
+        foo = Foo()
+        foo.id = 1
+        foo.intarr = [1,2,3]
+        sess.save(foo)
+        sess.flush()
+        sess.clear()
+        foo = sess.query(Foo).get(1)
+        self.assertEquals(foo.intarr, [1,2,3])
+        
+        foo.intarr.append(4)
+        sess.flush()
+        sess.clear()
+        foo = sess.query(Foo).get(1)
+        self.assertEquals(foo.intarr, [1,2,3,4])
+        
+        foo.intarr = []
+        sess.flush()
+        sess.clear()
+        self.assertEquals(foo.intarr, [])
+        
+        foo.intarr = None
+        sess.flush()
+        sess.clear()
+        self.assertEquals(foo.intarr, None)
+
+        # Errors in r4217:
+        foo = Foo()
+        foo.id = 2
+        sess.save(foo)
+        sess.flush()
+
+class TimeStampTest(TestBase, AssertsExecutionResults): 
+    __only_on__ = 'postgres' 
+    def test_timestamp(self): 
+        engine = testing.db
+        connection = engine.connect() 
+        s = select([func.TIMESTAMP("12/25/07").label("ts")]) 
+        result = connection.execute(s).fetchone() 
+        self.assertEqual(result[0], datetime.datetime(2007, 12, 25, 0, 0)) 
+
 
 if __name__ == "__main__":
     testenv.main()

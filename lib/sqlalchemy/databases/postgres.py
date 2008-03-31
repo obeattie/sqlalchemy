@@ -26,6 +26,7 @@ from sqlalchemy.engine import base, default
 from sqlalchemy.sql import compiler, expression
 from sqlalchemy.sql import operators as sql_operators
 from sqlalchemy import types as sqltypes
+from sqlalchemy.pool import connection_cache_decorator
 
 
 class PGInet(sqltypes.TypeEngine):
@@ -113,11 +114,26 @@ class PGBoolean(sqltypes.Boolean):
     def get_col_spec(self):
         return "BOOLEAN"
 
-class PGArray(sqltypes.Concatenable, sqltypes.TypeEngine):
-    def __init__(self, item_type):
+class PGArray(sqltypes.MutableType, sqltypes.Concatenable, sqltypes.TypeEngine):
+    def __init__(self, item_type, mutable=True):
         if isinstance(item_type, type):
             item_type = item_type()
         self.item_type = item_type
+        self.mutable = mutable
+
+    def copy_value(self, value):
+        if value is None:
+            return None
+        elif self.mutable:
+            return list(value)
+        else:
+            return value
+
+    def compare_values(self, x, y):
+        return x == y
+
+    def is_mutable(self):
+        return self.mutable
 
     def dialect_impl(self, dialect, **kwargs):
         impl = self.__class__.__new__(self.__class__)
@@ -352,9 +368,8 @@ class PGDialect(default.DefaultDialect):
         return [row[0] for row in resultset]
 
     def get_default_schema_name(self, connection):
-        if not hasattr(self, '_default_schema_name'):
-            self._default_schema_name = connection.scalar("select current_schema()", None)
-        return self._default_schema_name
+        return connection.scalar("select current_schema()", None)
+    get_default_schema_name = connection_cache_decorator(get_default_schema_name)
 
     def last_inserted_ids(self):
         if self.context.last_inserted_ids is None:
@@ -626,8 +641,15 @@ class PGCompiler(compiler.DefaultCompiler):
     operators.update(
         {
             sql_operators.mod : '%%',
-            sql_operators.ilike_op: 'ILIKE',
-            sql_operators.notilike_op: 'NOT ILIKE'
+            sql_operators.ilike_op: lambda x, y, escape=None: '%s ILIKE %s' % (x, y) + (escape and ' ESCAPE \'%s\'' % escape or ''),
+            sql_operators.notilike_op: lambda x, y, escape=None: '%s NOT ILIKE %s' % (x, y) + (escape and ' ESCAPE \'%s\'' % escape or ''),
+        }
+    )
+
+    functions = compiler.DefaultCompiler.functions.copy()
+    functions.update (
+        {
+            'TIMESTAMP':lambda x:'TIMESTAMP %s' % x,
         }
     )
 

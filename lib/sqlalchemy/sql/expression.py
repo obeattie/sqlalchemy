@@ -274,6 +274,10 @@ def insert(table, values=None, inline=False, **kwargs):
       column specifications will be generated from the full list of
       table columns.
 
+    prefixes
+      A list of modifier keywords to be inserted between INSERT and INTO,
+      see ``Insert.prefix_with``.
+
     inline
       if True, SQL defaults will be compiled 'inline' into the statement
       and not pre-executed.
@@ -773,7 +777,7 @@ class _FunctionGenerator(object):
             except KeyError:
                 raise AttributeError(name)
 
-        elif name.startswith('_'):
+        elif name.endswith('_'):
             name = name[0:-1]
         f = _FunctionGenerator(**self.opts)
         f.__names = list(self.__names) + [name]
@@ -1001,11 +1005,11 @@ class ClauseElement(object):
         e = self.bind
         if e is None:
             label = getattr(self, 'description', self.__class__.__name__)
-            msg = ('This %s is not bound to an Engine or Connection.  '
-                   'Execution can not proceed without a database to execute '
-                   'against.  Either execute with an explicit connection or '
-                   'bind the MetaData of the underlying tables to enable '
-                   'implicit execution.') % label
+            msg = ('This %s is not bound and does not support direct '
+                   'execution. Supply this statement to a Connection or '
+                   'Engine for execution. Or, assign a bind to the statement '
+                   'or the Metadata of its underlying tables to enable '
+                   'implicit execution via this method.' % label)
             raise exceptions.UnboundExecutionError(msg)
         return e.execute_clauseelement(self, multiparams, params)
 
@@ -1133,23 +1137,23 @@ class ColumnOperators(Operators):
     def concat(self, other):
         return self.operate(operators.concat_op, other)
 
-    def like(self, other):
-        return self.operate(operators.like_op, other)
+    def like(self, other, escape=None):
+        return self.operate(operators.like_op, other, escape=escape)
 
-    def ilike(self, other):
-        return self.operate(operators.ilike_op, other)
+    def ilike(self, other, escape=None):
+        return self.operate(operators.ilike_op, other, escape=escape)
 
     def in_(self, *other):
         return self.operate(operators.in_op, other)
 
-    def startswith(self, other):
-        return self.operate(operators.startswith_op, other)
+    def startswith(self, other, **kwargs):
+        return self.operate(operators.startswith_op, other, **kwargs)
 
-    def endswith(self, other):
-        return self.operate(operators.endswith_op, other)
+    def endswith(self, other, **kwargs):
+        return self.operate(operators.endswith_op, other, **kwargs)
 
-    def contains(self, other):
-        return self.operate(operators.contains_op, other)
+    def contains(self, other, **kwargs):
+        return self.operate(operators.contains_op, other, **kwargs)
 
     def desc(self):
         return self.operate(operators.desc_op)
@@ -1196,7 +1200,7 @@ class ColumnOperators(Operators):
 class _CompareMixin(ColumnOperators):
     """Defines comparison and math operations for ``ClauseElement`` instances."""
 
-    def __compare(self, op, obj, negate=None, reverse=False):
+    def __compare(self, op, obj, negate=None, reverse=False, **kwargs):
         if obj is None or isinstance(obj, _Null):
             if op == operators.eq:
                 return _BinaryExpression(self.expression_element(), null(), operators.is_, negate=operators.isnot)
@@ -1208,9 +1212,9 @@ class _CompareMixin(ColumnOperators):
             obj = self._check_literal(obj)
 
         if reverse:
-            return _BinaryExpression(obj, self.expression_element(), op, type_=sqltypes.Boolean, negate=negate)
+            return _BinaryExpression(obj, self.expression_element(), op, type_=sqltypes.Boolean, negate=negate, modifiers=kwargs)
         else:
-            return _BinaryExpression(self.expression_element(), obj, op, type_=sqltypes.Boolean, negate=negate)
+            return _BinaryExpression(self.expression_element(), obj, op, type_=sqltypes.Boolean, negate=negate, modifiers=kwargs)
 
     def __operate(self, op, obj, reverse=False):
         obj = self._check_literal(obj)
@@ -1241,13 +1245,13 @@ class _CompareMixin(ColumnOperators):
         operators.ilike_op : (__compare, operators.notilike_op),
     }
 
-    def operate(self, op, *other):
+    def operate(self, op, *other, **kwargs):
         o = _CompareMixin.operators[op]
-        return o[0](self, op, other[0], *o[1:])
+        return o[0](self, op, other[0], *o[1:], **kwargs)
 
-    def reverse_operate(self, op, other):
+    def reverse_operate(self, op, other, **kwargs):
         o = _CompareMixin.operators[op]
-        return o[0](self, op, other, reverse=True, *o[1:])
+        return o[0](self, op, other, reverse=True, *o[1:], **kwargs)
 
     def in_(self, *other):
         return self._in_impl(operators.in_op, operators.notin_op, *other)
@@ -1279,21 +1283,21 @@ class _CompareMixin(ColumnOperators):
 
         return self.__compare(op, ClauseList(*args).self_group(against=op), negate=negate_op)
 
-    def startswith(self, other):
+    def startswith(self, other, escape=None):
         """Produce the clause ``LIKE '<other>%'``"""
 
         # use __radd__ to force string concat behavior
-        return self.__compare(operators.like_op, literal_column("'%'", type_=sqltypes.String).__radd__(self._check_literal(other)))
+        return self.__compare(operators.like_op, literal_column("'%'", type_=sqltypes.String).__radd__(self._check_literal(other)), escape=escape)
 
-    def endswith(self, other):
+    def endswith(self, other, escape=None):
         """Produce the clause ``LIKE '%<other>'``"""
 
-        return self.__compare(operators.like_op, literal_column("'%'", type_=sqltypes.String) + self._check_literal(other))
+        return self.__compare(operators.like_op, literal_column("'%'", type_=sqltypes.String) + self._check_literal(other), escape=escape)
 
-    def contains(self, other):
+    def contains(self, other, escape=None):
         """Produce the clause ``LIKE '%<other>%'``"""
 
-        return self.__compare(operators.like_op, literal_column("'%'", type_=sqltypes.String) + self._check_literal(other) + literal_column("'%'", type_=sqltypes.String))
+        return self.__compare(operators.like_op, literal_column("'%'", type_=sqltypes.String) + self._check_literal(other) + literal_column("'%'", type_=sqltypes.String), escape=escape)
 
     def label(self, name):
         """Produce a column label, i.e. ``<columnname> AS <name>``.
@@ -1616,6 +1620,15 @@ class FromClause(Selectable):
       if ClauseAdapter is None:
           from sqlalchemy.sql.util import ClauseAdapter
       return ClauseAdapter(alias).traverse(self, clone=True)
+
+    def correspond_on_equivalents(self, column, equivalents):
+        col = self.corresponding_column(column, require_embedded=True)
+        if col is None and col in equivalents:
+            for equiv in equivalents[col]:
+                nc = self.corresponding_column(equiv, require_embedded=True)
+                if nc:
+                    return nc
+        return col
 
     def corresponding_column(self, column, require_embedded=False):
         """Given a ``ColumnElement``, return the exported ``ColumnElement``
@@ -2110,13 +2123,17 @@ class _UnaryExpression(ColumnElement):
 class _BinaryExpression(ColumnElement):
     """Represent an expression that is ``LEFT <operator> RIGHT``."""
 
-    def __init__(self, left, right, operator, type_=None, negate=None):
+    def __init__(self, left, right, operator, type_=None, negate=None, modifiers=None):
         ColumnElement.__init__(self)
         self.left = _literal_as_text(left).self_group(against=operator)
         self.right = _literal_as_text(right).self_group(against=operator)
         self.operator = operator
         self.type = sqltypes.to_instance(type_)
         self.negate = negate
+        if modifiers is None:
+            self.modifiers = {}
+        else:
+            self.modifiers = modifiers
 
     def _get_from_objects(self, **modifiers):
         return self.left._get_from_objects(**modifiers) + self.right._get_from_objects(**modifiers)
@@ -2155,7 +2172,7 @@ class _BinaryExpression(ColumnElement):
 
     def _negate(self):
         if self.negate is not None:
-            return _BinaryExpression(self.left, self.right, self.negate, negate=self.operator, type_=self.type)
+            return _BinaryExpression(self.left, self.right, self.negate, negate=self.operator, type_=self.type, modifiers=self.modifiers)
         else:
             return super(_BinaryExpression, self)._negate()
 
@@ -2615,7 +2632,10 @@ class _ColumnClause(ColumnElement):
             return None
         if self.__label is None:
             if self.table is not None and self.table.named_with_column:
-                self.__label = self.table.name + "_" + self.name
+                if getattr(self.table, 'schema', None):
+                    self.__label = "_".join([self.table.schema, self.table.name, self.name])
+                else:
+                    self.__label = "_".join([self.table.name, self.name])
                 counter = 1
                 while self.__label in self.table.c:
                     self.__label = self.__label + "_%d" % counter
@@ -2925,8 +2945,6 @@ class CompoundSelect(_SelectBaseMixin, FromClause):
             else:
                 self.selects.append(s)
 
-        self._col_map = {}
-
         _SelectBaseMixin.__init__(self, **kwargs)
 
         for s in self.selects:
@@ -2942,11 +2960,15 @@ class CompoundSelect(_SelectBaseMixin, FromClause):
                 yield c
 
     def _proxy_column(self, column):
-        selectable = column.table
-        col_ordering = self._col_map.get(selectable, None)
-        if col_ordering is None:
-            self._col_map[selectable] = col_ordering = []
-
+        if not hasattr(self, '_col_map'):
+            self._col_map = dict([(s, []) for s in self.selects])
+            for s in self.selects:
+                for c in s.c + [s.oid_column]:
+                    self._col_map[c] = s
+        
+        selectable = self._col_map[column]
+        col_ordering = self._col_map[selectable]
+        
         if selectable is self.selects[0]:
             if self.use_labels:
                 col = column._make_proxy(self, name=column._label)
@@ -2962,8 +2984,9 @@ class CompoundSelect(_SelectBaseMixin, FromClause):
 
     def _copy_internals(self, clone=_clone):
         self._clone_from_clause()
-        self._col_map = {}
         self.selects = [clone(s) for s in self.selects]
+        if hasattr(self, '_col_map'):
+            del self._col_map
         for attr in ('_order_by_clause', '_group_by_clause'):
             if getattr(self, attr) is not None:
                 setattr(self, attr, clone(getattr(self, attr)))
@@ -2978,13 +3001,17 @@ class CompoundSelect(_SelectBaseMixin, FromClause):
                 yield t
 
     def bind(self):
+        if self._bind:
+            return self._bind
         for s in self.selects:
             e = s.bind
             if e:
                 return e
         else:
             return None
-    bind = property(bind)
+    def _set_bind(self, bind):
+        self._bind = bind
+    bind = property(bind, _set_bind)
 
 class Select(_SelectBaseMixin, FromClause):
     """Represents a ``SELECT`` statement.
@@ -3073,14 +3100,12 @@ class Select(_SelectBaseMixin, FromClause):
         for f in froms:
             froms.difference_update(f._hide_froms)
 
-        if len(froms) > 1:
+        if len(froms) > 1 or self.__correlate:
             if self.__correlate:
                 froms.difference_update(self.__correlate)
             if self._should_correlate and existing_froms is not None:
                 froms.difference_update(existing_froms)
 
-            if not froms:
-                raise exceptions.InvalidRequestError("Select statement '%s' is overcorrelated; returned no 'from' clauses" % str(self.__dont_correlate()))
         return froms
 
     froms = property(_get_display_froms, doc="""Return a list of all FromClause elements which will be applied to the FROM clause of the resulting statement.""")
@@ -3434,7 +3459,9 @@ class Select(_SelectBaseMixin, FromClause):
                 self._bind = e
                 return e
         return None
-    bind = property(bind)
+    def _set_bind(self, bind):
+        self._bind = bind
+    bind = property(bind, _set_bind)
 
 class _UpdateBase(ClauseElement):
     """Form the base for ``INSERT``, ``UPDATE``, and ``DELETE`` statements."""
@@ -3459,14 +3486,23 @@ class _UpdateBase(ClauseElement):
             return parameters
 
     def bind(self):
-        return self.table.bind
-    bind = property(bind)
+        return self._bind or self.table.bind
+        
+    def _set_bind(self, bind):
+        self._bind = bind
+    bind = property(bind, _set_bind)
 
 class Insert(_UpdateBase):
-    def __init__(self, table, values=None, inline=False, **kwargs):
+    def __init__(self, table, values=None, inline=False, bind=None, prefixes=None, **kwargs):
+        self._bind = bind
         self.table = table
         self.select = None
         self.inline=inline
+        if prefixes:
+            self._prefixes = [_literal_as_text(p) for p in prefixes]
+        else:
+            self._prefixes = []
+
         self.parameters = self._process_colparams(values)
 
         self.kwargs = kwargs
@@ -3491,8 +3527,20 @@ class Insert(_UpdateBase):
             u.parameters.update(u._process_colparams(v))
         return u
 
+    def prefix_with(self, clause):
+        """Add a word or expression between INSERT and INTO. Generative.
+
+        If multiple prefixes are supplied, they will be separated with
+        spaces.
+        """
+        gen = self._clone()
+        clause = _literal_as_text(clause)
+        gen._prefixes = self._prefixes + [clause]
+        return gen
+
 class Update(_UpdateBase):
-    def __init__(self, table, whereclause, values=None, inline=False, **kwargs):
+    def __init__(self, table, whereclause, values=None, inline=False, bind=None, **kwargs):
+        self._bind = bind
         self.table = table
         if whereclause:
             self._whereclause = _literal_as_text(whereclause)
@@ -3536,7 +3584,8 @@ class Update(_UpdateBase):
         return u
 
 class Delete(_UpdateBase):
-    def __init__(self, table, whereclause):
+    def __init__(self, table, whereclause, bind=None):
+        self._bind = bind
         self.table = table
         if whereclause:
             self._whereclause = _literal_as_text(whereclause)

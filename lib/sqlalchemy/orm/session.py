@@ -714,6 +714,8 @@ class Session(object):
 
         if self.bind is not None:
             return self.bind
+        elif isinstance(clause, sql.expression.ClauseElement) and clause.bind is not None:
+            return clause.bind
         elif mapper is None:
             raise exceptions.UnboundExecutionError("Could not locate any mapper associated with SQL expression")
         else:
@@ -819,6 +821,7 @@ class Session(object):
         """
 
         state = attributes.state_getter(instance)
+        self._validate_persistent(state)
         if self.query(_object_mapper(instance))._get(
                 state.key, refresh_instance=state,
                 only_load_props=attribute_names) is None:
@@ -844,6 +847,7 @@ class Session(object):
         expired.
         """
         state = attributes.state_getter(instance)
+        self._validate_persistent(state)
         if attribute_names:
             _expire_state(state, attribute_names=attribute_names)
         else:
@@ -1079,6 +1083,10 @@ class Session(object):
 
         return object_session(instance)
     object_session = classmethod(object_session)
+
+    def _validate_persistent(self, state):
+        if state not in self.uow.new and not self.identity_map.contains_state(state):
+            raise exceptions.InvalidRequestError("Instance '%s' is not persistent within this Session" % mapperutil.state_str(state))
 
     def _save_impl(self, state):
         self._attach(state)

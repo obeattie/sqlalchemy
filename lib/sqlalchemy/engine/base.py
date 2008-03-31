@@ -464,11 +464,9 @@ class Compiled(object):
         raise NotImplementedError()
 
     def get_params(self, **params):
-        """Use construct_params().  (supports unicode names)
-        """
-
+        """Use construct_params().  (supports unicode names)"""
         return self.construct_params(params)
-    get_params = util.deprecated(get_params)
+    get_params = util.deprecated()(get_params)
 
     def construct_params(self, params):
         """Return the bind params for this compiled object.
@@ -1479,11 +1477,13 @@ class ResultProxy(object):
 
             if isinstance(key, basestring):
                 key = key.lower()
-
             try:
                 rec = props[key]
             except KeyError:
                 # fallback for targeting a ColumnElement to a textual expression
+                # it would be nice to get rid of this but we make use of it in the case where
+                # you say something like query.options(contains_alias('fooalias')) - the matching
+                # is done on strings
                 if isinstance(key, expression.ColumnElement):
                     if key._label.lower() in props:
                         return props[key._label.lower()]
@@ -1617,7 +1617,8 @@ class ResultProxy(object):
         """Fetch all rows, just like DB-API ``cursor.fetchall()``."""
 
         try:
-            l = [self._process_row(self, row) for row in self._fetchall_impl()]
+            process_row = self._process_row
+            l = [process_row(self, row) for row in self._fetchall_impl()]
             self.close()
             return l
         except Exception, e:
@@ -1628,7 +1629,8 @@ class ResultProxy(object):
         """Fetch many rows, just like DB-API ``cursor.fetchmany(size=cursor.arraysize)``."""
 
         try:
-            l = [self._process_row(self, row) for row in self._fetchmany_impl(size)]
+            process_row = self._process_row
+            l = [process_row(self, row) for row in self._fetchmany_impl(size)]
             if len(l) == 0:
                 self.close()
             return l

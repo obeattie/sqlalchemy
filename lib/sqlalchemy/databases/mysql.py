@@ -157,7 +157,9 @@ import datetime, inspect, re, sys
 from array import array as _array
 
 from sqlalchemy import exceptions, logging, schema, sql, util
+from sqlalchemy.pool import connection_cache_decorator
 from sqlalchemy.sql import operators as sql_operators
+from sqlalchemy.sql import functions as sql_functions
 from sqlalchemy.sql import compiler
 
 from sqlalchemy.engine import base as engine_base, default
@@ -1541,13 +1543,9 @@ class MySQLDialect(default.DefaultDialect):
             return False
 
     def get_default_schema_name(self, connection):
-        try:
-            return self._default_schema_name
-        except AttributeError:
-            name = self._default_schema_name = \
-              connection.execute('SELECT DATABASE()').scalar()
-            return name
-
+        return connection.execute('SELECT DATABASE()').scalar()
+    get_default_schema_name = connection_cache_decorator(get_default_schema_name)
+    
     def table_names(self, connection, schema):
         """Return a Unicode SHOW TABLES from a given schema."""
 
@@ -1631,7 +1629,7 @@ class MySQLDialect(default.DefaultDialect):
             connectable = connectable.contextual_connect()
 
         return self.server_version_info(connectable)
-    get_version_info = util.deprecated(get_version_info)
+    get_version_info = util.deprecated()(get_version_info)
 
     def reflecttable(self, connection, table, include_columns):
         """Load column definitions from the server."""
@@ -1898,6 +1896,11 @@ class MySQLCompiler(compiler.DefaultCompiler):
         sql_operators.concat_op: lambda x, y: "concat(%s, %s)" % (x, y),
         sql_operators.mod: '%%'
     })
+    functions = compiler.DefaultCompiler.functions.copy()
+    functions.update ({
+        sql_functions.random: 'rand%(expr)s'
+        })
+
 
     def visit_typeclause(self, typeclause):
         type_ = typeclause.type.dialect_impl(self.dialect)

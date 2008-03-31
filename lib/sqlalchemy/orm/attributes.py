@@ -79,8 +79,9 @@ class InstrumentedAttribute(interfaces.PropComparator):
     property = property(_property, doc="the MapperProperty object associated with this attribute")
 
 class ProxiedAttribute(InstrumentedAttribute):
-    """a 'proxy' attribute which adds InstrumentedAttribute
-    class-level behavior to any user-defined class property.
+    """Adds InstrumentedAttribute class-level behavior to a regular descriptor.
+
+    Obsoleted by proxied_attribute_factory.
     """
 
     class ProxyImpl(object):
@@ -112,6 +113,59 @@ class ProxiedAttribute(InstrumentedAttribute):
 
     def __delete__(self, instance):
         return self.user_prop.__delete__(instance)
+
+def proxied_attribute_factory(descriptor):
+    """Create an InstrumentedAttribute / user descriptor hybrid.
+
+    Returns a new InstrumentedAttribute type that delegates descriptor
+    behavior and getattr() to the given descriptor.
+    """
+
+    class ProxyImpl(object):
+        accepts_scalar_loader = False
+        def __init__(self, key):
+            self.key = key
+
+    class Proxy(InstrumentedAttribute):
+        """A combination of InsturmentedAttribute and a regular descriptor."""
+
+        def __init__(self, key, descriptor, comparator):
+            self.key = key
+            # maintain ProxiedAttribute.user_prop compatability.
+            self.descriptor = self.user_prop = descriptor
+            self._comparator = comparator
+            self.impl = ProxyImpl(key)
+
+        def comparator(self):
+            if callable(self._comparator):
+                self._comparator = self._comparator()
+            return self._comparator
+        comparator = property(comparator)
+
+        def __get__(self, instance, owner):
+            """Delegate __get__ to the original descriptor."""
+            if instance is None:
+                descriptor.__get__(instance, owner)
+                return self
+            return descriptor.__get__(instance, owner)
+
+        def __set__(self, instance, value):
+            """Delegate __set__ to the original descriptor."""
+            return descriptor.__set__(instance, value)
+
+        def __delete__(self, instance):
+            """Delegate __delete__ to the original descriptor."""
+            return descriptor.__delete__(instance)
+
+        def __getattr__(self, attribute):
+            """Delegate __getattr__ to the original descriptor."""
+            return getattr(descriptor, attribute)
+    Proxy.__name__ = type(descriptor).__name__ + 'Proxy'
+
+    util.monkeypatch_proxied_specials(Proxy, type(descriptor),
+                                      name='descriptor',
+                                      from_instance=descriptor)
+    return Proxy
 
 class AttributeImpl(object):
     """internal implementation for instrumented attributes."""
@@ -270,9 +324,12 @@ class AttributeImpl(object):
         """set an attribute value on the given instance and 'commit' it."""
 
         state.commit_attr(self)
+        
+        # ????? removed in merge ?
         # remove per-instance callable, if any
         state.callables.pop(self.key, None)
         state.dict[self.key] = value
+        
         return value
 
 class ScalarAttributeImpl(AttributeImpl):
@@ -415,6 +472,12 @@ class ScalarObjectAttributeImpl(ScalarAttributeImpl):
 
         if initiator is self:
             return
+        
+        # ???? MERGE ?
+        #if value is not None and not hasattr(value, '_state'):
+        #    raise TypeError("Can not assign %s instance to %s's %r attribute, "
+        #                    "a mapped instance was expected." % (
+        #        type(value).__name__, type(state.obj()).__name__, self.key))
 
         # TODO: add options to allow the get() to be passive
         old = self.get(state)
@@ -476,14 +539,11 @@ class CollectionAttributeImpl(AttributeImpl):
         return [y for y in list(collections.collection_adapter(item))]
 
     def get_history(self, state, passive=False):
-        if self.key in state.dict:
-            return History.from_attribute(self, state, state.dict[self.key])
+        current = self.get(state, passive=passive)
+        if current is PASSIVE_NORESULT:
+            return (None, None, None)
         else:
-            current = self.get(state, passive=passive)
-            if current is PASSIVE_NORESULT:
-                return (None, None, None)
-            else:
-                return History.from_attribute(self, state, current)
+            return History.from_attribute(self, state, current)
 
     def fire_append_event(self, state, value, initiator):
         state.modified_event(self, True, NEVER_SET, passive=True)
@@ -516,12 +576,6 @@ class CollectionAttributeImpl(AttributeImpl):
             new_collection.append_without_event(item)
         state.dict[self.key] = user_data
 
-    def get_history(self, state, passive=False):
-        current = self.get(state, passive=passive)
-        if current is PASSIVE_NORESULT:
-            return (None, None, None)
-        else:
-            return History.from_attribute(self, state, current)
 
     def delete(self, state):
         if self.key not in state.dict:
@@ -653,6 +707,7 @@ class CollectionAttributeImpl(AttributeImpl):
             user_data = self.get(state, passive=passive)
             if user_data is PASSIVE_NORESULT:
                 return user_data
+
         return getattr(user_data, '_sa_adapter')
 
 class GenericBackrefExtension(interfaces.AttributeExtension):
@@ -788,7 +843,7 @@ class InstanceState(object):
         if x is PASSIVE_NORESULT:
             return None
         elif hasattr(impl, 'get_collection'):
-            return impl.get_collection(self, x)
+            return impl.get_collection(self, x, passive=passive)
         elif isinstance(x, list):
             return x
         else:
@@ -858,7 +913,6 @@ class InstanceState(object):
         
         """
         instance = self.obj()
-
         unmodified = self.unmodified
         class_manager = self.manager
         class_manager.deferred_scalar_loader(instance, [
@@ -962,20 +1016,41 @@ class InstanceState(object):
             attr.commit_to_state(self, self.committed_state)
         else:
             self.committed_state.pop(attr.key, None)
+            
+        # ??? MERGE ?
+        #self.dict[attr.key] = value
+        
         self.pending.pop(attr.key, None)
         self.appenders.pop(attr.key, None)
+
+        # ???? MERGE ?
+        # we have a value so we can also unexpire it
+        #self.callables.pop(attr.key, None)
+        #if attr.key in self.expired_attributes:
+        #    self.expired_attributes.remove(attr.key)
 
     def commit(self, keys):
         """commit all attributes named in the given list of key names.
 
         This is used by a partial-attribute load operation to mark committed those attributes
         which were refreshed from the database.
+
+        Attributes marked as "expired" can potentially remain "expired" after this step
+        if a value was not populated in state.dict.
         """
 
         class_manager = manager_of_class(self.class_)
         commit_attr = self.commit_attr
         for key in keys:
             commit_attr(class_manager[key].impl)
+
+        # ???? MERGE ?
+        # unexpire attributes which have loaded
+        for key in self.expired_attributes.intersection(keys):
+            if key in self.dict:
+                self.expired_attributes.remove(key)
+                self.callables.pop(key, None)
+
 
     def commit_all(self):
         """commit all attributes unconditionally.
@@ -989,6 +1064,9 @@ class InstanceState(object):
          - any "appenders" used for the load operation are removed
          - any "expired" markers/callables are removed.
 
+
+        Attributes marked as "expired" can potentially remain "expired" after this step
+        if a value was not populated in state.dict.
         """
         self.committed_state = {}
 
@@ -1291,10 +1369,9 @@ def has_parent(class_, instance, key, optimistic=False):
     return manager.get_impl(key).hasparent(
         state_getter(instance), optimistic=optimistic)
 
-def _create_prop(class_, key, uselist, callable_, class_manager, typecallable, useobject, mutable_scalars, **kwargs):
-    if kwargs.pop('dynamic', False):
-        from sqlalchemy.orm import dynamic
-        return dynamic.DynamicAttributeImpl(class_, key, typecallable, class_manager=class_manager, **kwargs)
+def _create_prop(class_, key, uselist, callable_, class_manager, typecallable, useobject, mutable_scalars, impl_class, **kwargs):
+    if impl_class:
+        return impl_class(class_, key, typecallable, class_manager=class_manager, **kwargs)
     elif uselist:
         return CollectionAttributeImpl(class_, key, callable_,
                                        typecallable=typecallable,
@@ -1353,7 +1430,7 @@ def unregister_class(class_):
         state.uninstall_member('__init__')
         state.unregister()
 
-def register_attribute(class_, key, uselist, useobject, callable_=None, proxy_property=None, mutable_scalars=False, **kwargs):
+def register_attribute(class_, key, uselist, useobject, callable_=None, proxy_property=None, mutable_scalars=False, impl_class=None, **kwargs):
 
     cs = manager_of_class(class_)
     if cs.is_instrumented(key):
@@ -1371,7 +1448,8 @@ def register_attribute(class_, key, uselist, useobject, callable_=None, proxy_pr
     comparator = kwargs.pop('comparator', None)
 
     if proxy_property:
-        inst = ProxiedAttribute(key, proxy_property, comparator=comparator)
+        proxy_type = proxied_attribute_factory(proxy_property)
+        inst = proxy_type(key, proxy_property, comparator)
     else:
         inst = InstrumentedAttribute(
             _create_prop(class_, key, uselist, callable_,
@@ -1379,6 +1457,7 @@ def register_attribute(class_, key, uselist, useobject, callable_=None, proxy_pr
                          useobject=useobject,
                          typecallable=typecallable,
                          mutable_scalars=mutable_scalars,
+                         impl_class=impl_class,
                          **kwargs),
             comparator=comparator)
 

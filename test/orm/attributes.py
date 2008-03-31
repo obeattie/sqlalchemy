@@ -312,17 +312,21 @@ class AttributesTest(TestBase):
         class Foo(object):pass
         class Bar(Foo):pass
 
+        class Element(object):
+            _state = True
+
         attributes.register_class(Foo)
         attributes.register_class(Bar)
         attributes.register_attribute(Foo, 'element', uselist=False, useobject=True)
+        el = Element()
         x = Bar()
-        x.element = 'this is the element'
-        self.assertEquals(attributes.get_history(attributes.state_getter(x), 'element'), (['this is the element'],[], []))
+        x.element = el
+        self.assertEquals(attributes.get_history(attributes.state_getter(x), 'element'), ([el],[], []))
         attributes.state_getter(x).commit_all()
 
         (added, unchanged, deleted) = attributes.get_history(attributes.state_getter(x), 'element')
         assert added == []
-        assert unchanged == ['this is the element']
+        assert unchanged == [el]
 
     def test_lazyhistory(self):
         """tests that history functions work with lazy-loading attributes"""
@@ -779,6 +783,16 @@ class HistoryTest(TestBase):
         class Foo(fixtures.Base):
             pass
 
+        class Bar(fixtures.Base):
+            _state = None
+            def __nonzero__(self):
+                assert False
+
+        hi = Bar(name='hi')
+        there = Bar(name='there')
+        new = Bar(name='new')
+        old = Bar(name='old')
+
         attributes.register_class(Foo)
         attributes.register_attribute(Foo, 'someattr', uselist=False, useobject=True)
 
@@ -786,32 +800,32 @@ class HistoryTest(TestBase):
         f = Foo()
         self.assertEquals(attributes.get_history(attributes.state_getter(f), 'someattr'), ([], [None], []))
 
-        f.someattr = "hi"
-        self.assertEquals(attributes.get_history(attributes.state_getter(f), 'someattr'), (['hi'], [], []))
+        f.someattr = hi
+        self.assertEquals(attributes.get_history(attributes.state_getter(f), 'someattr'), ([hi], [], []))
 
         attributes.state_getter(f).commit(['someattr'])
-        self.assertEquals(attributes.get_history(attributes.state_getter(f), 'someattr'), ([], ['hi'], []))
+        self.assertEquals(attributes.get_history(attributes.state_getter(f), 'someattr'), ([], [hi], []))
 
-        f.someattr = 'there'
+        f.someattr = there
 
-        self.assertEquals(attributes.get_history(attributes.state_getter(f), 'someattr'), (['there'], [], ['hi']))
+        self.assertEquals(attributes.get_history(attributes.state_getter(f), 'someattr'), ([there], [], [hi]))
         attributes.state_getter(f).commit(['someattr'])
 
-        self.assertEquals(attributes.get_history(attributes.state_getter(f), 'someattr'), ([], ['there'], []))
+        self.assertEquals(attributes.get_history(attributes.state_getter(f), 'someattr'), ([], [there], []))
 
         del f.someattr
-        self.assertEquals(attributes.get_history(attributes.state_getter(f), 'someattr'), ([None], [], ['there']))
+        self.assertEquals(attributes.get_history(attributes.state_getter(f), 'someattr'), ([None], [], [there]))
 
         # case 2.  object with direct dictionary settings (similar to a load operation)
         f = Foo()
         f.__dict__['someattr'] = 'new'
         self.assertEquals(attributes.get_history(attributes.state_getter(f), 'someattr'), ([], ['new'], []))
 
-        f.someattr = 'old'
-        self.assertEquals(attributes.get_history(attributes.state_getter(f), 'someattr'), (['old'], [], ['new']))
+        f.someattr = old
+        self.assertEquals(attributes.get_history(attributes.state_getter(f), 'someattr'), ([old], [], ['new']))
 
         attributes.state_getter(f).commit(['someattr'])
-        self.assertEquals(attributes.get_history(attributes.state_getter(f), 'someattr'), ([], ['old'], []))
+        self.assertEquals(attributes.get_history(attributes.state_getter(f), 'someattr'), ([], [old], []))
 
         # setting None on uninitialized is currently not a change for an object attribute
         # (this is different than scalar attribute).  a lazyload has occured so if its

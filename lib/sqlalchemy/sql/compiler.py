@@ -76,10 +76,10 @@ OPERATORS =  {
     operators.eq : '=',
     operators.distinct_op : 'DISTINCT',
     operators.concat_op : '||',
-    operators.like_op : 'LIKE',
-    operators.notlike_op : 'NOT LIKE',
-    operators.ilike_op : lambda x, y: "lower(%s) LIKE lower(%s)" % (x, y),
-    operators.notilike_op : lambda x, y: "lower(%s) NOT LIKE lower(%s)" % (x, y),
+    operators.like_op : lambda x, y, escape=None: '%s LIKE %s' % (x, y) + (escape and ' ESCAPE \'%s\'' % escape or ''),
+    operators.notlike_op : lambda x, y, escape=None: '%s NOT LIKE %s' % (x, y) + (escape and ' ESCAPE \'%s\'' % escape or ''),
+    operators.ilike_op : lambda x, y, escape=None: "lower(%s) LIKE lower(%s)" % (x, y) + (escape and ' ESCAPE \'%s\'' % escape or ''),
+    operators.notilike_op : lambda x, y, escape=None: "lower(%s) NOT LIKE lower(%s)" % (x, y) + (escape and ' ESCAPE \'%s\'' % escape or ''),
     operators.between_op : 'BETWEEN',
     operators.in_op : 'IN',
     operators.notin_op : 'NOT IN',
@@ -101,6 +101,7 @@ FUNCTIONS = {
     functions.current_user: 'CURRENT_USER',
     functions.localtime: 'LOCALTIME',
     functions.localtimestamp: 'LOCALTIMESTAMP',
+    functions.random: 'random%(expr)s',
     functions.sysdate: 'sysdate',
     functions.session_user :'SESSION_USER',
     functions.user: 'USER'
@@ -248,14 +249,9 @@ class DefaultCompiler(engine.Compiled):
 
         return " ".join([self.process(label.obj), self.operator_string(operators.as_), self.preparer.format_label(label, labelname)])
 
-    def visit_column(self, column, result_map=None, use_schema=False, **kwargs):
-        # there is actually somewhat of a ruleset when you would *not* necessarily
-        # want to truncate a column identifier, if its mapped to the name of a
-        # physical column.  but thats very hard to identify at this point, and
-        # the identifier length should be greater than the id lengths of any physical
-        # columns so should not matter.
+    def visit_column(self, column, result_map=None, **kwargs):
 
-        if use_schema and getattr(column, 'table', None) and getattr(column.table, 'schema', None):
+        if getattr(column, 'table', None) and getattr(column.table, 'schema', None):
             schema_prefix = self.preparer.quote(column.table, column.table.schema) + '.'
         else:
             schema_prefix = ''
@@ -277,7 +273,7 @@ class DefaultCompiler(engine.Compiled):
                     return schema_prefix + self.preparer.quote(column.table, ANONYMOUS_LABEL.sub(self._process_anon, column.table.name)) + "." + n
             elif len(column.table.primary_key) != 0:
                 pk = list(column.table.primary_key)[0]
-                return self.visit_column(pk, result_map=result_map, use_schema=use_schema, **kwargs)
+                return self.visit_column(pk, result_map=result_map, **kwargs)
             else:
                 return None
         elif column.table is None or not column.table.named_with_column:
@@ -349,7 +345,7 @@ class DefaultCompiler(engine.Compiled):
         name = self.function_string(func)
 
         if callable(name):
-            return name(*[self.process(x) for x in func.clause_expr])
+            return name(*[self.process(x) for x in func.clauses])
         else:
             return ".".join(func.packagenames + [name]) % {'expr':self.function_argspec(func)}
 
@@ -357,7 +353,7 @@ class DefaultCompiler(engine.Compiled):
         return self.process(func.clause_expr)
 
     def function_string(self, func):
-        return self.functions.get(func.__class__, func.name + "%(expr)s")
+        return self.functions.get(func.__class__, self.functions.get(func.name, func.name + "%(expr)s"))
 
     def visit_compound_select(self, cs, asfrom=False, parens=True, **kwargs):
         stack_entry = {'select':cs}
@@ -394,7 +390,7 @@ class DefaultCompiler(engine.Compiled):
     def visit_binary(self, binary, **kwargs):
         op = self.operator_string(binary.operator)
         if callable(op):
-            return op(self.process(binary.left), self.process(binary.right))
+            return op(self.process(binary.left), self.process(binary.right), **binary.modifiers)
         else:
             return self.process(binary.left) + " " + op + " " + self.process(binary.right)
 
@@ -626,7 +622,10 @@ class DefaultCompiler(engine.Compiled):
         colparams = self._get_colparams(insert_stmt)
         preparer = self.preparer
 
-        return ("INSERT INTO %s (%s) VALUES (%s)" %
+        insert = ' '.join(["INSERT"] +
+                          [self.process(x) for x in insert_stmt._prefixes])
+
+        return (insert + " INTO %s (%s) VALUES (%s)" %
                 (preparer.format_table(insert_stmt.table),
                  ', '.join([preparer.quote(c[0], c[0].name)
                             for c in colparams]),

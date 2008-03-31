@@ -141,7 +141,16 @@ sq.myothertable_othername AS sq_myothertable_othername FROM (" + sqstring + ") A
 
     def test_dont_overcorrelate(self):
         self.assert_compile(select([table1], from_obj=[table1, table1.select()]), """SELECT mytable.myid, mytable.name, mytable.description FROM mytable, (SELECT mytable.myid AS myid, mytable.name AS name, mytable.description AS description FROM mytable)""")
+    
+    def test_intentional_full_correlate(self):
+        """test a subquery that has no FROM clause."""
+        
+        t = table('t', column('a'), column('b'))
+        s = select([t.c.a]).where(t.c.a==1).correlate(t).as_scalar()
 
+        s2 = select([t.c.a, s])
+        self.assert_compile(s2, """SELECT t.a, (SELECT t.a WHERE t.a = :t_a_1) AS anon_1 FROM t""")
+        
     def test_exists(self):
         self.assert_compile(exists([table1.c.myid], table1.c.myid==5).select(), "SELECT EXISTS (SELECT mytable.myid FROM mytable WHERE mytable.myid = :mytable_myid_1)", params={'mytable_myid':5})
 
@@ -429,15 +438,24 @@ sq.myothertable_othername AS sq_myothertable_othername FROM (" + sqstring + ") A
         clause = (table1.c.myid == 12) & table1.c.myid.between(15, 20) & table1.c.myid.like('hoho')
         assert str(clause) == str(util.pickle.loads(util.pickle.dumps(clause)))
 
-        # ILIKE
-        stmt = table1.select(table1.c.name.ilike('%something%'))
-        self.assert_compile(stmt, "SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE lower(mytable.name) LIKE lower(:mytable_name_1)")
-        self.assert_compile(stmt, "SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE mytable.name ILIKE %(mytable_name_1)s", dialect=postgres.PGDialect())
 
-        stmt = table1.select(~table1.c.name.ilike('%something%'))
-        self.assert_compile(stmt, "SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE lower(mytable.name) NOT LIKE lower(:mytable_name_1)")
-        self.assert_compile(stmt, "SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE mytable.name NOT ILIKE %(mytable_name_1)s", dialect=postgres.PGDialect())
-
+    def test_like(self):
+        for expr, check, dialect in [
+            (table1.c.myid.like('somstr'), "mytable.myid LIKE :mytable_myid_1", None),
+            (~table1.c.myid.like('somstr'), "mytable.myid NOT LIKE :mytable_myid_1", None),
+            (table1.c.myid.like('somstr', escape='\\'), "mytable.myid LIKE :mytable_myid_1 ESCAPE '\\'", None),
+            (~table1.c.myid.like('somstr', escape='\\'), "mytable.myid NOT LIKE :mytable_myid_1 ESCAPE '\\'", None),
+            (table1.c.myid.ilike('somstr', escape='\\'), "lower(mytable.myid) LIKE lower(:mytable_myid_1) ESCAPE '\\'", None),
+            (~table1.c.myid.ilike('somstr', escape='\\'), "lower(mytable.myid) NOT LIKE lower(:mytable_myid_1) ESCAPE '\\'", None),
+            (table1.c.myid.ilike('somstr', escape='\\'), "mytable.myid ILIKE %(mytable_myid_1)s ESCAPE '\\'", postgres.PGDialect()),
+            (~table1.c.myid.ilike('somstr', escape='\\'), "mytable.myid NOT ILIKE %(mytable_myid_1)s ESCAPE '\\'", postgres.PGDialect()),
+            (table1.c.name.ilike('%something%'), "lower(mytable.name) LIKE lower(:mytable_name_1)", None),
+            (table1.c.name.ilike('%something%'), "mytable.name ILIKE %(mytable_name_1)s", postgres.PGDialect()),
+            (~table1.c.name.ilike('%something%'), "lower(mytable.name) NOT LIKE lower(:mytable_name_1)", None),
+            (~table1.c.name.ilike('%something%'), "mytable.name NOT ILIKE %(mytable_name_1)s", postgres.PGDialect()),
+        ]:
+            self.assert_compile(expr, check, dialect=dialect)
+        
     def test_composed_string_comparators(self):
         self.assert_compile(
             table1.c.name.contains('jo'), "mytable.name LIKE '%%' || :mytable_name_1 || '%%'" , checkparams = {'mytable_name_1': u'jo'},
@@ -447,8 +465,11 @@ sq.myothertable_othername AS sq_myothertable_othername FROM (" + sqstring + ") A
             dialect=mysql.dialect()
         )
         self.assert_compile(
-            table1.c.name.endswith('hn'), "mytable.name LIKE '%%' || :mytable_name_1", checkparams = {'mytable_name_1': u'hn'},
+            table1.c.name.contains('jo', escape='\\'), "mytable.name LIKE '%%' || :mytable_name_1 || '%%' ESCAPE '\\'" , checkparams = {'mytable_name_1': u'jo'},
         )
+        self.assert_compile( table1.c.name.startswith('jo', escape='\\'), "mytable.name LIKE :mytable_name_1 || '%%' ESCAPE '\\'" )
+        self.assert_compile( table1.c.name.endswith('jo', escape='\\'), "mytable.name LIKE '%%' || :mytable_name_1 ESCAPE '\\'" )
+        self.assert_compile( table1.c.name.endswith('hn'), "mytable.name LIKE '%%' || :mytable_name_1", checkparams = {'mytable_name_1': u'hn'}, )
         self.assert_compile(
             table1.c.name.endswith('hn'), "mytable.name LIKE concat('%%', %s)",
             checkparams = {'mytable_name_1': u'hn'}, dialect=mysql.dialect()
@@ -1339,16 +1360,16 @@ class SchemaTest(TestBase, AssertsCompiledSQL):
     @testing.fails_on('mssql')
     def test_select(self):
         # these tests will fail with the MS-SQL compiler since it will alias schema-qualified tables
-        self.assert_compile(table4.select(), "SELECT remotetable.rem_id, remotetable.datatype_id, remotetable.value FROM remote_owner.remotetable")
+        self.assert_compile(table4.select(), "SELECT remote_owner.remotetable.rem_id, remote_owner.remotetable.datatype_id, remote_owner.remotetable.value FROM remote_owner.remotetable")
         self.assert_compile(table4.select(and_(table4.c.datatype_id==7, table4.c.value=='hi')),
-            "SELECT remotetable.rem_id, remotetable.datatype_id, remotetable.value FROM remote_owner.remotetable WHERE "\
-            "remotetable.datatype_id = :remotetable_datatype_id_1 AND remotetable.value = :remotetable_value_1")
+            "SELECT remote_owner.remotetable.rem_id, remote_owner.remotetable.datatype_id, remote_owner.remotetable.value FROM remote_owner.remotetable WHERE "\
+            "remote_owner.remotetable.datatype_id = :remote_owner_remotetable_datatype_id_1 AND remote_owner.remotetable.value = :remote_owner_remotetable_value_1")
 
         s = table4.select(and_(table4.c.datatype_id==7, table4.c.value=='hi'))
         s.use_labels = True
-        self.assert_compile(s, "SELECT remotetable.rem_id AS remotetable_rem_id, remotetable.datatype_id AS remotetable_datatype_id, remotetable.value "\
-            "AS remotetable_value FROM remote_owner.remotetable WHERE "\
-            "remotetable.datatype_id = :remotetable_datatype_id_1 AND remotetable.value = :remotetable_value_1")
+        self.assert_compile(s, "SELECT remote_owner.remotetable.rem_id AS remote_owner_remotetable_rem_id, remote_owner.remotetable.datatype_id AS remote_owner_remotetable_datatype_id, remote_owner.remotetable.value "\
+            "AS remote_owner_remotetable_value FROM remote_owner.remotetable WHERE "\
+            "remote_owner.remotetable.datatype_id = :remote_owner_remotetable_datatype_id_1 AND remote_owner.remotetable.value = :remote_owner_remotetable_value_1")
 
     def test_alias(self):
         a = alias(table4, 'remtable')
@@ -1357,7 +1378,7 @@ class SchemaTest(TestBase, AssertsCompiledSQL):
 
     def test_update(self):
         self.assert_compile(table4.update(table4.c.value=='test', values={table4.c.datatype_id:12}), "UPDATE remote_owner.remotetable SET datatype_id=:datatype_id "\
-            "WHERE remotetable.value = :remotetable_value_1")
+            "WHERE remote_owner.remotetable.value = :remote_owner_remotetable_value_1")
 
     def test_insert(self):
         self.assert_compile(table4.insert(values=(2, 5, 'test')), "INSERT INTO remote_owner.remotetable (rem_id, datatype_id, value) VALUES "\

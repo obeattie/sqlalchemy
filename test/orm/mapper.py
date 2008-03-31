@@ -102,7 +102,25 @@ class MapperTest(MapperSuperTest):
             assert False
         except exceptions.ArgumentError, e:
             assert "could not assemble any primary key columns for mapped table 'foo'" in str(e)
+    
+    def test_recompile_on_othermapper(self):
+        """test the global '__new_mappers' flag such that a compile 
+        trigger on an already-compiled mapper still triggers a check against all mappers."""
 
+        from sqlalchemy.orm import mapperlib
+        
+        mapper(User, users)
+        compile_mappers()
+        assert mapperlib._Mapper__new_mappers is False
+        
+        m = mapper(Address, addresses, properties={'user':relation(User, backref="addresses")})
+        
+        assert m.compiled is False
+        assert mapperlib._Mapper__new_mappers is True
+        u = User()
+        assert User.addresses
+        assert mapperlib._Mapper__new_mappers is False
+        
     def test_compileonsession(self):
         m = mapper(User, users)
         session = create_session()
@@ -230,6 +248,7 @@ class MapperTest(MapperSuperTest):
 
     def test_add_property(self):
         assert_col = []
+
         class User(object):
             def _get_user_name(self):
                 assert_col.append(('get', self._user_name))
@@ -239,11 +258,31 @@ class MapperTest(MapperSuperTest):
                 self._user_name = name
             user_name = property(_get_user_name, _set_user_name)
 
+            def _uc_user_name(self):
+                if self._user_name is None:
+                    return None
+                return self._user_name.upper()
+            uc_user_name = property(_uc_user_name)
+            uc_user_name2 = property(_uc_user_name)
+
         m = mapper(User, users)
         mapper(Address, addresses)
+
+        class UCComparator(PropComparator):
+            def __eq__(self, other):
+                cls = self.prop.parent.class_
+                col = getattr(cls, 'user_name')
+                if other is None:
+                    return col == None
+                else:
+                    return func.upper(col) == func.upper(other)
+
         m.add_property('_user_name', deferred(users.c.user_name))
         m.add_property('user_name', synonym('_user_name'))
         m.add_property('addresses', relation(Address))
+        m.add_property('uc_user_name', comparable_property(UCComparator))
+        m.add_property('uc_user_name2', comparable_property(
+                UCComparator, User.uc_user_name2))
 
         sess = create_session(transactional=True)
         assert sess.query(User).get(7)
@@ -253,6 +292,8 @@ class MapperTest(MapperSuperTest):
         def go():
             self.assert_result([u], User, user_address_result[0])
             assert u.user_name == 'jack'
+            assert u.uc_user_name == 'JACK'
+            assert u.uc_user_name2 == 'JACK'
             assert assert_col == [('get', 'jack')], str(assert_col)
         self.assert_sql_count(testing.db, go, 2)
 
@@ -350,6 +391,13 @@ class MapperTest(MapperSuperTest):
             assert False
         except exceptions.ArgumentError, e:
             assert "Attempting to assign a new relation 'addresses' to a non-primary mapper on class 'User'" in str(e)
+
+    def test_illegal_non_primary_2(self):
+        try:
+            mapper(User, users, non_primary=True)
+            assert False
+        except exceptions.InvalidRequestError, e:
+            assert "Configure a primary mapper first" in str(e)
 
     def test_propfilters(self):
         t = Table('person', MetaData(),
@@ -575,6 +623,11 @@ class MapperTest(MapperSuperTest):
         sess = create_session()
 
         assert_col = []
+        class extendedproperty(property):
+            attribute = 123
+            def __getitem__(self, key):
+                return 'value'
+
         class User(object):
             def _get_user_name(self):
                 assert_col.append(('get', self.user_name))
@@ -582,10 +635,10 @@ class MapperTest(MapperSuperTest):
             def _set_user_name(self, name):
                 assert_col.append(('set', name))
                 self.user_name = name
-            uname = property(_get_user_name, _set_user_name)
+            uname = extendedproperty(_get_user_name, _set_user_name)
 
         mapper(User, users, properties = dict(
-            addresses = relation(mapper(Address, addresses), lazy = True),
+            addresses = relation(mapper(Address, addresses), lazy=True),
             uname = synonym('user_name'),
             adlist = synonym('addresses', proxy=True),
             adname = synonym('addresses')
@@ -615,6 +668,8 @@ class MapperTest(MapperSuperTest):
         assert u.user_name == "some user name"
         assert u in sess.dirty
 
+        assert User.uname.attribute == 123
+        assert User.uname['key'] == 'value'
 
     def test_column_synonyms(self):
         """test new-style synonyms which automatically instrument properties, set up aliased column, etc."""
@@ -661,6 +716,70 @@ class MapperTest(MapperSuperTest):
         u.user_name = 'foo'
         assert u.user_name == 'foo'
         assert assert_col == [('get', 'jack'), ('set', 'foo'), ('get', 'foo')]
+
+    def test_comparable(self):
+        class extendedproperty(property):
+            attribute = 123
+            def __getitem__(self, key):
+                return 'value'
+
+        class UCComparator(PropComparator):
+            def __eq__(self, other):
+                cls = self.prop.parent.class_
+                col = getattr(cls, 'user_name')
+                if other is None:
+                    return col == None
+                else:
+                    return func.upper(col) == func.upper(other)
+
+        def map_(with_explicit_property):
+            class User(object):
+                @extendedproperty
+                def uc_user_name(self):
+                    if self.user_name is None:
+                        return None
+                    return self.user_name.upper()
+            if with_explicit_property:
+                args = (UCComparator, User.uc_user_name)
+            else:
+                args = (UCComparator,)
+
+            mapper(User, users, properties=dict(
+                    uc_user_name = comparable_property(*args)))
+            return User
+
+        for User in (map_(True), map_(False)):
+            sess = create_session()
+            sess.begin()
+            q = sess.query(User)
+
+            assert hasattr(User, 'user_name')
+            assert hasattr(User, 'uc_user_name')
+
+            # test compile
+            assert not isinstance(User.uc_user_name == 'jack', bool)
+            u = q.filter(User.uc_user_name=='JACK').one()
+
+            assert u.uc_user_name == "JACK"
+            assert u not in sess.dirty
+
+            u.user_name = "some user name"
+            assert u.user_name == "some user name"
+            assert u in sess.dirty
+            assert u.uc_user_name == "SOME USER NAME"
+
+            sess.flush()
+            sess.clear()
+
+            q = sess.query(User)
+            u2 = q.filter(User.user_name=='some user name').one()
+            u3 = q.filter(User.uc_user_name=='SOME USER NAME').one()
+
+            assert u2 is u3
+
+            assert User.uc_user_name.attribute == 123
+            assert User.uc_user_name['key'] == 'value'
+            sess.rollback()
 
 class OptionsTest(MapperSuperTest):
     @testing.fails_on('maxdb')
@@ -843,14 +962,11 @@ class OptionsTest(MapperSuperTest):
         self.assert_sql_count(testing.db, go, 3)
         sess.clear()
 
-
-        print "-------MARK----------"
         # eagerload orders.items.keywords; eagerload_all() implies eager load of orders, orders.items
         q2 = sess.query(User).options(eagerload_all('orders.items.keywords'))
         u = q2.all()
         def go():
             print u[0].orders[1].items[0].keywords[1]
-        print "-------MARK2----------"
         self.assert_sql_count(testing.db, go, 0)
 
         sess.clear()
@@ -864,15 +980,13 @@ class OptionsTest(MapperSuperTest):
 
         sess.clear()
 
-        try:
-            sess.query(User).options(eagerload('items', Order))
-            assert False
-        except exceptions.ArgumentError, e:
-            assert str(e) == "Can't find entity Mapper|Order|orders in Query.  Current list: ['Mapper|User|users']"
+        self.assertRaisesMessage(exceptions.ArgumentError, 
+            r"Can't find entity Mapper\|Order\|orders in Query.  Current list: \['Mapper\|User\|users'\]", 
+            sess.query(User).options, eagerload('items', Order)
+        )
 
         # eagerload "keywords" on items.  it will lazy load "orders", then lazy load
         # the "items" on the order, but on "items" it will eager load the "keywords"
-        print "-------MARK5----------"
         q3 = sess.query(User).options(eagerload('orders.items.keywords'))
         u = q3.all()
         self.assert_sql_count(testing.db, go, 2)
