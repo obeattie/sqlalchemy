@@ -7,7 +7,7 @@
 import inspect, operator, new, weakref
 from itertools import chain
 from sqlalchemy import util
-from sqlalchemy.util import attrgetter
+from sqlalchemy.util import attrgetter, itemgetter
 from sqlalchemy.orm import interfaces, collections
 from sqlalchemy.orm.util import identity_equal
 from sqlalchemy import exceptions
@@ -1033,7 +1033,7 @@ class ClassManager(dict):
         delattr(self.class_, self.MANAGER_ATTR)
 
     def manager_getter(self):
-        return operator.attrgetter(self.MANAGER_ATTR)
+        return attrgetter(self.MANAGER_ATTR)
 
     def instrument_attribute(self, key, inst, propagated=False):
         if propagated:
@@ -1217,9 +1217,9 @@ class History(tuple):
     # TODO: migrate [] marker for empty slots to ()
     __slots__ = ()
 
-    added = property(operator.itemgetter(0))
-    unchanged = property(operator.itemgetter(1))
-    deleted = property(operator.itemgetter(2))
+    added = property(itemgetter(0))
+    unchanged = property(itemgetter(1))
+    deleted = property(itemgetter(2))
 
     def __new__(cls, added, unchanged, deleted):
         return tuple.__new__(cls, (added, unchanged, deleted))

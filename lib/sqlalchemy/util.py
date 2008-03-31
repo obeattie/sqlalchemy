@@ -96,9 +96,15 @@ except ImportError:
 
 try:
     from operator import attrgetter
-except:
+except ImportError:
     def attrgetter(attribute):
         return lambda value: getattr(value, attribute)
+
+try:
+    from operator import itemgetter
+except ImportError:
+    def itemgetter(attribute):
+        return lambda value: value[attribute]
 
 if sys.version_info >= (2, 5):
     class PopulateDict(dict):
