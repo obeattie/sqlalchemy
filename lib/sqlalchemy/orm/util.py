@@ -80,63 +80,78 @@ def polymorphic_union(table_map, typecolname, aliasname='p_union'):
 
 
 class ExtensionCarrier(object):
-    """stores a collection of MapperExtension objects.
-    
-    allows an extension methods to be called on contained MapperExtensions
-    in the order they were added to this object.  Also includes a 'methods' dictionary
-    accessor which allows for a quick check if a particular method
-    is overridden on any contained MapperExtensions.
+    """Fronts an ordered collection of MapperExtension objects.
+
+    Bundles multiple MapperExtensions into a unified callable unit,
+    encapsulating ordering, looping and EXT_CONTINUE logic.  The
+    ExtensionCarrier implements the MapperExtension interface, e.g.::
+
+      carrier.after_insert(...args...)
+
+    Also includes a 'methods' dictionary accessor which allows for a quick
+    check if a particular method is overridden on any contained
+    MapperExtensions.
+
     """
-    
-    def __init__(self, _elements=None):
+
+    interface = util.Set([method for method in dir(MapperExtension)
+                          if not method.startswith('_')])
+
+    def __init__(self, extensions=None):
         self.methods = {}
-        if _elements is not None:
-            self.__elements = [self.__inspect(e) for e in _elements]
-        else:
-            self.__elements = []
-        
+        self._extensions = []
+        for ext in extensions or ():
+            self.append(ext)
+
     def copy(self):
-        return ExtensionCarrier(list(self.__elements))
-        
-    def __iter__(self):
-        return iter(self.__elements)
+        return ExtensionCarrier(self._extensions)
 
-    def insert(self, extension):
-        """Insert a MapperExtension at the beginning of this ExtensionCarrier's list."""
-
-        self.__elements.insert(0, self.__inspect(extension))
+    def push(self, extension):
+        """Insert a MapperExtension at the beginning of the collection."""
+        self._register(extension)
+        self._extensions.insert(0, extension)
 
     def append(self, extension):
-        """Append a MapperExtension at the end of this ExtensionCarrier's list."""
+        """Append a MapperExtension at the end of the collection."""
+        self._register(extension)
+        self._extensions.append(extension)
 
-        self.__elements.append(self.__inspect(extension))
+    def __iter__(self):
+        """Iterate over MapperExtensions in the collection."""
+        return iter(self._extensions)
 
-    def __inspect(self, extension):
-        for meth in MapperExtension.__dict__.keys():
-            if meth not in self.methods and hasattr(extension, meth) and getattr(extension, meth) is not getattr(MapperExtension, meth):
-                self.methods[meth] = self.__create_do(meth)
-        return extension
-           
-    def __create_do(self, funcname):
+    def _register(self, extension):
+        """Register callable fronts for overridden interface methods."""
+        for method in self.interface:
+            if method in self.methods:
+                continue
+            impl = getattr(extension, method, None)
+            if impl and impl is not getattr(MapperExtension, method):
+                self.methods[method] = self._create_do(method)
+
+    def _create_do(self, method):
+        """Return a closure that loops over impls of the named method."""
         def _do(*args, **kwargs):
-            for elem in self.__elements:
-                ret = getattr(elem, funcname)(*args, **kwargs)
+            for ext in self._extensions:
+                ret = getattr(ext, method)(*args, **kwargs)
                 if ret is not EXT_CONTINUE:
                     return ret
             else:
                 return EXT_CONTINUE
-
         try:
             _do.__name__ = funcname
         except:
-            # cant set __name__ in py 2.3 
             pass
         return _do
-    
-    def _pass(self, *args, **kwargs):
+
+    def _pass(*args, **kwargs):
         return EXT_CONTINUE
-        
+    _pass = staticmethod(_pass)
+
     def __getattr__(self, key):
+        """Delegate MapperExtension methods to bundled fronts."""
+        if key not in self.interface:
+            raise AttributeError(key)
         return self.methods.get(key, self._pass)
 
 class AliasedClauses(object):

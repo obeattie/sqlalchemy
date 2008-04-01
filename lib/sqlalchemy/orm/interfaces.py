@@ -588,7 +588,7 @@ class ExtensionOption(MapperOption):
 
     def process_query(self, query):
         query._extension = query._extension.copy()
-        query._extension.insert(self.ext)
+        query._extension.push(self.ext)
 
 
 class PropertyOption(MapperOption):
