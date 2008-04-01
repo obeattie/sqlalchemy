@@ -22,7 +22,7 @@ collections = None
 
 __all__ = ['EXT_CONTINUE', 'EXT_STOP', 'EXT_PASS', 'MapperExtension',
            'MapperProperty', 'PropComparator', 'StrategizedProperty',
-           'build_path', 'MapperOption',
+           'build_path', 'MapperOption', 'SessionExtension',
            'ExtensionOption', 'PropertyOption',
            'AttributeExtension', 'StrategizedOption', 'LoaderStrategy',
            'InstrumentationManager']
@@ -277,6 +277,48 @@ class MapperExtension(object):
         """Receive an object instance after that instance is DELETEed."""
 
         return EXT_CONTINUE
+
+class SessionExtension(object):
+    """An extension hook object for Sessions.  Subclasses may be installed into a Session
+    (or sessionmaker) using the ``extension`` keyword argument.
+    """
+
+    def before_commit(self, session):
+        """Execute right before commit is called.
+
+        Note that this may not be per-flush if a longer running transaction is ongoing."""
+
+    def after_commit(self, session):
+        """Execute after a commit has occured.
+
+        Note that this may not be per-flush if a longer running transaction is ongoing."""
+
+    def after_rollback(self, session):
+        """Execute after a rollback has occured.
+
+        Note that this may not be per-flush if a longer running transaction is ongoing."""
+
+    def before_flush(self, session, flush_context, instances):
+        """Execute before flush process has started.
+
+        `instances` is an optional list of objects which were passed to the ``flush()``
+        method.
+        """
+
+    def after_flush(self, session, flush_context):
+        """Execute after flush has completed, but before commit has been called.
+
+        Note that the session's state is still in pre-flush, i.e. 'new', 'dirty',
+        and 'deleted' lists still show pre-flush state as well as the history
+        settings on instance attributes."""
+
+    def after_flush_postexec(self, session, flush_context):
+        """Execute after flush has completed, and after the post-exec state occurs.
+
+        This will be when the 'new', 'dirty', and 'deleted' lists are in their final
+        state.  An actual commit() may or may not have occured, depending on whether or not
+        the flush started its own transaction or participated in a larger transaction.
+        """
 
 class MapperProperty(object):
     """Manage the relationship of a ``Mapper`` to a single class

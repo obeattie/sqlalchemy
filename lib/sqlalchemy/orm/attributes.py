@@ -869,7 +869,6 @@ class InstanceState(object):
 
     def __getstate__(self):
         return {'key': self.key,
-                'session_id': self.session_id,
                 'entity_name': self.entity_name,
                 'committed_state': self.committed_state,
                 'pending': self.pending,
@@ -883,7 +882,7 @@ class InstanceState(object):
         self.committed_state = state['committed_state']
         self.parents = state['parents']
         self.key = state['key']
-        self.session_id = state['session_id']
+        self.session_id = None
         self.entity_name = state['entity_name']
         self.pending = state['pending']
         self.modified = state['modified']

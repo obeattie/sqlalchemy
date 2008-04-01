@@ -78,7 +78,69 @@ def polymorphic_union(table_map, typecolname, aliasname='p_union'):
             result.append(sql.select([col(name, table) for name in colnames], from_obj=[table]))
     return sql.union_all(*result).alias(aliasname)
 
+def identity_key(*args, **kwargs):
+    """Get an identity key.
 
+    Valid call signatures:
+
+    * ``identity_key(class, ident, entity_name=None)``
+
+      class
+          mapped class (must be a positional argument)
+
+      ident
+          primary key, if the key is composite this is a tuple
+
+      entity_name
+          optional entity name
+
+    * ``identity_key(instance=instance)``
+
+      instance
+          object instance (must be given as a keyword arg)
+
+    * ``identity_key(class, row=row, entity_name=None)``
+
+      class
+          mapped class (must be a positional argument)
+
+      row
+          result proxy row (must be given as a keyword arg)
+
+      entity_name
+          optional entity name (must be given as a keyword arg)
+    """
+    from sqlalchemy.orm import class_mapper, object_mapper
+    if args:
+        if len(args) == 1:
+            class_ = args[0]
+            try:
+                row = kwargs.pop("row")
+            except KeyError:
+                ident = kwargs.pop("ident")
+            entity_name = kwargs.pop("entity_name", None)
+        elif len(args) == 2:
+            class_, ident = args
+            entity_name = kwargs.pop("entity_name", None)
+        elif len(args) == 3:
+            class_, ident, entity_name = args
+        else:
+            raise exceptions.ArgumentError("expected up to three "
+                "positional arguments, got %s" % len(args))
+        if kwargs:
+            raise exceptions.ArgumentError("unknown keyword arguments: %s"
+                % ", ".join(kwargs.keys()))
+        mapper = class_mapper(class_, entity_name=entity_name)
+        if "ident" in locals():
+            return mapper.identity_key_from_primary_key(ident)
+        return mapper.identity_key_from_row(row)
+    instance = kwargs.pop("instance")
+    if kwargs:
+        raise exceptions.ArgumentError("unknown keyword arguments: %s"
+            % ", ".join(kwargs.keys()))
+    mapper = object_mapper(instance)
+    return mapper.identity_key_from_instance(instance)
+    
 class ExtensionCarrier(object):
     """Fronts an ordered collection of MapperExtension objects.
 

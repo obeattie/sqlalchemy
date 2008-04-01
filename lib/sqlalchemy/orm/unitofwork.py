@@ -86,173 +86,6 @@ def register_attribute(class_, key, *args, **kwargs):
     
 
 
-class UnitOfWork(object):
-    """Main UOW object which stores lists of dirty/new/deleted objects.
-
-    Provides top-level *flush* functionality as well as the
-    default transaction boundaries involved in a write
-    operation.
-    """
-
-    def __init__(self, session):
-        if session.weak_identity_map:
-            self.identity_map = identity.WeakInstanceDict()
-        else:
-            self.identity_map = identity.StrongInstanceDict()
-
-        self.new = {}   # InstanceState->object, strong refs object
-        self.deleted = {}  # same
-        self.logger = logging.instance_logger(self, echoflag=session.echo_uow)
-    
-    def remove_persistent(self, state):
-        self.identity_map.remove(state)
-        self.deleted.pop(state, None)
-    
-    def remove_pending(self, state):
-        self.new.pop(state)
-        
-    def add_persistent(self, state):
-        self.identity_map.add(state)
-
-    def add_pending(self, state):
-        if state.key is not None:
-            raise exceptions.InvalidRequestError(
-                "Object '%s' already has an identity - it can't be registered "
-                "as pending" % repr(obj))
-        if state not in self.new:
-            self.new[state] = state.obj()
-            state.insert_order = len(self.new)
-
-    def add_deleted(self, state):
-        self.deleted[state] = state.obj()
-        
-    def _contains_state(self, state):
-        if state.key is not None:
-            return state.key in self.identity_map
-        else:
-            return state in self.new
-
-    def _register_newly_persistent(self, state):
-
-        mapper = _state_mapper(state)
-        instance_key = mapper._identity_key_from_state(state)
-
-        if state.key is None:
-            state.key = instance_key
-        elif state.key != instance_key:
-            # primary key switch
-            self.identity_map.remove(state)
-            state.key = instance_key
-            
-        if hasattr(state, 'insert_order'):
-            delattr(state, 'insert_order')
-        
-        obj = state.obj()
-        # prevent against last minute dereferences of the object
-        # TODO: identify a code path where state.obj() is None
-        if obj is not None:
-            if state.key in self.identity_map and not self.identity_map.contains_state(state):
-                self.identity_map.remove_key(state.key)
-            self.identity_map.add(state)
-            state.commit_all()
-
-        # remove from new last, might be the last strong ref
-        self.new.pop(state, None)
-
-    def locate_dirty(self):
-        """Return a set of all persistent instances considered dirty.
-
-        Instances are considered dirty when they were modified but not
-        deleted.
-
-        """
-        return util.IdentitySet(
-            [state.obj() for state in self.locate_dirty_states() if state not in self.deleted]
-        )
-
-    def locate_dirty_states(self):
-        """Return a set of all persistent states considered dirty.
-
-        This method returns all states that were modified including those that
-        were possibly deleted.
-
-        """
-        return util.IdentitySet(
-            [state for state in self.identity_map.all_states() if state.check_modified()]
-        )
-
-    def flush(self, session, objects=None):
-        """Create a dependency tree of all pending SQL operations within this
-        unit of work and execute.
-
-        """
-        if not self.identity_map.check_modified() and not self.deleted and not self.new:
-            return
-        dirty = self.locate_dirty_states()
-        if not dirty and not self.deleted and not self.new:
-            self.identity_map.modified = False
-            return
-
-        deleted = util.Set(self.deleted)
-        new = util.Set(self.new)
-
-        dirty = util.Set(dirty).difference(deleted)
-
-        flush_context = UOWTransaction(self, session)
-
-        if session.extension is not None:
-            session.extension.before_flush(session, flush_context, objects)
-
-        # create the set of all objects we want to operate upon
-        if objects:
-            # specific list passed in
-            objset = util.Set([attributes.state_getter(o) for o in objects])
-        else:
-            # or just everything
-            objset = util.Set(self.identity_map.all_states()).union(new)
-            
-        # store objects whose fate has been decided
-        processed = util.Set()
-
-        # put all saves/updates into the flush context.  detect top-level orphans and throw them into deleted.
-        for state in new.union(dirty).intersection(objset).difference(deleted):
-            is_orphan = _state_mapper(state)._is_orphan(state)
-            if is_orphan and not _state_has_identity(state):
-                raise exceptions.FlushError("instance %s is an unsaved, pending instance and is an orphan (is not attached to %s)" %
-                    (
-                        mapperutil.state_str(state),
-                        ", nor ".join(["any parent '%s' instance via that classes' '%s' attribute" % (klass.__name__, key) for (key,klass) in _state_mapper(state).delete_orphans])
-                    ))
-            flush_context.register_object(state, isdelete=is_orphan)
-            processed.add(state)
-
-        # put all remaining deletes into the flush context.
-        for state in deleted.intersection(objset).difference(processed):
-            flush_context.register_object(state, isdelete=True)
-
-        if len(flush_context.tasks) == 0:
-            return
-            
-        session.create_transaction(autoflush=False)
-        flush_context.transaction = session.transaction
-        try:
-            flush_context.execute()
-            
-            if session.extension is not None:
-                session.extension.after_flush(session, flush_context)
-            session.commit()
-        except:
-            session.rollback()
-            flush_context.remove_flush_changes()
-            raise
-
-        flush_context.finalize_flush_changes()
-        
-        if not objects:
-            self.identity_map.modified = False
-            
-        if session.extension is not None:
-            session.extension.after_flush_postexec(session, flush_context)
 
 class UOWTransaction(object):
     """Handles the details of organizing and executing transaction
@@ -264,8 +97,7 @@ class UOWTransaction(object):
     packages.
     """
 
-    def __init__(self, uow, session):
-        self.uow = uow
+    def __init__(self, session):
         self.session = session
         self.mapper_flush_opts = session._mapper_flush_opts
         
@@ -310,7 +142,7 @@ class UOWTransaction(object):
 
     def register_object(self, state, isdelete=False, listonly=False, postupdate=False, post_update_cols=None):
         # if object is not in the overall session, do nothing
-        if not self.uow._contains_state(state):
+        if not self.session._contains_state(state):
             if self._should_log_debug:
                 self.logger.debug("object %s not part of session, not registering for flush" % (mapperutil.state_str(state)))
             return
@@ -461,9 +293,9 @@ class UOWTransaction(object):
         for elem in self.elements:
             elem.state.remove_savepoint()
             if elem.isdelete:
-                self.uow.remove_persistent(elem.state)
+                self.session._remove_persistent(elem.state)
             else:
-                self.uow._register_newly_persistent(elem.state)
+                self.session._register_newly_persistent(elem.state)
 
     def _sort_dependencies(self):
         nodes = topological.sort_with_cycles(self.dependencies, 

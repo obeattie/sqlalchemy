@@ -1053,8 +1053,8 @@ class Mapper(object):
             # UPDATE if so.
             mapper = _state_mapper(state)
             instance_key = mapper._identity_key_from_state(state)
-            if not postupdate and not has_identity and instance_key in uowtransaction.uow.identity_map:
-                instance = uowtransaction.uow.identity_map[instance_key]
+            if not postupdate and not has_identity and instance_key in uowtransaction.session.identity_map:
+                instance = uowtransaction.session.identity_map[instance_key]
                 existing = attributes.state_getter(instance)
                 if not uowtransaction.is_deleted(existing):
                     raise exceptions.FlushError("New instance %s with identity key %s conflicts with persistent instance %s" % (state_str(state), str(instance_key), state_str(existing)))
@@ -1084,7 +1084,7 @@ class Mapper(object):
                 if self.__should_log_debug:
                     self.__log_debug("_save_obj() table '%s' instance %s identity %s" % (table.name, state_str(state), str(instance_key)))
 
-                isinsert = not instance_key in uowtransaction.uow.identity_map and not postupdate and not has_identity
+                isinsert = not instance_key in uowtransaction.session.identity_map and not postupdate and not has_identity
                 params = {}
                 value_params = {}
                 hasdata = False

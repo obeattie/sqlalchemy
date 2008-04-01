@@ -10,12 +10,13 @@
 import weakref
 import sqlalchemy.orm.attributes
 from sqlalchemy import util, exceptions, sql, engine
-from sqlalchemy.orm import unitofwork, query, attributes, util as mapperutil
+from sqlalchemy.orm import unitofwork, query, attributes, util as mapperutil, SessionExtension
 from sqlalchemy.orm.mapper import object_mapper as _object_mapper
 from sqlalchemy.orm.mapper import class_mapper as _class_mapper
-from sqlalchemy.orm.mapper import _state_mapper
+from sqlalchemy.orm.mapper import _state_mapper, _state_has_identity, _class_to_mapper
 from sqlalchemy.orm.mapper import Mapper
-
+from sqlalchemy.orm.unitofwork import UOWTransaction
+from sqlalchemy.orm import identity
 
 __all__ = ['Session', 'SessionTransaction', 'SessionExtension']
 
@@ -88,47 +89,6 @@ def sessionmaker(bind=None, class_=None, autoflush=True, transactional=True, **k
 
     return Sess
 
-class SessionExtension(object):
-    """An extension hook object for Sessions.  Subclasses may be installed into a Session
-    (or sessionmaker) using the ``extension`` keyword argument.
-    """
-
-    def before_commit(self, session):
-        """Execute right before commit is called.
-
-        Note that this may not be per-flush if a longer running transaction is ongoing."""
-
-    def after_commit(self, session):
-        """Execute after a commit has occured.
-
-        Note that this may not be per-flush if a longer running transaction is ongoing."""
-
-    def after_rollback(self, session):
-        """Execute after a rollback has occured.
-
-        Note that this may not be per-flush if a longer running transaction is ongoing."""
-
-    def before_flush(self, session, flush_context, instances):
-        """Execute before flush process has started.
-
-        `instances` is an optional list of objects which were passed to the ``flush()``
-        method.
-        """
-
-    def after_flush(self, session, flush_context):
-        """Execute after flush has completed, but before commit has been called.
-
-        Note that the session's state is still in pre-flush, i.e. 'new', 'dirty',
-        and 'deleted' lists still show pre-flush state as well as the history
-        settings on instance attributes."""
-
-    def after_flush_postexec(self, session, flush_context):
-        """Execute after flush has completed, and after the post-exec state occurs.
-
-        This will be when the 'new', 'dirty', and 'deleted' lists are in their final
-        state.  An actual commit() may or may not have occured, depending on whether or not
-        the flush started its own transaction or participated in a larger transaction.
-        """
 
 class SessionTransaction(object):
     """Represents a Session-level Transaction.
@@ -460,10 +420,14 @@ class Session(object):
             expunge(), clear(), or purge().
         """
         self.echo_uow = echo_uow
-        self.weak_identity_map = weak_identity_map
-        self.uow = unitofwork.UnitOfWork(self)
-        self.identity_map = self.uow.identity_map
+        if weak_identity_map:
+            self._identity_cls = identity.WeakInstanceDict
+        else:
+            self._identity_cls = identity.StrongInstanceDict
+        self.identity_map = self._identity_cls()
 
+        self._new = {}   # InstanceState->object, strong refs object
+        self._deleted = {}  # same
         self.bind = bind
         self.__binds = {}
         self.transaction = None
@@ -498,6 +462,7 @@ class Session(object):
         return self.transaction
 
     create_transaction = begin
+
 
     def begin_nested(self):
         """Begin a `nested` transaction on this Session.
@@ -645,10 +610,12 @@ class Session(object):
         this ``Session``.
         """
         
-        for state in self.identity_map.all_states() + list(self.uow.new):
+        for state in self.identity_map.all_states() + list(self._new):
             self._unattach(state)
-        self.uow = unitofwork.UnitOfWork(self)
-        self.identity_map = self.uow.identity_map
+
+        self.identity_map = self._identity_cls()
+        self._new = {}
+        self._deleted = {}
 
     # TODO: need much more test coverage for bind_mapper() and similar !
 
@@ -700,11 +667,10 @@ class Session(object):
 
         elif len(self.__binds):
             if mapper is not None:
-                if isinstance(mapper, type):
-                    mapper = _class_mapper(mapper)
+                mapper = _class_to_mapper(mapper)
                 if mapper.base_mapper in self.__binds:
                     return self.__binds[mapper.base_mapper]
-                elif mapper.compile().mapped_table in self.__binds:
+                elif mapper.mapped_table in self.__binds:
                     return self.__binds[mapper.mapped_table]
             if clause is not None:
                 for t in clause._table_iterator():
@@ -718,10 +684,7 @@ class Session(object):
         elif mapper is None:
             raise exceptions.UnboundExecutionError("Could not locate any mapper associated with SQL expression")
         else:
-            if isinstance(mapper, type):
-                mapper = _class_mapper(mapper)
-            else:
-                mapper = mapper.compile()
+            mapper = _class_to_mapper(mapper)
             e = mapper.mapped_table.bind
             if e is None:
                 raise exceptions.UnboundExecutionError("Could not locate any Engine or Connection bound to mapper '%s'" % str(mapper))
@@ -734,10 +697,8 @@ class Session(object):
 
         entity_name = kwargs.pop('entity_name', None)
 
-        if isinstance(mapper_or_class, type):
-            q = self._query_cls(_class_mapper(mapper_or_class, entity_name=entity_name), self, **kwargs)
-        else:
-            q = self._query_cls(mapper_or_class, self, **kwargs)
+        mapper_or_class = _class_to_mapper(mapper_or_class, entity_name=entity_name)
+        q = self._query_cls(mapper_or_class, self, **kwargs)
 
         for ent in addtl_entities:
             q = q.add_entity(ent)
@@ -746,16 +707,6 @@ class Session(object):
     def _autoflush(self):
         if self.autoflush and (self.transaction is None or self.transaction.autoflush):
             self.flush()
-
-    def flush(self, objects=None):
-        """Flush all the object modifications present in this session
-        to the database.
-
-        `objects` is a list or tuple of objects specifically to be
-        flushed; if ``None``, all new and modified objects are flushed.
-        """
-
-        self.uow.flush(self, objects)
 
     def get(self, class_, ident, **kwargs):
         """Return an instance of the object based on the given
@@ -859,7 +810,7 @@ class Session(object):
         Returns the number of objects pruned.
         """
 
-        return self.uow.identity_map.prune()
+        return self.identity_map.prune()
 
     def expunge(self, instance):
         """Remove the given `instance` from this ``Session``.
@@ -870,11 +821,16 @@ class Session(object):
         """
         state = attributes.state_getter(instance)
         for s, m in [(state, None)] + list(_cascade_state_iterator('expunge', state)):
-            if s in self.uow.new:
-                self.uow.remove_pending(s)
+            if s in self._new:
+                self._new.pop(s)
+                self._unattach(s)
             elif self.identity_map.contains_state(s):
-                self.uow.remove_persistent(s)
-            self._unattach(s)
+                self._remove_persistent(s)
+    
+    def _remove_persistent(self, state):
+        self.identity_map.remove(state)
+        self._deleted.pop(state, None)
+        self._unattach(state)
 
     def save(self, instance, entity_name=None):
         """Add a transient (unsaved) instance to this ``Session``.
@@ -1010,67 +966,7 @@ class Session(object):
         return merged
 
     def identity_key(cls, *args, **kwargs):
-        """Get an identity key.
-
-        Valid call signatures:
-
-        * ``identity_key(class, ident, entity_name=None)``
-
-          class
-              mapped class (must be a positional argument)
-
-          ident
-              primary key, if the key is composite this is a tuple
-
-          entity_name
-              optional entity name
-
-        * ``identity_key(instance=instance)``
-
-          instance
-              object instance (must be given as a keyword arg)
-
-        * ``identity_key(class, row=row, entity_name=None)``
-
-          class
-              mapped class (must be a positional argument)
-
-          row
-              result proxy row (must be given as a keyword arg)
-
-          entity_name
-              optional entity name (must be given as a keyword arg)
-        """
-
-        if args:
-            if len(args) == 1:
-                class_ = args[0]
-                try:
-                    row = kwargs.pop("row")
-                except KeyError:
-                    ident = kwargs.pop("ident")
-                entity_name = kwargs.pop("entity_name", None)
-            elif len(args) == 2:
-                class_, ident = args
-                entity_name = kwargs.pop("entity_name", None)
-            elif len(args) == 3:
-                class_, ident, entity_name = args
-            else:
-                raise exceptions.ArgumentError("expected up to three "
-                    "positional arguments, got %s" % len(args))
-            if kwargs:
-                raise exceptions.ArgumentError("unknown keyword arguments: %s"
-                    % ", ".join(kwargs.keys()))
-            mapper = _class_mapper(class_, entity_name=entity_name)
-            if "ident" in locals():
-                return mapper.identity_key_from_primary_key(ident)
-            return mapper.identity_key_from_row(row)
-        instance = kwargs.pop("instance")
-        if kwargs:
-            raise exceptions.ArgumentError("unknown keyword arguments: %s"
-                % ", ".join(kwargs.keys()))
-        mapper = _object_mapper(instance)
-        return mapper.identity_key_from_instance(instance)
+        return mapperutil.identity_key(*args, **kwargs)
     identity_key = classmethod(identity_key)
 
     def object_session(cls, instance):
@@ -1080,15 +976,21 @@ class Session(object):
     object_session = classmethod(object_session)
 
     def _validate_persistent(self, state):
-        if state not in self.uow.new and not self.identity_map.contains_state(state):
+        if state not in self._new and not self.identity_map.contains_state(state):
             raise exceptions.InvalidRequestError("Instance '%s' is not persistent within this Session" % mapperutil.state_str(state))
 
     def _save_impl(self, state):
+        if state.key is not None:
+            raise exceptions.InvalidRequestError(
+                "Object '%s' already has an identity - it can't be registered "
+                "as pending" % repr(obj))
+        if state not in self._new:
+            self._new[state] = state.obj()
+            state.insert_order = len(self._new)
         self._attach(state)
-        self.uow.add_pending(state)
 
     def _update_impl(self, state):
-        if self.identity_map.contains_state(state) and state not in self.uow.deleted:
+        if self.identity_map.contains_state(state) and state not in self._deleted:
             return
 
         if state.key is None:
@@ -1101,8 +1003,8 @@ class Session(object):
                 "Could not update instance '%s', identity key %s; a different "
                 "instance with the same identity key already exists in this "
                 "session." % (mapperutil.state_str(state), state.key))
+        self.identity_map.add(state)
         self._attach(state)
-        self.uow.add_persistent(state)
         
     def _save_or_update_impl(self, state):
         if state.key is None:
@@ -1111,7 +1013,7 @@ class Session(object):
             self._update_impl(state)
 
     def _delete_impl(self, state, ignore_transient=False):
-        if self.identity_map.contains_state(state) and state in self.uow.deleted:
+        if self.identity_map.contains_state(state) and state in self._deleted:
             return
             
         if state.key is None:
@@ -1124,8 +1026,9 @@ class Session(object):
                 "Instance '%s' is with key %s already persisted with a "
                 "different identity" % (mapperutil.state_str(state),
                                         state.key))
+
+        self._deleted[state] = state.obj()
         self._attach(state)
-        self.uow.add_deleted(state)
 
     def _attach(self, state):
         old_id = state.session_id
@@ -1152,13 +1055,116 @@ class Session(object):
         """
         return self._contains_state(attributes.state_getter(instance))
     
-    def _contains_state(self, state):
-        return state in self.uow.new or self.identity_map.contains_state(state)
-        
     def __iter__(self):
         """Return an iterator of all instances which are pending or persistent within this Session."""
 
-        return iter(list(self.uow.new.values()) + self.uow.identity_map.values())
+        return iter(list(self._new.values()) + self.identity_map.values())
+
+    def _contains_state(self, state):
+        return state in self._new or self.identity_map.contains_state(state)
+
+    def _register_newly_persistent(self, state):
+
+        mapper = _state_mapper(state)
+        instance_key = mapper._identity_key_from_state(state)
+
+        if state.key is None:
+            state.key = instance_key
+        elif state.key != instance_key:
+            # primary key switch
+            self.identity_map.remove(state)
+            state.key = instance_key
+
+        if hasattr(state, 'insert_order'):
+            delattr(state, 'insert_order')
+
+        obj = state.obj()
+        # prevent against last minute dereferences of the object
+        # TODO: identify a code path where state.obj() is None
+        if obj is not None:
+            if state.key in self.identity_map and not self.identity_map.contains_state(state):
+                self.identity_map.remove_key(state.key)
+            self.identity_map.add(state)
+            state.commit_all()
+
+        # remove from new last, might be the last strong ref
+        self._new.pop(state, None)
+
+    def flush(self, objects=None):
+        """Flush all the object modifications present in this session
+        to the database.
+
+        `objects` is a list or tuple of objects specifically to be
+        flushed; if ``None``, all new and modified objects are flushed.
+
+        """
+        if not self.identity_map.check_modified() and not self._deleted and not self._new:
+            return
+        dirty = self._dirty_states
+        if not dirty and not self._deleted and not self._new:
+            self.identity_map.modified = False
+            return
+
+        deleted = util.Set(self._deleted)
+        new = util.Set(self._new)
+
+        dirty = util.Set(dirty).difference(deleted)
+
+        flush_context = UOWTransaction(self)
+
+        if self.extension is not None:
+            self.extension.before_flush(self, flush_context, objects)
+
+        # create the set of all objects we want to operate upon
+        if objects:
+            # specific list passed in
+            objset = util.Set([attributes.state_getter(o) for o in objects])
+        else:
+            # or just everything
+            objset = util.Set(self.identity_map.all_states()).union(new)
+
+        # store objects whose fate has been decided
+        processed = util.Set()
+
+        # put all saves/updates into the flush context.  detect top-level orphans and throw them into deleted.
+        for state in new.union(dirty).intersection(objset).difference(deleted):
+            is_orphan = _state_mapper(state)._is_orphan(state)
+            if is_orphan and not _state_has_identity(state):
+                raise exceptions.FlushError("instance %s is an unsaved, pending instance and is an orphan (is not attached to %s)" %
+                    (
+                        mapperutil.state_str(state),
+                        ", nor ".join(["any parent '%s' instance via that classes' '%s' attribute" % (klass.__name__, key) for (key,klass) in _state_mapper(state).delete_orphans])
+                    ))
+            flush_context.register_object(state, isdelete=is_orphan)
+            processed.add(state)
+
+        # put all remaining deletes into the flush context.
+        for state in deleted.intersection(objset).difference(processed):
+            flush_context.register_object(state, isdelete=True)
+
+        if len(flush_context.tasks) == 0:
+            return
+
+        self.create_transaction(autoflush=False)
+        flush_context.transaction = self.transaction
+        try:
+            flush_context.execute()
+
+            if self.extension is not None:
+                self.extension.after_flush(self, flush_context)
+            self.commit()
+        except:
+            self.rollback()
+            flush_context.remove_flush_changes()
+            raise
+
+        flush_context.finalize_flush_changes()
+
+        if not objects:
+            self.identity_map.modified = False
+
+        if self.extension is not None:
+            self.extension.after_flush_postexec(self, flush_context)
 
     def is_modified(self, instance, include_collections=True, passive=False):
         """Return True if the given instance has modified attributes.
@@ -1185,8 +1191,23 @@ class Session(object):
                 return True
         return False
 
+    def _dirty_states(self):
+        """Return a set of all persistent states considered dirty.
+
+        This method returns all states that were modified including those that
+        were possibly deleted.
+
+        """
+        return util.IdentitySet(
+            [state for state in self.identity_map.all_states() if state.check_modified()]
+        )
+    _dirty_states = property(_dirty_states)
+
     def dirty(self):
-        """Return a ``Set`` of all instances marked as 'dirty' within this ``Session``.
+        """Return a set of all persistent instances considered dirty.
+
+        Instances are considered dirty when they were modified but not
+        deleted.
 
         Note that the 'dirty' state here is 'optimistic'; most attribute-setting or collection
         modification operations will mark an instance as 'dirty' and place it in this set,
@@ -1197,21 +1218,25 @@ class Session(object):
 
         To check if an instance has actionable net changes to its attributes, use the
         is_modified() method.
-        """
 
-        return self.uow.locate_dirty()
+        """
+        
+        return util.IdentitySet(
+            [state.obj() for state in self._dirty_states if state not in self._deleted]
+        )
+
     dirty = property(dirty)
 
     def deleted(self):
         "Return a ``Set`` of all instances marked as 'deleted' within this ``Session``"
         
-        return util.IdentitySet(self.uow.deleted.values())
+        return util.IdentitySet(self._deleted.values())
     deleted = property(deleted)
 
     def new(self):
         "Return a ``Set`` of all instances marked as 'new' within this ``Session``."
         
-        return util.IdentitySet(self.uow.new.values())
+        return util.IdentitySet(self._new.values())
     new = property(new)
 
 def _expire_state(state, attribute_names):
