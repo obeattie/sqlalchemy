@@ -437,7 +437,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
 
         sess.save(User())
 
-        transaction.commit()
+        transaction._commit()
         sess.commit()
         sess.commit()
 
@@ -450,7 +450,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
 
         sess.save(User())
 
-        t2.commit()
+        t2._commit()
         assert sess.transaction is t1
 
         sess.close()
