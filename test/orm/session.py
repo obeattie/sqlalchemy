@@ -27,7 +27,8 @@ class SessionTest(TestBase, AssertsExecutionResults):
         pass
 
     def test_close(self):
-        """test that flush() doenst close a connection the session didnt open"""
+        """test that flush() doesn't close a connection the session didn't open"""
+        
         c = testing.db.connect()
         class User(object):pass
         mapper(User, users)
@@ -64,7 +65,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
             s.user_name = 'some other user'
             s.flush()
             assert s.transaction is tran
-            tran.close()
+            tran._close()
         finally:
             c.close()
 
@@ -487,18 +488,14 @@ class SessionTest(TestBase, AssertsExecutionResults):
 
         sess = create_session(transactional=False)
 
-        try:
-            sess.begin()
-            sess.begin()
+        sess.begin()
+        sess.begin()
 
-            sess.save(User())
-            sess.flush()
+        sess.save(User())
+        sess.flush()
 
-            sess.rollback()
-            sess.begin()
-            assert False
-        except exceptions.InvalidRequestError, e:
-            self.assertEquals(str(e), "The transaction is inactive due to a rollback in a subtransaction and should be closed")
+        sess.rollback()
+        self.assertRaisesMessage(exceptions.InvalidRequestError, "inactive due to a rollback in a subtransaction", sess.begin)
         sess.close()
 
     @engines.close_open_connections
@@ -514,23 +511,9 @@ class SessionTest(TestBase, AssertsExecutionResults):
         sess.flush()
         assert transaction.get_or_add(testing.db) is transaction.get_or_add(c) is c
 
-        try:
-            transaction.add(testing.db.connect())
-            assert False
-        except exceptions.InvalidRequestError, e:
-            assert str(e) == "Session already has a Connection associated for the given Connection's Engine"
-
-        try:
-            transaction.get_or_add(testing.db.connect())
-            assert False
-        except exceptions.InvalidRequestError, e:
-            assert str(e) == "Session already has a Connection associated for the given Connection's Engine"
-
-        try:
-            transaction.add(testing.db)
-            assert False
-        except exceptions.InvalidRequestError, e:
-            assert str(e) == "Session already has a Connection associated for the given Engine"
+        self.assertRaisesMessage(exceptions.InvalidRequestError, "Session already has a Connection associated", transaction.add, testing.db.connect())
+        self.assertRaisesMessage(exceptions.InvalidRequestError, "Session already has a Connection associated", transaction.get_or_add, testing.db.connect())
+        self.assertRaisesMessage(exceptions.InvalidRequestError, "Session already has a Connection associated", transaction.add, testing.db)
 
         transaction._rollback()
         assert len(sess.query(User).all()) == 0
@@ -582,17 +565,8 @@ class SessionTest(TestBase, AssertsExecutionResults):
 
         user = User()
 
-        try:
-            s.update(user)
-            assert False
-        except exceptions.InvalidRequestError, e:
-            assert str(e) == "Instance 'User@%s' is not persisted" % hex(id(user))
-
-        try:
-            s.delete(user)
-            assert False
-        except exceptions.InvalidRequestError, e:
-            assert str(e) == "Instance 'User@%s' is not persisted" % hex(id(user))
+        self.assertRaisesMessage(exceptions.InvalidRequestError, "is not persisted", s.update, user)
+        self.assertRaisesMessage(exceptions.InvalidRequestError, "is not persisted", s.delete, user)
 
         s.save(user)
         s.flush()
@@ -618,25 +592,13 @@ class SessionTest(TestBase, AssertsExecutionResults):
         assert user in s
         assert user not in s.dirty
 
-        try:
-            s.save(user)
-            assert False
-        except exceptions.InvalidRequestError, e:
-            assert str(e) == "Instance 'User@%s' is already persistent" % hex(id(user))
+        self.assertRaisesMessage(exceptions.InvalidRequestError, "is already persistent", s.save, user)
 
         s2 = create_session()
-        try:
-            s2.delete(user)
-            assert False
-        except exceptions.InvalidRequestError, e:
-            assert "is already attached to session" in str(e)
+        self.assertRaisesMessage(exceptions.InvalidRequestError, "is already attached to session", s2.delete, user)
 
         u2 = s2.query(User).get(user.user_id)
-        try:
-            s.delete(u2)
-            assert False
-        except exceptions.InvalidRequestError, e:
-            assert "already persisted with a different identity" in str(e)
+        self.assertRaisesMessage(exceptions.InvalidRequestError, "already persisted with a different identity", s.delete, u2)
 
         s.delete(user)
         s.flush()
@@ -895,11 +857,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
         u1 = User()
         sess1.save(u1)
 
-        try:
-            sess2.save(u1)
-            assert False
-        except exceptions.InvalidRequestError, e:
-            assert "already attached to session" in str(e)
+        self.assertRaisesMessage(exceptions.InvalidRequestError, "already attached to session", sess2.save, u1)
 
         u2 = pickle.loads(pickle.dumps(u1))
 
@@ -1066,11 +1024,7 @@ class ScopedMapperTest(TestBase):
         Session.mapper(ValidatedOtherObject, table2, validate=True)
 
         v1 = ValidatedOtherObject(someid=12)
-        try:
-            v2 = ValidatedOtherObject(someid=12, bogus=345)
-            assert False
-        except exceptions.ArgumentError:
-            pass
+        self.assertRaises(exceptions.ArgumentError, ValidatedOtherObject, someid=12, bogus=345)
 
     def test_dont_clobber_methods(self):
         class MyClass(object):

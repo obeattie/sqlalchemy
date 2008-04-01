@@ -259,7 +259,7 @@ class SessionTransaction(object):
             if self.session.extension is not None:
                 self.session.extension.after_commit(self.session)
 
-        self.close()
+        self._close()
         return self._parent
     commit = util.deprecated()(_commit)
     
@@ -268,7 +268,7 @@ class SessionTransaction(object):
         
         if self.session.transaction is not self:
             for subtransaction in self.session.transaction._iterate_parents(upto=self):
-                subtransaction.close()
+                subtransaction._close()
         
         if self.is_active:
             for transaction in self._iterate_parents():
@@ -278,7 +278,7 @@ class SessionTransaction(object):
                     break
                 else:
                     transaction._deactivate()
-        self.close()
+        self._close()
         return self._parent
     rollback = util.deprecated()(_rollback)
     
@@ -292,7 +292,7 @@ class SessionTransaction(object):
     def _deactivate(self):
         self._active = False
 
-    def close(self):
+    def _close(self):
         self.session.transaction = self._parent
         if self._parent is None:
             for connection, transaction, autoclose in util.Set(self._connections.values()):
@@ -303,7 +303,8 @@ class SessionTransaction(object):
         self._deactivate()
         self.session = None
         self._connections = None
-
+    close = util.deprecated()(_close)
+    
     def __enter__(self):
         return self
 
@@ -625,7 +626,7 @@ class Session(object):
         self.clear()
         if self.transaction is not None:
             for transaction in self.transaction._iterate_parents():
-                transaction.close()
+                transaction._close()
         if self.transactional:
             # note this doesnt use any connection resources
             self.begin()
