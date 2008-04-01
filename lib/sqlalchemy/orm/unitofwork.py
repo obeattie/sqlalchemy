@@ -246,9 +246,10 @@ class UnitOfWork(object):
             session.commit()
         except:
             session.rollback()
+            flush_context.remove_flush_changes()
             raise
 
-        flush_context.post_exec()
+        flush_context.finalize_flush_changes()
         
         if not objects:
             self.identity_map.modified = False
@@ -310,7 +311,7 @@ class UOWTransaction(object):
                 [c is not None and attributes.state_getter(c) or None for c in deleted],
                 )
 
-    def register_object(self, state, isdelete = False, listonly = False, postupdate=False, post_update_cols=None, **kwargs):
+    def register_object(self, state, isdelete=False, listonly=False, postupdate=False, post_update_cols=None):
         # if object is not in the overall session, do nothing
         if not self.uow._contains_state(state):
             if self._should_log_debug:
@@ -326,7 +327,7 @@ class UOWTransaction(object):
         if postupdate:
             task.append_postupdate(state, post_update_cols)
         else:
-            task.append(state, listonly, isdelete=isdelete, **kwargs)
+            task.append(state, listonly=listonly, apply_savepoint=True, isdelete=isdelete)
 
     def set_row_switch(self, state):
         """mark a deleted object as a 'row switch'.
@@ -441,22 +442,34 @@ class UOWTransaction(object):
         import uowdumper
         uowdumper.UOWDumper(tasks, buf)
         return buf.getvalue()
-        
-    def post_exec(self):
+    
+    def elements(self):
+        """return an iterator of all UOWTaskElements within this UOWTransaction."""
+        for task in self.tasks.values():
+            for elem in task.elements:
+                yield elem
+    elements = property(elements)
+    
+    def remove_flush_changes(self):
+        for elem in self.elements:
+            if elem.state:
+                elem.state.rollback()
+            
+    def finalize_flush_changes(self):
         """mark processed objects as clean / deleted after a successful flush().
         
         this method is called within the flush() method after the 
         execute() method has succeeded and the transaction has been committed.
         """
 
-        for task in self.tasks.values():
-            for elem in task.elements:
-                if elem.state is None:
-                    continue
-                if elem.isdelete:
-                    self.uow.remove_persistent(elem.state)
-                else:
-                    self.uow._register_newly_persistent(elem.state)
+        for elem in self.elements:
+            if elem.state is None:
+                continue
+            elem.state.remove_savepoint()
+            if elem.isdelete:
+                self.uow.remove_persistent(elem.state)
+            else:
+                self.uow._register_newly_persistent(elem.state)
 
     def _sort_dependencies(self):
         nodes = topological.sort_with_cycles(self.dependencies, 
@@ -479,10 +492,9 @@ class UOWTransaction(object):
 
 class UOWTask(object):
     """Represents all of the objects in the UOWTransaction which correspond to
-    a particular mapper.  This is the primary class of three classes used to generate
-    the elements of the dependency graph.
+    a particular mapper.  
+    
     """
-
     def __init__(self, uowtransaction, mapper, base_task=None):
         self.uowtransaction = uowtransaction
 
@@ -546,9 +558,11 @@ class UOWTask(object):
 
         return not self._objects and not self.dependencies
             
-    def append(self, state, listonly=False, isdelete=False):
+    def append(self, state, apply_savepoint=False, listonly=False, isdelete=False):
         if state not in self._objects:
             self._objects[state] = rec = UOWTaskElement(state)
+            if apply_savepoint:
+                state.set_savepoint()
         else:
             rec = self._objects[state]
         
@@ -752,11 +766,14 @@ class UOWTask(object):
             make_task_tree(head, t, {})
 
         ret = [t]
+
+        # add tasks that were in the cycle, but didnt get assembled
+        # into the cyclical tree, to the start of the list
+        # TODO: no test coverage for this.  Can't seem to reproduce
+        # the use case where it was needed, and its likely 
+        # we can remove this.
         for t2 in cycles:
             if t2 not in used_tasks and t2 is not self:
-                # add tasks that were in the cycle, but didnt get assembled
-                # into the cyclical tree, to the start of the list
-                # TODO: no test coverage for this !!
                 localtask = UOWTask(self.uowtransaction, t2.mapper)
                 for state in t2.elements:
                     localtask.append(state, t2.listonly, isdelete=t2._objects[state].isdelete)
@@ -767,14 +784,7 @@ class UOWTask(object):
         return ret
 
     def __repr__(self):
-        if self.mapper is not None:
-            if self.mapper.__class__.__name__ == 'Mapper':
-                name = self.mapper.class_.__name__ + "/" + self.mapper.local_table.description
-            else:
-                name = repr(self.mapper)
-        else:
-            name = '(none)'
-        return ("UOWTask(%s) Mapper: '%s'" % (hex(id(self)), name))
+        return ("UOWTask(%s) Mapper: '%r'" % (hex(id(self)), self.mapper))
 
 class UOWTaskElement(object):
     """An element within a UOWTask.

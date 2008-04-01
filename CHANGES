@@ -28,6 +28,16 @@ user_defined_state
       deprecated, using descriptors attached to the class.  A
       deprecation warning will be issued when accessed.
 
+    - attribute savepoint/rollback capability has been added.  
+      For starters, this takes effect within the flush() call,
+      so that attribute changes which occur within flush()
+      are rolled back when the flush fails.  Since it's 
+      primarily new primary key values that get assigned within
+      flush(), expiring those attributes is not an option.
+      The next place we might use savepoints is within
+      SAVEPOINT transactions, since rolling back to a savepoint
+      is a transaction-contained operation.
+      
 
 0.4.5
 =====
