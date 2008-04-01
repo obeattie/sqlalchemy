@@ -98,9 +98,9 @@ class AttributesTest(TestBase):
         class Foo(object):pass
 
         data = {'a':'this is a', 'b':12}
-        def loader(instance, keys):
+        def loader(state, keys):
             for k in keys:
-                instance.__dict__[k] = data[k]
+                state.dict[k] = data[k]
             return attributes.ATTR_WAS_SET
 
         attributes.register_class(Foo, deferred_scalar_loader=loader)
@@ -136,9 +136,9 @@ class AttributesTest(TestBase):
 
     def test_deferred_pickleable(self):
         data = {'a':'this is a', 'b':12}
-        def loader(instance, keys):
+        def loader(state, keys):
             for k in keys:
-                instance.__dict__[k] = data[k]
+                state.dict[k] = data[k]
             return attributes.ATTR_WAS_SET
 
         attributes.register_class(MyTest, deferred_scalar_loader=loader)

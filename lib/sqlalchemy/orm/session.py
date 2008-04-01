@@ -1264,10 +1264,12 @@ def object_session(instance):
     
 def _state_session(state):
     if state.session_id is None:
-        return
+        return None
     session = _sessions.get(state.session_id)
     if session is not None and session._contains_state(state):
         return session
+    else:
+        return None
 
 # Lazy initialization to avoid circular imports
 unitofwork.object_session = object_session

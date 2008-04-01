@@ -1657,7 +1657,7 @@ def _load_scalar_attributes(state, attribute_names):
             session = mapper.get_session()
         except exceptions.InvalidRequestError:
             raise exceptions.UnboundExecutionError("Instance %s is not bound to a Session, and no contextual session is established; attribute refresh operation cannot proceed" % (state_str(state)))
-
+    
     identity_key = state.key
     if identity_key is None:
         # if instance is pending, a refresh operation may not complete (even if PK attributes are assigned)

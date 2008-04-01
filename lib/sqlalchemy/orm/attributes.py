@@ -925,10 +925,13 @@ class InstanceState(object):
     def unmodified(self):
         """a set of keys which have no uncommitted changes"""
 
+        for attr in self.manager.attributes:
+            assert (attr.impl.key not in self.manager.mutable_attributes) == (not hasattr(attr.impl, 'check_mutable_modified')), repr([attr.impl.key, attr.impl, attr.impl.key not in self.manager.mutable_attributes, (not hasattr(attr.impl, 'check_mutable_modified'))])
+            
         return util.Set([
             key for key in self.manager.keys() if 
             key not in self.committed_state
-            or not (key in self.manager.mutable_attributes and self.manager[key].impl.check_mutable_modified(self))
+            or (key in self.manager.mutable_attributes and not self.manager[key].impl.check_mutable_modified(self))
         ])  
     unmodified = property(unmodified)
 

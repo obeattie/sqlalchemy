@@ -80,10 +80,7 @@ class ExpireTest(FixtureTest):
 
         sess.expire(u, attribute_names=['name'])
         sess.expunge(u)
-        try:
-            u.name
-        except exceptions.InvalidRequestError, e:
-            assert str(e) == "Instance <class 'testlib.fixtures.User'> is not bound to a Session, and no contextual session is established; attribute refresh operation cannot proceed"
+        self.assertRaises(exceptions.UnboundExecutionError, getattr, u, 'name')
     
     def test_pending_doesnt_raise(self):
         mapper(User, users)
