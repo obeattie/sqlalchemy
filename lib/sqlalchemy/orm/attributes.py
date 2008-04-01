@@ -909,10 +909,9 @@ class InstanceState(object):
         serializable.
         
         """
-        instance = self.obj()
         unmodified = self.unmodified
         class_manager = self.manager
-        class_manager.deferred_scalar_loader(instance, [
+        class_manager.deferred_scalar_loader(self, [
             attr.impl.key for attr in class_manager.attributes if
                 attr.impl.accepts_scalar_loader and
                 attr.impl.key in self.expired_attributes and
@@ -927,11 +926,10 @@ class InstanceState(object):
         """a set of keys which have no uncommitted changes"""
 
         return util.Set([
-            attr.impl.key for attr in self.manager.attributes if
-            attr.impl.key not in self.committed_state
-            and (not hasattr(attr.impl, 'check_mutable_modified') or
-                 not attr.impl.check_mutable_modified(self))
-        ])  # TODO: test coverage for 'unmodified' + mutable attributes present
+            key for key in self.manager.keys() if 
+            key not in self.committed_state
+            or not (key in self.manager.mutable_attributes and self.manager[key].impl.check_mutable_modified(self))
+        ])  
     unmodified = property(unmodified)
 
     def expire_attributes(self, attribute_names):

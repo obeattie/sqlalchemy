@@ -1644,22 +1644,20 @@ def has_mapper(object):
     state = attributes.state_getter(object)
     return state.entity_name is not attributes.NO_ENTITY_NAME
 
-object_session = None
+_state_session = None
 
-def _load_scalar_attributes(instance, attribute_names):
-    mapper = object_mapper(instance)
-    global object_session
-    if not object_session:
-        from sqlalchemy.orm.session import object_session
-    session = object_session(instance)
+def _load_scalar_attributes(state, attribute_names):
+    mapper = _state_mapper(state)
+    global _state_session
+    if not _state_session:
+        from sqlalchemy.orm.session import _state_session
+    session = _state_session(state)
     if not session:
         try:
             session = mapper.get_session()
         except exceptions.InvalidRequestError:
-            raise exceptions.UnboundExecutionError("Instance %s is not bound to a Session, and no contextual session is established; attribute refresh operation cannot proceed" % (instance.__class__))
+            raise exceptions.UnboundExecutionError("Instance %s is not bound to a Session, and no contextual session is established; attribute refresh operation cannot proceed" % (state_str(state)))
 
-    # fixme: entity_name?
-    state = attributes.state_getter(instance)
     identity_key = state.key
     if identity_key is None:
         # if instance is pending, a refresh operation may not complete (even if PK attributes are assigned)
@@ -1669,7 +1667,7 @@ def _load_scalar_attributes(instance, attribute_names):
         shouldraise = True
         
     if session.query(mapper)._get(identity_key, refresh_instance=state, only_load_props=attribute_names) is None and shouldraise:
-        raise exceptions.InvalidRequestError("Could not refresh instance '%s'" % instance_str(instance))
+        raise exceptions.InvalidRequestError("Could not refresh instance '%s'" % state_str(state))
 
 def _state_mapper(state, entity_name=None):
     if state.entity_name is not attributes.NO_ENTITY_NAME:

@@ -281,9 +281,11 @@ class MutableTypesTest(ORMTest):
         Session.commit()
         Session.close()
         f2 = Session.query(Foo).filter_by(id=f1.id).one()
+        assert 'data' in attributes.state_getter(f2).unmodified
         assert f2.data == f1.data
         f2.data.y = 19
         assert f2 in Session.dirty
+        assert 'data' not in attributes.state_getter(f2).unmodified
         Session.commit()
         Session.close()
         f3 = Session.query(Foo).filter_by(id=f1.id).one()

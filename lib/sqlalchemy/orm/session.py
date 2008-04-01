@@ -1259,11 +1259,14 @@ def _state_for_unknown_persistence_instance(instance, entity_name):
 
 def object_session(instance):
     """Return the ``Session`` to which the given instance is bound, or ``None`` if none."""
-    state = attributes.state_getter(instance)
+
+    return _state_session(attributes.state_getter(instance))
+    
+def _state_session(state):
     if state.session_id is None:
         return
     session = _sessions.get(state.session_id)
-    if session is not None and instance in session:
+    if session is not None and session._contains_state(state):
         return session
 
 # Lazy initialization to avoid circular imports

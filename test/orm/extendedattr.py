@@ -124,15 +124,16 @@ class UserDefinedExtensionTest(TestBase):
             class Foo(base):pass
 
             data = {'a':'this is a', 'b':12}
-            def loader(instance, keys):
+            def loader(state, keys):
                 for k in keys:
-                    attributes.state_getter(instance).dict[k] = data[k]
+                    state.dict[k] = data[k]
                 return attributes.ATTR_WAS_SET
 
             attributes.register_class(Foo, deferred_scalar_loader=loader)
             attributes.register_attribute(Foo, 'a', uselist=False, useobject=False)
             attributes.register_attribute(Foo, 'b', uselist=False, useobject=False)
-
+            
+            assert Foo in attributes.instrumentation_registry.state_finders
             f = Foo()
             attributes.state_getter(f).expire_attributes(None)
             self.assertEquals(f.a, "this is a")
