@@ -1128,7 +1128,7 @@ class symbol(object):
             return sym
         finally:
             symbol._lock.release()
-            
+
 def conditional_cache_decorator(func):
     """apply conditional caching to the return value of a function."""
 

@@ -23,7 +23,7 @@ import StringIO, weakref
 from sqlalchemy import util, logging, topological, exceptions
 from sqlalchemy.orm import attributes, interfaces, identity
 from sqlalchemy.orm import util as mapperutil
-from sqlalchemy.orm.mapper import object_mapper, _state_mapper, has_identity
+from sqlalchemy.orm.mapper import object_mapper, _state_mapper, _state_has_identity
 
 # Load lazily
 object_session = None
@@ -54,7 +54,7 @@ class UOWEventHandler(interfaces.AttributeExtension):
         if sess:
             # expunge pending orphans
             if self.cascade.delete_orphan and item in sess.new:
-                if self._target_mapper(obj)._is_orphan(item):
+                if self._target_mapper(obj)._is_orphan(attributes.state_getter(item)):
                     sess.expunge(item)
 
     def set(self, obj, newvalue, oldvalue, initiator):
@@ -219,12 +219,11 @@ class UnitOfWork(object):
             if state in processed:
                 continue
 
-            obj = state.obj()
-            is_orphan = _state_mapper(state)._is_orphan(obj)
-            if is_orphan and not has_identity(obj):
+            is_orphan = _state_mapper(state)._is_orphan(state)
+            if is_orphan and not _state_has_identity(state):
                 raise exceptions.FlushError("instance %s is an unsaved, pending instance and is an orphan (is not attached to %s)" %
                     (
-                        obj,
+                        mapperutil.state_str(state),
                         ", nor ".join(["any parent '%s' instance via that classes' '%s' attribute" % (klass.__name__, key) for (key,klass) in _state_mapper(state).delete_orphans])
                     ))
             flush_context.register_object(state, isdelete=is_orphan)

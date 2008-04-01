@@ -70,8 +70,8 @@ class InstrumentedAttribute(interfaces.PropComparator):
     def reverse_operate(self, op, other, **kwargs):
         return op(other, self.comparator, **kwargs)
 
-    def hasparent(self, instance, optimistic=False):
-        return self.impl.hasparent(state_getter(instance), optimistic=optimistic)
+    def hasparent(self, state, optimistic=False):
+        return self.impl.hasparent(state, optimistic=optimistic)
 
     def _property(self):
         from sqlalchemy.orm.mapper import class_mapper
@@ -323,7 +323,7 @@ class AttributeImpl(object):
     def set_committed_value(self, state, value):
         """set an attribute value on the given instance and 'commit' it."""
 
-        state.commit_attr(self)
+        state.commit([self.key])
         
         # ????? removed in merge ?
         # remove per-instance callable, if any
@@ -392,7 +392,7 @@ class MutableScalarAttributeImpl(ScalarAttributeImpl):
 
     def __init__(self, class_, key, callable_, class_manager, copy_function=None, compare_function=None, **kwargs):
         super(ScalarAttributeImpl, self).__init__(class_, key, callable_, class_manager, compare_function=compare_function, **kwargs)
-        class_manager.has_mutable_scalars = True
+        class_manager.mutable_attributes.add(key)
         if copy_function is None:
             raise exceptions.ArgumentError("MutableScalarAttributeImpl requires a copy function")
         self.copy = copy_function
@@ -692,7 +692,7 @@ class CollectionAttributeImpl(AttributeImpl):
                 collection.remove_without_event(item)
             del state.pending[self.key]
         else:
-            state.commit_attr(self)
+            state.commit([self.key])
 
         return user_data
 
@@ -774,15 +774,12 @@ class InstanceState(object):
     def check_modified(self):
         if self.modified:
             return True
-        elif self.manager.has_mutable_scalars:
-            for attr in self.manager.attributes:
-                if (hasattr(attr.impl, 'check_mutable_modified') and
-                    attr.impl.check_mutable_modified(self)):
+        else:
+            for key in self.manager.mutable_attributes:
+                if self.manager[key].impl.check_mutable_modified(self):
                     return True
             else:
                 return False
-        else:
-            return False
 
     def __cleanup(self, ref):
         # tiptoe around Python GC unpredictableness
@@ -941,20 +938,13 @@ class InstanceState(object):
         self.expired_attributes = util.Set(self.expired_attributes)
 
         if attribute_names is None:
-            for attr in self.manager.attributes:
-                self.dict.pop(attr.impl.key, None)
-                self.expired_attributes.add(attr.impl.key)
-                if attr.impl.accepts_scalar_loader:
-                    self.callables[attr.impl.key] = self
-            
-            self.committed_state = {}
-        else:
-            for key in attribute_names:
-                self.dict.pop(key, None)
-                self.committed_state.pop(key, None)
-                self.expired_attributes.add(key)
-                if self.manager.get_impl(key).accepts_scalar_loader:
-                    self.callables[key] = self
+            attribute_names = self.manager.keys()
+        for key in attribute_names:
+            self.dict.pop(key, None)
+            self.committed_state.pop(key, None)
+            self.expired_attributes.add(key)
+            if self.manager.get_impl(key).accepts_scalar_loader:
+                self.callables[key] = self
 
     def reset(self, key):
         """remove the given attribute and any callables associated with it."""
@@ -1011,24 +1001,6 @@ class InstanceState(object):
                 else:
                     attr.impl.rollback_to_savepoint(self, savepoint)
 
-    def commit_attr(self, attr):
-        if hasattr(attr, 'commit_to_state') and attr.key in self.dict:
-            attr.commit_to_state(self, self.committed_state)
-        else:
-            self.committed_state.pop(attr.key, None)
-            
-        # ??? MERGE ?
-        #self.dict[attr.key] = value
-        
-        self.pending.pop(attr.key, None)
-        self.appenders.pop(attr.key, None)
-
-        # ???? MERGE ?
-        # we have a value so we can also unexpire it
-        #self.callables.pop(attr.key, None)
-        #if attr.key in self.expired_attributes:
-        #    self.expired_attributes.remove(attr.key)
-
     def commit(self, keys):
         """commit all attributes named in the given list of key names.
 
@@ -1040,11 +1012,12 @@ class InstanceState(object):
         """
 
         class_manager = manager_of_class(self.class_)
-        commit_attr = self.commit_attr
         for key in keys:
-            commit_attr(class_manager[key].impl)
+            if key in self.dict and hasattr(class_manager[key].impl, 'commit_to_state'):
+                class_manager[key].impl.commit_to_state(self, self.committed_state)
+            else:
+                self.committed_state.pop(key, None)
 
-        # ???? MERGE ?
         # unexpire attributes which have loaded
         for key in self.expired_attributes.intersection(keys):
             if key in self.dict:
@@ -1075,12 +1048,10 @@ class InstanceState(object):
             if key in self.dict:
                 self.expired_attributes.remove(key)
                 self.callables.pop(key, None)
-
-        if self.manager.has_mutable_scalars:
-            for attr in self.manager.attributes:
-                if (hasattr(attr.impl, 'commit_to_state') and
-                    attr.impl.key in self.dict):
-                    attr.impl.commit_to_state(self, self.committed_state)
+        
+        for key in self.manager.mutable_attributes:
+            if key in self.dict:
+                self.manager[key].impl.commit_to_state(self, self.committed_state)
 
         self.modified = False
         self._strong_obj = None
@@ -1095,7 +1066,7 @@ class ClassManager(dict):
     def __init__(self, class_):
         self.class_ = class_
         self.mappers = {}
-        self.has_mutable_scalars = False
+        self.mutable_attributes = util.Set()
         self.local_attrs = {}
         self.originals = {}
         for base in class_.__mro__[-2:0:-1]:   # reverse, skipping 1st and last
@@ -1103,7 +1074,7 @@ class ClassManager(dict):
             if cls_state:
                 self.update(cls_state)
         self.registered = False
-
+    
     def install(self):
         setattr(self.class_, self.MANAGER_ATTR, self)
 
@@ -1137,6 +1108,8 @@ class ClassManager(dict):
             del self.local_attrs[key]
             self.uninstall_descriptor(key)
         del self[key]
+        if key in self.mutable_attributes:
+            self.mutable_attributes.remove(key)
         for cls in self.class_.__subclasses__():
             manager = manager_of_class(cls)
             if manager is None:
@@ -1364,11 +1337,14 @@ class PendingCollection(object):
 def get_history(state, key, **kwargs):
     return state.get_history(key, **kwargs)
 
-def has_parent(class_, instance, key, optimistic=False):
+def state_has_parent(class_, state, key, optimistic=False):
     manager = manager_of_class(class_)
     return manager.get_impl(key).hasparent(
-        state_getter(instance), optimistic=optimistic)
+        state, optimistic=optimistic)
 
+def has_parent(class_, obj, key, optimistic=False):
+    return state_has_parent(class_, state_getter(obj), key, optimistic)
+    
 def _create_prop(class_, key, uselist, callable_, class_manager, typecallable, useobject, mutable_scalars, impl_class, **kwargs):
     if impl_class:
         return impl_class(class_, key, typecallable, class_manager=class_manager, **kwargs)

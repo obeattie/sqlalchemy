@@ -49,7 +49,7 @@ class ClauseSynchronizer(object):
             source_column = None
             dest_column = None
 
-            if foreign_keys is None:
+            if not foreign_keys:
                 if binary.left.table == binary.right.table:
                     raise exceptions.ArgumentError("need foreign_keys argument for self-referential sync")
 

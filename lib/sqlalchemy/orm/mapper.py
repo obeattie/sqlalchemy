@@ -189,11 +189,11 @@ class Mapper(object):
         if self.__should_log_debug:
             self.logger.debug("(" + self.class_.__name__ + "|" + (self.entity_name is not None and "/%s" % self.entity_name or "") + (self.local_table and self.local_table.description or str(self.local_table)) + (not self.non_primary and "|non-primary" or "") + ") " + msg)
 
-    def _is_orphan(self, obj):
+    def _is_orphan(self, state):
         o = False
         for mapper in self.iterate_to_root():
             for (key,klass) in mapper.delete_orphans:
-                if attributes.has_parent(klass, obj, key, optimistic=has_identity(obj)):
+                if attributes.state_has_parent(klass, state, key, optimistic=_state_has_identity(state)):
                     return False
             o = o or bool(mapper.delete_orphans)
         return o
@@ -216,9 +216,10 @@ class Mapper(object):
         return prop
 
     def iterate_properties(self):
+        """return an iterator of all MapperProperty objects."""
         self.compile()
         return self.__props.itervalues()
-    iterate_properties = property(iterate_properties, doc="returns an iterator of all MapperProperty objects.")
+    iterate_properties = property(iterate_properties)
 
     def __adjust_wp_selectable(self, spec=None, selectable=False):
         """given a with_polymorphic() argument, resolve it against this mapper's with_polymorphic setting"""
@@ -396,8 +397,6 @@ class Mapper(object):
         if self.inherits:
             if isinstance(self.inherits, type):
                 self.inherits = class_mapper(self.inherits, compile=False)
-            else:
-                self.inherits = self.inherits
             if not issubclass(self.class_, self.inherits.class_):
                 raise exceptions.ArgumentError("Class '%s' does not inherit from '%s'" % (self.class_.__name__, self.inherits.class_.__name__))
             if self.non_primary != self.inherits.non_primary:
@@ -415,7 +414,7 @@ class Mapper(object):
                         if mapper.polymorphic_on:
                             mapper._requires_row_aliasing = True
                 else:
-                    if self.inherit_condition is None:
+                    if not self.inherit_condition:
                         # figure out inherit condition from our table to the immediate table
                         # of the inherited mapper, not its full table which could pull in other
                         # stuff we dont want (allows test/inheritance.InheritTest4 to pass)
@@ -425,26 +424,10 @@ class Mapper(object):
                     # stricter set of tables to create "sync rules" by,based on the immediate
                     # inherited table, rather than all inherited tables
                     self._synchronizer = sync.ClauseSynchronizer(self, self, sync.ONETOMANY)
-                    if self.inherit_foreign_keys:
-                        fks = util.Set(self.inherit_foreign_keys)
-                    else:
-                        fks = None
-                    self._synchronizer.compile(self.mapped_table.onclause, foreign_keys=fks)
+                    self._synchronizer.compile(self.mapped_table.onclause, foreign_keys=util.Set(self.inherit_foreign_keys or []))
             else:
                 self._synchronizer = None
                 self.mapped_table = self.local_table
-            if self.polymorphic_identity is not None:
-                self.inherits.polymorphic_map[self.polymorphic_identity] = self
-                if self.polymorphic_on is None:
-                    for mapper in self.iterate_to_root():
-                        # try to set up polymorphic on using correesponding_column(); else leave
-                        # as None
-                        if mapper.polymorphic_on:
-                            self.polymorphic_on = self.mapped_table.corresponding_column(mapper.polymorphic_on)
-                            break
-                    else:
-                        # TODO: this exception not covered
-                        raise exceptions.ArgumentError("Mapper '%s' specifies a polymorphic_identity of '%s', but no mapper in it's hierarchy specifies the 'polymorphic_on' column argument" % (str(self), self.polymorphic_identity))
 
             if self.polymorphic_identity and not self.concrete:
                 self._identity_class = self.inherits._identity_class
@@ -464,6 +447,19 @@ class Mapper(object):
             self.inherits._inheriting_mappers.add(self)
             self.base_mapper = self.inherits.base_mapper
             self._all_tables = self.inherits._all_tables
+            
+            if self.polymorphic_identity is not None:
+                self.polymorphic_map[self.polymorphic_identity] = self
+                if not self.polymorphic_on:
+                    for mapper in self.iterate_to_root():
+                        # try to set up polymorphic on using correesponding_column(); else leave
+                        # as None
+                        if mapper.polymorphic_on:
+                            self.polymorphic_on = self.mapped_table.corresponding_column(mapper.polymorphic_on)
+                            break
+                    else:
+                        # TODO: this exception not covered
+                        raise exceptions.ArgumentError("Mapper '%s' specifies a polymorphic_identity of '%s', but no mapper in it's hierarchy specifies the 'polymorphic_on' column argument" % (str(self), self.polymorphic_identity))
         else:
             self._all_tables = util.Set()
             self.base_mapper = self
@@ -540,13 +536,6 @@ class Mapper(object):
         the determination of column pairs that are equated to
         one another either by an established foreign key relationship
         or by a joined-table inheritance join.
-
-        This is used to determine the minimal set of primary key
-        columns for the mapper, as well as when relating
-        columns to those of a polymorphic selectable (i.e. a UNION of
-        several mapped tables), as that selectable usually only contains
-        one column in its columns clause out of a group of several which
-        are equated to each other.
 
         The resulting structure is a dictionary of columns mapped
         to lists of equivalent columns, i.e.
@@ -735,24 +724,17 @@ class Mapper(object):
             for col in prop.columns:
                 for col in col.proxy_set:
                     self._columntoproperty[col] = prop
-            
-                
-        elif isinstance(prop, SynonymProperty) and setparent:
+
+        elif isinstance(prop, (ComparableProperty, SynonymProperty)) and setparent:
             if prop.descriptor is None:
                 prop.descriptor = getattr(self.class_, key, None)
                 if isinstance(prop.descriptor, Mapper._CompileOnAttr):
                     prop.descriptor = object.__getattribute__(prop.descriptor, 'existing_prop')
-            if prop.map_column:
-                if not key in self.mapped_table.c:
+            if getattr(prop, 'map_column', False):
+                if key not in self.mapped_table.c:
                     raise exceptions.ArgumentError("Can't compile synonym '%s': no column on table '%s' named '%s'"  % (prop.name, self.mapped_table.description, key))
                 self._compile_property(prop.name, ColumnProperty(self.mapped_table.c[key]), init=init, setparent=setparent)
-        elif isinstance(prop, ComparableProperty) and setparent:
-            # refactor me
-            if prop.descriptor is None:
-                prop.descriptor = getattr(self.class_, key, None)
-                if isinstance(prop.descriptor, Mapper._CompileOnAttr):
-                    prop.descriptor = object.__getattribute__(prop.descriptor,
-                                                              'existing_prop')
+
         self.__props[key] = prop
 
         if setparent:

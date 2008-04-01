@@ -24,7 +24,7 @@ class IdentityMap(dict):
     def _manage_incoming_state(self, state):
         if state.modified:  
             self.modified = True
-        if state.manager.has_mutable_scalars:
+        if state.manager.mutable_attributes:
             self._mutable_attrs[state] = True
     
     def _manage_removed_state(self, state):

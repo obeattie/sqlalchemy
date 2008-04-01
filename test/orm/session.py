@@ -532,7 +532,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
         except exceptions.InvalidRequestError, e:
             assert str(e) == "Session already has a Connection associated for the given Engine"
 
-        transaction.rollback()
+        transaction._rollback()
         assert len(sess.query(User).all()) == 0
         sess.close()
 

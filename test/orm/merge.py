@@ -402,7 +402,7 @@ class MergeTest(TestBase, AssertsExecutionResults):
         assert not sess2.dirty
         a2 = u2.addresses[0]
         a2.email_address='somenewaddress'
-        assert not object_mapper(a2)._is_orphan(a2)
+        assert not object_mapper(a2)._is_orphan(attributes.state_getter(a2))
         sess2.flush()
         sess2.clear()
         assert sess2.query(User).get(u2.user_id).addresses[0].email_address == 'somenewaddress'
@@ -423,7 +423,7 @@ class MergeTest(TestBase, AssertsExecutionResults):
             # if dont_load is changed to support dirty objects, this code needs to pass
             a2 = u2.addresses[0]
             a2.email_address='somenewaddress'
-            assert not object_mapper(a2)._is_orphan(a2)
+            assert not object_mapper(a2)._is_orphan(attributes.state_getter(a2))
             sess2.flush()
             sess2.clear()
             assert sess2.query(User).get(u2.user_id).addresses[0].email_address == 'somenewaddress'

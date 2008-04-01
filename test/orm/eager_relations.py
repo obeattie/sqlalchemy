@@ -31,8 +31,8 @@ class EagerTest(FixtureTest):
 
         sess = create_session()
         user = sess.query(User).get(7)
-        assert getattr(User, 'addresses').hasparent(user.addresses[0], optimistic=True)
-        assert not class_mapper(Address)._is_orphan(user.addresses[0])
+        assert getattr(User, 'addresses').hasparent(attributes.state_getter(user.addresses[0]), optimistic=True)
+        assert not class_mapper(Address)._is_orphan(attributes.state_getter(user.addresses[0]))
 
     def test_orderby(self):
         mapper(User, users, properties = {

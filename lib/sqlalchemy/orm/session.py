@@ -218,11 +218,12 @@ class SessionTransaction(object):
         self._connections[conn] = self._connections[conn.engine] = (conn, transaction, conn is not bind)
         return conn
 
-    def prepare(self):
+    def _prepare(self):
         if self._parent is not None or not self.session.twophase:
             raise exceptions.InvalidRequestError("Only root two phase transactions of can be prepared")
         self._prepare_impl()
-        
+    prepare = util.deprecated()(_prepare)
+    
     def _prepare_impl(self):
         self._assert_is_active()
         if self.session.extension is not None and (self._parent is None or self.nested):
@@ -246,7 +247,7 @@ class SessionTransaction(object):
         self._deactivate()
         self._prepared = True
     
-    def commit(self):
+    def _commit(self):
         self._assert_is_open()
         if not self._prepared:
             self._prepare_impl()
@@ -260,8 +261,9 @@ class SessionTransaction(object):
 
         self.close()
         return self._parent
-
-    def rollback(self):
+    commit = util.deprecated()(_commit)
+    
+    def _rollback(self):
         self._assert_is_open()
         
         if self.session.transaction is not self:
@@ -278,6 +280,7 @@ class SessionTransaction(object):
                     transaction._deactivate()
         self.close()
         return self._parent
+    rollback = util.deprecated()(_rollback)
     
     def _rollback_impl(self):
         for t in util.Set(self._connections.values()):
@@ -514,12 +517,7 @@ class Session(object):
         if self.transaction is None:
             pass
         else:
-            self.transaction.rollback()
-        # TODO: we can rollback attribute values.  however
-        # we would want to expand attributes.py to be able to save *two* rollback points, one to the
-        # last flush() and the other to when the object first entered the transaction.
-        # [ticket:705]
-        #attributes.rollback(*self.identity_map.values())
+            self.transaction._rollback()
         if self.transaction is None and self.transactional:
             self.begin()
 
@@ -543,7 +541,7 @@ class Session(object):
             else:
                 raise exceptions.InvalidRequestError("No transaction is begun.")
 
-        self.transaction.commit()
+        self.transaction._commit()
         if self.transaction is None and self.transactional:
             self.begin()
     
@@ -562,7 +560,7 @@ class Session(object):
             else:
                 raise exceptions.InvalidRequestError("No transaction is begun.")
 
-        self.transaction.prepare()
+        self.transaction._prepare()
 
     def connection(self, mapper=None, **kwargs):
         """Return a ``Connection`` corresponding to this session's
