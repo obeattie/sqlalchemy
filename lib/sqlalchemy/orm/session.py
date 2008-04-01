@@ -964,43 +964,48 @@ class Session(object):
         if instance in _recursive:
             return _recursive[instance]
 
-        state = attributes.state_getter(instance)
         new_instance = False
-        if state.key is None:
+        state = attributes.state_getter(instance)
+        key = state.key
+        if key is None:
             if dont_load:
                 raise exceptions.InvalidRequestError("merge() with dont_load=True option does not support objects transient (i.e. unpersisted) objects.  flush() all changes on mapped instances before merging with dont_load=True.")
-            merged = mapper.class_manager.new_instance()
-            new_instance = True
-        else:
-            if state.key in self.identity_map:
-                merged = self.identity_map[state.key]
+            key = mapper._identity_key_from_state(state)
+
+        merged = None
+        if key:
+            if key in self.identity_map:
+                merged = self.identity_map[key]
             elif dont_load:
-                state = attributes.state_getter(instance)
                 if state.modified:
                     raise exceptions.InvalidRequestError("merge() with dont_load=True option does not support objects marked as 'dirty'.  flush() all changes on mapped instances before merging with dont_load=True.")
 
                 merged = mapper.class_manager.new_instance()
                 merged_state = attributes.state_getter(merged)
-                merged_state.key = state.key
+                merged_state.key = key
                 merged_state.entity_name = entity_name
                 self._update_impl(merged_state)
                 new_instance = True
             else:
-                merged = self.get(mapper.class_, state.key[1])
-                if merged is None:
-                    raise exceptions.AssertionError("Instance %s has an instance key but is not persisted" % mapperutil.instance_str(instance))
+                merged = self.get(mapper.class_, key[1])
+
+        if merged is None:
+            merged = mapper.class_manager.new_instance()
+            merged_state = attributes.state_getter(merged)
+            new_instance = True
+            self.save(merged, entity_name=mapper.entity_name)
+
         _recursive[instance] = merged
+        
         for prop in mapper.iterate_properties:
             prop.merge(self, instance, merged, dont_load, _recursive)
-        if state.key is None:
-            self.save(merged, entity_name=mapper.entity_name)
-        elif dont_load:
-            state = attributes.state_getter(merged)
-            state.commit_all()
+            
+        if dont_load:
+            attributes.state_getter(merged).commit_all()  # remove any history
 
         if new_instance:
-            merged_state = attributes.state_getter(merged)
             merged_state.XXX_reconstitution_notification(merged)
+
         return merged
 
     def identity_key(cls, *args, **kwargs):

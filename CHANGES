@@ -42,6 +42,25 @@ user_defined_state
 0.4.5
 =====
 - orm
+    - a small change in behavior to session.merge() - existing
+      objects are checked for based on primary key attributes,
+      not necessarily _instance_key.  So the widely requested
+      capability, that:
+      
+            x = MyObject(id=1)
+            x = sess.merge(x)
+            
+      will in fact load MyObject with id #1 from the database
+      if present, is now available.  merge() still 
+      copies the state of the given object to the persistent
+      one, so an example like the above would typically have
+      copied "None" from all attributes of "x" onto the persistent 
+      copy.  These can be reverted using session.expire(x).
+    
+    - also fixed behavior in merge() whereby collection elements
+      present on the destination but not the merged collection 
+      were not being removed from the destination.
+        
     - Added a more aggressive check for "uncompiled mappers",
       helps particularly with declarative layer [ticket:995]
 
@@ -162,8 +181,12 @@ user_defined_state
         - delete-orphan casacde is properly detected on relations
           that are present on superclasses when using inheritance.
 
-    - fixed order_by calculation in Query to properly alias
+    - Fixed order_by calculation in Query to properly alias
       mapper-config'ed order_by when using select_from()
+
+    - Refactored the diffing logic that kicks in when replacing
+      one collection with another into collections.bulk_replace,
+      useful to anyone building multi-level collections.
 
 - sql
     - schema-qualified tables now will place the schemaname
@@ -187,7 +210,13 @@ user_defined_state
 
     - random() is now a generic sql function and will compile to
       the database's random implementation, if any.
-
+    
+    - fixed an issue in select() regarding its generation of 
+      FROM clauses, in rare circumstances two clauses could
+      be produced when one was intended to cancel out the
+      other.  Some ORM queries with lots of eager loads
+      might have seen this symptom.
+      
 - oracle
     - The "owner" keyword on Table is now deprecated, and is
       exactly synonymous with the "schema" keyword.  Tables can
