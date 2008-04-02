@@ -403,6 +403,8 @@ class PropertyLoader(StrategizedProperty):
             return op(self.comparator, value)
 
     def _optimized_compare(self, value, value_is_parent=False):
+        if value is not None:
+            value = attributes.state_getter(value)
         return self._get_strategy(strategies.LazyLoader).lazy_clause(value, reverse_direction=not value_is_parent)
 
     def private(self):
@@ -436,7 +438,7 @@ class PropertyLoader(StrategizedProperty):
                 if obj is not None:
                     dest_list.append(obj)
             if dont_load:
-                coll = attributes.init_collection(dest, self.key)
+                coll = attributes.init_collection(dest_state, self.key)
                 for c in dest_list:
                     coll.append_without_event(c) 
             else:

@@ -318,6 +318,9 @@ def state_str(state):
 def attribute_str(instance, attribute):
     return instance_str(instance) + "." + attribute
 
+def state_attribute_str(state, attribute):
+    return state_str(state) + "." + attribute
+
 def identity_equal(a, b):
     if a is b:
         return True

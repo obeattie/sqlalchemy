@@ -193,14 +193,14 @@ class AttributesTest(TestBase):
         
         results = []
         class ReceiveEvents(AttributeExtension):
-            def append(self, obj, child, initiator):
+            def append(self, state, child, initiator):
                 assert False
 
-            def remove(self, obj, child, initiator):
-                results.append(("remove", obj, child))
+            def remove(self, state, child, initiator):
+                results.append(("remove", state.obj(), child))
 
-            def set(self, obj, child, oldchild, initiator):
-                results.append(("set", obj, child, oldchild))
+            def set(self, state, child, oldchild, initiator):
+                results.append(("set", state.obj(), child, oldchild))
         
         attributes.register_class(Foo)
         attributes.register_attribute(Foo, 'x', uselist=False, mutable_scalars=False, useobject=False, extension=ReceiveEvents())
@@ -889,7 +889,7 @@ class HistoryTest(TestBase):
 
         # case 2.  object with direct settings (similar to a load operation)
         f = Foo()
-        collection = attributes.init_collection(f, 'someattr')
+        collection = attributes.init_collection(attributes.state_getter(f), 'someattr')
         collection.append_without_event(new)
         attributes.state_getter(f).commit_all()
         self.assertEquals(attributes.get_history(attributes.state_getter(f), 'someattr'), ([], [new], []))
@@ -975,7 +975,7 @@ class HistoryTest(TestBase):
         # case 2.  object with direct settings (similar to a load operation)
         f = Foo()
         f.__dict__['id'] = 1
-        collection = attributes.init_collection(f, 'someattr')
+        collection = attributes.init_collection(attributes.state_getter(f), 'someattr')
         collection.append_without_event(new)
         attributes.state_getter(f).commit_all()
         self.assertEquals(attributes.get_history(attributes.state_getter(f), 'someattr'), ([], [new], []))
@@ -987,7 +987,7 @@ class HistoryTest(TestBase):
         self.assertEquals(attributes.get_history(attributes.state_getter(f), 'someattr'), ([], [new, old], []))
 
         f = Foo()
-        collection = attributes.init_collection(f, 'someattr')
+        collection = attributes.init_collection(attributes.state_getter(f), 'someattr')
         collection.append_without_event(new)
         attributes.state_getter(f).commit_all()
         self.assertEquals(attributes.get_history(attributes.state_getter(f), 'someattr'), ([], [new], []))

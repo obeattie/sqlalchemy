@@ -262,7 +262,7 @@ class AttributeImpl(object):
         if self.key in state.callables:
             return state.callables[self.key]
         elif self.callable_ is not None:
-            return self.callable_(state.obj())
+            return self.callable_(state)
         else:
             return None
 
@@ -370,14 +370,12 @@ class ScalarAttributeImpl(AttributeImpl):
             state.dict[self.key] = value
 
     def fire_replace_event(self, state, value, previous, initiator):
-        instance = state.obj()
         for ext in self.extensions:
-            ext.set(instance, value, previous, initiator or self)
+            ext.set(state, value, previous, initiator or self)
 
     def fire_remove_event(self, state, value, initiator):
-        instance = state.obj()
         for ext in self.extensions:
-            ext.remove(instance, value, initiator or self)
+            ext.remove(state, value, initiator or self)
 
     def type(self):
         self.property.columns[0].type
@@ -490,9 +488,8 @@ class ScalarObjectAttributeImpl(ScalarAttributeImpl):
         if self.trackparent and value is not None:
             self.sethasparent(state_getter(value), False)
 
-        instance = state.obj()
         for ext in self.extensions:
-            ext.remove(instance, value, initiator or self)
+            ext.remove(state, value, initiator or self)
 
     def fire_replace_event(self, state, value, previous, initiator):
         state.modified_event(self, False, previous)
@@ -503,9 +500,8 @@ class ScalarObjectAttributeImpl(ScalarAttributeImpl):
             if previous is not value and previous is not None:
                 self.sethasparent(state_getter(previous), False)
 
-        instance = state.obj()
         for ext in self.extensions:
-            ext.set(instance, value, previous, initiator or self)
+            ext.set(state, value, previous, initiator or self)
 
 
 class CollectionAttributeImpl(AttributeImpl):
@@ -550,9 +546,9 @@ class CollectionAttributeImpl(AttributeImpl):
 
         if self.trackparent and value is not None:
             self.sethasparent(state_getter(value), True)
-        instance = state.obj()
+
         for ext in self.extensions:
-            ext.append(instance, value, initiator or self)
+            ext.append(state, value, initiator or self)
 
     def fire_pre_remove_event(self, state, initiator):
         state.modified_event(self, True, NEVER_SET, passive=True)
@@ -563,9 +559,8 @@ class CollectionAttributeImpl(AttributeImpl):
         if self.trackparent and value is not None:
             self.sethasparent(state_getter(value), False)
 
-        instance = state.obj()
         for ext in self.extensions:
-            ext.remove(instance, value, initiator or self)
+            ext.remove(state, value, initiator or self)
 
     def rollback_to_savepoint(self, state, savepoint):
 
@@ -724,7 +719,7 @@ class GenericBackrefExtension(interfaces.AttributeExtension):
     def __init__(self, key):
         self.key = key
 
-    def set(self, instance, child, oldchild, initiator):
+    def set(self, state, child, oldchild, initiator):
         if oldchild is child:
             return
         if oldchild is not None:
@@ -733,21 +728,21 @@ class GenericBackrefExtension(interfaces.AttributeExtension):
             old_state = state_getter(oldchild)
             impl = old_state.get_impl(self.key)
             try:
-                impl.remove(old_state, instance, initiator, passive=True)
+                impl.remove(old_state, state.obj(), initiator, passive=True)
             except (ValueError, KeyError, IndexError):
                 pass
         if child is not None:
             new_state = state_getter(child)
-            new_state.get_impl(self.key).append(new_state, instance, initiator, passive=True)
+            new_state.get_impl(self.key).append(new_state, state.obj(), initiator, passive=True)
 
-    def append(self, instance, child, initiator):
-        state = state_getter(child)
-        state.get_impl(self.key).append(state, instance, initiator, passive=True)
+    def append(self, state, child, initiator):
+        child_state = state_getter(child)
+        child_state.get_impl(self.key).append(child_state, state.obj(), initiator, passive=True)
 
-    def remove(self, instance, child, initiator):
+    def remove(self, state, child, initiator):
         if child is not None:
-            state = state_getter(child)
-            state.get_impl(self.key).remove(state, instance, initiator, passive=True)
+            child_state = state_getter(child)
+            child_state.get_impl(self.key).remove(child_state, state.obj(), initiator, passive=True)
 
 import sets
 _empty_set = sets.ImmutableSet()
@@ -1444,9 +1439,8 @@ def register_attribute(class_, key, uselist, useobject, callable_=None, proxy_pr
 def unregister_attribute(class_, key):
     manager_of_class(class_).uninstrument_attribute(key)
 
-def init_collection(instance, key):
+def init_collection(state, key):
     """Initialize a collection attribute and return the collection adapter."""
-    state = state_getter(instance)
     attr = state.get_impl(key)
     user_data = attr.initialize(state)
     return attr.get_collection(state, user_data)

@@ -27,6 +27,7 @@ from sqlalchemy.orm.mapper import object_mapper, _state_mapper, _state_has_ident
 
 # Load lazily
 object_session = None
+_state_session = None
 
 class UOWEventHandler(interfaces.AttributeExtension):
     """An event handler added to all relation attributes which handles
@@ -38,33 +39,33 @@ class UOWEventHandler(interfaces.AttributeExtension):
         self.class_ = class_
         self.cascade = cascade
     
-    def _target_mapper(self, obj):
-        prop = object_mapper(obj).get_property(self.key)
+    def _target_mapper(self, state):
+        prop = _state_mapper(state).get_property(self.key)
         return prop.mapper
 
-    def append(self, obj, item, initiator):
+    def append(self, state, item, initiator):
         # process "save_update" cascade rules for when an instance is appended to the list of another instance
-        sess = object_session(obj)
+        sess = _state_session(state)
         if sess:
             if self.cascade.save_update and item not in sess:
-                sess.save_or_update(item, entity_name=self._target_mapper(obj).entity_name)
+                sess.save_or_update(item, entity_name=self._target_mapper(state).entity_name)
 
-    def remove(self, obj, item, initiator):
-        sess = object_session(obj)
+    def remove(self, state, item, initiator):
+        sess = _state_session(state)
         if sess:
             # expunge pending orphans
             if self.cascade.delete_orphan and item in sess.new:
-                if self._target_mapper(obj)._is_orphan(attributes.state_getter(item)):
+                if self._target_mapper(state)._is_orphan(attributes.state_getter(item)):
                     sess.expunge(item)
 
-    def set(self, obj, newvalue, oldvalue, initiator):
+    def set(self, state, newvalue, oldvalue, initiator):
         # process "save_update" cascade rules for when an instance is attached to another instance
         if oldvalue is newvalue:
             return
-        sess = object_session(obj)
+        sess = _state_session(state)
         if sess:
             if newvalue is not None and self.cascade.save_update and newvalue not in sess:
-                sess.save_or_update(newvalue, entity_name=self._target_mapper(obj).entity_name)
+                sess.save_or_update(newvalue, entity_name=self._target_mapper(state).entity_name)
             if self.cascade.delete_orphan and oldvalue in sess.new:
                 sess.expunge(oldvalue)
 

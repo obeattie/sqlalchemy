@@ -353,8 +353,8 @@ class MapperProperty(object):
 
         Callables are of the following form::
 
-            def new_execute(instance, row, **flags):
-                # process incoming instance and given row.  the instance is
+            def new_execute(state, row, **flags):
+                # process incoming instance state and given row.  the instance is
                 # "new" and was just created upon receipt of this row.
                 # flags is a dictionary containing at least the following
                 # attributes:
@@ -365,12 +365,12 @@ class MapperProperty(object):
                 #   ispostselect - indicates if this row resulted from a
                 #                  'post' select of additional tables/columns
 
-            def existing_execute(instance, row, **flags):
-                # process incoming instance and given row.  the instance is
+            def existing_execute(state, row, **flags):
+                # process incoming instance state and given row.  the instance is
                 # "existing" and was created based on a previous row.
 
-            def post_execute(instance, **flags):
-                # process instance after all result rows have been processed.
+            def post_execute(state, **flags):
+                # process instance state after all result rows have been processed.
                 # this function should be used to issue additional selections
                 # in order to eagerly load additional properties.
 

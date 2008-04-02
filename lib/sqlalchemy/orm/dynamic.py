@@ -44,9 +44,8 @@ class DynamicAttributeImpl(attributes.AttributeImpl):
 
         if self.trackparent and value is not None:
             self.sethasparent(attributes.state_getter(value), True)
-        instance = state.obj()
         for ext in self.extensions:
-            ext.append(instance, value, initiator or self)
+            ext.append(state, value, initiator or self)
 
     def fire_remove_event(self, state, value, initiator):
         state.modified = True
@@ -54,9 +53,8 @@ class DynamicAttributeImpl(attributes.AttributeImpl):
         if self.trackparent and value is not None:
             self.sethasparent(attributes.state_getter(value), False)
 
-        instance = state.obj()
         for ext in self.extensions:
-            ext.remove(instance, value, initiator or self)
+            ext.remove(state, value, initiator or self)
         
     def set(self, state, value, initiator):
         if initiator is self:

@@ -986,6 +986,7 @@ class Mapper(object):
             else:
                 raise exceptions.UnmappedColumnError("No column %s.%s is configured on mapper %s..." % (column.table.name, column.name, str(self)))
 
+    # TODO: all these crazy names will be simplified once we are entirely using InstanceState
     def _get_state_attr_by_column(self, state, column):
         return self._get_col_to_prop(column).getattr(state, column)
 
@@ -1002,6 +1003,9 @@ class Mapper(object):
 
     def _get_committed_attr_by_column(self, obj, column):
         state = attributes.state_getter(obj)
+        return self._get_committed_state_attr_by_column(state, column)
+
+    def _get_committed_state_attr_by_column(self, state, column):
         return self._get_col_to_prop(column).getcommitted(state, column)
 
     def _save_obj(self, states, uowtransaction, postupdate=False, post_update_cols=None, single=False):
@@ -1463,7 +1467,7 @@ class Mapper(object):
                 context.progress.add(state)
 
             if 'populate_instance' not in extension.methods or extension.populate_instance(self, context, row, instance, only_load_props=only_load_props, instancekey=identitykey, isnew=isnew) is EXT_CONTINUE:
-                self.populate_instance(context, instance, row, only_load_props=only_load_props, instancekey=identitykey, isnew=isnew)
+                self.populate_instance(context, state, row, only_load_props=only_load_props, instancekey=identitykey, isnew=isnew)
         
         else:
             # populate attributes on non-loading instances which have been expired
@@ -1478,7 +1482,7 @@ class Mapper(object):
                     context.partials[state] = attrs  #<-- allow query.instances to commit the subset of attrs
 
                 if 'populate_instance' not in extension.methods or extension.populate_instance(self, context, row, instance, only_load_props=attrs, instancekey=identitykey, isnew=isnew) is EXT_CONTINUE:
-                    self.populate_instance(context, instance, row, only_load_props=attrs, instancekey=identitykey, isnew=isnew)
+                    self.populate_instance(context, state, row, only_load_props=attrs, instancekey=identitykey, isnew=isnew)
 
         if result is not None and ('append_result' not in extension.methods or extension.append_result(self, context, row, instance, result, instancekey=identitykey, isnew=isnew) is EXT_CONTINUE):
             result.append(instance)
@@ -1488,8 +1492,8 @@ class Mapper(object):
 
         return instance
 
-    def populate_instance(self, selectcontext, instance, row, ispostselect=None, isnew=False, only_load_props=None, **flags):
-        """populate an instance from a result row."""
+    def populate_instance(self, selectcontext, state, row, ispostselect=None, isnew=False, only_load_props=None, **flags):
+        """populate an instance state from a result row."""
 
         snapshot = selectcontext.path + (self,)
         # retrieve a set of "row population" functions derived from the MapperProperties attached
@@ -1531,11 +1535,11 @@ class Mapper(object):
             populators = [p for p in populators if p[0] in only_load_props]
 
         for (key, populator) in populators:
-            selectcontext.exec_with_path(self, key, populator, instance, row, ispostselect=ispostselect, isnew=isnew, **flags)
+            selectcontext.exec_with_path(self, key, populator, state, row, ispostselect=ispostselect, isnew=isnew, **flags)
 
         if self.non_primary:
             selectcontext.attributes[('populating_mapper',
-                                      attributes.state_getter(instance))] = self
+                                      state)] = self
 
     def _post_instance(self, selectcontext, state, **kwargs):
         post_processors = selectcontext.attributes[('post_processors', self, None)]
@@ -1570,17 +1574,18 @@ class Mapper(object):
                 for c, bind in param_names:
                     params[bind] = self._get_attr_by_column(instance, c)
                 row = selectcontext.session.connection(self).execute(statement, params).fetchone()
-                self.populate_instance(selectcontext, instance, row, isnew=False, instancekey=identitykey, ispostselect=True, only_load_props=only_load_props)
+                state = attributes.state_getter(instance)
+                self.populate_instance(selectcontext, state, row, isnew=False, instancekey=identitykey, ispostselect=True, only_load_props=only_load_props)
             return post_execute
         elif hosted_mapper.polymorphic_fetch == 'deferred':
             from sqlalchemy.orm.strategies import DeferredColumnLoader
 
             def post_execute(instance, **flags):
-                def create_statement(instance):
+                def create_statement(state):
                     params = {}
                     for (c, bind) in param_names:
                         # use the "committed" (database) version to get query column values
-                        params[bind] = self._get_committed_attr_by_column(instance, c)
+                        params[bind] = self._get_committed_state_attr_by_column(state, c)
                     return (statement, params)
 
                 props = [prop for prop in [self._get_col_to_prop(col) for col in statement.inner_columns] if prop.key not in instance.__dict__]
@@ -1596,7 +1601,7 @@ class Mapper(object):
                     state = attributes.state_getter(instance)
                     state.set_callable(prop.key,
                                        strategy.setup_loader(
-                                           instance, props=keys,
+                                           state, props=keys,
                                            create_statement=create_statement))
             return post_execute
         else:
@@ -1638,12 +1643,12 @@ def _state_has_identity(state):
     return bool(state.key)
 
 def has_mapper(object):
-    """Return True if the given object has had a mapper association
-    set up, either through loading, or via insertion in a session.
-    """
     state = attributes.state_getter(object)
-    return state.entity_name is not attributes.NO_ENTITY_NAME
+    return _state_has_mapper(state)
 
+def _state_has_mapper(state):
+    return state.entity_name is not attributes.NO_ENTITY_NAME
+    
 _state_session = None
 
 def _load_scalar_attributes(state, attribute_names):

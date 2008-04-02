@@ -113,7 +113,9 @@ class SessionTransaction(object):
         self._active = True
         self._prepared = False
 
-    is_active = property(lambda s: s.session is not None and s._active)
+    def is_active(self):
+        return self.session is not None and self._active
+    is_active = property(is_active)
     
     def _assert_is_active(self):
         self._assert_is_open()
@@ -273,12 +275,12 @@ class SessionTransaction(object):
             return
         if type is None:
             try:
-                self.commit()
+                self._commit()
             except:
-                self.rollback()
+                self._rollback()
                 raise
         else:
-            self.rollback()
+            self._rollback()
 
 class Session(object):
     """Encapsulates a set of objects being operated upon within an object-relational operation.
@@ -819,14 +821,16 @@ class Session(object):
         Cascading will be applied according to the *expunge* cascade
         rule.
         """
-        state = attributes.state_getter(instance)
+        self._expunge_state(attributes.state_getter(instance))
+        
+    def _expunge_state(self, state):
         for s, m in [(state, None)] + list(_cascade_state_iterator('expunge', state)):
             if s in self._new:
                 self._new.pop(s)
                 self._unattach(s)
             elif self.identity_map.contains_state(s):
                 self._remove_persistent(s)
-    
+        
     def _remove_persistent(self, state):
         self.identity_map.remove(state)
         self._deleted.pop(state, None)
@@ -878,9 +882,12 @@ class Session(object):
 
         """
         state = _state_for_unknown_persistence_instance(instance, entity_name)
+        self._save_or_update_state(state, entity_name)
+        
+    def _save_or_update_state(self, state, entity_name):
         self._save_or_update_impl(state)
         self._cascade_save_or_update(state, entity_name)
-
+        
     def _cascade_save_or_update(self, state, entity_name):
         for state, mapper in _cascade_unknown_state_iterator('save-update', state, halt_on=lambda c:c in self):
             self._save_or_update_impl(state)
@@ -1304,5 +1311,6 @@ def _state_session(state):
 
 # Lazy initialization to avoid circular imports
 unitofwork.object_session = object_session
+unitofwork._state_session = _state_session
 from sqlalchemy.orm import mapper
 mapper._expire_state = _expire_state
