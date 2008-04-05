@@ -336,7 +336,7 @@ def format_argspec_init(method, grouped=True):
     """format_argspec_plus with considerations for typical __init__ methods
 
     Wraps format_argspec_plus with error handling strategies for typical
-    __init__ cases:
+    __init__ cases::
 
       object.__init__ -> (self)
       other unreflectable (usually C) -> (self, *args, **kwargs)
@@ -353,6 +353,22 @@ def format_argspec_init(method, grouped=True):
                             or 'self, *args, **kwargs')
         return dict(self_arg='self', args=args, apply_pos=args, apply_kw=args)
 
+def getargspec_init(method):
+    """inspect.getargspec with considerations for typical __init__ methods
+
+    Wraps inspect.getargspec with error handling for typical __init__ cases::
+
+      object.__init__ -> (self)
+      other unreflectable (usually C) -> (self, *args, **kwargs)
+
+    """
+    try:
+        return inspect.getargspec(method)
+    except TypeError:
+        if method is object.__init__:
+            return (['self'], None, None, None)
+        else:
+            return (['self'], 'args', 'kwargs', None)
 
 def unbound_method_to_callable(func_or_cls):
     """Adjust the incoming callable such that a 'self' argument is not required."""
