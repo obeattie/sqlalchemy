@@ -894,6 +894,12 @@ def _selectable(element):
     else:
         raise exceptions.ArgumentError("Object '%s' is not a Selectable and does not implement `__selectable__()`" % repr(element))
 
+def _join_criterion(join, left, right, onclause):
+    if onclause is None:
+        return join._match_primaries(join.left, join.right)
+    else:
+        return onclause
+    
 def is_column(col):
     """True if ``col`` is an instance of ``ColumnElement``."""
     return isinstance(col, ColumnElement)
@@ -2234,10 +2240,7 @@ class Join(FromClause):
         self.left = _selectable(left)
         self.right = _selectable(right).self_group()
 
-        if onclause is None:
-            self.onclause = self._match_primaries(self.left, self.right)
-        else:
-            self.onclause = onclause
+        self.onclause = _join_criterion(self, left, right, onclause)
         self.isouter = isouter
         self.__folded_equivalents = None
 

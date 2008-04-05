@@ -404,7 +404,7 @@ class DefaultCompiler(engine.Compiled):
     def _truncated_identifier(self, ident_class, name):
         if (ident_class, name) in self.generated_ids:
             return self.generated_ids[(ident_class, name)]
-
+        
         anonname = ANONYMOUS_LABEL.sub(self._process_anon, name)
 
         if len(anonname) > self.dialect.max_identifier_length:

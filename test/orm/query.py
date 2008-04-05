@@ -559,7 +559,7 @@ class ParentTest(QueryTest):
         assert [Keyword(name='red'), Keyword(name='small'), Keyword(name='square')] == k
 
 
-class JoinTest(QueryTest):
+class JoinTest(QueryTest, AssertsCompiledSQL):
 
     def test_getjoinable_tables(self):
         sess = create_session()
@@ -608,7 +608,80 @@ class JoinTest(QueryTest):
                 []
             )
         
+        orderalias = aliased(Order)
+        itemalias = aliased(Item)
+        self.assertEquals(
+            sess.query(User).join([('orders', orderalias), ('items', itemalias)]).filter(itemalias.description == 'item 4').all(),
+            [User(name='jack')]
+        )
+        self.assertEquals(
+            sess.query(User).join([('orders', orderalias), ('items', itemalias)]).filter(orderalias.user_id==9).filter(itemalias.description=='item 4').all(),
+            []
+        )
         
+    def test_aliased_classes(self):
+        sess = create_session()
+
+        (user7, user8, user9, user10) = sess.query(User).all()
+        (address1, address2, address3, address4, address5) = sess.query(Address).all()
+        expected = [(user7, address1),
+            (user8, address2),
+            (user8, address3),
+            (user8, address4),
+            (user9, address5),
+            (user10, None)]
+
+        q = sess.query(User)
+        AdAlias = aliased(Address)
+        q = q.add_entity(AdAlias).select_from(outerjoin(User, AdAlias))
+        l = q.all()
+        self.assertEquals(l, expected)
+
+        sess.clear()
+
+        q = sess.query(User).add_entity(AdAlias)
+        l = q.select_from(outerjoin(User, AdAlias)).filter(AdAlias.email_address=='ed@bettyboop.com').all()
+        self.assertEquals(l, [(user8, address3)])
+
+        l = q.select_from(outerjoin(User, AdAlias, 'addresses')).filter(AdAlias.email_address=='ed@bettyboop.com').all()
+        self.assertEquals(l, [(user8, address3)])
+
+    def test_aliased_classes_m2m(self):
+        sess = create_session()
+        
+        (order1, order2, order3, order4, order5) = sess.query(Order).all()
+        (item1, item2, item3, item4, item5) = sess.query(Item).all()
+        expected = [
+            (order1, item1),
+            (order1, item2),
+            (order1, item3),
+            (order2, item1),
+            (order2, item2),
+            (order2, item3),
+            (order3, item3),
+            (order3, item4),
+            (order3, item5),
+            (order4, item1),
+            (order4, item5),
+            (order5, item5),
+        ]
+        self.assert_compile(join(Order, Item, 'items'), "orders JOIN order_items ON orders.id = order_items.order_id JOIN items ON items.id = order_items.item_id")
+        
+        q = sess.query(Order)
+        q = q.add_entity(Item).select_from(join(Order, Item, 'items'))
+        l = q.all()
+        self.assertEquals(l, expected)
+
+        IAlias = aliased(Item)
+        q = sess.query(Order, IAlias).select_from(join(Order, IAlias, 'items')).filter(IAlias.description=='item 3')
+        l = q.all()
+        self.assertEquals(l, 
+            [
+                (order1, item3),
+                (order2, item3),
+                (order3, item3),
+            ]
+        )
         
     def test_generative_join(self):
         # test that alised_ids is copied
@@ -882,40 +955,40 @@ class InstancesTest(QueryTest):
         self.assert_sql_count(testing.db, go, 1)
         sess.clear()
 
-    def test_columns(self):
+    def test_values(self):
         sess = create_session()
 
         sel = users.select(User.id.in_([7, 8])).alias()
         q = sess.query(User)
-        q2 = q.select_from(sel)._values(User.name)
-        self.assertEquals(q2.all(), [(u'jack',), (u'ed',)])
+        q2 = q.select_from(sel).values(User.name)
+        self.assertEquals(list(q2), [(u'jack',), (u'ed',)])
         
         q = sess.query(User)
-        q2 = q._values(User.name, User.name + " " + cast(User.id, String)).order_by(User.id)
-        self.assertEquals(q2.all(), [(u'jack', u'jack 7'), (u'ed', u'ed 8'), (u'fred', u'fred 9'), (u'chuck', u'chuck 10')])
+        q2 = q.order_by(User.id).values(User.name, User.name + " " + cast(User.id, String))
+        self.assertEquals(list(q2), [(u'jack', u'jack 7'), (u'ed', u'ed 8'), (u'fred', u'fred 9'), (u'chuck', u'chuck 10')])
         
-        q2 = q._values(User.name.like('%j%'), func.count(User.name.like('%j%'))).group_by([User.name.like('%j%')]).order_by(desc(User.name.like('%j%')))
-        self.assertEquals(q2.all(), [(True, 1), (False, 3)])
+        q2 = q.group_by([User.name.like('%j%')]).order_by(desc(User.name.like('%j%'))).values(User.name.like('%j%'), func.count(User.name.like('%j%')))
+        self.assertEquals(list(q2), [(True, 1), (False, 3)])
         
-        q2 = q.join('addresses').filter(User.name.like('%e%')).order_by(User.id, Address.id)._values(User.name, Address.email_address)
-        self.assertEquals(q2.all(), [(u'ed', u'ed@wood.com'), (u'ed', u'ed@bettyboop.com'), (u'ed', u'ed@lala.com'), (u'fred', u'fred@fred.com')])
+        q2 = q.join('addresses').filter(User.name.like('%e%')).order_by(User.id, Address.id).values(User.name, Address.email_address)
+        self.assertEquals(list(q2), [(u'ed', u'ed@wood.com'), (u'ed', u'ed@bettyboop.com'), (u'ed', u'ed@lala.com'), (u'fred', u'fred@fred.com')])
         
-        q2 = q.join('addresses').filter(User.name.like('%e%'))._values(User.name, Address.email_address).order_by(desc(Address.email_address))[1:3]
-        self.assertEquals(q2.all(), [(u'ed', u'ed@wood.com'), (u'ed', u'ed@lala.com')])
+        q2 = q.join('addresses').filter(User.name.like('%e%')).order_by(desc(Address.email_address))[1:3].values(User.name, Address.email_address)
+        self.assertEquals(list(q2), [(u'ed', u'ed@wood.com'), (u'ed', u'ed@lala.com')])
         
-        q2 = q.join('addresses', aliased=True).filter(User.name.like('%e%'))._values(User.name, Address.email_address)
-        self.assertEquals(q2.all(), [(u'ed', u'ed@wood.com'), (u'ed', u'ed@bettyboop.com'), (u'ed', u'ed@lala.com'), (u'fred', u'fred@fred.com')])
+        q2 = q.join('addresses', aliased=True).filter(User.name.like('%e%')).values(User.name, Address.email_address)
+        self.assertEquals(list(q2), [(u'ed', u'ed@wood.com'), (u'ed', u'ed@bettyboop.com'), (u'ed', u'ed@lala.com'), (u'fred', u'fred@fred.com')])
         
-        q2 = q._values(func.count(User.name))
-        assert q2.one() == (4,)
+        q2 = q.values(func.count(User.name))
+        assert q2.next() == (4,)
 
         u2 = users.alias()
-        q2 = q.select_from(sel).filter(u2.c.id>1)._values(users.c.name, sel.c.name, u2.c.name).order_by([users.c.id, sel.c.id, u2.c.id])
-        self.assertEquals(q2.all(), [(u'jack', u'jack', u'jack'), (u'jack', u'jack', u'ed'), (u'jack', u'jack', u'fred'), (u'jack', u'jack', u'chuck'), (u'ed', u'ed', u'jack'), (u'ed', u'ed', u'ed'), (u'ed', u'ed', u'fred'), (u'ed', u'ed', u'chuck')])
+        q2 = q.select_from(sel).filter(u2.c.id>1).order_by([users.c.id, sel.c.id, u2.c.id]).values(users.c.name, sel.c.name, u2.c.name)
+        self.assertEquals(list(q2), [(u'jack', u'jack', u'jack'), (u'jack', u'jack', u'ed'), (u'jack', u'jack', u'fred'), (u'jack', u'jack', u'chuck'), (u'ed', u'ed', u'jack'), (u'ed', u'ed', u'ed'), (u'ed', u'ed', u'fred'), (u'ed', u'ed', u'chuck')])
         
-        q2 = q.select_from(sel).filter(users.c.id>1)._values(users.c.name, sel.c.name, User.name)
-        self.assertEquals(q2.all(), [(u'jack', u'jack', u'jack'), (u'ed', u'ed', u'ed')])
-        
+        q2 = q.select_from(sel).filter(users.c.id>1).values(users.c.name, sel.c.name, User.name)
+        self.assertEquals(list(q2), [(u'jack', u'jack', u'jack'), (u'ed', u'ed', u'ed')])
+    
     def test_multi_mappers(self):
 
         test_session = create_session()
@@ -958,7 +1031,7 @@ class InstancesTest(QueryTest):
             sess.clear()
 
             q = sess.query(User, Address).join('addresses', aliased=aliased).options(eagerload('addresses')).filter_by(email_address='ed@bettyboop.com')
-            assert q.all() == [(user8, address3)]
+            self.assertEquals(list(util.OrderedSet(q.all())), [(user8, address3)])
             sess.clear()
 
     def test_aliased_multi_mappers(self):
@@ -967,7 +1040,6 @@ class InstancesTest(QueryTest):
         (user7, user8, user9, user10) = sess.query(User).all()
         (address1, address2, address3, address4, address5) = sess.query(Address).all()
 
-        # note the result is a cartesian product
         expected = [(user7, address1),
             (user8, address2),
             (user8, address3),
@@ -997,7 +1069,13 @@ class InstancesTest(QueryTest):
             sess.clear()
 
         self.assertRaises(exceptions.InvalidRequestError, sess.query(User).add_column, object())
-
+    
+    def test_ambiguous_column(self):
+        sess = create_session()
+        
+        q = sess.query(User).join('addresses', aliased=True).join('addresses', aliased=True).add_column(Address.id)
+        self.assertRaises(exceptions.InvalidRequestError, iter, q)
+        
     def test_multi_columns_2(self):
         """test aliased/nonalised joins with the usage of add_column()"""
         sess = create_session()
@@ -1030,6 +1108,12 @@ class InstancesTest(QueryTest):
             (user8, 3, "Name:ed"),
             (user9, 1, "Name:fred"),
             (user10, 0, "Name:chuck")]
+
+        q = create_session().query(User).add_column(func.count(addresses.c.id))\
+            .add_column(("Name:" + users.c.name)).outerjoin('addresses', aliased=True)\
+            .group_by([c for c in users.c]).order_by(users.c.id)
+
+        assert q.all() == expected
 
         # test with a straight statement
         s = select([users, func.count(addresses.c.id).label('count'), ("Name:" + users.c.name).label('concat')], from_obj=[users.outerjoin(addresses)], group_by=[c for c in users.c], order_by=[users.c.id])
@@ -1411,6 +1495,7 @@ class ExternalColumnsTest(QueryTest):
 
     def test_external_columns_good(self):
         """test querying mappings that reference external columns or selectables."""
+        
         mapper(User, users, properties={
             'concat': column_property((users.c.id * 2)),
             'count': column_property(select([func.count(addresses.c.id)], users.c.id==addresses.c.user_id).correlate(users).as_scalar())
@@ -1421,6 +1506,7 @@ class ExternalColumnsTest(QueryTest):
         })
 
         sess = create_session()
+
         l = sess.query(User).all()
         assert [
             User(id=7, concat=14, count=1),
@@ -1437,21 +1523,32 @@ class ExternalColumnsTest(QueryTest):
             Address(id=5, user=User(id=9, concat=18, count=1))
         ]
 
-        assert address_result == sess.query(Address).all()
+        self.assertEquals(sess.query(Address).all(), address_result)
 
         # run the eager version twice to test caching of aliased clauses
         for x in range(2):
             sess.clear()
             def go():
-                assert address_result == sess.query(Address).options(eagerload('user')).all()
+                self.assertEquals(sess.query(Address).options(eagerload('user')).all(), address_result)
             self.assert_sql_count(testing.db, go, 1)
-
+        return
+        
         tuple_address_result = [(address, address.user) for address in address_result]
+        
+        self.assertEquals(sess.query(Address).join('user', aliased=True, id='ualias').add_entity(User, id='ualias').all(), tuple_address_result)
 
-        tuple_address_result == sess.query(Address).join('user').add_entity(User).all()
+        self.assertEquals(list(sess.query(Address).join('user').values(Address.id, User.id, User.concat, User.count)), 
+            [(1, 7, 14, 1), (2, 8, 16, 3), (3, 8, 16, 3), (4, 8, 16, 3), (5, 9, 18, 1)]
+        )
 
-        assert tuple_address_result == sess.query(Address).join('user', aliased=True, id='ualias').add_entity(User, id='ualias').all()
+        self.assertEquals(list(sess.query(Address).join('user', aliased=True).values(Address.id, User.id, User.concat, User.count)), 
+            [(1, 7, 14, 1), (2, 8, 16, 3), (3, 8, 16, 3), (4, 8, 16, 3), (5, 9, 18, 1)]
+        )
 
+        ua = aliased(User)
+        self.assertEquals(list(sess.query(Address, ua).select_from(join(Address,ua, 'user')).values(Address.id, ua.id, ua.concat, ua.count)), 
+            [(1, 7, 14, 1), (2, 8, 16, 3), (3, 8, 16, 3), (4, 8, 16, 3), (5, 9, 18, 1)]
+        )
 
 
 if __name__ == '__main__':
