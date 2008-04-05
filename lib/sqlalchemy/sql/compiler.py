@@ -76,10 +76,10 @@ OPERATORS =  {
     operators.eq : '=',
     operators.distinct_op : 'DISTINCT',
     operators.concat_op : '||',
-    operators.like_op : 'LIKE',
-    operators.notlike_op : 'NOT LIKE',
-    operators.ilike_op : lambda x, y: "lower(%s) LIKE lower(%s)" % (x, y),
-    operators.notilike_op : lambda x, y: "lower(%s) NOT LIKE lower(%s)" % (x, y),
+    operators.like_op : lambda x, y, escape=None: '%s LIKE %s' % (x, y) + (escape and ' ESCAPE \'%s\'' % escape or ''),
+    operators.notlike_op : lambda x, y, escape=None: '%s NOT LIKE %s' % (x, y) + (escape and ' ESCAPE \'%s\'' % escape or ''),
+    operators.ilike_op : lambda x, y, escape=None: "lower(%s) LIKE lower(%s)" % (x, y) + (escape and ' ESCAPE \'%s\'' % escape or ''),
+    operators.notilike_op : lambda x, y, escape=None: "lower(%s) NOT LIKE lower(%s)" % (x, y) + (escape and ' ESCAPE \'%s\'' % escape or ''),
     operators.between_op : 'BETWEEN',
     operators.in_op : 'IN',
     operators.notin_op : 'NOT IN',
@@ -101,6 +101,7 @@ FUNCTIONS = {
     functions.current_user: 'CURRENT_USER',
     functions.localtime: 'LOCALTIME',
     functions.localtimestamp: 'LOCALTIMESTAMP',
+    functions.random: 'random%(expr)s',
     functions.sysdate: 'sysdate',
     functions.session_user :'SESSION_USER',
     functions.user: 'USER'
@@ -192,16 +193,6 @@ class DefaultCompiler(engine.Compiled):
     def is_subquery(self, select):
         return self.stack and self.stack[-1].get('is_subquery')
 
-    def get_whereclause(self, obj):
-        """given a FROM clause, return an additional WHERE condition that should be
-        applied to a SELECT.
-
-        Currently used by Oracle to provide WHERE criterion for JOIN and OUTER JOIN
-        constructs in non-ansi mode.
-        """
-
-        return None
-
     def construct_params(self, params=None):
         """return a dictionary of bind parameter keys and values"""
 
@@ -248,19 +239,17 @@ class DefaultCompiler(engine.Compiled):
 
         return " ".join([self.process(label.obj), self.operator_string(operators.as_), self.preparer.format_label(label, labelname)])
 
-    def visit_column(self, column, result_map=None, use_schema=False, **kwargs):
-        # there is actually somewhat of a ruleset when you would *not* necessarily
-        # want to truncate a column identifier, if its mapped to the name of a
-        # physical column.  but thats very hard to identify at this point, and
-        # the identifier length should be greater than the id lengths of any physical
-        # columns so should not matter.
+    def visit_column(self, column, result_map=None, **kwargs):
 
-        if use_schema and getattr(column, 'table', None) and getattr(column.table, 'schema', None):
-            schema_prefix = self.preparer.quote(column.table, column.table.schema) + '.'
-        else:
-            schema_prefix = ''
-
-        if not column.is_literal:
+        if column._is_oid:
+            name = self.dialect.oid_column_name(column)
+            if name is None:
+                if len(column.table.primary_key) != 0:
+                    pk = list(column.table.primary_key)[0]
+                    return self.visit_column(pk, result_map=result_map, **kwargs)
+                else:
+                    return None
+        elif not column.is_literal:
             name = self._truncated_identifier("colident", column.name)
         else:
             name = column.name
@@ -268,28 +257,19 @@ class DefaultCompiler(engine.Compiled):
         if result_map is not None:
             result_map[name.lower()] = (name, (column, ), column.type)
 
-        if column._is_oid:
-            n = self.dialect.oid_column_name(column)
-            if n is not None:
-                if column.table is None or not column.table.named_with_column:
-                    return n
-                else:
-                    return schema_prefix + self.preparer.quote(column.table, ANONYMOUS_LABEL.sub(self._process_anon, column.table.name)) + "." + n
-            elif len(column.table.primary_key) != 0:
-                pk = list(column.table.primary_key)[0]
-                return self.visit_column(pk, result_map=result_map, use_schema=use_schema, **kwargs)
-            else:
-                return None
-        elif column.table is None or not column.table.named_with_column:
-            if getattr(column, "is_literal", False):
-                return self.escape_literal_column(name)
-            else:
-                return self.preparer.quote(column, name)
+        if getattr(column, "is_literal", False):
+            name = self.escape_literal_column(name)
         else:
-            if getattr(column, "is_literal", False):
-                return schema_prefix + self.preparer.quote(column.table, ANONYMOUS_LABEL.sub(self._process_anon, column.table.name)) + "." + self.escape_literal_column(name)
+            name = self.preparer.quote(column, name)
+
+        if column.table is None or not column.table.named_with_column:
+            return name
+        else:
+            if getattr(column.table, 'schema', None):
+                schema_prefix = self.preparer.quote(column.table, column.table.schema) + '.'
             else:
-                return schema_prefix + self.preparer.quote(column.table, ANONYMOUS_LABEL.sub(self._process_anon, column.table.name)) + "." + self.preparer.quote(column, name)
+                schema_prefix = ''
+            return schema_prefix + self.preparer.quote(column.table, ANONYMOUS_LABEL.sub(self._process_anon, column.table.name)) + "." + name
 
     def escape_literal_column(self, text):
         """provide escaping for the literal_column() construct."""
@@ -349,7 +329,7 @@ class DefaultCompiler(engine.Compiled):
         name = self.function_string(func)
 
         if callable(name):
-            return name(*[self.process(x) for x in func.clause_expr])
+            return name(*[self.process(x) for x in func.clauses])
         else:
             return ".".join(func.packagenames + [name]) % {'expr':self.function_argspec(func)}
 
@@ -357,7 +337,7 @@ class DefaultCompiler(engine.Compiled):
         return self.process(func.clause_expr)
 
     def function_string(self, func):
-        return self.functions.get(func.__class__, func.name + "%(expr)s")
+        return self.functions.get(func.__class__, self.functions.get(func.name, func.name + "%(expr)s"))
 
     def visit_compound_select(self, cs, asfrom=False, parens=True, **kwargs):
         stack_entry = {'select':cs}
@@ -394,7 +374,7 @@ class DefaultCompiler(engine.Compiled):
     def visit_binary(self, binary, **kwargs):
         op = self.operator_string(binary.operator)
         if callable(op):
-            return op(self.process(binary.left), self.process(binary.right))
+            return op(self.process(binary.left), self.process(binary.right), **binary.modifiers)
         else:
             return self.process(binary.left) + " " + op + " " + self.process(binary.right)
 
@@ -521,30 +501,23 @@ class DefaultCompiler(engine.Compiled):
         self.stack.append(stack_entry)
 
         # the actual list of columns to print in the SELECT column list.
-        inner_columns = util.OrderedSet()
-
-        for co in select.inner_columns:
-            l = self.label_select_column(select, co, asfrom=asfrom)
-            inner_columns.add(self.process(l, **column_clause_args))
-
-        collist = string.join(inner_columns.difference(util.Set([None])), ', ')
+        inner_columns = util.OrderedSet(
+            [c for c in [
+                self.process(
+                    self.label_select_column(select, co, asfrom=asfrom), 
+                    **column_clause_args) 
+                for co in select.inner_columns
+            ]
+            if c is not None]
+        )
 
         text = " ".join(["SELECT"] + [self.process(x) for x in select._prefixes]) + " "
         text += self.get_select_precolumns(select)
-        text += collist
-
-        whereclause = select._whereclause
+        text += ', '.join(inner_columns)
 
         from_strings = []
         for f in froms:
             from_strings.append(self.process(f, asfrom=True))
-
-            w = self.get_whereclause(f)
-            if w is not None:
-                if whereclause is not None:
-                    whereclause = sql.and_(w, whereclause)
-                else:
-                    whereclause = w
 
         if froms:
             text += " \nFROM "
@@ -552,8 +525,8 @@ class DefaultCompiler(engine.Compiled):
         else:
             text += self.default_from()
 
-        if whereclause is not None:
-            t = self.process(whereclause)
+        if select._whereclause is not None:
+            t = self.process(select._whereclause)
             if t:
                 text += " \nWHERE " + t
 
@@ -626,7 +599,10 @@ class DefaultCompiler(engine.Compiled):
         colparams = self._get_colparams(insert_stmt)
         preparer = self.preparer
 
-        return ("INSERT INTO %s (%s) VALUES (%s)" %
+        insert = ' '.join(["INSERT"] +
+                          [self.process(x) for x in insert_stmt._prefixes])
+
+        return (insert + " INTO %s (%s) VALUES (%s)" %
                 (preparer.format_table(insert_stmt.table),
                  ', '.join([preparer.quote(c[0], c[0].name)
                             for c in colparams]),

@@ -712,6 +712,8 @@ class Session(object):
 
         if self.bind is not None:
             return self.bind
+        elif isinstance(clause, sql.expression.ClauseElement) and clause.bind is not None:
+            return clause.bind
         elif mapper is None:
             raise exceptions.UnboundExecutionError("Could not locate any mapper associated with SQL expression")
         else:
@@ -739,15 +741,6 @@ class Session(object):
         for ent in addtl_entities:
             q = q.add_entity(ent)
         return q
-
-    def sql(self):
-        class SQLProxy(object):
-            def __getattr__(self, key):
-                def call(*args, **kwargs):
-                    kwargs[engine] = self.engine
-                    return getattr(sql, key)(*args, **kwargs)
-
-    sql = property(sql)
 
     def _autoflush(self):
         if self.autoflush and (self.transaction is None or self.transaction.autoflush):
@@ -962,8 +955,10 @@ class Session(object):
         if key is None:
             if dont_load:
                 raise exceptions.InvalidRequestError("merge() with dont_load=True option does not support objects transient (i.e. unpersisted) objects.  flush() all changes on mapped instances before merging with dont_load=True.")
-            merged = attributes.new_instance(mapper.class_)
-        else:
+            key = mapper.identity_key_from_instance(instance)
+
+        merged = None
+        if key:
             if key in self.identity_map:
                 merged = self.identity_map[key]
             elif dont_load:
@@ -976,15 +971,19 @@ class Session(object):
                 self._update_impl(merged, entity_name=mapper.entity_name)
             else:
                 merged = self.get(mapper.class_, key[1])
-                if merged is None:
-                    raise exceptions.AssertionError("Instance %s has an instance key but is not persisted" % mapperutil.instance_str(instance))
+        
+        if merged is None:
+            merged = attributes.new_instance(mapper.class_)
+            self.save(merged, entity_name=mapper.entity_name)
+            
         _recursive[instance] = merged
+        
         for prop in mapper.iterate_properties:
             prop.merge(self, instance, merged, dont_load, _recursive)
-        if key is None:
-            self.save(merged, entity_name=mapper.entity_name)
-        elif dont_load:
-            merged._state.commit_all()
+            
+        if dont_load:
+            merged._state.commit_all()  # remove any history
+
         return merged
 
     def identity_key(cls, *args, **kwargs):
@@ -1118,7 +1117,8 @@ class Session(object):
         ``Session``.
         """
 
-        return instance in self
+        if instance not in self:
+            raise exceptions.InvalidRequestError("Instance '%s' is not persistent within this Session" % mapperutil.instance_str(instance))
 
     def __contains__(self, instance):
         """Return True if the given instance is associated with this session.

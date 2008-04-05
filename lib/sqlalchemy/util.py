@@ -4,7 +4,7 @@
 # This module is part of SQLAlchemy and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
-import inspect, itertools, sets, sys, warnings, weakref
+import inspect, itertools, new, operator, sets, sys, warnings, weakref
 import __builtin__
 types = __import__('types')
 
@@ -163,6 +163,23 @@ except ImportError:
             return 'defaultdict(%s, %s)' % (self.default_factory,
                                             dict.__repr__(self))
 
+try:
+    from collections import deque
+except ImportError:
+    class deque(list):
+        def appendleft(self, x):
+            self.insert(0, x)
+        
+        def extendleft(self, iterable):
+            self[0:0] = list(iterable)
+
+        def popleft(self):
+            return self.pop(0)
+            
+        def rotate(self, n):
+            for i in xrange(n):
+                self.appendleft(self.pop())
+                
 def to_list(x, default=None):
     if x is None:
         return default
@@ -171,6 +188,18 @@ def to_list(x, default=None):
     else:
         return x
 
+def array_as_starargs_decorator(func):
+    """Interpret a single positional array argument as
+    *args for the decorated method.
+    
+    """
+    def starargs_as_list(self, *args, **kwargs):
+        if len(args) == 1:
+            return func(self, *to_list(args[0], []), **kwargs)
+        else:
+            return func(self, *args, **kwargs)
+    return starargs_as_list
+    
 def to_set(x):
     if x is None:
         return Set()
@@ -251,6 +280,14 @@ def get_cls_kwargs(cls):
 def get_func_kwargs(func):
     """Return the full set of legal kwargs for the given `func`."""
     return inspect.getargspec(func)[0]
+
+def unbound_method_to_callable(func_or_cls):
+    """Adjust the incoming callable such that a 'self' argument is not required."""
+    
+    if isinstance(func_or_cls, types.MethodType) and not func_or_cls.im_self:
+        return func_or_cls.im_func
+    else:
+        return func_or_cls
 
 # from paste.deploy.converters
 def asbool(obj):
@@ -344,6 +381,35 @@ def warn_exception(func, *args, **kwargs):
     except:
         warn("%s('%s') ignored" % sys.exc_info()[0:2])
 
+def monkeypatch_proxied_specials(into_cls, from_cls, skip=None, only=None,
+                                 name='self.proxy', from_instance=None):
+    """Automates delegation of __specials__ for a proxying type."""
+
+    if only:
+        dunders = only
+    else:
+        if skip is None:
+            skip = ('__slots__', '__del__', '__getattribute__',
+                    '__metaclass__', '__getstate__', '__setstate__')
+        dunders = [m for m in dir(from_cls)
+                   if (m.startswith('__') and m.endswith('__') and
+                       not hasattr(into_cls, m) and m not in skip)]
+    for method in dunders:
+        try:
+            spec = inspect.getargspec(getattr(from_cls, method))
+            fn_args = inspect.formatargspec(spec[0])
+            d_args = inspect.formatargspec(spec[0][1:])
+        except TypeError:
+            fn_args = '(self, *args, **kw)'
+            d_args = '(*args, **kw)'
+
+        py = ("def %(method)s%(fn_args)s: "
+              "return %(name)s.%(method)s%(d_args)s" % locals())
+
+        env = from_instance is not None and {name: from_instance} or {}
+        exec py in env
+        setattr(into_cls, method, env[method])
+
 class SimpleProperty(object):
     """A *default* property accessor."""
 
@@ -429,7 +495,10 @@ class OrderedProperties(object):
 
     def __contains__(self, key):
         return key in self._data
-
+    
+    def update(self, value):
+        self._data.update(value)
+        
     def get(self, key, default=None):
         if key in self:
             return self[key]
@@ -952,6 +1021,17 @@ class ScopedRegistry(object):
     def _get_key(self):
         return self.scopefunc()
 
+class _symbol(object):
+    def __init__(self, name):
+        """Construct a new named symbol."""
+        assert isinstance(name, str)
+        self.name = name
+    def __reduce__(self):
+        return symbol, (self.name,)
+    def __repr__(self):
+        return "<symbol '%s>" % self.name
+_symbol.__name__ = 'symbol'
+
 class symbol(object):
     """A constant symbol.
 
@@ -962,31 +1042,147 @@ class symbol(object):
 
     A slight refinement of the MAGICCOOKIE=object() pattern.  The primary
     advantage of symbol() is its repr().  They are also singletons.
-    """
 
+    Repeated calls of symbol('name') will all return the same instance.
+
+    """
     symbols = {}
     _lock = threading.Lock()
 
     def __new__(cls, name):
+        cls._lock.acquire()
         try:
-            symbol._lock.acquire()
             sym = cls.symbols.get(name)
             if sym is None:
-                cls.symbols[name] = sym = object.__new__(cls, name)
+                cls.symbols[name] = sym = _symbol(name)
             return sym
         finally:
             symbol._lock.release()
 
-    def __init__(self, name):
-        """Construct a new named symbol.
 
-        Repeated calls of symbol('name') will all return the same instance.
-        """
+def as_interface(obj, cls=None, methods=None, required=None):
+    """Ensure basic interface compliance for an instance or dict of callables.
 
-        assert isinstance(name, str)
-        self.name = name
-    def __repr__(self):
-        return "<symbol '%s>" % self.name
+    Checks that ``obj`` implements public methods of ``cls`` or has members
+    listed in ``methods``.  If ``required`` is not supplied, implementing at
+    least one interface method is sufficient.  Methods present on ``obj`` that
+    are not in the interface are ignored.
+
+    If ``obj`` is a dict and ``dict`` does not meet the interface
+    requirements, the keys of the dictionary are inspected. Keys present in
+    ``obj`` that are not in the interface will raise TypeErrors.
+
+    Raises TypeError if ``obj`` does not meet the interface criteria.
+
+    In all passing cases, an object with callable members is returned.  In the
+    simple case, ``obj`` is returned as-is; if dict processing kicks in then
+    an anonymous class is returned.
+
+    obj
+      A type, instance, or dictionary of callables.
+    cls
+      Optional, a type.  All public methods of cls are considered the
+      interface.  An ``obj`` instance of cls will always pass, ignoring
+      ``required``..
+    methods
+      Optional, a sequence of method names to consider as the interface.
+    required
+      Optional, a sequence of mandatory implementations. If omitted, an
+      ``obj`` that provides at least one interface method is considered
+      sufficient.  As a convenience, required may be a type, in which case
+      all public methods of the type are required.
+
+    """
+    if not cls and not methods:
+        raise TypeError('a class or collection of method names are required')
+
+    if isinstance(cls, type) and isinstance(obj, cls):
+        return obj
+
+    interface = Set(methods or [m for m in dir(cls) if not m.startswith('_')])
+    implemented = Set(dir(obj))
+
+    complies = operator.ge
+    if isinstance(required, type):
+        required = interface
+    elif not required:
+        required = Set()
+        complies = operator.gt
+    else:
+        required = Set(required)
+
+    if complies(implemented.intersection(interface), required):
+        return obj
+
+    # No dict duck typing here.
+    if not type(obj) is dict:
+        qualifier = complies is operator.gt and 'any of' or 'all of'
+        raise TypeError("%r does not implement %s: %s" % (
+            obj, qualifier, ', '.join(interface)))
+
+    class AnonymousInterface(object):
+        """A callable-holding shell."""
+
+    if cls:
+        AnonymousInterface.__name__ = 'Anonymous' + cls.__name__
+    found = Set()
+
+    for method, impl in dictlike_iteritems(obj):
+        if method not in interface:
+            raise TypeError("%r: unknown in this interface" % method)
+        if not callable(impl):
+            raise TypeError("%r=%r is not callable" % (method, impl))
+        setattr(AnonymousInterface, method, staticmethod(impl))
+        found.add(method)
+
+    if complies(found, required):
+        return AnonymousInterface
+
+    raise TypeError("dictionary does not contain required keys %s" %
+                    ', '.join(required - found))
+
+def function_named(fn, name):
+    """Return a function with a given __name__.
+
+    Will assign to __name__ and return the original function if possible on
+    the Python implementation, otherwise a new function will be constructed.
+
+    """
+    try:
+        fn.__name__ = name
+    except TypeError:
+        fn = new.function(fn.func_code, fn.func_globals, name,
+                          fn.func_defaults, fn.func_closure)
+    return fn
+
+def conditional_cache_decorator(func):
+    """apply conditional caching to the return value of a function."""
+
+    return cache_decorator(func, conditional=True)
+
+def cache_decorator(func, conditional=False):
+    """apply caching to the return value of a function."""
+
+    name = '_cached_' + func.__name__
+    
+    def do_with_cache(self, *args, **kwargs):
+        if conditional:
+            cache = kwargs.pop('cache', False)
+            if not cache:
+                return func(self, *args, **kwargs)
+        try:
+            return getattr(self, name)
+        except AttributeError:
+            value = func(self, *args, **kwargs)
+            setattr(self, name, value)
+            return value
+    return do_with_cache
+    
+def reset_cached(instance, name):
+    try:
+        delattr(instance, '_cached_' + name)
+    except AttributeError:
+        pass
 
 def warn(msg):
     if isinstance(msg, basestring):
@@ -997,7 +1193,7 @@ def warn(msg):
 def warn_deprecated(msg):
     warnings.warn(msg, exceptions.SADeprecationWarning, stacklevel=3)
 
-def deprecated(func, message=None, add_deprecation_to_docstring=True):
+def deprecated(message=None, add_deprecation_to_docstring=True):
     """Decorates a function and issues a deprecation warning on use.
 
     message
@@ -1010,27 +1206,64 @@ def deprecated(func, message=None, add_deprecation_to_docstring=True):
       provided, or sensible default if message is omitted.
     """
 
-    if message is not None:
-        warning = message % dict(func=func.__name__)
+    if add_deprecation_to_docstring:
+        header = message is not None and message or 'Deprecated.'
     else:
-        warning = "Call to deprecated function %s" % func.__name__
+        header = None
+
+    if message is None:
+        message = "Call to deprecated function %(func)s"
+
+    def decorate(fn):
+        return _decorate_with_warning(
+            fn, exceptions.SADeprecationWarning,
+            message % dict(func=fn.__name__), header)
+    return decorate
+
+def pending_deprecation(version, message=None,
+                        add_deprecation_to_docstring=True):
+    """Decorates a function and issues a pending deprecation warning on use.
+
+    version
+      An approximate future version at which point the pending deprecation
+      will become deprecated.  Not used in messaging.
+
+    message
+      If provided, issue message in the warning.  A sensible default
+      is used if not provided.
+
+    add_deprecation_to_docstring
+      Default True.  If False, the wrapped function's __doc__ is left
+      as-is.  If True, the 'message' is prepended to the docs if
+      provided, or sensible default if message is omitted.
+    """
+
+    if add_deprecation_to_docstring:
+        header = message is not None and message or 'Deprecated.'
+    else:
+        header = None
+
+    if message is None:
+        message = "Call to deprecated function %(func)s"
+
+    def decorate(fn):
+        return _decorate_with_warning(
+            fn, exceptions.SAPendingDeprecationWarning,
+            message % dict(func=fn.__name__), header)
+    return decorate
+
+def _decorate_with_warning(func, wtype, message, docstring_header=None):
+    """Wrap a function with a warnings.warn and augmented docstring."""
 
     def func_with_warning(*args, **kwargs):
-        warnings.warn(exceptions.SADeprecationWarning(warning),
-                      stacklevel=2)
+        warnings.warn(wtype(message), stacklevel=2)
         return func(*args, **kwargs)
 
     doc = func.__doc__ is not None and func.__doc__ or ''
-
-    if add_deprecation_to_docstring:
-        header = message is not None and warning or 'Deprecated.'
-        doc = '\n'.join((header.rstrip(), doc))
+    if docstring_header is not None:
+        doc = '\n'.join((docstring_header.rstrip(), doc))
 
     func_with_warning.__doc__ = doc
     func_with_warning.__dict__.update(func.__dict__)
-    try:
-        func_with_warning.__name__ = func.__name__
-    except TypeError:
-        pass
 
-    return func_with_warning
+    return function_named(func_with_warning, func.__name__)

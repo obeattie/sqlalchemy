@@ -95,6 +95,15 @@ The `mapper()` function creates a new `Mapper` object and stores it away for fut
     
 What was that last `id` attribute?  That was placed there by the `Mapper`, to track the value of the `id` column in the `users_table`.  Since our `User` doesn't exist in the database, its id is `None`.  When we save the object, it will get populated automatically with its new id.
 
+## Too Verbose ?  There are alternatives
+
+The full set of steps to map a class, which are to define a `Table`, define a class, and then define a `mapper()`, are fairly verbose and for simple cases may appear overly disjoint.   Most popular object relational products use the so-called "active record" approach, where the table definition and its class mapping are all defined at once.  With SQLAlchemy, there are two excellent alternatives to its usual configuration which provide this approach:
+
+  * [Elixir](http://elixir.ematia.de/) is a "sister" product to SQLAlchemy, which is a full "declarative" layer built on top of SQLAlchemy.  It has existed almost as long as SA itself and defines a rich featureset on top of SA's normal configuration, adding many new capabilities such as plugins, automatic generation of table and column names based on configurations, and an intuitive system of defining relations.
+  * [declarative](rel:plugins_declarative) is a so-called "micro-declarative" plugin included with SQLAlchemy 0.4.4 and above.  In contrast to Elixir, it maintains the use of the same configurational constructs outlined in this tutorial, except it allows the `Column`, `relation()`, and other constructs to be defined "inline" with the mapped class itself, so that explicit calls to `Table` and `mapper()` are not needed in most cases.
+
+With either declarative layer it's a good idea to be familiar with SQLAlchemy's "base" configurational style in any case.  But now that we have our configuration started, we're ready to look at how to build sessions and query the database; this process is the same regardless of configurational style.
+
 ## Creating a Session
 
 We're now ready to start talking to the database.  The ORM's "handle" to the database is the `Session`.  When we first set up the application, at the same level as our `create_engine()` statement, we define a second object called `Session` (or whatever you want to call it, `create_session`, etc.) which is configured by the `sessionmaker()` function.  This function is configurational and need only be called once.  
@@ -384,10 +393,10 @@ To use an entirely string-based statement, using `from_statement()`; just ensure
     ...     select(
     ...            [users_table], 
     ...            select([func.max(users_table.c.name)]).label('maxuser')==users_table.c.name) 
-    ...    ).all()
+    ...    ).all() # doctest: +NORMALIZE_WHITESPACE
     SELECT users.id AS users_id, users.name AS users_name, users.fullname AS users_fullname, users.password AS users_password 
     FROM users 
-    WHERE (SELECT max(users.name) 
+    WHERE (SELECT max(users.name) AS max_1
     FROM users) = users.name
     []
     {stop}[<User('wendy','Wendy Williams', 'foobar')>]
@@ -397,8 +406,8 @@ There's also a way to combine scalar results with objects, using `add_column()`.
     {python}
     {sql}>>> for r in session.query(User).\
     ...     add_column(select([func.max(users_table.c.name)]).label('maxuser')):
-    ...     print r
-    SELECT users.id AS users_id, users.name AS users_name, users.fullname AS users_fullname, users.password AS users_password, (SELECT max(users.name) 
+    ...     print r # doctest: +NORMALIZE_WHITESPACE
+    SELECT users.id AS users_id, users.name AS users_name, users.fullname AS users_fullname, users.password AS users_password, (SELECT max(users.name) AS max_1
     FROM users) AS maxuser 
     FROM users ORDER BY users.oid
     []
@@ -854,14 +863,14 @@ Let's try to delete `jack` and see how that goes.  We'll mark as deleted in the 
 
     {python}
     >>> session.delete(jack)
-    {sql}>>> session.query(User).filter_by(name='jack').count()
+    {sql}>>> session.query(User).filter_by(name='jack').count() # doctest: +NORMALIZE_WHITESPACE
     UPDATE addresses SET user_id=? WHERE addresses.id = ?
     [None, 1]
     UPDATE addresses SET user_id=? WHERE addresses.id = ?
     [None, 2]
     DELETE FROM users WHERE users.id = ?
     [5]
-    SELECT count(users.id) 
+    SELECT count(users.id) AS count_1
     FROM users 
     WHERE users.name = ?
     ['jack']
@@ -872,8 +881,8 @@ So far, so good.  How about Jack's `Address` objects ?
     {python}
     {sql}>>> session.query(Address).filter(
     ...     Address.email_address.in_(['jack@google.com', 'j25@yahoo.com'])
-    ...  ).count()
-    SELECT count(addresses.id) 
+    ...  ).count() # doctest: +NORMALIZE_WHITESPACE
+    SELECT count(addresses.id) AS count_1
     FROM addresses 
     WHERE addresses.email_address IN (?, ?)
     ['jack@google.com', 'j25@yahoo.com']
@@ -924,10 +933,10 @@ Now when we load Jack, removing an address from his `addresses` collection will 
     # only one address remains
     {sql}>>> session.query(Address).filter(
     ...     Address.email_address.in_(['jack@google.com', 'j25@yahoo.com'])
-    ... ).count()
+    ... ).count() # doctest: +NORMALIZE_WHITESPACE
     DELETE FROM addresses WHERE addresses.id = ?
     [2]
-    SELECT count(addresses.id) 
+    SELECT count(addresses.id) AS count_1
     FROM addresses 
     WHERE addresses.email_address IN (?, ?)
     ['jack@google.com', 'j25@yahoo.com']
@@ -946,9 +955,9 @@ Deleting Jack will delete both Jack and his remaining `Address`:
     COMMIT
     {stop}
     
-    {sql}>>> session.query(User).filter_by(name='jack').count()
+    {sql}>>> session.query(User).filter_by(name='jack').count() # doctest: +NORMALIZE_WHITESPACE
     BEGIN
-    SELECT count(users.id) 
+    SELECT count(users.id) AS count_1
     FROM users 
     WHERE users.name = ?
     ['jack']
@@ -956,8 +965,8 @@ Deleting Jack will delete both Jack and his remaining `Address`:
     
     {sql}>>> session.query(Address).filter(
     ...    Address.email_address.in_(['jack@google.com', 'j25@yahoo.com'])
-    ... ).count()
-    SELECT count(addresses.id) 
+    ... ).count() # doctest: +NORMALIZE_WHITESPACE
+    SELECT count(addresses.id) AS count_1
     FROM addresses 
     WHERE addresses.email_address IN (?, ?)
     ['jack@google.com', 'j25@yahoo.com']
@@ -970,11 +979,12 @@ We're moving into the bonus round here, but lets show off a many-to-many relatio
 First some new tables:
 
     {python}
+    >>> from sqlalchemy import Text
     >>> post_table = Table('posts', metadata, 
     ...        Column('id', Integer, primary_key=True),
     ...        Column('user_id', Integer, ForeignKey('users.id')),
     ...        Column('headline', String(255), nullable=False),
-    ...        Column('body', String)
+    ...        Column('body', Text)
     ...        )
     
     >>> post_keywords = Table('post_keywords', metadata,

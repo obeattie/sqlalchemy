@@ -23,7 +23,7 @@ import StringIO, weakref
 from sqlalchemy import util, logging, topological, exceptions
 from sqlalchemy.orm import attributes, interfaces
 from sqlalchemy.orm import util as mapperutil
-from sqlalchemy.orm.mapper import object_mapper, _state_mapper
+from sqlalchemy.orm.mapper import object_mapper, _state_mapper, has_identity
 
 # Load lazily
 object_session = None
@@ -37,23 +37,25 @@ class UOWEventHandler(interfaces.AttributeExtension):
         self.key = key
         self.class_ = class_
         self.cascade = cascade
+    
+    def _target_mapper(self, obj):
+        prop = object_mapper(obj).get_property(self.key)
+        return prop.mapper
 
     def append(self, obj, item, initiator):
         # process "save_update" cascade rules for when an instance is appended to the list of another instance
         sess = object_session(obj)
         if sess:
             if self.cascade.save_update and item not in sess:
-                mapper = object_mapper(obj)
-                prop = mapper.get_property(self.key)
-                ename = prop.mapper.entity_name
-                sess.save_or_update(item, entity_name=ename)
+                sess.save_or_update(item, entity_name=self._target_mapper(obj).entity_name)
 
     def remove(self, obj, item, initiator):
         sess = object_session(obj)
         if sess:
             # expunge pending orphans
             if self.cascade.delete_orphan and item in sess.new:
-                sess.expunge(item)
+                if self._target_mapper(obj)._is_orphan(item):
+                    sess.expunge(item)
 
     def set(self, obj, newvalue, oldvalue, initiator):
         # process "save_update" cascade rules for when an instance is attached to another instance
@@ -62,10 +64,7 @@ class UOWEventHandler(interfaces.AttributeExtension):
         sess = object_session(obj)
         if sess:
             if newvalue is not None and self.cascade.save_update and newvalue not in sess:
-                mapper = object_mapper(obj)
-                prop = mapper.get_property(self.key)
-                ename = prop.mapper.entity_name
-                sess.save_or_update(newvalue, entity_name=ename)
+                sess.save_or_update(newvalue, entity_name=self._target_mapper(obj).entity_name)
             if self.cascade.delete_orphan and oldvalue in sess.new:
                 sess.expunge(oldvalue)
 
@@ -210,7 +209,15 @@ class UnitOfWork(object):
             if state in processed:
                 continue
 
-            flush_context.register_object(state, isdelete=_state_mapper(state)._is_orphan(state.obj()))
+            obj = state.obj()
+            is_orphan = _state_mapper(state)._is_orphan(obj)
+            if is_orphan and not has_identity(obj):
+                raise exceptions.FlushError("instance %s is an unsaved, pending instance and is an orphan (is not attached to %s)" %
+                    (
+                        obj,
+                        ", nor ".join(["any parent '%s' instance via that classes' '%s' attribute" % (klass.__name__, key) for (key,klass) in _state_mapper(state).delete_orphans])
+                    ))
+            flush_context.register_object(state, isdelete=is_orphan)
             processed.add(state)
 
         # put all remaining deletes into the flush context.
@@ -342,16 +349,6 @@ class UOWTransaction(object):
         taskelement = task._objects[state]
         taskelement.isdelete = "rowswitch"
         
-    def unregister_object(self, obj):
-        """remove an object from its parent UOWTask.
-        
-        called by mapper._save_obj() when an 'identity switch' is detected, so that
-        no further operations occur upon the instance."""
-        mapper = object_mapper(obj)
-        task = self.get_task_by_mapper(mapper)
-        if obj._state in task._objects:
-            task.delete(obj._state)
-
     def is_deleted(self, state):
         """return true if the given state is marked as deleted within this UOWTransaction."""
         
@@ -584,11 +581,6 @@ class UOWTask(object):
         # instead of __eq__
         self.mapper._save_obj([state], self.uowtransaction, postupdate=True, post_update_cols=util.Set(post_update_cols))
 
-    def delete(self, obj):
-        """remove the given object from this UOWTask, if present."""
-
-        self._objects.pop(obj._state, None)
-
     def __contains__(self, state):
         """return True if the given object is contained within this UOWTask or inheriting tasks."""
         
@@ -770,11 +762,11 @@ class UOWTask(object):
             make_task_tree(head, t, {})
 
         ret = [t]
+
+        # add tasks that were in the cycle, but didnt get assembled
+        # into the cyclical tree, to the start of the list
         for t2 in cycles:
             if t2 not in used_tasks and t2 is not self:
-                # add tasks that were in the cycle, but didnt get assembled
-                # into the cyclical tree, to the start of the list
-                # TODO: no test coverage for this !!
                 localtask = UOWTask(self.uowtransaction, t2.mapper)
                 for state in t2.elements:
                     localtask.append(state, t2.listonly, isdelete=t2._objects[state].isdelete)

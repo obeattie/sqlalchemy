@@ -1,24 +1,41 @@
 """'dynamic' collection API.  returns Query() objects on the 'read' side, alters
 a special AttributeHistory on the 'write' side."""
 
-from sqlalchemy import exceptions, util
-from sqlalchemy.orm import attributes, object_session, util as mapperutil
+from sqlalchemy import exceptions, util, logging
+from sqlalchemy.orm import attributes, object_session, util as mapperutil, strategies
 from sqlalchemy.orm.query import Query
 from sqlalchemy.orm.mapper import has_identity, object_mapper
 
+
+class DynaLoader(strategies.AbstractRelationLoader):
+    def init_class_attribute(self):
+        self.is_class_level = True
+        self._register_attribute(self.parent.class_, impl_class=DynamicAttributeImpl, target_mapper=self.parent_property.mapper, order_by=self.parent_property.order_by)
+
+    def create_row_processor(self, selectcontext, mapper, row):
+        return (None, None, None)
+
+DynaLoader.logger = logging.class_logger(DynaLoader)
+
 class DynamicAttributeImpl(attributes.AttributeImpl):
-    def __init__(self, class_, key, typecallable, target_mapper, **kwargs):
+    def __init__(self, class_, key, typecallable, target_mapper, order_by, **kwargs):
         super(DynamicAttributeImpl, self).__init__(class_, key, typecallable, **kwargs)
         self.target_mapper = target_mapper
+        self.order_by=order_by
+        self.query_class = AppenderQuery
 
     def get(self, state, passive=False):
         if passive:
-            return self._get_collection(state, passive=True).added_items
+            return self._get_collection_history(state, passive=True).added_items
         else:
-            return AppenderQuery(self, state)
+            return self.query_class(self, state)
 
-    def get_collection(self, state, user_data=None):
-        return self._get_collection(state, passive=True).added_items
+    def get_collection(self, state, user_data=None, passive=True):
+        if passive:
+            return self._get_collection_history(state, passive=passive).added_items
+        else:
+            history = self._get_collection_history(state, passive=passive)
+            return history.added_items + history.unchanged_items
 
     def fire_append_event(self, state, value, initiator):
         state.modified = True
@@ -52,10 +69,10 @@ class DynamicAttributeImpl(attributes.AttributeImpl):
         raise NotImplementedError()
         
     def get_history(self, state, passive=False):
-        c = self._get_collection(state, passive)
+        c = self._get_collection_history(state, passive)
         return (c.added_items, c.unchanged_items, c.deleted_items)
         
-    def _get_collection(self, state, passive=False):
+    def _get_collection_history(self, state, passive=False):
         try:
             c = state.dict[self.key]
         except KeyError:
@@ -68,12 +85,12 @@ class DynamicAttributeImpl(attributes.AttributeImpl):
         
     def append(self, state, value, initiator, passive=False):
         if initiator is not self:
-            self._get_collection(state, passive=True).added_items.append(value)
+            self._get_collection_history(state, passive=True).added_items.append(value)
             self.fire_append_event(state, value, initiator)
     
     def remove(self, state, value, initiator, passive=False):
         if initiator is not self:
-            self._get_collection(state, passive=True).deleted_items.append(value)
+            self._get_collection_history(state, passive=True).deleted_items.append(value)
             self.fire_remove_event(state, value, initiator)
 
             
@@ -99,21 +116,21 @@ class AppenderQuery(Query):
     def __iter__(self):
         sess = self.__session()
         if sess is None:
-            return iter(self.attr._get_collection(self.instance._state, passive=True).added_items)
+            return iter(self.attr._get_collection_history(self.instance._state, passive=True).added_items)
         else:
             return iter(self._clone(sess))
 
     def __getitem__(self, index):
         sess = self.__session()
         if sess is None:
-            return self.attr._get_collection(self.instance._state, passive=True).added_items.__getitem__(index)
+            return self.attr._get_collection_history(self.instance._state, passive=True).added_items.__getitem__(index)
         else:
             return self._clone(sess).__getitem__(index)
     
     def count(self):
         sess = self.__session()
         if sess is None:
-            return len(self.attr._get_collection(self.instance._state, passive=True).added_items)
+            return len(self.attr._get_collection_history(self.instance._state, passive=True).added_items)
         else:
             return self._clone(sess).count()
     
@@ -130,7 +147,10 @@ class AppenderQuery(Query):
                 except exceptions.InvalidRequestError:
                     raise exceptions.UnboundExecutionError("Parent instance %s is not bound to a Session, and no contextual session is established; lazy load operation of attribute '%s' cannot proceed" % (mapperutil.instance_str(instance), self.attr.key))
 
-        return sess.query(self.attr.target_mapper).with_parent(instance, self.attr.key)
+        q = sess.query(self.attr.target_mapper).with_parent(instance, self.attr.key)
+        if self.attr.order_by:
+            q = q.order_by(self.attr.order_by)
+        return q
 
     def assign(self, collection):
         instance = self.instance
@@ -138,7 +158,7 @@ class AppenderQuery(Query):
             oldlist = list(self)
         else:
             oldlist = []
-        self.attr._get_collection(self.instance._state, passive=True).replace(oldlist, collection)
+        self.attr._get_collection_history(self.instance._state, passive=True).replace(oldlist, collection)
         return oldlist
         
     def append(self, item):

@@ -107,9 +107,6 @@ class OracleText(sqltypes.Text):
                     return value
         return process
 
-class OracleRaw(sqltypes.Binary):
-    def get_col_spec(self):
-        return "RAW(%(length)s)" % {'length' : self.length}
 
 class OracleChar(sqltypes.CHAR):
     def get_col_spec(self):
@@ -133,6 +130,10 @@ class OracleBinary(sqltypes.Binary):
             else:
                 return value
         return process
+
+class OracleRaw(OracleBinary):
+    def get_col_spec(self):
+        return "RAW(%(length)s)" % {'length' : self.length}
 
 class OracleBoolean(sqltypes.Boolean):
     def get_col_spec(self):
@@ -362,68 +363,6 @@ class OracleDialect(default.DefaultDialect):
         cursor = connection.execute("""select sequence_name from all_sequences where sequence_name=:name""", {'name':self._denormalize_name(sequence_name)})
         return bool( cursor.fetchone() is not None )
 
-    def _locate_owner_row(self, owner, name, rows, raiseerr=False):
-        """return the row in the given list of rows which references the given table name and owner name."""
-        if not rows:
-            if raiseerr:
-                raise exceptions.NoSuchTableError(name)
-            else:
-                return None
-        else:
-            if owner is not None:
-                for row in rows:
-                    if owner.upper() in row[0]:
-                        return row
-                else:
-                    if raiseerr:
-                        raise exceptions.AssertionError("Specified owner %s does not own table %s" % (owner, name))
-                    else:
-                        return None
-            else:
-                if len(rows)==1:
-                    return rows[0]
-                else:
-                    if raiseerr:
-                        raise exceptions.AssertionError("There are multiple tables with name '%s' visible to the schema, you must specifiy owner" % name)
-                    else:
-                        return None
-
-    def _resolve_table_owner(self, connection, name, table, dblink=''):
-        """Locate the given table in the ``ALL_TAB_COLUMNS`` view,
-        including searching for equivalent synonyms and dblinks.
-        """
-
-        c = connection.execute ("select distinct OWNER from ALL_TAB_COLUMNS%(dblink)s where TABLE_NAME = :table_name" % {'dblink':dblink}, {'table_name':name})
-        rows = c.fetchall()
-        try:
-            row = self._locate_owner_row(table.owner, name, rows, raiseerr=True)
-            return name, row['OWNER'], ''
-        except exceptions.SQLAlchemyError:
-            # locate synonyms
-            c = connection.execute ("""select OWNER, TABLE_OWNER, TABLE_NAME, DB_LINK
-                                       from   ALL_SYNONYMS%(dblink)s
-                                       where  SYNONYM_NAME = :synonym_name
-                                       and (DB_LINK IS NOT NULL
-                                               or ((TABLE_NAME, TABLE_OWNER) in
-                                                    (select TABLE_NAME, OWNER from ALL_TAB_COLUMNS%(dblink)s)))""" % {'dblink':dblink},
-                                    {'synonym_name':name})
-            rows = c.fetchall()
-            row = self._locate_owner_row(table.owner, name, rows)
-            if row is None:
-                row = self._locate_owner_row("PUBLIC", name, rows)
-
-            if row is not None:
-                owner, name, dblink = row['TABLE_OWNER'], row['TABLE_NAME'], row['DB_LINK']
-                if dblink:
-                    dblink = '@' + dblink
-                    if not owner:
-                        # re-resolve table owner using new dblink variable
-                        t1, owner, t2 = self._resolve_table_owner(connection, name, table, dblink=dblink)
-                else:
-                    dblink = ''
-                return name, owner, dblink
-            raise
-
     def _normalize_name(self, name):
         if name is None:
             return None
@@ -440,13 +379,10 @@ class OracleDialect(default.DefaultDialect):
         else:
             return name.encode(self.encoding)
 
-    def get_default_schema_name(self,connection):
-        try:
-            return self._default_schema_name
-        except AttributeError:
-            name = self._default_schema_name = \
-                connection.execute('SELECT USER FROM DUAL').scalar()
-            return name
+    def get_default_schema_name(self, connection):
+        return connection.execute('SELECT USER FROM DUAL').scalar()
+    get_default_schema_name = base.connection_memoize(
+        ('dialect', 'default_schema_name'))(get_default_schema_name)
 
     def table_names(self, connection, schema):
         # note that table_names() isnt loading DBLINKed or synonym'ed tables
@@ -458,15 +394,66 @@ class OracleDialect(default.DefaultDialect):
             cursor = connection.execute(s,{'owner':self._denormalize_name(schema)})
         return [self._normalize_name(row[0]) for row in cursor]
 
+    def _resolve_synonym(self, connection, desired_owner=None, desired_synonym=None, desired_table=None):
+        """search for a local synonym matching the given desired owner/name.
+
+        if desired_owner is None, attempts to locate a distinct owner.
+
+	returns the actual name, owner, dblink name, and synonym name if found.
+        """
+
+	sql = """select OWNER, TABLE_OWNER, TABLE_NAME, DB_LINK, SYNONYM_NAME
+		   from   ALL_SYNONYMS WHERE """
+
+        clauses = []
+        params = {}
+        if desired_synonym:
+            clauses.append("SYNONYM_NAME=:synonym_name")
+            params['synonym_name'] = desired_synonym
+        if desired_owner:
+            clauses.append("TABLE_OWNER=:desired_owner")
+            params['desired_owner'] = desired_owner
+        if desired_table:
+            clauses.append("TABLE_NAME=:tname")
+            params['tname'] = desired_table
+
+        sql += " AND ".join(clauses) 
+
+	result = connection.execute(sql, **params)
+        if desired_owner:
+            row = result.fetchone()
+            if row:
+                return row['TABLE_NAME'], row['TABLE_OWNER'], row['DB_LINK'], row['SYNONYM_NAME']
+            else:
+                return None, None, None, None
+        else:
+            rows = result.fetchall()
+            if len(rows) > 1:
+                raise exceptions.AssertionError("There are multiple tables visible to the schema, you must specify owner")
+            elif len(rows) == 1:
+                row = rows[0]
+                return row['TABLE_NAME'], row['TABLE_OWNER'], row['DB_LINK'], row['SYNONYM_NAME']
+            else:
+                return None, None, None, None
+
     def reflecttable(self, connection, table, include_columns):
         preparer = self.identifier_preparer
 
-        # search for table, including across synonyms and dblinks.
-        # locate the actual name of the table, the real owner, and any dblink clause needed.
-        actual_name, owner, dblink = self._resolve_table_owner(connection, self._denormalize_name(table.name), table)
+        resolve_synonyms = table.kwargs.get('oracle_resolve_synonyms', False)
+
+	if resolve_synonyms:
+            actual_name, owner, dblink, synonym = self._resolve_synonym(connection, desired_owner=self._denormalize_name(table.schema), desired_synonym=self._denormalize_name(table.name))
+        else:
+            actual_name, owner, dblink, synonym = None, None, None, None
+
+        if not actual_name:
+            actual_name = self._denormalize_name(table.name)
+        if not dblink:
+            dblink = ''
+        if not owner:
+            owner = self._denormalize_name(table.schema) or self.get_default_schema_name(connection)
 
         c = connection.execute ("select COLUMN_NAME, DATA_TYPE, DATA_LENGTH, DATA_PRECISION, DATA_SCALE, NULLABLE, DATA_DEFAULT from ALL_TAB_COLUMNS%(dblink)s where TABLE_NAME = :table_name and OWNER = :owner" % {'dblink':dblink}, {'table_name':actual_name, 'owner':owner})
-
 
         while True:
             row = c.fetchone()
@@ -555,8 +542,20 @@ class OracleDialect(default.DefaultDialect):
                          "all_cons_columns%(dblink)s - does the user have "
                          "proper rights to the table?") % {'dblink':dblink})
                     continue
-                refspec = ".".join([remote_table, remote_column])
-                schema.Table(remote_table, table.metadata, autoload=True, autoload_with=connection, owner=remote_owner)
+
+                if resolve_synonyms:
+                    ref_remote_name, ref_remote_owner, ref_dblink, ref_synonym = self._resolve_synonym(connection, desired_owner=self._denormalize_name(remote_owner), desired_table=self._denormalize_name(remote_table))
+                    if ref_synonym:
+                        remote_table = self._normalize_name(ref_synonym)
+                        remote_owner = self._normalize_name(ref_remote_owner)
+
+                if not table.schema and self._denormalize_name(remote_owner) == owner:
+                    refspec =  ".".join([remote_table, remote_column])               
+                    t = schema.Table(remote_table, table.metadata, autoload=True, autoload_with=connection, oracle_resolve_synonyms=resolve_synonyms, useexisting=True)
+                else:
+                    refspec =  ".".join([x for x in [remote_owner, remote_table, remote_column] if x])
+                    t = schema.Table(remote_table, table.metadata, autoload=True, autoload_with=connection, schema=remote_owner, oracle_resolve_synonyms=resolve_synonyms, useexisting=True)
+
                 if local_column not in fk[0]:
                     fk[0].append(local_column)
                 if refspec not in fk[1]:
@@ -572,7 +571,9 @@ class _OuterJoinColumn(sql.ClauseElement):
     __visit_name__ = 'outer_join_column'
     def __init__(self, column):
         self.column = column
-
+    def _get_from_objects(self, **kwargs):
+        return []
+    
 class OracleCompiler(compiler.DefaultCompiler):
     """Oracle compiler modifies the lexical structure of Select
     statements to work under non-ANSI configured Oracle databases, if
@@ -611,36 +612,28 @@ class OracleCompiler(compiler.DefaultCompiler):
     def visit_join(self, join, **kwargs):
         if self.dialect.use_ansi:
             return compiler.DefaultCompiler.visit_join(self, join, **kwargs)
-
-        (where, parentjoin) = self.__wheres.get(join, (None, None))
-
-        class VisitOn(visitors.ClauseVisitor):
-            def visit_binary(s, binary):
-                if binary.operator == sql_operators.eq:
-                    if binary.left.table is join.right:
-                        binary.left = _OuterJoinColumn(binary.left)
-                    elif binary.right.table is join.right:
-                        binary.right = _OuterJoinColumn(binary.right)
-
-        if join.isouter:
-            if where is not None:
-                self.__wheres[join.left] = self.__wheres[parentjoin] = (sql.and_(VisitOn().traverse(join.onclause, clone=True), where), parentjoin)
-            else:
-                self.__wheres[join.left] = self.__wheres[join] = (VisitOn().traverse(join.onclause, clone=True), join)
         else:
-            if where is not None:
-                self.__wheres[join.left] = self.__wheres[parentjoin] = (sql.and_(join.onclause, where), parentjoin)
+            return self.process(join.left, asfrom=True) + ", " + self.process(join.right, asfrom=True)
+    
+    def _get_nonansi_join_whereclause(self, froms):
+        clauses = []
+        
+        def visit_join(join):
+            if join.isouter:
+                def visit_binary(binary):
+                    if binary.operator == sql_operators.eq:
+                        if binary.left.table is join.right:
+                            binary.left = _OuterJoinColumn(binary.left)
+                        elif binary.right.table is join.right:
+                            binary.right = _OuterJoinColumn(binary.right)
+                clauses.append(visitors.traverse(join.onclause, visit_binary=visit_binary, clone=True))
             else:
-                self.__wheres[join.left] = self.__wheres[join] = (join.onclause, join)
-
-        return self.process(join.left, asfrom=True) + ", " + self.process(join.right, asfrom=True)
-
-    def get_whereclause(self, f):
-        if f in self.__wheres:
-            return self.__wheres[f][0]
-        else:
-            return None
-
+                clauses.append(join.onclause)
+        
+        for f in froms:
+            visitors.traverse(f, visit_join=visit_join)
+        return sql.and_(*clauses)
+        
     def visit_outer_join_column(self, vc):
         return self.process(vc.column) + "(+)"
 
@@ -664,27 +657,43 @@ class OracleCompiler(compiler.DefaultCompiler):
         so tries to wrap it in a subquery with ``row_number()`` criterion.
         """
 
-        if not getattr(select, '_oracle_visit', None) and (select._limit is not None or select._offset is not None):
-            # to use ROW_NUMBER(), an ORDER BY is required.
-            orderby = self.process(select._order_by_clause)
-            if not orderby:
-                orderby = list(select.oid_column.proxies)[0]
-                orderby = self.process(orderby)
+        if not getattr(select, '_oracle_visit', None):
+            if not self.dialect.use_ansi:
+                if self.stack and 'from' in self.stack[-1]:
+                    existingfroms = self.stack[-1]['from']
+                else:
+                    existingfroms = None
 
-            oldselect = select
-            select = select.column(sql.literal_column("ROW_NUMBER() OVER (ORDER BY %s)" % orderby).label("ora_rn")).order_by(None)
-            select._oracle_visit = True
+                froms = select._get_display_froms(existingfroms)
+                whereclause = self._get_nonansi_join_whereclause(froms)
+                if whereclause:
+                    select = select.where(whereclause)
+                    select._oracle_visit = True
+                
+            if select._limit is not None or select._offset is not None:
+                # to use ROW_NUMBER(), an ORDER BY is required.
+                orderby = self.process(select._order_by_clause)
+                if not orderby:
+                    orderby = list(select.oid_column.proxies)[0]
+                    orderby = self.process(orderby)
 
-            limitselect = sql.select([c for c in select.c if c.key!='ora_rn'])
-            if select._offset is not None:
-                limitselect.append_whereclause("ora_rn>%d" % select._offset)
-                if select._limit is not None:
-                    limitselect.append_whereclause("ora_rn<=%d" % (select._limit + select._offset))
-            else:
-                limitselect.append_whereclause("ora_rn<=%d" % select._limit)
-            return self.process(limitselect, iswrapper=True, **kwargs)
-        else:
-            return compiler.DefaultCompiler.visit_select(self, select, **kwargs)
+                select = select.column(sql.literal_column("ROW_NUMBER() OVER (ORDER BY %s)" % orderby).label("ora_rn")).order_by(None)
+                select._oracle_visit = True
+                
+                limitselect = sql.select([c for c in select.c if c.key!='ora_rn'])
+                limitselect._oracle_visit = True
+                limitselect._is_wrapper = True
+                
+                if select._offset is not None:
+                    limitselect.append_whereclause("ora_rn>%d" % select._offset)
+                    if select._limit is not None:
+                        limitselect.append_whereclause("ora_rn<=%d" % (select._limit + select._offset))
+                else:
+                    limitselect.append_whereclause("ora_rn<=%d" % select._limit)
+                select = limitselect
+        
+        kwargs['iswrapper'] = getattr(select, '_is_wrapper', False)
+        return compiler.DefaultCompiler.visit_select(self, select, **kwargs)
 
     def limit_clause(self, select):
         return ""

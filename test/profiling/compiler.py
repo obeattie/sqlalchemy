@@ -15,16 +15,15 @@ class CompileTest(TestBase, AssertsExecutionResults):
             Column('c1', Integer, primary_key=True),
             Column('c2', String(30)))
 
-    @profiling.function_call_count(42, {'2.3': 44})
+    @profiling.function_call_count(74, {'2.3': 44, '2.4': 42})
     def test_insert(self):
         t1.insert().compile()
 
-    @profiling.function_call_count(42, {'2.3': 47})
+    @profiling.function_call_count(75, {'2.3': 47, '2.4': 42})
     def test_update(self):
         t1.update().compile()
 
-    # TODO: this is alittle high
-    @profiling.function_call_count(125, versions={'2.3': 180})
+    @profiling.function_call_count(228, versions={'2.3': 153, '2.4':116})
     def test_select(self):
         s = select([t1], t1.c.c2==t2.c.c1)
         s.compile()

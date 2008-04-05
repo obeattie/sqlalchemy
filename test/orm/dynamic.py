@@ -23,7 +23,23 @@ class DynamicTest(FixtureTest):
         print list(u.addresses)
         assert [User(id=7, addresses=[Address(id=1, email_address='jack@bean.com')])] == q.filter(User.id==7).all()
         assert fixtures.user_address_result == q.all()
+    
+    def test_order_by(self):
+        mapper(User, users, properties={
+            'addresses':dynamic_loader(mapper(Address, addresses))
+        })
+        sess = create_session()
+        u = sess.query(User).get(8)
+        self.assertEquals(list(u.addresses.order_by(desc(Address.email_address))), [Address(email_address=u'ed@wood.com'), Address(email_address=u'ed@lala.com'), Address(email_address=u'ed@bettyboop.com')])
 
+    def test_configured_order_by(self):
+        mapper(User, users, properties={
+            'addresses':dynamic_loader(mapper(Address, addresses), order_by=desc(Address.email_address))
+        })
+        sess = create_session()
+        u = sess.query(User).get(8)
+        self.assertEquals(list(u.addresses), [Address(email_address=u'ed@wood.com'), Address(email_address=u'ed@lala.com'), Address(email_address=u'ed@bettyboop.com')])
+        
     def test_count(self):
         mapper(User, users, properties={
             'addresses':dynamic_loader(mapper(Address, addresses))
@@ -75,7 +91,17 @@ class DynamicTest(FixtureTest):
 
         assert o1 in i1.orders.all()
         assert i1 in o1.items.all()
-
+    
+    def test_transient_detached(self):
+        mapper(User, users, properties={
+            'addresses':dynamic_loader(mapper(Address, addresses))
+        })
+        sess = create_session()
+        u1 = User()
+        u1.addresses.append(Address())
+        assert u1.addresses.count() == 1
+        assert u1.addresses[0] == Address()
+        
 class FlushTest(FixtureTest):
     def test_basic(self):
         class Fixture(Base):
@@ -105,7 +131,7 @@ class FlushTest(FixtureTest):
         ] == sess.query(User).all()
 
     @testing.fails_on('maxdb')
-    def test_delete(self):
+    def test_delete_nocascade(self):
         mapper(User, users, properties={
             'addresses':dynamic_loader(mapper(Address, addresses), backref='user')
         })
@@ -125,6 +151,9 @@ class FlushTest(FixtureTest):
         sess.delete(u.addresses[3])
         assert [Address(email_address='a'), Address(email_address='b'), Address(email_address='d')] == list(u.addresses)
 
+        sess.clear()
+        u = sess.query(User).get(u.id)
+
         sess.delete(u)
 
         # u.addresses relation will have to force the load
@@ -133,6 +162,39 @@ class FlushTest(FixtureTest):
         sess.close()
 
         assert testing.db.scalar(addresses.count(addresses.c.user_id != None)) ==0
+
+    @testing.fails_on('maxdb')
+    def test_delete_cascade(self):
+        mapper(User, users, properties={
+            'addresses':dynamic_loader(mapper(Address, addresses), backref='user', cascade="all, delete-orphan")
+        })
+        sess = create_session(autoflush=True)
+        u = User(name='ed')
+        u.addresses.append(Address(email_address='a'))
+        u.addresses.append(Address(email_address='b'))
+        u.addresses.append(Address(email_address='c'))
+        u.addresses.append(Address(email_address='d'))
+        u.addresses.append(Address(email_address='e'))
+        u.addresses.append(Address(email_address='f'))
+        sess.save(u)
+
+        assert Address(email_address='c') == u.addresses[2]
+        sess.delete(u.addresses[2])
+        sess.delete(u.addresses[4])
+        sess.delete(u.addresses[3])
+        assert [Address(email_address='a'), Address(email_address='b'), Address(email_address='d')] == list(u.addresses)
+        
+        sess.clear()
+        u = sess.query(User).get(u.id)
+        
+        sess.delete(u)
+
+        # u.addresses relation will have to force the load
+        # of all addresses so that they can be updated
+        sess.flush()
+        sess.close()
+
+        assert testing.db.scalar(addresses.count()) ==0
 
     @testing.fails_on('maxdb')
     def test_remove_orphans(self):

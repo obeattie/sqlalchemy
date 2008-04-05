@@ -2,38 +2,400 @@
 CHANGES
 =======
 
+0.4.6
+=====
+- orm
+    - Fix to the recent relation() refactoring which fixes
+      exotic relations which join between local and remote table
+      multiple times, with a common column shared between the 
+      joins.
+      
+- sql
+    - Fixed bug with union() when applied to non-Table connected
+      select statements
+
+- engines
+    - Pool listeners can now be provided as a dictionary of
+      callables or a (possibly partial) duck-type of
+      PoolListener, your choice.
+
+0.4.5
+=====
+- orm
+    - A small change in behavior to session.merge() - existing
+      objects are checked for based on primary key attributes, not
+      necessarily _instance_key.  So the widely requested
+      capability, that:
+
+            x = MyObject(id=1)
+            x = sess.merge(x)
+
+      will in fact load MyObject with id #1 from the database if
+      present, is now available.  merge() still copies the state
+      of the given object to the persistent one, so an example
+      like the above would typically have copied "None" from all
+      attributes of "x" onto the persistent copy.  These can be
+      reverted using session.expire(x).
+
+    - Also fixed behavior in merge() whereby collection elements
+      present on the destination but not the merged collection
+      were not being removed from the destination.
+
+    - Added a more aggressive check for "uncompiled mappers",
+      helps particularly with declarative layer [ticket:995]
+
+    - The methodology behind "primaryjoin"/"secondaryjoin" has
+      been refactored.  Behavior should be slightly more
+      intelligent, primarily in terms of error messages which
+      have been pared down to be more readable.  In a slight
+      number of scenarios it can better resolve the correct
+      foreign key than before.
+
+    - Added comparable_property(), adds query Comparator
+      behavior to regular, unmanaged Python properties
+
+    - The functionality of query.with_polymorphic() has been
+      added to mapper() as a configuration option.
+
+      It's set via several forms:
+
+            with_polymorphic='*'
+            with_polymorphic=[mappers]
+            with_polymorphic=('*', selectable)
+            with_polymorphic=([mappers], selectable)
+
+      This controls the default polymorphic loading strategy for
+      inherited mappers. When a selectable is not given, outer
+      joins are created for all joined-table inheriting mappers
+      requested. Note that the auto-create of joins is not
+      compatible with concrete table inheritance.
+
+      The existing select_table flag on mapper() is now
+      deprecated and is synonymous with:
+
+        with_polymorphic('*', select_table).
+
+      Note that the underlying "guts" of select_table have been
+      completely removed and replaced with the newer, more
+      flexible approach.
+
+      The new approach also automatically allows eager loads to
+      work for subclasses, if they are present, for example
+
+        sess.query(Company).options(
+         eagerload_all(
+          [Company.employees.of_type(Engineer), 'machines']
+        ))
+
+      to load Company objects, their employees, and the
+      'machines' collection of employees who happen to be
+      Engineers. A "with_polymorphic" Query option should be
+      introduced soon as well which would allow per-Query
+      control of with_polymorphic() on relations.
+
+    - Added two "experimental" features to Query, "experimental"
+      in that their specific name/behavior is not carved in
+      stone just yet: _values() and _from_self().  We'd like
+      feedback on these.
+
+      - _values(*columns) is given a list of column expressions,
+        and returns a new Query that only returns those
+        columns. When evaluated, the return value is a list of
+        tuples just like when using add_column() or
+        add_entity(), the only difference is that "entity zero",
+        i.e. the mapped class, is not included in the
+        results. This means it finally makes sense to use
+        group_by() and having() on Query, which have been
+        sitting around uselessly until now.
+
+        A future change to this method may include that its
+        ability to join, filter and allow other options not
+        related to a "resultset" are removed, so the feedback
+        we're looking for is how people want to use
+        _values()...i.e. at the very end, or do people prefer to
+        continue generating after it's called.
+
+      - _from_self() compiles the SELECT statement for the Query
+        (minus any eager loaders), and returns a new Query that
+        selects from that SELECT. So basically you can query
+        from a Query without needing to extract the SELECT
+        statement manually. This gives meaning to operations
+        like query[3:5]._from_self().filter(some
+        criterion). There's not much controversial here except
+        that you can quickly create highly nested queries that
+        are less efficient, and we want feedback on the naming
+        choice.
+
+    - query.order_by() and query.group_by() will accept multiple
+      arguments using *args (like select() already does).
+
+    - Added some convenience descriptors to Query:
+      query.statement returns the full SELECT construct,
+      query.whereclause returns just the WHERE part of the
+      SELECT construct.
+
+    - Fixed/covered case when using a False/0 value as a
+      polymorphic discriminator.
+
+    - Fixed bug which was preventing synonym() attributes from
+      being used with inheritance
+
+    - Fixed SQL function truncation of trailing underscores
+      [ticket:996]
+
+    - When attributes are expired on a pending instance, an
+      error will not be raised when the "refresh" action is
+      triggered and no result is found.
+
+    - Session.execute can now find binds from metadata
+
+    - Adjusted the definition of "self-referential" to be any
+      two mappers with a common parent (this affects whether or
+      not aliased=True is required when joining with Query).
+
+    - Made some fixes to the "from_joinpoint" argument to
+      query.join() so that if the previous join was aliased and
+      this one isn't, the join still happens successfully.
+
+    - Assorted "cascade deletes" fixes:
+        - Fixed "cascade delete" operation of dynamic relations,
+          which had only been implemented for foreign-key
+          nulling behavior in 0.4.2 and not actual cascading
+          deletes [ticket:895]
+
+        - Delete cascade without delete-orphan cascade on a
+          many-to-one will not delete orphans which were
+          disconnected from the parent before session.delete()
+          is called on the parent (one-to-many already had
+          this).
+
+        - Delete cascade with delete-orphan will delete orphans
+          whether or not it remains attached to its also-deleted
+          parent.
+
+        - delete-orphan casacde is properly detected on
+          relations that are present on superclasses when using
+          inheritance.
+
+    - Fixed order_by calculation in Query to properly alias
+      mapper-config'ed order_by when using select_from()
+
+    - Refactored the diffing logic that kicks in when replacing
+      one collection with another into collections.bulk_replace,
+      useful to anyone building multi-level collections.
+
+    - Cascade traversal algorithm converted from recursive to
+      iterative to support deep object graphs.
+
+- sql
+    - Schema-qualified tables now will place the schemaname
+      ahead of the tablename in all column expressions as well
+      as when generating column labels.  This prevents cross-
+      schema name collisions in all cases [ticket:999]
+
+    - Can now allow selects which correlate all FROM clauses and
+      have no FROM themselves.  These are typically used in a
+      scalar context, i.e. SELECT x, (SELECT x WHERE y) FROM
+      table.  Requires explicit correlate() call.
+
+    - 'name' is no longer a required constructor argument for
+      Column().  It (and .key) may now be deferred until the
+      column is added to a Table.
+
+    - like(), ilike(), contains(), startswith(), endswith() take
+      an optional keyword argument "escape=<somestring>", which
+      is set as the escape character using the syntax "x LIKE y
+      ESCAPE '<somestring>'" [ticket:993], [ticket:791]
+
+    - random() is now a generic sql function and will compile to
+      the database's random implementation, if any.
+
+    - update().values() and insert().values() take keyword
+      arguments.
+
+    - Fixed an issue in select() regarding its generation of
+      FROM clauses, in rare circumstances two clauses could be
+      produced when one was intended to cancel out the other.
+      Some ORM queries with lots of eager loads might have seen
+      this symptom.
+
+    - The case() function now also takes a dictionary as its
+      whens parameter.  It also interprets the "THEN"
+      expressions as values by default, meaning case([(x==y,
+      "foo")]) will interpret "foo" as a bound value, not a SQL
+      expression.  use text(expr) for literal SQL expressions in
+      this case.  For the criterion itself, these may be literal
+      strings only if the "value" keyword is present, otherwise
+      SA will force explicit usage of either text() or
+      literal().
+
+- declarative extension
+    - The "synonym" function is now directly usable with
+      "declarative".  Pass in the decorated property using the
+      "descriptor" keyword argument, e.g.: somekey =
+      synonym('_somekey', descriptor=property(g, s))
+
+    - The "deferred" function is usable with "declarative".
+      Simplest usage is to declare deferred and Column together,
+      e.g.: data = deferred(Column(Text))
+
+    - Declarative also gained @synonym_for(...) and
+      @comparable_using(...), front-ends for synonym and
+      comparable_property.
+
+    - Improvements to mapper compilation when using declarative;
+      already-compiled mappers will still trigger compiles of
+      other uncompiled mappers when used [ticket:995]
+
+    - Declarative will complete setup for Columns lacking names,
+      allows a more DRY syntax.
+
+        class Foo(Base):
+            __tablename__ = 'foos'
+            id = Column(Integer, primary_key=True)
+
+     - inheritance in declarative can be disabled when sending
+       "inherits=None" to __mapper_args__.
+
+     - declarative_base() takes optional kwarg "mapper", which
+       is any callable/class/method that produces a mapper, such
+       as declarative_base(mapper=scopedsession.mapper).  This
+       property can also be set on individual declarative
+       classes using the "__mapper_cls__" property.
+
+- postgres
+    - Got PG server side cursors back into shape, added fixed
+      unit tests as part of the default test suite.  Added
+      better uniqueness to the cursor ID [ticket:1001]
+
+- oracle
+    - The "owner" keyword on Table is now deprecated, and is
+      exactly synonymous with the "schema" keyword.  Tables can
+      now be reflected with alternate "owner" attributes,
+      explicitly stated on the Table object or not using
+      "schema".
+
+    - All of the "magic" searching for synonyms, DBLINKs etc.
+      during table reflection are disabled by default unless you
+      specify "oracle_resolve_synonyms=True" on the Table
+      object.  Resolving synonyms necessarily leads to some
+      messy guessing which we'd rather leave off by default.
+      When the flag is set, tables and related tables will be
+      resolved against synonyms in all cases, meaning if a
+      synonym exists for a particular table, reflection will use
+      it when reflecting related tables.  This is stickier
+      behavior than before which is why it's off by default.
+
+- mssql
+     - Reflected tables will now automatically load other tables
+       which are referenced by Foreign keys in the auto-loaded
+       table, [ticket:979].
+
+     - Added executemany check to skip identity fetch,
+       [ticket:916].
+
+     - Added stubs for small date type, [ticket:884]
+
+     - Added a new 'driver' keyword parameter for the pyodbc
+       dialect.  Will substitute into the ODBC connection string
+       if given, defaults to 'SQL Server'.
+
+     - Added a new 'max_identifier_length' keyword parameter for
+       the pyodbc dialect.
+
+     - Improvements to pyodbc + Unix. If you couldn't get that
+       combination to work before, please try again.
+
+- mysql
+     - The connection.info keys the dialect uses to cache server
+       settings have changed and are now namespaced.
+
 0.4.4
 ------
 - sql
     - Can again create aliases of selects against textual FROM
       clauses, [ticket:975]
 
-    - The value of a bindparam() can be a callable, in which case
-      it's evaluated at statement execution time to get the value.
+    - The value of a bindparam() can be a callable, in which
+      case it's evaluated at statement execution time to get the
+      value.
 
-    - added exception wrapping/reconnect support to result set 
-      fetching.  Reconnect works for those databases that 
-      raise a catchable data error during results 
-      (i.e. doesn't work on MySQL) [ticket:978]
+    - Added exception wrapping/reconnect support to result set
+      fetching.  Reconnect works for those databases that raise
+      a catchable data error during results (i.e. doesn't work
+      on MySQL) [ticket:978]
+
+    - Implemented two-phase API for "threadlocal" engine, via
+      engine.begin_twophase(), engine.prepare() [ticket:936]
+
+    - Fixed bug which was preventing UNIONS from being
+      cloneable, [ticket:986]
+
+    - Added "bind" keyword argument to insert(), update(),
+      delete() and DDL(). The .bind property is now assignable
+      on those statements as well as on select().
+
+    - Insert statements can now be compiled with extra "prefix"
+      words between INSERT and INTO, for vendor extensions like
+      MySQL's INSERT IGNORE INTO table.
 
 - orm
-    - any(), has(), contains(), attribute level == and != now
-      work properly with self-referential relations - the clause
-      inside the EXISTS is aliased on the "remote" side to
-      distinguish it from the parent table.
+    - any(), has(), contains(), ~contains(), attribute level ==
+      and != now work properly with self-referential relations -
+      the clause inside the EXISTS is aliased on the "remote"
+      side to distinguish it from the parent table.  This
+      applies to single table self-referential as well as
+      inheritance-based self-referential.
 
-    - Your cries have been heard: removing a pending item from an
-      attribute or collection with delete-orphan expunges the item
-      from the session; no FlushError is raised.  Note that if you
-      session.save()'ed the pending item explicitly, the
+    - Repaired behavior of == and != operators at the relation()
+      level when compared against NULL for one-to-one relations
+      [ticket:985]
+
+    - Fixed bug whereby session.expire() attributes were not
+      loading on an polymorphically-mapped instance mapped by a
+      select_table mapper.
+
+    - Added query.with_polymorphic() - specifies a list of
+      classes which descend from the base class, which will be
+      added to the FROM clause of the query.  Allows subclasses
+      to be used within filter() criterion as well as eagerly
+      loads the attributes of those subclasses.
+
+    - Your cries have been heard: removing a pending item from
+      an attribute or collection with delete-orphan expunges the
+      item from the session; no FlushError is raised.  Note that
+      if you session.save()'ed the pending item explicitly, the
       attribute/collection removal still knocks it out.
 
-    - Fixed potential generative bug when the same Query was used
-      to generate multiple Query objects using join().
+    - session.refresh() and session.expire() raise an error when
+      called on instances which are not persistent within the
+      session
 
-    - Added a new "higher level" operator called "of_type()": used
-      in join() as well as with any() and has(), qualifies the
-      subclass which will be used in filter criterion, e.g.:
+    - Fixed potential generative bug when the same Query was
+      used to generate multiple Query objects using join().
+
+    - Fixed bug which was introduced in 0.4.3, whereby loading
+      an already-persistent instance mapped with joined table
+      inheritance would trigger a useless "secondary" load from
+      its joined table, when using the default "select"
+      polymorphic_fetch.  This was due to attributes being
+      marked as expired during its first load and not getting
+      unmarked from the previous "secondary" load.  Attributes
+      are now unexpired based on presence in __dict__ after any
+      load or commit operation succeeds.
+
+    - Deprecated Query methods apply_sum(), apply_max(),
+      apply_min(), apply_avg().  Better methodologies are
+      coming....
+
+    - relation() can accept a callable for its first argument,
+      which returns the class to be related.  This is in place
+      to assist declarative packages to define relations without
+      classes yet being in place.
+
+    - Added a new "higher level" operator called "of_type()":
+      used in join() as well as with any() and has(), qualifies
+      the subclass which will be used in filter criterion, e.g.:
 
         query.filter(Company.employees.of_type(Engineer).
           any(Engineer.name=='foo'))
@@ -47,17 +409,39 @@ CHANGES
       flush().
 
     - Expressions used in filter(), filter_by() and others, when
-      they make usage of a clause generated from a relation using
-      the identity of a child object (e.g.,
+      they make usage of a clause generated from a relation
+      using the identity of a child object (e.g.,
       filter(Parent.child==<somechild>)), evaluate the actual
       primary key value of <somechild> at execution time so that
       the autoflush step of the Query can complete, thereby
       populating the PK value of <somechild> in the case that
       <somechild> was pending.
 
+    - setting the relation()-level order by to a column in the
+      many-to-many "secondary" table will now work with eager
+      loading, previously the "order by" wasn't aliased against
+      the secondary table's alias.
+
+    - Synonyms riding on top of existing descriptors are now
+      full proxies to those descriptors.
+
 - dialects
     - Invalid SQLite connection URLs now raise an error.
 
+    - postgres TIMESTAMP renders correctly [ticket:981]
+
+    - postgres PGArray is a "mutable" type by default; when used
+      with the ORM, mutable-style equality/ copy-on-write
+      techniques are used to test for changes.
+
+- extensions
+    - a new super-small "declarative" extension has been added,
+      which allows Table and mapper() configuration to take
+      place inline underneath a class declaration.  This
+      extension differs from ActiveMapper and Elixir in that it
+      does not redefine any SQLAlchemy semantics at all; literal
+      Column, Table and relation() constructs are used to define
+      the class behavior and table definition.
 
 0.4.3
 ------
@@ -166,7 +550,11 @@ CHANGES
 
     - The proper error message is raised when trying to access
       expired instance attributes with no session present
-
+    
+    - dynamic_loader() / lazy="dynamic" now accepts and uses
+      the order_by parameter in the same way in which it works
+      with relation().
+      
     - Added expire_all() method to Session.  Calls expire() for
       all persistent instances.  This is handy in conjunction
       with...

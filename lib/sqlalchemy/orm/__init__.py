@@ -11,10 +11,9 @@ See the SQLAlchemy object relational tutorial and mapper configuration
 documentation for an overview of how this module is used.
 """
 
-from sqlalchemy import util as sautil
 from sqlalchemy.orm.mapper import Mapper, object_mapper, class_mapper, _mapper_registry
 from sqlalchemy.orm.interfaces import MapperExtension, EXT_CONTINUE, EXT_STOP, EXT_PASS, ExtensionOption, PropComparator
-from sqlalchemy.orm.properties import SynonymProperty, PropertyLoader, ColumnProperty, CompositeProperty, BackRef
+from sqlalchemy.orm.properties import SynonymProperty, ComparableProperty, PropertyLoader, ColumnProperty, CompositeProperty, BackRef
 from sqlalchemy.orm import mapper as mapperlib
 from sqlalchemy.orm import strategies
 from sqlalchemy.orm.query import Query
@@ -22,14 +21,14 @@ from sqlalchemy.orm.util import polymorphic_union, create_row_adapter
 from sqlalchemy.orm.session import Session as _Session
 from sqlalchemy.orm.session import object_session, sessionmaker
 from sqlalchemy.orm.scoping import ScopedSession
-from itertools import chain
+
 
 __all__ = [ 'relation', 'column_property', 'composite', 'backref', 'eagerload',
             'eagerload_all', 'lazyload', 'noload', 'deferred', 'defer',
             'undefer', 'undefer_group', 'extension', 'mapper', 'clear_mappers',
             'compile_mappers', 'class_mapper', 'object_mapper', 'sessionmaker',
             'scoped_session', 'dynamic_loader', 'MapperExtension',
-            'polymorphic_union',
+            'polymorphic_union', 'comparable_property',
             'create_session', 'synonym', 'contains_alias', 'Query',
             'contains_eager', 'EXT_CONTINUE', 'EXT_STOP', 'EXT_PASS',
             'object_session', 'PropComparator' ]
@@ -274,7 +273,7 @@ def relation(argument, secondary=None, **kwargs):
 
 def dynamic_loader(argument, secondary=None, primaryjoin=None, secondaryjoin=None, entity_name=None,
     foreign_keys=None, backref=None, post_update=False, cascade=None, remote_side=None, enable_typechecks=True,
-    passive_deletes=False):
+    passive_deletes=False, order_by=None):
     """construct a dynamically-loading mapper property.
 
     This property is similar to relation(), except read operations
@@ -287,12 +286,12 @@ def dynamic_loader(argument, secondary=None, primaryjoin=None, secondaryjoin=Non
     A subset of arguments available to relation() are available here.
     """
 
-    from sqlalchemy.orm.strategies import DynaLoader
+    from sqlalchemy.orm.dynamic import DynaLoader
 
     return PropertyLoader(argument, secondary=secondary, primaryjoin=primaryjoin,
             secondaryjoin=secondaryjoin, entity_name=entity_name, foreign_keys=foreign_keys, backref=backref,
             post_update=post_update, cascade=cascade, remote_side=remote_side, enable_typechecks=enable_typechecks,
-            passive_deletes=passive_deletes,
+            passive_deletes=passive_deletes, order_by=order_by,
             strategy_class=DynaLoader)
 
 #def _relation_loader(mapper, secondary=None, primaryjoin=None, secondaryjoin=None, lazy=True, **kwargs):
@@ -481,9 +480,13 @@ def mapper(class_, local_table=None, *args, **params):
       polymorphic_on
         Used with mappers in an inheritance relationship, a ``Column``
         which will identify the class/mapper combination to be used
-        with a particular row.  requires the polymorphic_identity
+        with a particular row.  Requires the ``polymorphic_identity``
         value to be set for all mappers in the inheritance
-        hierarchy.
+        hierarchy.  The column specified by ``polymorphic_on`` is 
+        usually a column that resides directly within the base 
+        mapper's mapped table; alternatively, it may be a column
+        that is only present within the <selectable> portion
+        of the ``with_polymorphic`` argument.
 
       _polymorphic_map
         Used internally to propagate the full map of polymorphic
@@ -497,7 +500,7 @@ def mapper(class_, local_table=None, *args, **params):
       polymorphic_fetch
         specifies how subclasses mapped through joined-table
         inheritance will be fetched.  options are 'union',
-        'select', and 'deferred'.  if the select_table argument
+        'select', and 'deferred'.  if the 'with_polymorphic' argument
         is present, defaults to 'union', otherwise defaults to
         'select'.
 
@@ -529,12 +532,27 @@ def mapper(class_, local_table=None, *args, **params):
         to be used against this mapper's selectable unit.  This is
         normally simply the primary key of the `local_table`, but
         can be overridden here.
-
+    
+      with_polymorphic
+        A tuple in the form ``(<classes>, <selectable>)`` indicating the
+        default style of "polymorphic" loading, that is, which tables
+        are queried at once. <classes> is any single or list of mappers
+        and/or classes indicating the inherited classes that should be
+        loaded at once. The special value ``'*'`` may be used to indicate
+        all descending classes should be loaded immediately. The second
+        tuple argument <selectable> indicates a selectable that will be
+        used to query for multiple classes. Normally, it is left as
+        None, in which case this mapper will form an outer join from
+        the base mapper's table to that of all desired sub-mappers.
+        When specified, it provides the selectable to be used for
+        polymorphic loading. When with_polymorphic includes mappers
+        which load from a "concrete" inheriting table, the <selectable>
+        argument is required, since it usually requires more complex
+        UNION queries.
+        
       select_table
-        A [sqlalchemy.schema#Table] or any [sqlalchemy.sql#Selectable]
-        which will be used to select instances of this mapper's class.
-        usually used to provide polymorphic loading among several
-        classes in an inheritance hierarchy.
+        Deprecated.  Synonymous with 
+        ``with_polymorphic=('*', <selectable>)``.
 
       version_id_col
         A ``Column`` which must have an integer type that will be
@@ -547,7 +565,7 @@ def mapper(class_, local_table=None, *args, **params):
 
     return Mapper(class_, local_table, *args, **params)
 
-def synonym(name, map_column=False, proxy=False):
+def synonym(name, map_column=False, descriptor=None, proxy=False):
     """Set up `name` as a synonym to another mapped property.
 
     Used with the ``properties`` dictionary sent to  [sqlalchemy.orm#mapper()].
@@ -589,7 +607,43 @@ def synonym(name, map_column=False, proxy=False):
     is not already available.
     """
 
-    return SynonymProperty(name, map_column=map_column)
+    return SynonymProperty(name, map_column=map_column, descriptor=descriptor)
+
+def comparable_property(comparator_factory, descriptor=None):
+    """Provide query semantics for an unmanaged attribute.
+
+    Allows a regular Python @property (descriptor) to be used in Queries and
+    SQL constructs like a managed attribute.  comparable_property wraps a
+    descriptor with a proxy that directs operator overrides such as ==
+    (__eq__) to the supplied comparator but proxies everything else through
+    to the original descriptor::
+
+      class MyClass(object):
+          @property
+          def myprop(self):
+              return 'foo'
+
+      class MyComparator(sqlalchemy.orm.interfaces.PropComparator):
+          def __eq__(self, other):
+              ....
+
+      mapper(MyClass, mytable, properties=dict(
+               'myprop': comparable_property(MyComparator)))
+
+    Used with the ``properties`` dictionary sent to  [sqlalchemy.orm#mapper()].
+
+    comparator_factory
+      A PropComparator subclass or factory that defines operator behavior
+      for this property.
+
+    descriptor
+      Optional when used in a ``properties={}`` declaration.  The Python
+      descriptor or property to layer comparison behavior on top of.
+
+      The like-named descriptor will be automatically retreived from the
+      mapped class if left blank in a ``properties`` declaration.
+    """
+    return ComparableProperty(comparator_factory, descriptor)
 
 def compile_mappers():
     """Compile all mappers that have been defined.
@@ -655,9 +709,6 @@ def lazyload(name, mapper=None):
 
     return strategies.EagerLazyOption(name, lazy=True, mapper=mapper)
 
-def fetchmode(name, type):
-    return strategies.FetchModeOption(name, type)
-
 def noload(name):
     """Return a ``MapperOption`` that will convert the property of the
     given name into a non-load.
@@ -679,21 +730,14 @@ def contains_alias(alias):
         def __init__(self, alias):
             self.alias = alias
             if isinstance(self.alias, basestring):
-                self.selectable = None
+                self.translator = None
             else:
-                self.selectable = alias
-            self._row_translators = {}
-        def get_selectable(self, mapper):
-            if self.selectable is None:
-                self.selectable = mapper.mapped_table.alias(self.alias)
-            return self.selectable
+                self.translator = create_row_adapter(alias)
+        
         def translate_row(self, mapper, context, row):
-            if mapper in self._row_translators:
-                return self._row_translators[mapper](row)
-            else:
-                translator = create_row_adapter(self.get_selectable(mapper), mapper.mapped_table)
-                self._row_translators[mapper] = translator
-                return translator(row)
+            if not self.translator:
+                self.translator = create_row_adapter(mapper.mapped_table.alias(self.alias))
+            return self.translator(row)
 
     return ExtensionOption(AliasedRow(alias))
 

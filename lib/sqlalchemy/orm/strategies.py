@@ -223,7 +223,7 @@ class UndeferGroupOption(MapperOption):
 class AbstractRelationLoader(LoaderStrategy):
     def init(self):
         super(AbstractRelationLoader, self).init()
-        for attr in ['primaryjoin', 'secondaryjoin', 'secondary', 'foreign_keys', 'mapper', 'select_mapper', 'target', 'select_table', 'loads_polymorphic', 'uselist', 'cascade', 'attributeext', 'order_by', 'remote_side', 'polymorphic_primaryjoin', 'polymorphic_secondaryjoin', 'direction']:
+        for attr in ['primaryjoin', 'secondaryjoin', 'secondary', 'foreign_keys', 'mapper', 'target', 'table', 'uselist', 'cascade', 'attributeext', 'order_by', 'remote_side', 'direction']:
             setattr(self, attr, getattr(self.parent_property, attr))
         self._should_log_debug = logging.is_debug_enabled(self.logger)
         
@@ -237,16 +237,6 @@ class AbstractRelationLoader(LoaderStrategy):
         self.logger.info("register managed %s attribute %s on class %s" % ((self.uselist and "list-holding" or "scalar"), self.key, self.parent.class_.__name__))
         sessionlib.register_attribute(class_, self.key, uselist=self.uselist, useobject=True, extension=self.attributeext, cascade=self.cascade,  trackparent=True, typecallable=self.parent_property.collection_class, callable_=callable_, comparator=self.parent_property.comparator, **kwargs)
 
-class DynaLoader(AbstractRelationLoader):
-    def init_class_attribute(self):
-        self.is_class_level = True
-        self._register_attribute(self.parent.class_, dynamic=True, target_mapper=self.parent_property.mapper)
-
-    def create_row_processor(self, selectcontext, mapper, row):
-        return (None, None, None)
-
-DynaLoader.logger = logging.class_logger(DynaLoader)
-        
 class NoLoader(AbstractRelationLoader):
     def init_class_attribute(self):
         self.is_class_level = True
@@ -265,14 +255,14 @@ NoLoader.logger = logging.class_logger(NoLoader)
 class LazyLoader(AbstractRelationLoader):
     def init(self):
         super(LazyLoader, self).init()
-        (self.lazywhere, self.lazybinds, self.equated_columns) = self._create_lazy_clause(self.parent_property)
+        (self.__lazywhere, self.__bind_to_col, self._equated_columns) = self.__create_lazy_clause(self.parent_property)
         
-        self.logger.info(str(self.parent_property) + " lazy loading clause " + str(self.lazywhere))
+        self.logger.info(str(self.parent_property) + " lazy loading clause " + str(self.__lazywhere))
 
         # determine if our "lazywhere" clause is the same as the mapper's
         # get() clause.  then we can just use mapper.get()
         #from sqlalchemy.orm import query
-        self.use_get = not self.uselist and self.mapper._get_clause[0].compare(self.lazywhere)
+        self.use_get = not self.uselist and self.mapper._get_clause[0].compare(self.__lazywhere)
         if self.use_get:
             self.logger.info(str(self.parent_property) + " will use query.get() to optimize instance loads")
 
@@ -285,10 +275,9 @@ class LazyLoader(AbstractRelationLoader):
             return self._lazy_none_clause(reverse_direction)
             
         if not reverse_direction:
-            (criterion, lazybinds, rev) = (self.lazywhere, self.lazybinds, self.equated_columns)
+            (criterion, bind_to_col, rev) = (self.__lazywhere, self.__bind_to_col, self._equated_columns)
         else:
-            (criterion, lazybinds, rev) = LazyLoader._create_lazy_clause(self.parent_property, reverse_direction=reverse_direction)
-        bind_to_col = dict([(lazybinds[col].key, col) for col in lazybinds])
+            (criterion, bind_to_col, rev) = LazyLoader.__create_lazy_clause(self.parent_property, reverse_direction=reverse_direction)
 
         def visit_bindparam(bindparam):
             mapper = reverse_direction and self.parent_property.mapper or self.parent_property.parent
@@ -301,10 +290,9 @@ class LazyLoader(AbstractRelationLoader):
     
     def _lazy_none_clause(self, reverse_direction=False):
         if not reverse_direction:
-            (criterion, lazybinds, rev) = (self.lazywhere, self.lazybinds, self.equated_columns)
+            (criterion, bind_to_col, rev) = (self.__lazywhere, self.__bind_to_col, self._equated_columns)
         else:
-            (criterion, lazybinds, rev) = LazyLoader._create_lazy_clause(self.parent_property, reverse_direction=reverse_direction)
-        bind_to_col = dict([(lazybinds[col].key, col) for col in lazybinds])
+            (criterion, bind_to_col, rev) = LazyLoader.__create_lazy_clause(self.parent_property, reverse_direction=reverse_direction)
 
         def visit_binary(binary):
             mapper = reverse_direction and self.parent_property.mapper or self.parent_property.parent
@@ -361,24 +349,20 @@ class LazyLoader(AbstractRelationLoader):
                     instance._state.reset(self.key)
             return (new_execute, None, None)
 
-    def _create_lazy_clause(cls, prop, reverse_direction=False):
-        (primaryjoin, secondaryjoin, remote_side) = (prop.polymorphic_primaryjoin, prop.polymorphic_secondaryjoin, prop.remote_side)
-        
+    def __create_lazy_clause(cls, prop, reverse_direction=False):
         binds = {}
         equated_columns = {}
 
+        secondaryjoin = prop.secondaryjoin
+        local = prop.local_side
+        
         def should_bind(targetcol, othercol):
-            if not prop._col_is_part_of_mappings(targetcol):
-                return False
-                
             if reverse_direction and not secondaryjoin:
-                return targetcol in remote_side
+                return othercol in local
             else:
-                return othercol in remote_side
+                return targetcol in local
 
         def visit_binary(binary):
-            if not isinstance(binary.left, sql.ColumnElement) or not isinstance(binary.right, sql.ColumnElement):
-                return
             leftcol = binary.left
             rightcol = binary.right
 
@@ -386,31 +370,28 @@ class LazyLoader(AbstractRelationLoader):
             equated_columns[leftcol] = rightcol
 
             if should_bind(leftcol, rightcol):
-                if leftcol in binds:
-                    binary.left = binds[leftcol]
-                else:
-                    binary.left = binds[leftcol] = sql.bindparam(None, None, type_=binary.right.type)
+                if leftcol not in binds:
+                    binds[leftcol] = sql.bindparam(None, None, type_=binary.right.type)
+                binary.left = binds[leftcol]
+            elif should_bind(rightcol, leftcol):
+                if rightcol not in binds:
+                    binds[rightcol] = sql.bindparam(None, None, type_=binary.left.type)
+                binary.right = binds[rightcol]
 
-            # the "left is not right" compare is to handle part of a join clause that is "table.c.col1==table.c.col1",
-            # which can happen in rare cases (test/orm/relationships.py RelationTest2)
-            if leftcol is not rightcol and should_bind(rightcol, leftcol):
-                if rightcol in binds:
-                    binary.right = binds[rightcol]
-                else:
-                    binary.right = binds[rightcol] = sql.bindparam(None, None, type_=binary.left.type)
-
-                
-        lazywhere = primaryjoin
+        lazywhere = prop.primaryjoin
         
-        if not secondaryjoin or not reverse_direction:
+        if not prop.secondaryjoin or not reverse_direction:
             lazywhere = visitors.traverse(lazywhere, clone=True, visit_binary=visit_binary)
         
-        if secondaryjoin is not None:
+        if prop.secondaryjoin is not None:
             if reverse_direction:
                 secondaryjoin = visitors.traverse(secondaryjoin, clone=True, visit_binary=visit_binary)
             lazywhere = sql.and_(lazywhere, secondaryjoin)
-        return (lazywhere, binds, equated_columns)
-    _create_lazy_clause = classmethod(_create_lazy_clause)
+    
+        bind_to_col = dict([(binds[col].key, col) for col in binds])
+        
+        return (lazywhere, bind_to_col, equated_columns)
+    __create_lazy_clause = classmethod(__create_lazy_clause)
     
 LazyLoader.logger = logging.class_logger(LazyLoader)
 
@@ -461,8 +442,8 @@ class LoadLazyAttribute(object):
         if strategy.use_get:
             ident = []
             allnulls = True
-            for primary_key in prop.select_mapper.primary_key: 
-                val = instance_mapper._get_committed_attr_by_column(instance, strategy.equated_columns[primary_key])
+            for primary_key in prop.mapper.primary_key: 
+                val = instance_mapper._get_committed_attr_by_column(instance, strategy._equated_columns[primary_key])
                 allnulls = allnulls and val is None
                 ident.append(val)
             if allnulls:
@@ -537,7 +518,7 @@ class EagerLoader(AbstractRelationLoader):
         try:
             clauses = self.clauses[path]
         except KeyError:
-            clauses = mapperutil.PropertyAliasedClauses(self.parent_property, self.parent_property.polymorphic_primaryjoin, self.parent_property.polymorphic_secondaryjoin, parentclauses)
+            clauses = mapperutil.PropertyAliasedClauses(self.parent_property, self.parent_property.primaryjoin, self.parent_property.secondaryjoin, parentclauses)
             self.clauses[path] = clauses
 
         # place the "row_decorator" from the AliasedClauses into the QueryContext, where it will
@@ -554,7 +535,6 @@ class EagerLoader(AbstractRelationLoader):
                 context.eager_order_by += clauses.secondary.default_order_by()
         else:
             context.eager_joins = towrap.outerjoin(clauses.alias, clauses.primaryjoin)
-
             # ensure all the cols on the parent side are actually in the
             # columns clause (i.e. are not deferred), so that aliasing applied by the Query propagates 
             # those columns outward.  This has the effect of "undefering" those columns.
@@ -568,8 +548,8 @@ class EagerLoader(AbstractRelationLoader):
         if clauses.order_by:
             context.eager_order_by += util.to_list(clauses.order_by)
         
-        for value in self.select_mapper.iterate_properties:
-            context.exec_with_path(self.select_mapper, value.key, value.setup, context, parentclauses=clauses, parentmapper=self.select_mapper)
+        for value in self.mapper._iterate_polymorphic_properties():
+            context.exec_with_path(self.mapper, value.key, value.setup, context, parentclauses=clauses, parentmapper=self.mapper)
         
     def _create_row_decorator(self, selectcontext, row, path):
         """Create a *row decorating* function that will apply eager
@@ -593,7 +573,7 @@ class EagerLoader(AbstractRelationLoader):
         try:
             decorated_row = decorator(row)
             # check for identity key
-            identity_key = self.select_mapper.identity_key_from_row(decorated_row)
+            identity_key = self.mapper.identity_key_from_row(decorated_row)
             # and its good
             return decorator
         except KeyError, k:
@@ -605,6 +585,7 @@ class EagerLoader(AbstractRelationLoader):
     def create_row_processor(self, selectcontext, mapper, row):
 
         row_decorator = self._create_row_decorator(selectcontext, row, selectcontext.path)
+        pathstr = ','.join([str(x) for x in selectcontext.path])
         if row_decorator is not None:
             def execute(instance, row, isnew, **flags):
                 decorated_row = row_decorator(row)
@@ -617,11 +598,11 @@ class EagerLoader(AbstractRelationLoader):
                         # parent object, bypassing InstrumentedAttribute
                         # event handlers.
                         #
-                        instance.__dict__[self.key] = self.select_mapper._instance(selectcontext, decorated_row, None)
+                        instance.__dict__[self.key] = self.mapper._instance(selectcontext, decorated_row, None)
                     else:
                         # call _instance on the row, even though the object has been created,
                         # so that we further descend into properties
-                        self.select_mapper._instance(selectcontext, decorated_row, None)
+                        self.mapper._instance(selectcontext, decorated_row, None)
                 else:
                     if isnew or self.key not in instance._state.appenders:
                         # appender_key can be absent from selectcontext.attributes with isnew=False
@@ -639,8 +620,8 @@ class EagerLoader(AbstractRelationLoader):
                     result_list = instance._state.appenders[self.key]
                     if self._should_log_debug:
                         self.logger.debug("eagerload list instance on %s" % mapperutil.attribute_str(instance, self.key))
-
-                    self.select_mapper._instance(selectcontext, decorated_row, result_list)
+                    
+                    self.mapper._instance(selectcontext, decorated_row, result_list)
 
             if self._should_log_debug:
                 self.logger.debug("Returning eager instance loader for %s" % str(self))
@@ -689,22 +670,6 @@ class EagerLazyOption(StrategizedOption):
 
 EagerLazyOption.logger = logging.class_logger(EagerLazyOption)
 
-# TODO: enable FetchMode option.  currently 
-# this class does nothing.  will require Query
-# to swich between using its "polymorphic" selectable
-# and its regular selectable in order to make decisions
-# (therefore might require that FetchModeOperation is performed
-# only as the first operation on a Query.)
-class FetchModeOption(PropertyOption):
-    def __init__(self, key, type):
-        super(FetchModeOption, self).__init__(key)
-        if type not in ('join', 'select'):
-            raise exceptions.ArgumentError("Fetchmode must be one of 'join' or 'select'")
-        self.type = type
-        
-    def process_query_property(self, query, properties):
-        query.attributes[('fetchmode', properties[-1])] = self.type
-        
 class RowDecorateOption(PropertyOption):
     def __init__(self, key, decorator=None, alias=None):
         super(RowDecorateOption, self).__init__(key)
@@ -719,7 +684,7 @@ class RowDecorateOption(PropertyOption):
             if isinstance(self.alias, basestring):
                 self.alias = prop.target.alias(self.alias)
 
-            self.decorator = mapperutil.create_row_adapter(self.alias, prop.target)
+            self.decorator = mapperutil.create_row_adapter(self.alias)
         query._attributes[("eager_row_processor", paths[-1])] = self.decorator
 
 RowDecorateOption.logger = logging.class_logger(RowDecorateOption)

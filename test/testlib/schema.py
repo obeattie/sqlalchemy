@@ -1,4 +1,5 @@
 from testlib import testing
+import itertools
 schema = None
 
 __all__ = 'Table', 'Column',
@@ -52,7 +53,13 @@ def Table(*args, **kw):
                 if fk.onupdate is None:
                     fk.onupdate = 'CASCADE'
 
+    if testing.against('oracle'):
+        pk_seqs = [col for col in args if isinstance(col, schema.Column)
+           and col.primary_key and getattr(col, '_needs_autoincrement', False)]
+        for c in pk_seqs:
+            c.args.append(schema.Sequence(args[0] + '_' + c.name + '_seq', optional=True))
     return schema.Table(*args, **kw)
+
 
 def Column(*args, **kw):
     """A schema.Column wrapper/hook for dialect-specific tweaks."""
@@ -61,6 +68,11 @@ def Column(*args, **kw):
     if schema is None:
         from sqlalchemy import schema
 
-    # TODO: a Column that creates a Sequence automatically for PK columns,
-    # which would help Oracle tests
-    return schema.Column(*args, **kw)
+    test_opts = dict([(k,kw.pop(k)) for k in kw.keys()
+                      if k.startswith('test_')])
+
+    c = schema.Column(*args, **kw)
+    if testing.against('oracle'):
+        if 'test_needs_autoincrement' in test_opts:
+            c._needs_autoincrement = True
+    return c

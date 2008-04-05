@@ -370,6 +370,7 @@ class ExecutionContextWrapper(object):
     def __setattr__(self, key, value):
         setattr(self.ctx, key, value)
 
+    trailing_underscore_pattern = re.compile(r'(\W:[\w_#]+)_\b',re.MULTILINE)
     def post_execution(self):
         ctx = self.ctx
         statement = unicode(ctx.compiled)
@@ -412,7 +413,17 @@ class ExecutionContextWrapper(object):
             parameters = ctx.compiled_parameters
 
             query = self.convert_statement(query)
-            testdata.unittest.assert_(statement == query and (params is None or params == parameters), "Testing for query '%s' params %s, received '%s' with params %s" % (query, repr(params), statement, repr(parameters)))
+            equivalent = ( (statement == query)
+                           or ( (config.db.name == 'oracle') and (self.trailing_underscore_pattern.sub(r'\1', statement) == query) ) 
+                         ) \
+                         and \
+                         ( (params is None) or (params == parameters)
+                           or params == [dict([(k.strip('_'), v)
+                                               for (k, v) in p.items()])
+                                         for p in parameters]
+                         )
+            testdata.unittest.assert_(equivalent, 
+                    "Testing for query '%s' params %s, received '%s' with params %s" % (query, repr(params), statement, repr(parameters)))
         testdata.sql_count += 1
         self.ctx.post_execution()
 
@@ -458,7 +469,14 @@ class TestBase(unittest.TestCase):
     def shortDescription(self):
         """overridden to not return docstrings"""
         return None
-
+    
+    def assertRaisesMessage(self, except_cls, msg, callable_, *args, **kwargs):
+        try:
+            callable_(*args, **kwargs)
+            assert False, "Callable did not raise expected exception"
+        except except_cls, e:
+            assert re.search(msg, str(e)), "Exception message did not match: '%s'" % str(e)
+        
     if not hasattr(unittest.TestCase, 'assertTrue'):
         assertTrue = unittest.TestCase.failUnless
     if not hasattr(unittest.TestCase, 'assertFalse'):
@@ -511,8 +529,12 @@ class ComparesTables(object):
             self.assertEquals(set([f.column.name for f in c.foreign_keys]), set([f.column.name for f in reflected_c.foreign_keys]))
             if c.default:
                 assert isinstance(reflected_c.default, schema.PassiveDefault)
+            elif against(('mysql', '<', (5, 0))):
+                # ignore reflection of bogus db-generated PassiveDefault()
+                pass
             elif not c.primary_key or not against('postgres'):
-                assert reflected_c.default is None
+                print repr(c)
+                assert reflected_c.default is None, reflected_c.default
         
         assert len(table.primary_key) == len(reflected_table.primary_key)
         for c in table.primary_key:
@@ -524,7 +546,7 @@ class AssertsExecutionResults(object):
         result = list(result)
         print repr(result)
         self.assert_list(result, class_, objects)
-
+        
     def assert_list(self, result, class_, list):
         self.assert_(len(result) == len(list),
                      "result list is not the same size as test list, " +
