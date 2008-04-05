@@ -158,6 +158,20 @@ class ClauseTest(TestBase, AssertsCompiledSQL):
         clause = t1.c.col2 == t2.c.col2
         assert str(clause) == ClauseVisitor().traverse(clause, clone=True)
 
+    def test_binary_anon_label_quirk(self):
+        t = table('t1', column('col1'))
+
+
+        f = t.c.col1 * 5
+        self.assert_compile(select([f]), "SELECT t1.col1 * :t1_col1_1 AS anon_1 FROM t1")
+
+        f.anon_label
+
+        a = t.alias()
+        f = sql_util.ClauseAdapter(a).traverse(f)
+
+        self.assert_compile(select([f]), "SELECT t1_1.col1 * :t1_col1_1 AS anon_1 FROM t1 AS t1_1")
+        
     def test_join(self):
         clause = t1.join(t2, t1.c.col2==t2.c.col2)
         c1 = str(clause)
@@ -170,7 +184,7 @@ class ClauseTest(TestBase, AssertsCompiledSQL):
         clause2 = Vis().traverse(clause, clone=True)
         assert c1 == str(clause)
         assert str(clause2) == str(t1.join(t2, t1.c.col2==t2.c.col3))
-
+    
     def test_text(self):
         clause = text("select * from table where foo=:bar", bindparams=[bindparam('bar')])
         c1 = str(clause)

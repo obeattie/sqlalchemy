@@ -2,7 +2,7 @@ import testenv; testenv.configure_for_tests()
 import datetime, re, operator
 from sqlalchemy import *
 from sqlalchemy import exceptions, sql, util
-from sqlalchemy.sql import table, column
+from sqlalchemy.sql import table, column, compiler
 from sqlalchemy.databases import sqlite, postgres, mysql, oracle, firebird, mssql
 from testlib import *
 
@@ -127,8 +127,8 @@ sq.myothertable_othername AS sq_myothertable_othername FROM (" + sqstring + ") A
     def test_nested_uselabels(self):
         """test nested anonymous label generation.  this
         essentially tests the ANONYMOUS_LABEL regex.
-        """
 
+        """
         s1 = table1.select()
         s2 = s1.alias()
         s3 = select([s2], use_labels=True)
@@ -138,7 +138,38 @@ sq.myothertable_othername AS sq_myothertable_othername FROM (" + sqstring + ") A
         "anon_1.anon_2_description AS anon_1_anon_2_description FROM (SELECT anon_2.myid AS anon_2_myid, anon_2.name AS anon_2_name, "\
         "anon_2.description AS anon_2_description FROM (SELECT mytable.myid AS myid, mytable.name AS name, mytable.description "\
         "AS description FROM mytable) AS anon_2) AS anon_1")
+        
+    def test_anon_label_nesting(self):
+        """test anonymous label replacement for an anon label like:  
+        
+            {ANON 11765680 {ANON 10755152 t1}_col1}
 
+        """
+
+        self.assertEquals(
+            compiler.ANONYMOUS_LABEL.match("{ANON 11765680 {ANON 10755152 t1}_col1}").group(0),
+           "{ANON 11765680 {ANON 10755152 t1}_col1}"
+        )
+        
+        self.assertEquals(
+            compiler.ANONYMOUS_LABEL.search("{ANON 12345 {ANON 67890 {ANON 47843 ident}_hoho}_foobar}").group(0),
+           "{ANON 67890 {ANON 47843 ident}_hoho}_foobar}"
+        )
+
+        self.assertEquals(
+            compiler.ANONYMOUS_LABEL.search("{ANON 12345 {ANON 67890 {ANON 47843 ident}_hoho}_foobar} {ANON 45678 lala}").group(0),
+           "{ANON 67890 {ANON 47843 ident}_hoho}_foobar}"
+        )
+
+        
+        t = table('t1', column('col1'))
+
+        a = t.alias()
+        
+        self.assert_compile(select([a.c.col1 * 5]), "SELECT t1_1.col1 * :t1_1_col1_1 AS anon_1 FROM t1 AS t1_1")
+
+        self.assert_compile(select([a.alias().c.col1 * 5]), "SELECT t1_1.col1 * :t1_1_col1_1 AS anon_1 FROM t1 AS t1_1")
+        
     def test_dont_overcorrelate(self):
         self.assert_compile(select([table1], from_obj=[table1, table1.select()]), """SELECT mytable.myid, mytable.name, mytable.description FROM mytable, (SELECT mytable.myid AS myid, mytable.name AS name, mytable.description AS description FROM mytable)""")
     

@@ -1481,7 +1481,7 @@ class ColumnElement(ClauseElement, _CompareMixin):
             co = _ColumnClause(name, selectable, type_=getattr(self, 'type', None))
         else:
             name = str(self)
-            co = _ColumnClause(self.anon_label.name, selectable, type_=getattr(self, 'type', None))
+            co = _ColumnClause(self.anon_label, selectable, type_=getattr(self, 'type', None))
 
         co.proxies = [self]
         selectable.columns[name]= co
@@ -1501,7 +1501,7 @@ class ColumnElement(ClauseElement, _CompareMixin):
         """
 
         if not hasattr(self, '_ColumnElement__anon_label'):
-            self.__anon_label = self.label(None)
+            self.__anon_label = "{ANON %d %s}" % (id(self), getattr(self, 'name', 'anon'))
         return self.__anon_label
     anon_label = property(anon_label)
 

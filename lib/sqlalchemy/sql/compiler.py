@@ -47,7 +47,7 @@ ILLEGAL_INITIAL_CHARACTERS = re.compile(r'[0-9$]')
 
 BIND_PARAMS = re.compile(r'(?<![:\w\$\x5c]):([\w\$]+)(?![:\w\$])', re.UNICODE)
 BIND_PARAMS_ESC = re.compile(r'\x5c(:[\w\$]+)(?![:\w\$])', re.UNICODE)
-ANONYMOUS_LABEL = re.compile(r'{ANON (-?\d+) (.*?)}')
+ANONYMOUS_LABEL = re.compile(r'{ANON (-?\d+) ({*[^{]*)}')
 
 BIND_TEMPLATES = {
     'pyformat':"%%(%(name)s)s",
@@ -418,6 +418,10 @@ class DefaultCompiler(engine.Compiled):
 
     def _process_anon(self, match):
         (ident, derived) = match.group(1,2)
+
+        # recurse for nested labels
+        derived = ANONYMOUS_LABEL.sub(self._process_anon, derived)
+
         key = ('anonymous', ident)
         if key in self.generated_ids:
             return self.generated_ids[key]
@@ -460,7 +464,7 @@ class DefaultCompiler(engine.Compiled):
             not isinstance(column.table, sql.Select):
             return column.label(column.name)
         elif not isinstance(column, (sql._UnaryExpression, sql._TextClause)) and (not hasattr(column, 'name') or isinstance(column, sql._Function)):
-            return column.anon_label
+            return column.label(column.anon_label)
         else:
             return column
 
