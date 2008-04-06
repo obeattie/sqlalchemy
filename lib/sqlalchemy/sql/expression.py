@@ -853,7 +853,6 @@ def _cloned_intersection(a, b):
     The returned set is in terms of the enties present within 'a'.
     
     """
-
     all_overlap = util.Set(_expand_cloned(a)).intersection(_expand_cloned(b))
     return a.intersection(
         [
@@ -916,11 +915,6 @@ def _selectable(element):
     else:
         raise exceptions.ArgumentError("Object '%s' is not a Selectable and does not implement `__selectable__()`" % repr(element))
 
-def _join_criterion(join, left, right, onclause):
-    if onclause is None:
-        return join._match_primaries(join.left, join.right)
-    else:
-        return onclause
     
 def is_column(col):
     """True if ``col`` is an instance of ``ColumnElement``."""
@@ -2262,7 +2256,11 @@ class Join(FromClause):
         self.left = _selectable(left)
         self.right = _selectable(right).self_group()
 
-        self.onclause = _join_criterion(self, left, right, onclause)
+        if onclause is None:
+            self.onclause = self.__match_primaries(self.left, self.right)
+        else:
+            self.onclause = onclause
+        
         self.isouter = isouter
         self.__folded_equivalents = None
 
@@ -2297,7 +2295,7 @@ class Join(FromClause):
     def get_children(self, **kwargs):
         return self.left, self.right, self.onclause
 
-    def _match_primaries(self, primary, secondary):
+    def __match_primaries(self, primary, secondary):
         crit = []
         constraints = util.Set()
         for fk in secondary.foreign_keys:
@@ -2327,49 +2325,6 @@ class Join(FromClause):
         else:
             return and_(*crit)
 
-    def _folded_equivalents(self, equivs=None):
-        """Returns the column list of this Join with all equivalently-named,
-        equated columns folded into one column, where 'equated' means they are
-        equated to each other in the ON clause of this join.
-
-        this method is used by select(fold_equivalents=True).
-
-        The primary usage for this is when generating UNIONs so that
-        each selectable can have distinctly-named columns without the need
-        for use_labels=True.
-        """
-
-        if self.__folded_equivalents is not None:
-            return self.__folded_equivalents
-        if equivs is None:
-            equivs = util.Set()
-        class LocateEquivs(visitors.NoColumnVisitor):
-            def visit_binary(self, binary):
-                if binary.operator == operators.eq and binary.left.name == binary.right.name:
-                    equivs.add(binary.right)
-                    equivs.add(binary.left)
-        LocateEquivs().traverse(self.onclause)
-        collist = []
-        if isinstance(self.left, Join):
-            left = self.left._folded_equivalents(equivs)
-        else:
-            left = list(self.left.columns)
-        if isinstance(self.right, Join):
-            right = self.right._folded_equivalents(equivs)
-        else:
-            right = list(self.right.columns)
-        used = util.Set()
-        for c in left + right:
-            if c in equivs:
-                if c.name not in used:
-                    collist.append(c)
-                    used.add(c.name)
-            else:
-                collist.append(c)
-        self.__folded_equivalents = collist
-        return self.__folded_equivalents
-    folded_equivalents = property(_folded_equivalents)
-
     def select(self, whereclause=None, fold_equivalents=False, **kwargs):
         """Create a ``Select`` from this ``Join``.
 
@@ -2391,7 +2346,10 @@ class Join(FromClause):
         """
 
         if fold_equivalents:
-            collist = self.folded_equivalents
+            global sql_util
+            if not sql_util:
+                from sqlalchemy.sql import util as sql_util
+            collist = sql_util.folded_equivalents(self)
         else:
             collist = [self.left, self.right]
 
