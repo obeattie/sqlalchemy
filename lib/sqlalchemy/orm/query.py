@@ -22,7 +22,8 @@ from sqlalchemy import sql, util, exceptions, logging
 from sqlalchemy.sql import util as sql_util
 from sqlalchemy.sql import expression, visitors, operators
 from sqlalchemy.orm import mapper, object_mapper
-from sqlalchemy.orm.mapper import _state_mapper, _class_to_mapper, Mapper, _is_mapped_class
+
+from sqlalchemy.orm.util import _state_mapper, _class_to_mapper, _is_mapped_class, _is_aliased_class
 from sqlalchemy.orm import util as mapperutil
 from sqlalchemy.orm import interfaces
 from sqlalchemy.orm import attributes
@@ -395,7 +396,7 @@ class Query(object):
         """
         q = self._clone()
 
-        if not alias and issubclass(entity, AliasedClass):
+        if not alias and _is_aliased_class(entity):
             alias = entity.alias
 
         if isinstance(entity, type):
@@ -730,7 +731,7 @@ class Query(object):
                 prop = mapper.get_property(key, resolve_synonyms=True)
 
             if use_selectable:
-                if isinstance(use_selectable, type) and issubclass(use_selectable, AliasedClass):
+                if _is_aliased_class(use_selectable):
                     use_selectable = use_selectable.alias
                     is_aliased_class = True
                 if not use_selectable.is_derived_from(prop.mapper.mapped_table):
@@ -1157,7 +1158,7 @@ class Query(object):
 
             if context.eager_joins:
                 eager_joins = local_adapter.traverse(context.eager_joins)
-                statement.append_from(eager_joins, _copy_collection=False)
+                statement.append_from(eager_joins)
 
             if context.order_by:
                 statement.append_order_by(*local_adapter.copy_and_process(context.order_by))
@@ -1184,7 +1185,7 @@ class Query(object):
             if context.eager_joins:
                 if adapter:
                     context.eager_joins = adapter.adapt_clause(context.eager_joins)
-                statement.append_from(context.eager_joins, _copy_collection=False)
+                statement.append_from(context.eager_joins)
 
             if context.eager_order_by:
                 if adapter:
@@ -1566,28 +1567,44 @@ class _ColumnEntity(_QueryEntity):
         self.alias_id = id
 
     def __resolve_expr_against_query_aliases(self, query, expr, context):
+        if not query._alias_ids:
+            return expr
+            
         if ('_ColumnEntity', expr) in context.attributes:
             return context.attributes[('_ColumnEntity', expr)]
+        
+        if self.alias_id:
+            try:
+                aliases = query._alias_ids[self.alias_id][0]
+            except KeyError:
+                raise exceptions.InvalidRequestError("Query has no alias identified by '%s'" % self.alias_id)
+
+            def _locate_aliased(element):
+                if element in query._alias_ids:
+                    return aliases
+        else:
+            def _locate_aliased(element):
+                if element in query._alias_ids:
+                    aliases = query._alias_ids[element]
+                    if len(aliases) > 1:
+                        raise exceptions.InvalidRequestError("Ambiguous join for entity '%s'; specify id=<someid> to query.join()/query.add_column(), or use the aliased() function to use explicit class aliases." % expr)
+                    return aliases[0]
+                return None
 
         class Adapter(visitors.ClauseVisitor):
-            def before_clone(self, col):
-                if not hasattr(col, 'table'):
-                    return None
-                if col.table in query._alias_ids:
-                    aliases = query._alias_ids[col.table]
-                    if len(aliases) > 1:
-                        raise exceptions.InvalidRequestError("Ambiguous join for entity '%s'; specify id=<someid> to query.join()/query.add_column(), or use the aliased() function to use explicit class aliases." % col)
-                    return aliases[0].aliased_column(col)
-                else:
-                    return None
+            def before_clone(self, element):
+                if isinstance(element, expression.FromClause):
+                    alias = _locate_aliased(element)
+                    if alias:
+                        return alias.alias
+                
+                if hasattr(element, 'table'):
+                    alias = _locate_aliased(element.table)
+                    if alias:
+                        return alias.aliased_column(element)
 
-            def visit_select(s, select):
-                select._should_correlate = False
-                for t in list(select._Select__correlate):
-                    if t in query._alias_ids:
-                        aliases = query._alias_ids[t]
-                        select._recorrelate_froms([(t, aliases[0].alias)])
-                    
+                return None
+
         context.attributes[('_ColumnEntity', expr)] = ret = Adapter().traverse(expr, clone=True)
         return ret
         

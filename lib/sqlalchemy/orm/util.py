@@ -162,18 +162,11 @@ class AliasedClauses(object):
         conv = self.alias.corresponding_column(column)
         if conv:
             return conv
-            
-        aliased_column = column
         
-        # TODO: select correlation repair should be merged into ClauseAdapter
-        class ModifySubquery(visitors.ClauseVisitor):
-            def visit_select(s, select):
-                select._should_correlate = False
-                select.append_correlation(self.alias)
-                
-        aliased_column = sql_util.ClauseAdapter(self.alias, equivalents=self.equivalents).chain(ModifySubquery()).traverse(aliased_column, clone=True)
+        # process column-level subqueries    
+        aliased_column = sql_util.ClauseAdapter(self.alias, equivalents=self.equivalents).traverse(column, clone=True)
 
-        aliased_column = aliased_column.label(None)  # TODO: this is masking a subtle compiler bug related to anon_label.  it should not be needed.
+        # add to row decorator explicitly
         self.row_decorator({}).map[column] = aliased_column
         return aliased_column
 
@@ -252,14 +245,7 @@ class AliasedComparator(PropComparator):
     def __init__(self, alias, comparator):
         self.alias = alias
         self.comparator = comparator
-
-        # TODO: select correlation repair should be merged into ClauseAdapter
-        class ModifySubquery(visitors.ClauseVisitor):
-            def visit_select(s, select):
-                select._should_correlate = False
-                select.append_correlation(self.alias)
-
-        self.adapter = sql_util.ClauseAdapter(alias).chain(ModifySubquery())
+        self.adapter = sql_util.ClauseAdapter(alias) 
 
     def clause_element(self):
         return self.adapter.traverse(self.comparator.clause_element(), clone=True)
@@ -274,7 +260,7 @@ from sqlalchemy.sql import expression
 _selectable = expression._selectable
 def _orm_selectable(selectable):
     if _is_mapped_class(selectable):
-        if issubclass(selectable, AliasedClass):
+        if _is_aliased_class(selectable):
             return selectable.alias
         else:
             return _class_to_mapper(selectable)._with_polymorphic_selectable()
@@ -282,34 +268,53 @@ def _orm_selectable(selectable):
         return _selectable(selectable)
 expression._selectable = _orm_selectable
 
-_join_criterion = expression._join_criterion
-def _orm_join_criterion(join, left, right, onclause):
-    if isinstance(onclause, str) and _is_mapped_class(left) and _is_mapped_class(right):
-        left_mapper = _class_to_mapper(left)
-        right_mapper = _class_to_mapper(right)
-        prop = left_mapper.get_property(onclause)
+class ORMJoin(expression.Join):
+    __visit_name__ = expression.Join.__visit_name__
+    
+    def __init__(self, left, right, onclause=None, isouter=False):
+        if _is_mapped_class(left) or _is_mapped_class(right):
+            if hasattr(left, '_orm_mappers'):
+                left_mapper = left._orm_mappers[1]
+                adapt_from = left.right
+            else:
+                left_mapper = _class_to_mapper(left)
+                if _is_aliased_class(left):
+                    adapt_from = left.alias
+                else:
+                    adapt_from = None
 
-        if issubclass(left, AliasedClass):
-            adapt_from = left.alias
-        else:
-            adapt_from = None
+            right_mapper = _class_to_mapper(right)
+            self._orm_mappers = (left_mapper, right_mapper)
+            
+            if isinstance(onclause, basestring):
+                prop = left_mapper.get_property(onclause)
 
-        if issubclass(right, AliasedClass):
-            adapt_to = right.alias
-        else:
-            adapt_to = None
+                if _is_aliased_class(right):
+                    adapt_to = right.alias
+                else:
+                    adapt_to = None
 
-        pj, sj, source, dest, target_adapter = prop._create_joins(source_selectable=adapt_from, dest_selectable=adapt_to, source_polymorphic=True, dest_polymorphic=True)
+                pj, sj, source, dest, target_adapter = prop._create_joins(source_selectable=adapt_from, dest_selectable=adapt_to, source_polymorphic=True, dest_polymorphic=True)
 
-        if sj:
-            join.left = sql.join(join.left, prop.secondary, onclause=pj)
-            return sj
-        else:
-            return pj
-    else:
-        return _join_criterion(join, left, right, onclause)
-expression._join_criterion = _orm_join_criterion
+                if sj:
+                    left = sql.join(left, prop.secondary, onclause=pj)
+                    onclause = sj
+                else:
+                    onclause = pj
+        expression.Join.__init__(self, left, right, onclause, isouter)
 
+    def join(self, right, onclause=None, isouter=False):
+        return ORMJoin(self, right, onclause, isouter)
+
+    def outerjoin(self, right, onclause=None):
+        return ORMJoin(self, right, onclause, True)
+
+def join(left, right, onclause=None):
+    return ORMJoin(left, right, onclause, False)
+
+def outerjoin(left, right, onclause=None):
+    return ORMJoin(left, right, onclause, True)
+    
 def has_identity(object):
     return hasattr(object, '_instance_key')
 
@@ -318,6 +323,9 @@ def _state_has_identity(state):
 
 def _is_mapped_class(cls):
     return hasattr(cls, '_class_state')
+
+def _is_aliased_class(obj):
+    return isinstance(obj, type) and issubclass(obj, AliasedClass)
     
 def has_mapper(object):
     """Return True if the given object has had a mapper association

@@ -18,7 +18,7 @@ creating database-specific compilers and schema generators, the module
 is otherwise internal to SQLAlchemy.
 """
 
-import string, re
+import string, re, itertools
 from sqlalchemy import schema, engine, util, exceptions
 from sqlalchemy.sql import operators, functions
 from sqlalchemy.sql import expression as sql
@@ -489,10 +489,7 @@ class DefaultCompiler(engine.Compiled):
 
         froms = select._get_display_froms(existingfroms)
 
-        correlate_froms = util.Set()
-        for f in froms:
-            correlate_froms.add(f)
-            correlate_froms.update(f._get_from_objects())
+        correlate_froms = util.Set(itertools.chain(*([froms] + [f._get_from_objects() for f in froms])))
 
         # TODO: might want to propigate existing froms for select(select(select))
         # where innermost select should correlate to outermost

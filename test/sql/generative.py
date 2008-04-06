@@ -320,7 +320,46 @@ class ClauseAdapterTest(TestBase, AssertsCompiledSQL):
             column("col3"),
             )
 
+    def test_correlation_on_clone(self):
+        t1alias = t1.alias('t1alias')
+        t2alias = t2.alias('t2alias')
+        vis = sql_util.ClauseAdapter(t1alias)
 
+        s = select(['*'], from_obj=[t1alias, t2alias]).as_scalar()
+        assert t2alias in s._froms
+        assert t1alias in s._froms
+
+        self.assert_compile(select(['*'], t2alias.c.col1==s), "SELECT * FROM table2 AS t2alias WHERE t2alias.col1 = (SELECT * FROM table1 AS t1alias)")
+        s = vis.traverse(s, clone=True)
+        assert t2alias not in s._froms  # not present because it's been cloned
+        assert t1alias in s._froms # present because the adapter placed it there
+        # correlate list on "s" needs to take into account the full _cloned_set for each element in _froms when correlating
+        self.assert_compile(select(['*'], t2alias.c.col1==s), "SELECT * FROM table2 AS t2alias WHERE t2alias.col1 = (SELECT * FROM table1 AS t1alias)")
+
+        s = select(['*'], from_obj=[t1alias, t2alias]).correlate(t2alias).as_scalar()
+        self.assert_compile(select(['*'], t2alias.c.col1==s), "SELECT * FROM table2 AS t2alias WHERE t2alias.col1 = (SELECT * FROM table1 AS t1alias)")
+        s = vis.traverse(s, clone=True)
+        self.assert_compile(select(['*'], t2alias.c.col1==s), "SELECT * FROM table2 AS t2alias WHERE t2alias.col1 = (SELECT * FROM table1 AS t1alias)")
+        s = ClauseVisitor().traverse(s, clone=True)
+        self.assert_compile(select(['*'], t2alias.c.col1==s), "SELECT * FROM table2 AS t2alias WHERE t2alias.col1 = (SELECT * FROM table1 AS t1alias)")
+        
+        s = select(['*']).where(t1.c.col1==t2.c.col1).as_scalar()
+        self.assert_compile(select([t1.c.col1, s]), "SELECT table1.col1, (SELECT * FROM table2 WHERE table1.col1 = table2.col1) AS anon_1 FROM table1")
+        vis = sql_util.ClauseAdapter(t1alias)
+        s = vis.traverse(s, clone=True)
+        self.assert_compile(select([t1alias.c.col1, s]), "SELECT t1alias.col1, (SELECT * FROM table2 WHERE t1alias.col1 = table2.col1) AS anon_1 FROM table1 AS t1alias")
+        s = ClauseVisitor().traverse(s, clone=True)
+        self.assert_compile(select([t1alias.c.col1, s]), "SELECT t1alias.col1, (SELECT * FROM table2 WHERE t1alias.col1 = table2.col1) AS anon_1 FROM table1 AS t1alias")
+
+        s = select(['*']).where(t1.c.col1==t2.c.col1).correlate(t1).as_scalar()
+        self.assert_compile(select([t1.c.col1, s]), "SELECT table1.col1, (SELECT * FROM table2 WHERE table1.col1 = table2.col1) AS anon_1 FROM table1")
+        vis = sql_util.ClauseAdapter(t1alias)
+        s = vis.traverse(s, clone=True)
+        self.assert_compile(select([t1alias.c.col1, s]), "SELECT t1alias.col1, (SELECT * FROM table2 WHERE t1alias.col1 = table2.col1) AS anon_1 FROM table1 AS t1alias")
+        s = ClauseVisitor().traverse(s, clone=True)
+        self.assert_compile(select([t1alias.c.col1, s]), "SELECT t1alias.col1, (SELECT * FROM table2 WHERE t1alias.col1 = table2.col1) AS anon_1 FROM table1 AS t1alias")
+        
+        
     def test_table_to_alias(self):
 
         t1alias = t1.alias('t1alias')
@@ -334,6 +373,7 @@ class ClauseAdapterTest(TestBase, AssertsCompiledSQL):
         self.assert_compile(vis.traverse(select(['*'], t1.c.col1==t2.c.col2, from_obj=[t1, t2]), clone=True), "SELECT * FROM table1 AS t1alias, table2 WHERE t1alias.col1 = table2.col2")
         self.assert_compile(vis.traverse(select(['*'], t1.c.col1==t2.c.col2, from_obj=[t1, t2]).correlate(t1), clone=True), "SELECT * FROM table2 WHERE t1alias.col1 = table2.col2")
         self.assert_compile(vis.traverse(select(['*'], t1.c.col1==t2.c.col2, from_obj=[t1, t2]).correlate(t2), clone=True), "SELECT * FROM table1 AS t1alias WHERE t1alias.col1 = table2.col2")
+
 
         s = select(['*'], from_obj=[t1]).alias('foo')
         self.assert_compile(s.select(), "SELECT foo.* FROM (SELECT * FROM table1) AS foo")

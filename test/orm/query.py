@@ -1,10 +1,11 @@
 import testenv; testenv.configure_for_tests()
 import operator
 from sqlalchemy import *
-from sqlalchemy import exceptions
+from sqlalchemy import exceptions, util
 from sqlalchemy.sql import compiler
 from sqlalchemy.engine import default
 from sqlalchemy.orm import *
+
 from testlib import *
 from testlib import engines
 from testlib.fixtures import *
@@ -643,7 +644,11 @@ class JoinTest(QueryTest, AssertsCompiledSQL):
         l = q.select_from(outerjoin(User, AdAlias)).filter(AdAlias.email_address=='ed@bettyboop.com').all()
         self.assertEquals(l, [(user8, address3)])
 
+
         l = q.select_from(outerjoin(User, AdAlias, 'addresses')).filter(AdAlias.email_address=='ed@bettyboop.com').all()
+        self.assertEquals(l, [(user8, address3)])
+
+        l = q.select_from(outerjoin(User, AdAlias, User.id==AdAlias.user_id)).filter(AdAlias.email_address=='ed@bettyboop.com').all()
         self.assertEquals(l, [(user8, address3)])
 
     def test_aliased_classes_m2m(self):
@@ -1375,7 +1380,34 @@ class SelfReferentialTest(ORMTest):
         node = sess.query(Node).filter_by(data='n122').join('parent', aliased=True).filter_by(data='n12').\
             join('parent', aliased=True, from_joinpoint=True).filter_by(data='n1').first()
         assert node.data == 'n122'
+    
+    def test_explicit_join(self):
+        sess = create_session()
+        
+        n1 = aliased(Node)
+        n2 = aliased(Node)
+        
+        node = sess.query(Node).select_from(join(Node, n1, 'children')).filter(n1.data=='n122').first()
+        assert node.data=='n12'
+        
+        node = sess.query(Node).select_from(join(Node, n1, 'children').join(n2, 'children')).\
+            filter(n2.data=='n122').first()
+        assert node.data=='n1'
+        
+        # mix explicit and named onclauses
+        node = sess.query(Node).select_from(join(Node, n1, Node.id==n1.parent_id).join(n2, 'children')).\
+            filter(n2.data=='n122').first()
+        assert node.data=='n1'
 
+        node = sess.query(Node).select_from(join(Node, n1, 'parent').join(n2, 'parent')).\
+            filter(and_(Node.data=='n122', n1.data=='n12', n2.data=='n1')).first()
+        assert node.data == 'n122'
+
+        self.assertEquals(
+            list(sess.query(Node).select_from(join(Node, n1, 'parent').join(n2, 'parent')).\
+            filter(and_(Node.data=='n122', n1.data=='n12', n2.data=='n1')).values(Node.data, n1.data, n2.data)),
+            [('n122', 'n12', 'n1')])
+        
     def test_any(self):
         sess = create_session()
         
@@ -1464,6 +1496,15 @@ class SelfReferentialM2MTest(ORMTest):
 
         self.assertEquals(sess.query(Node).filter(Node.children.contains(n4)).order_by(Node.data).all(), [Node(data='n1'), Node(data='n3')])
         self.assertEquals(sess.query(Node).filter(not_(Node.children.contains(n4))).order_by(Node.data).all(), [Node(data='n2'), Node(data='n4'), Node(data='n5'), Node(data='n6'), Node(data='n7')])
+    
+    def test_explicit_join(self):
+        sess = create_session()
+        
+        n1 = aliased(Node)
+        self.assertEquals(
+            sess.query(Node).select_from(join(Node, n1, 'children')).filter(n1.data.in_(['n3', 'n7'])).all(),
+            [Node(data='n1'), Node(data='n2')]
+        )
         
 class ExternalColumnsTest(QueryTest):
     keep_mappers = False
@@ -1472,26 +1513,15 @@ class ExternalColumnsTest(QueryTest):
         pass
 
     def test_external_columns_bad(self):
-        """test that SA catches some common mis-configurations of external columns."""
-        f = (users.c.id * 2)
-        try:
-            mapper(User, users, properties={
-                'concat': f,
-            })
-            class_mapper(User)
-        except exceptions.ArgumentError, e:
-            assert str(e) == "Column '%s' is not represented in mapper's table.  Use the `column_property()` function to force this column to be mapped as a read-only attribute." % str(f)
-        else:
-            raise 'expected ArgumentError'
+
+        self.assertRaisesMessage(exceptions.ArgumentError, "not represented in mapper's table", mapper, User, users, properties={
+            'concat': (users.c.id * 2),
+        })
         clear_mappers()
-        try:
-            mapper(User, users, properties={
-                'count': column_property(select([func.count(addresses.c.id)], users.c.id==addresses.c.user_id).correlate(users))
-            })
-        except exceptions.ArgumentError, e:
-            assert str(e) == 'column_property() must be given a ColumnElement as its argument.  Try .label() or .as_scalar() for Selectables to fix this.'
-        else:
-            raise 'expected ArgumentError'
+
+        self.assertRaisesMessage(exceptions.ArgumentError, "must be given a ColumnElement as its argument.", column_property,
+            select([func.count(addresses.c.id)], users.c.id==addresses.c.user_id).correlate(users)
+        )
 
     def test_external_columns_good(self):
         """test querying mappings that reference external columns or selectables."""
@@ -1507,6 +1537,7 @@ class ExternalColumnsTest(QueryTest):
 
         sess = create_session()
 
+        
         l = sess.query(User).all()
         assert [
             User(id=7, concat=14, count=1),
@@ -1529,13 +1560,26 @@ class ExternalColumnsTest(QueryTest):
         for x in range(2):
             sess.clear()
             def go():
-                self.assertEquals(sess.query(Address).options(eagerload('user')).all(), address_result)
+               self.assertEquals(sess.query(Address).options(eagerload('user')).all(), address_result)
             self.assert_sql_count(testing.db, go, 1)
-        return
         
         tuple_address_result = [(address, address.user) for address in address_result]
         
+        q =sess.query(Address).join('user', aliased=True, id='ualias').join('user', aliased=True).add_column(User.concat)
+        self.assertRaisesMessage(exceptions.InvalidRequestError, "Ambiguous", q.all)
+        
         self.assertEquals(sess.query(Address).join('user', aliased=True, id='ualias').add_entity(User, id='ualias').all(), tuple_address_result)
+
+        self.assertEquals(sess.query(Address).join('user', aliased=True, id='ualias').join('user', aliased=True).\
+                add_column(User.concat, id='ualias').add_column(User.count, id='ualias').all(),
+            [
+                (Address(id=1), 14, 1),
+                (Address(id=2), 16, 3),
+                (Address(id=3), 16, 3),
+                (Address(id=4), 16, 3),
+                (Address(id=5), 18, 1)
+            ]
+        )
 
         self.assertEquals(list(sess.query(Address).join('user').values(Address.id, User.id, User.concat, User.count)), 
             [(1, 7, 14, 1), (2, 8, 16, 3), (3, 8, 16, 3), (4, 8, 16, 3), (5, 9, 18, 1)]

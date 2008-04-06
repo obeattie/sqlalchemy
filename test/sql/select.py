@@ -142,14 +142,24 @@ sq.myothertable_othername AS sq_myothertable_othername FROM (" + sqstring + ") A
     def test_dont_overcorrelate(self):
         self.assert_compile(select([table1], from_obj=[table1, table1.select()]), """SELECT mytable.myid, mytable.name, mytable.description FROM mytable, (SELECT mytable.myid AS myid, mytable.name AS name, mytable.description AS description FROM mytable)""")
     
-    def test_intentional_full_correlate(self):
-        """test a subquery that has no FROM clause."""
-        
+    def test_full_correlate(self):
+        # intentional
         t = table('t', column('a'), column('b'))
         s = select([t.c.a]).where(t.c.a==1).correlate(t).as_scalar()
 
         s2 = select([t.c.a, s])
         self.assert_compile(s2, """SELECT t.a, (SELECT t.a WHERE t.a = :a_1) AS anon_1 FROM t""")
+    
+        # unintentional
+        t2 = table('t2', column('c'), column('d'))
+        s = select([t.c.a]).where(t.c.a==t2.c.d).as_scalar()
+        s2 =select([t, t2, s])
+        self.assertRaises(exceptions.InvalidRequestError, str, s2)
+
+        # intentional again
+        s = s.correlate(t, t2)
+        s2 =select([t, t2, s])
+        self.assert_compile(s, "SELECT t.a WHERE t.a = t2.d")
         
     def test_exists(self):
         self.assert_compile(exists([table1.c.myid], table1.c.myid==5).select(), "SELECT EXISTS (SELECT mytable.myid FROM mytable WHERE mytable.myid = :myid_1)", params={'mytable_myid':5})
