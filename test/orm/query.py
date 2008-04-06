@@ -203,9 +203,9 @@ class OperatorTest(QueryTest):
                                 (operator.sub, '-'), (operator.div, '/'),
                                 ):
             for (lhs, rhs, res) in (
-                (5, User.id, ':users_id_1 %s users.id'),
+                (5, User.id, ':id_1 %s users.id'),
                 (5, literal(6), ':param_1 %s :param_2'),
-                (User.id, 5, 'users.id %s :users_id_1'),
+                (User.id, 5, 'users.id %s :id_1'),
                 (User.id, literal('b'), 'users.id %s :param_1'),
                 (User.id, User.id, 'users.id %s users.id'),
                 (literal(5), 'b', ':param_1 %s :param_2'),
@@ -223,9 +223,9 @@ class OperatorTest(QueryTest):
                                         (operator.le, '<=', '>='),
                                         (operator.ge, '>=', '<=')):
             for (lhs, rhs, l_sql, r_sql) in (
-                ('a', User.id, ':users_id_1', 'users.id'),
+                ('a', User.id, ':id_1', 'users.id'),
                 ('a', literal('b'), ':param_2', ':param_1'), # note swap!
-                (User.id, 'b', 'users.id', ':users_id_1'),
+                (User.id, 'b', 'users.id', ':id_1'),
                 (User.id, literal('b'), 'users.id', ':param_1'),
                 (User.id, User.id, 'users.id', 'users.id'),
                 (literal('a'), 'b', ':param_1', ':param_2'),
@@ -244,15 +244,15 @@ class OperatorTest(QueryTest):
                              fwd_sql + "'\n or\n'" + rev_sql + "'")
 
     def test_op(self):
-        assert str(User.name.op('ilike')('17').compile(dialect=default.DefaultDialect())) == "users.name ilike :users_name_1"
+        assert str(User.name.op('ilike')('17').compile(dialect=default.DefaultDialect())) == "users.name ilike :name_1"
 
     def test_in(self):
          self._test(User.id.in_(['a', 'b']),
-                    "users.id IN (:users_id_1, :users_id_2)")
+                    "users.id IN (:id_1, :id_2)")
 
     def test_between(self):
         self._test(User.id.between('a', 'b'),
-                   "users.id BETWEEN :users_id_1 AND :users_id_2")
+                   "users.id BETWEEN :id_1 AND :id_2")
 
     def test_clauses(self):
         for (expr, compare) in (

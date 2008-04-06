@@ -163,14 +163,14 @@ class ClauseTest(TestBase, AssertsCompiledSQL):
 
 
         f = t.c.col1 * 5
-        self.assert_compile(select([f]), "SELECT t1.col1 * :t1_col1_1 AS anon_1 FROM t1")
+        self.assert_compile(select([f]), "SELECT t1.col1 * :col1_1 AS anon_1 FROM t1")
 
         f.anon_label
 
         a = t.alias()
         f = sql_util.ClauseAdapter(a).traverse(f)
 
-        self.assert_compile(select([f]), "SELECT t1_1.col1 * :t1_col1_1 AS anon_1 FROM t1 AS t1_1")
+        self.assert_compile(select([f]), "SELECT t1_1.col1 * :col1_1 AS anon_1 FROM t1 AS t1_1")
         
     def test_join(self):
         clause = t1.join(t2, t1.c.col2==t2.c.col2)
@@ -232,7 +232,7 @@ class ClauseTest(TestBase, AssertsCompiledSQL):
             def visit_binary(self, binary):
                 if binary.left is t1.c.col3:
                     binary.left = t1.c.col1
-                    binary.right = bindparam("table1_col1", unique=True)
+                    binary.right = bindparam("col1", unique=True)
         s5 = Vis().traverse(s4, clone=True)
         print str(s4)
         print str(s5)
@@ -277,8 +277,8 @@ class ClauseTest(TestBase, AssertsCompiledSQL):
         s2 = ClauseVisitor().traverse(s, clone=True).alias()
         s3 = select([s], s.c.col2==s2.c.col2)
         self.assert_compile(s3, "SELECT anon_1.col1, anon_1.col2, anon_1.col3 FROM (SELECT table1.col1 AS col1, table1.col2 AS col2, "\
-        "table1.col3 AS col3 FROM table1 WHERE table1.col1 = :table1_col1_1) AS anon_1, "\
-        "(SELECT table1.col1 AS col1, table1.col2 AS col2, table1.col3 AS col3 FROM table1 WHERE table1.col1 = :table1_col1_2) AS anon_2 "\
+        "table1.col3 AS col3 FROM table1 WHERE table1.col1 = :col1_1) AS anon_1, "\
+        "(SELECT table1.col1 AS col1, table1.col2 AS col2, table1.col3 AS col3 FROM table1 WHERE table1.col1 = :col1_2) AS anon_2 "\
         "WHERE anon_1.col2 = anon_2.col2")
 
     @testing.emits_warning('.*replaced by another column with the same key')
@@ -304,7 +304,7 @@ class ClauseTest(TestBase, AssertsCompiledSQL):
             def visit_select(self, select):
                 select.append_whereclause(t1.c.col2==7)
 
-        self.assert_compile(Vis().traverse(s, clone=True), "SELECT * FROM table1 WHERE table1.col1 = table2.col1 AND table1.col2 = :table1_col2_1")
+        self.assert_compile(Vis().traverse(s, clone=True), "SELECT * FROM table1 WHERE table1.col1 = table2.col1 AND table1.col2 = :col2_1")
 
 class ClauseAdapterTest(TestBase, AssertsCompiledSQL):
     def setUpAll(self):
@@ -495,7 +495,7 @@ class SelectTest(TestBase, AssertsCompiledSQL):
 
     def test_select(self):
         self.assert_compile(t1.select().where(t1.c.col1==5).order_by(t1.c.col3),
-        "SELECT table1.col1, table1.col2, table1.col3 FROM table1 WHERE table1.col1 = :table1_col1_1 ORDER BY table1.col3")
+        "SELECT table1.col1, table1.col2, table1.col3 FROM table1 WHERE table1.col1 = :col1_1 ORDER BY table1.col3")
 
         self.assert_compile(t1.select().select_from(select([t2], t2.c.col1==t1.c.col1)).order_by(t1.c.col3),
             "SELECT table1.col1, table1.col2, table1.col3 FROM table1, (SELECT table2.col1 AS col1, table2.col2 AS col2, table2.col3 AS col3 "\

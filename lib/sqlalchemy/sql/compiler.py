@@ -47,7 +47,7 @@ ILLEGAL_INITIAL_CHARACTERS = re.compile(r'[0-9$]')
 
 BIND_PARAMS = re.compile(r'(?<![:\w\$\x5c]):([\w\$]+)(?![:\w\$])', re.UNICODE)
 BIND_PARAMS_ESC = re.compile(r'\x5c(:[\w\$]+)(?![:\w\$])', re.UNICODE)
-ANONYMOUS_LABEL = re.compile(r'{ANON (-?\d+) ({*[^{]*)}')
+ANONYMOUS_LABEL = re.compile(r'{ANON (-?\d+) ([^{}]+)}')
 
 BIND_TEMPLATES = {
     'pyformat':"%%(%(name)s)s",
@@ -415,12 +415,9 @@ class DefaultCompiler(engine.Compiled):
             truncname = anonname
         self.generated_ids[(ident_class, name)] = truncname
         return truncname
-
+    
     def _process_anon(self, match):
         (ident, derived) = match.group(1,2)
-
-        # recurse for nested labels
-        derived = ANONYMOUS_LABEL.sub(self._process_anon, derived)
 
         key = ('anonymous', ident)
         if key in self.generated_ids:
