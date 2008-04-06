@@ -47,17 +47,6 @@ def find_tables(clause, check_columns=False, include_aliases=False):
     visitors.traverse(clause, traverse_options= {'column_collections':False}, **kwargs)
     return tables
 
-def find_unaliased_tables(clause):
-    """locate Table objects within the given expression which are not aliased"""
-    aliases = util.Set()
-    tables = util.Set()
-    def visit_alias(alias):
-        aliases.append(alias.obj)
-    def visit_table(table):
-        tables.append(table)
-    visitors.traverse(clause, traverse_options= {'column_collections':False}, visit_alias=visit_alias, visit_table=visit_table)
-    return tables.difference(aliases)
-    
 def find_columns(clause):
     """locate Column objects within the given expression."""
     
