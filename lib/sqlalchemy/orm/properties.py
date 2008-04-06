@@ -333,45 +333,6 @@ class PropertyLoader(StrategizedProperty):
             
             return j, criterion, dest
             
-        def _no_join_and_criterion(self, criterion=None, **kwargs):
-            adapt_against = None
-
-            if getattr(self, '_of_type', None):
-                target_mapper = self._of_type
-                to_selectable = target_mapper._with_polymorphic_selectable() #mapped_table
-            else:
-                target_mapper = self.prop.mapper
-                to_selectable = target_mapper._with_polymorphic_selectable()
- 
-            if self.prop._is_self_referential():
-                pj = self.prop._primary_join_against(self.prop.parent, None)
-                sj = self.prop._secondary_join_against(self.prop.parent)
-
-                pac = PropertyAliasedClauses(self.prop, pj, sj)
-                j = pac.primaryjoin
-                if pac.secondaryjoin:
-                    j = j & pac.secondaryjoin
-            else:
-                j = self.prop._full_join_against(self.prop.parent, None)
-
-            for k in kwargs:
-                crit = (getattr(self.prop.mapper.class_, k) == kwargs[k])
-                if criterion is None:
-                    criterion = crit
-                else:
-                    criterion = criterion & crit
-            
-            if to_selectable:
-                j = ClauseAdapter(to_selectable, include=self.prop.remote_side).traverse(j)
-                
-            if criterion:
-                if to_selectable:
-                    criterion = ClauseAdapter(to_selectable).traverse(criterion)
-                if self.prop._is_self_referential():
-                    criterion = pac.adapt_clause(criterion)
-            
-            return j, criterion, to_selectable
-            
         def any(self, criterion=None, **kwargs):
             if not self.prop.uselist:
                 raise exceptions.InvalidRequestError("'any()' not implemented for scalar attributes. Use has().")
@@ -770,7 +731,7 @@ class PropertyLoader(StrategizedProperty):
             
         return primaryjoin, secondaryjoin, source_selectable or self.parent.local_table, dest_selectable or self.mapper.local_table, target_adapter
         
-    def get_join(self, parent, primary=True, secondary=True, polymorphic_parent=True):
+    def _get_join(self, parent, primary=True, secondary=True, polymorphic_parent=True):
         """deprecated.  use primary_join_against(), secondary_join_against(), full_join_against()"""
         
         pj, sj, source, dest, adapter = self._create_joins(source_polymorphic=polymorphic_parent)
