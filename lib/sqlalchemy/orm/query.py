@@ -43,7 +43,6 @@ class Query(object):
         self._with_options = []
         self._lockmode = None
         
-        self._entities = []
         self._order_by = False
         self._group_by = False
         self._distinct = False
@@ -68,11 +67,11 @@ class Query(object):
         self.__init_mapper(_class_to_mapper(class_or_mapper, entity_name=entity_name))
 
     def __init_mapper(self, mapper):
-        """populate all instance variables derived from this Query's mapper."""
         
         self.mapper = mapper
         self.table = self.mapper.mapped_table
         self._from_obj = None
+        self._entities = []
         self._eager_loaders = util.Set()
         self._extension = self.mapper.extension
         self._aliases_head = self._aliases_tail = None
@@ -104,7 +103,7 @@ class Query(object):
 
     def __reset_all(self, mapper, meth):
         q = self.__conditional_clone(meth, [self.__no_criterion_condition])
-        q.__init_mapper(mapper, mapper)
+        q.__init_mapper(mapper)
         return q
 
     def _set_select_from(self, from_obj):
@@ -133,9 +132,9 @@ class Query(object):
                  "criterion is being ignored.") % meth)
 
         q._joinpoint = self.mapper
-        q._statement = q._criterion = q._from_obj = None
+        # dont clear out FROM here, unless mapper zero is going to be re-created
+        q._statement = q._criterion = None
         q._order_by = q._group_by = q._distinct = False
-        q._aliases_head = q._aliases_tail = None
         
     def __no_entities(self, meth):
         q = self.__no_statement(meth)
