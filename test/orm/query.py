@@ -10,6 +10,8 @@ from testlib import *
 from testlib import engines
 from testlib.fixtures import *
 
+from sqlalchemy.orm.util import _join as join, _outerjoin as outerjoin
+
 class QueryTest(FixtureTest):
     keep_mappers = True
     keep_data = True

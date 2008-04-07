@@ -268,7 +268,9 @@ def _orm_selectable(selectable):
         return _selectable(selectable)
 expression._selectable = _orm_selectable
 
-class ORMJoin(expression.Join):
+class _ORMJoin(expression.Join):
+    """future functionality."""
+
     __visit_name__ = expression.Join.__visit_name__
     
     def __init__(self, left, right, onclause=None, isouter=False):
@@ -304,16 +306,20 @@ class ORMJoin(expression.Join):
         expression.Join.__init__(self, left, right, onclause, isouter)
 
     def join(self, right, onclause=None, isouter=False):
-        return ORMJoin(self, right, onclause, isouter)
+        return _ORMJoin(self, right, onclause, isouter)
 
     def outerjoin(self, right, onclause=None):
-        return ORMJoin(self, right, onclause, True)
+        return _ORMJoin(self, right, onclause, True)
 
-def join(left, right, onclause=None):
-    return ORMJoin(left, right, onclause, False)
+def _join(left, right, onclause=None):
+    """future functionality."""
+    
+    return _ORMJoin(left, right, onclause, False)
 
-def outerjoin(left, right, onclause=None):
-    return ORMJoin(left, right, onclause, True)
+def _outerjoin(left, right, onclause=None):
+    """future functionality."""
+
+    return _ORMJoin(left, right, onclause, True)
     
 def has_identity(object):
     return hasattr(object, '_instance_key')
