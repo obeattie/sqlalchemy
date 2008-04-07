@@ -1337,10 +1337,7 @@ class Mapper(object):
             # if any, will need to be "post-fetched" based on the tables present in the row,
             # or from the options set up on the query
             if ('polymorphic_fetch', self) not in context.attributes:
-                if self in context.query._with_polymorphic:
-                    context.attributes[('polymorphic_fetch', self)] = (polymorphic_from, [])
-                else:
-                    context.attributes[('polymorphic_fetch', self)] = (polymorphic_from, [t for t in self.tables if t not in polymorphic_from.tables])
+                context.attributes[('polymorphic_fetch', self)] = (polymorphic_from, [t for t in self.tables if t not in polymorphic_from.tables])
                 
         elif not refresh_instance and self.polymorphic_on:
             discriminator = row[self.polymorphic_on]

@@ -256,17 +256,28 @@ class AliasedComparator(PropComparator):
     def reverse_operate(self, op, other, **kwargs):
         return self.adapter.traverse(self.comparator.reverse_operate(op, *other, **kwargs), clone=True)
 
+def _mapped_class_to_selectable(cls):
+    if _is_aliased_class(cls):
+        return cls.alias
+    else:
+        return _class_to_mapper(cls)._with_polymorphic_selectable()
+    
 from sqlalchemy.sql import expression
 _selectable = expression._selectable
 def _orm_selectable(selectable):
     if _is_mapped_class(selectable):
-        if _is_aliased_class(selectable):
-            return selectable.alias
-        else:
-            return _class_to_mapper(selectable)._with_polymorphic_selectable()
+        return _mapped_class_to_selectable(selectable)
     else:
         return _selectable(selectable)
 expression._selectable = _orm_selectable
+
+_literal_as_column = expression._literal_as_column
+def _orm_literal_as_column(c):
+    if _is_mapped_class(c):
+        return _mapped_class_to_selectable(c)
+    else:
+        return _literal_as_column(c)    
+expression._literal_as_column = _orm_literal_as_column
 
 class _ORMJoin(expression.Join):
     """future functionality."""

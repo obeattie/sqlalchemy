@@ -646,13 +646,19 @@ class JoinTest(QueryTest, AssertsCompiledSQL):
         l = q.select_from(outerjoin(User, AdAlias)).filter(AdAlias.email_address=='ed@bettyboop.com').all()
         self.assertEquals(l, [(user8, address3)])
 
-
         l = q.select_from(outerjoin(User, AdAlias, 'addresses')).filter(AdAlias.email_address=='ed@bettyboop.com').all()
         self.assertEquals(l, [(user8, address3)])
 
         l = q.select_from(outerjoin(User, AdAlias, User.id==AdAlias.user_id)).filter(AdAlias.email_address=='ed@bettyboop.com').all()
         self.assertEquals(l, [(user8, address3)])
 
+        # this is the first test where we are joining "backwards" - from AdAlias to User even though
+        # the query is against User
+        q = sess.query(User, AdAlias)
+        l = q.join(AdAlias.user).filter(User.name=='ed')
+        self.assertEquals(l.all(), [(user8, address2),(user8, address3),(user8, address4),])
+
+        
     def test_aliased_classes_m2m(self):
         sess = create_session()
         

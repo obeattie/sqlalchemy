@@ -282,6 +282,9 @@ class PropertyLoader(StrategizedProperty):
             if of_type:
                 self._of_type = _class_to_mapper(of_type)
         
+        def clause_element(self):
+            return self.prop.parent.mapped_table
+            
         def of_type(self, cls):
             return PropertyLoader.Comparator(self.prop, cls)
             
