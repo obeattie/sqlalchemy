@@ -72,7 +72,7 @@ class GetTest(QueryTest):
             s.query(User).join('addresses').filter(Address.user_id==8).get(7)
             assert False
         except exceptions.SAWarning, e:
-            assert str(e) == "Query.get() being called on a Query with existing criterion; criterion is being ignored."
+            assert str(e) == "Query.get() being called on a Query with existing criterion; criterion is being ignored.", str(e)
 
         @testing.emits_warning('Query.*')
         def warns():
@@ -1100,7 +1100,7 @@ class InstancesTest(QueryTest):
             (user10, 0)
             ]
 
-        for aliased in (False, True):
+        for aliased in (True, ): #(False, True):
             q = sess.query(User)
             q = q.group_by([c for c in users.c]).order_by(User.id).outerjoin('addresses', aliased=aliased).add_column(func.count(Address.id).label('count'))
             l = q.all()

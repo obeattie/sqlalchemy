@@ -58,7 +58,8 @@ class Query(object):
         self._populate_existing = False
         self._version_check = False
         self._autoflush = True
-        
+        self._eager_loaders = util.Set()
+        self._extension = None
         self._attributes = {}
         self._current_path = ()
         self._only_load_props = None
@@ -72,8 +73,8 @@ class Query(object):
         self.table = self.mapper.mapped_table
         self._from_obj = None
         self._entities = []
-        self._eager_loaders = util.Set()
-        self._extension = self.mapper.extension
+        if not self._extension:
+            self._extension = self.mapper.extension
         self._aliases_head = self._aliases_tail = None
         self._alias_ids = {}
         self._joinpoint = self.mapper
@@ -101,10 +102,6 @@ class Query(object):
     def __no_statement(self, meth):
         return self.__conditional_clone(meth, [self.__no_statement_condition])
 
-    def __reset_all(self, mapper, meth):
-        q = self.__conditional_clone(meth, [self.__no_criterion_condition])
-        q.__init_mapper(mapper)
-        return q
 
     def _set_select_from(self, from_obj):
         if isinstance(from_obj, expression._SelectBaseMixin):
@@ -124,7 +121,7 @@ class Query(object):
             aliased_tables += entity.tables
         self._aliases_head = self._aliases_tail = mapperutil.AliasedClauses(self._from_obj, equivalents=equivs)
         self._alias_ids.update([(table, [self._aliases_head]) for table in aliased_tables])
-
+    
     def __no_criterion_condition(self, q, meth):
         if q._criterion or q._statement:
             util.warn(
@@ -626,7 +623,7 @@ class Query(object):
             session.query(Company).join([('employees', people.join(engineers)), Engineer.computers])
 
         """
-        return self._join(prop, id=id, outerjoin=False, aliased=aliased, from_joinpoint=from_joinpoint)
+        return self._join(prop, id=id, outerjoin=False, create_aliases=aliased, from_joinpoint=from_joinpoint)
 
     def outerjoin(self, prop, id=None, aliased=False, from_joinpoint=False):
         """Create a left outer join against this ``Query`` object's criterion
@@ -647,33 +644,8 @@ class Query(object):
             session.query(Company).join([('employees', people.join(engineers)), Engineer.computers])
 
         """
-        return self._join(prop, id=id, outerjoin=True, aliased=aliased, from_joinpoint=from_joinpoint)
-    
-    def _join(self, prop, id, outerjoin, aliased, from_joinpoint):
-        (clause, mapper, aliases) = self._join_to(prop, outerjoin=outerjoin, start=from_joinpoint and self._joinpoint or self.mapper, create_aliases=aliased)
-        # TODO: improve the generative check here to look for primary mapped entity, etc.
-        q = self.__no_statement("join")
-        q._from_obj = clause
-        q._joinpoint = mapper
-        q._aliases = aliases
-        q.__generate_alias_ids()
-        
-        if aliases:
-            q._aliases_tail = aliases
+        return self._join(prop, id=id, outerjoin=True, create_aliases=aliased, from_joinpoint=from_joinpoint)
 
-        a = aliases
-        while a is not None:
-            if isinstance(a, mapperutil.PropertyAliasedClauses):
-                q._alias_ids.setdefault(a.mapper, []).append(a)
-                q._alias_ids.setdefault(a.table, []).append(a)
-                a = a.parentclauses
-            else:
-                break
-
-        if id:
-            q._alias_ids[id] = [aliases]
-        return q
-    
     def _get_joinable_tables(self):
         if not self._from_obj:
             return []
@@ -688,8 +660,12 @@ class Query(object):
         else:
             return self.__joinable_tables[1]
 
-    def _join_to(self, keys, outerjoin, start, create_aliases):
+    
+    def _join(self, keys, id, outerjoin, create_aliases, from_joinpoint):
+        q = self.__no_statement("join")
 
+        start=from_joinpoint and self._joinpoint or self.mapper
+        
         currenttables = self._get_joinable_tables()
         clause = self._from_obj
         adapt_against = clause
@@ -744,7 +720,29 @@ class Query(object):
             if prop._is_self_referential() and not create_aliases and not use_selectable:
                 raise exceptions.InvalidRequestError("Self-referential query on '%s' property requires aliased=True argument." % str(prop))
             
-            if prop.table not in currenttables or create_aliases or use_selectable:
+            if create_aliases or use_selectable:
+                target = aliased(prop.mapper, alias=use_selectable)
+            elif prop.table not in currenttables:
+                target = prop.mapper
+            elif not create_aliases and prop.secondary is not None and prop.secondary not in currenttables:
+                # TODO: this check is not strong enough for different paths to the same endpoint which
+                # does not use secondary tables
+                raise exceptions.InvalidRequestError("Can't join to property '%s'; a path to this table along a different secondary table already exists.  Use the `alias=True` argument to `join()`." % prop.key)
+            else:
+                target = None
+                
+            if target:
+                clause = mapperutil._join(clause, target, prop, isouter=outerjoin)
+                if use_selectable or create_aliases:
+                    alias = mapperutil.AliasedClauses(target.alias, 
+                            equivalents=prop.mapper._equivalent_columns, 
+                            chain_to=alias, 
+                            should_adapt=not is_aliased_class)
+
+                    q._alias_ids.setdefault(prop.mapper, []).append(alias)
+                    q._alias_ids.setdefault(prop.table, []).append(alias)
+                    
+            if False: #prop.table not in currenttables or create_aliases or use_selectable:
                 
                 if use_selectable or create_aliases:
                     alias = mapperutil.PropertyAliasedClauses(prop,
@@ -754,22 +752,28 @@ class Query(object):
                         alias=use_selectable,
                         should_adapt=not is_aliased_class
                     )
+
+                    q._alias_ids.setdefault(alias.mapper, []).append(alias)
+                    q._alias_ids.setdefault(alias.table, []).append(alias)
+
                     crit = alias.primaryjoin
                     if prop.secondary:
                         clause = clause.join(alias.secondary, crit, isouter=outerjoin)
                         clause = clause.join(alias.alias, alias.secondaryjoin, isouter=outerjoin)
                     else:
                         clause = clause.join(alias.alias, crit, isouter=outerjoin)
+                    if clause:
+                        clause._join_from_this = (prop.parent, alias.alias)
                 else:
                     assert not prop.mapper.with_polymorphic
-                    pj, sj, source, dest, target_adapter = prop._create_joins(source_selectable=adapt_against)
+                    pj, sj, source, dest, secondary, target_adapter = prop._create_joins(source_selectable=adapt_against)
                     if sj:
                         clause = clause.join(prop.secondary, pj, isouter=outerjoin)
                         clause = clause.join(prop.table, sj, isouter=outerjoin)
                     else:
                         clause = clause.join(prop.table, pj, isouter=outerjoin)
-                        
-            elif not create_aliases and prop.secondary is not None and prop.secondary not in currenttables:
+
+            elif False: #not create_aliases and prop.secondary is not None and prop.secondary not in currenttables:
                 # TODO: this check is not strong enough for different paths to the same endpoint which
                 # does not use secondary tables
                 raise exceptions.InvalidRequestError("Can't join to property '%s'; a path to this table along a different secondary table already exists.  Use the `alias=True` argument to `join()`." % prop.key)
@@ -779,9 +783,19 @@ class Query(object):
             if use_selectable:
                 adapt_against = use_selectable
         
-        return (clause, mapper, alias)
+        # TODO: improve the generative check here to look for primary mapped entity, etc.
+        q._from_obj = clause
+        q._joinpoint = mapper
+        q._aliases = alias
+        q.__generate_alias_ids()
+        
+        if alias:
+            q._aliases_tail = alias
 
-
+        if id:
+            q._alias_ids[id] = [alias]
+        return q
+    
     def reset_joinpoint(self):
         """return a new Query reset the 'joinpoint' of this Query reset
         back to the starting mapper.  Subsequent generative calls will
@@ -1011,14 +1025,13 @@ class Query(object):
         else:
             ident = util.to_list(ident)
 
-        q = self
+        if refresh_instance is None:
+            q = self.__conditional_clone("get", [self.__no_criterion_condition])
+        else:
+            q = self._clone()
+        q.__init_mapper(self.mapper)
         
-        # dont use 'polymorphic' mapper if we are refreshing an instance
-        if refresh_instance and q.mapper is not q.mapper:
-            q = q.__reset_all(q.mapper, '_get')
-
         if ident is not None:
-            q = q.__no_criterion('get')
             params = {}
             (_get_clause, _get_params) = q.mapper._get_clause
             q = q.filter(_get_clause)

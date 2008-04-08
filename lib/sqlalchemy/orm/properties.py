@@ -317,7 +317,7 @@ class PropertyLoader(StrategizedProperty):
             else:
                 to_selectable = None
 
-            pj, sj, source, dest, target_adapter = self.prop._create_joins(dest_polymorphic=True, dest_selectable=to_selectable)
+            pj, sj, source, dest, secondary, target_adapter = self.prop._create_joins(dest_polymorphic=True, dest_selectable=to_selectable)
 
             for k in kwargs:
                 crit = (getattr(self.prop.mapper.class_, k) == kwargs[k])
@@ -709,35 +709,44 @@ class PropertyLoader(StrategizedProperty):
                     dest_selectable = dest_selectable.alias()
                 else:
                     dest_selectable = self.mapper.local_table.alias()
-                
-        primaryjoin = self.primaryjoin
-        if source_selectable:
-            if self.direction in (ONETOMANY, MANYTOMANY):
-                primaryjoin = ClauseAdapter(source_selectable, exclude=self.foreign_keys, equivalents=self.parent._equivalent_columns).traverse(primaryjoin)
-            else:
-                primaryjoin = ClauseAdapter(source_selectable, include=self.foreign_keys, equivalents=self.parent._equivalent_columns).traverse(primaryjoin)
         
-        secondaryjoin = self.secondaryjoin
-        target_adapter = None
-        if dest_selectable:
-            if self.direction == ONETOMANY:
-                target_adapter = ClauseAdapter(dest_selectable, include=self.foreign_keys, equivalents=self.mapper._equivalent_columns)
-            elif self.direction == MANYTOMANY:
-                target_adapter = ClauseAdapter(dest_selectable, equivalents=self.mapper._equivalent_columns)
+        primaryjoin, secondaryjoin, secondary = self.primaryjoin, self.secondaryjoin, self.secondary
+        if source_selectable or dest_selectable:
+            if secondary:
+                secondary = secondary.alias()
+                primary_aliasizer = ClauseAdapter(secondary)
+                if dest_selectable:
+                    secondary_aliasizer = ClauseAdapter(dest_selectable, equivalents=self.mapper._equivalent_columns).chain(ClauseAdapter(secondary))
+                else:
+                    secondary_aliasizer = ClauseAdapter(secondary)
+
+                if source_selectable:
+                    primary_aliasizer.chain(ClauseAdapter(source_selectable, equivalents=self.parent._equivalent_columns))
+
+                secondaryjoin = secondary_aliasizer.traverse(secondaryjoin, clone=True)
+                primaryjoin = primary_aliasizer.traverse(primaryjoin, clone=True)
             else:
-                target_adapter = ClauseAdapter(dest_selectable, exclude=self.foreign_keys, equivalents=self.mapper._equivalent_columns)
-            if secondaryjoin:
-                secondaryjoin = target_adapter.traverse(secondaryjoin)
-            else:
-                primaryjoin = target_adapter.traverse(primaryjoin)
+                if dest_selectable:
+                    primary_aliasizer = ClauseAdapter(dest_selectable, exclude=self.local_side, equivalents=self.mapper._equivalent_columns)
+                    if source_selectable: 
+                        primary_aliasizer.chain(ClauseAdapter(source_selectable, exclude=self.remote_side, equivalents=self.parent._equivalent_columns))
+                elif source_selectable:
+                    primary_aliasizer = ClauseAdapter(source_selectable, exclude=self.remote_side, equivalents=self.parent._equivalent_columns)
+
+                primaryjoin = primary_aliasizer.traverse(primaryjoin, clone=True)
+                secondary = secondaryjoin = secondary_aliasizer = None
+        
+            target_adapter = secondary_aliasizer or primary_aliasizer
             target_adapter.include = target_adapter.exclude = None
+        else:
+            target_adapter = None
             
-        return primaryjoin, secondaryjoin, source_selectable or self.parent.local_table, dest_selectable or self.mapper.local_table, target_adapter
+        return primaryjoin, secondaryjoin, source_selectable or self.parent.local_table, dest_selectable or self.mapper.local_table, secondary, target_adapter
         
     def _get_join(self, parent, primary=True, secondary=True, polymorphic_parent=True):
         """deprecated.  use primary_join_against(), secondary_join_against(), full_join_against()"""
         
-        pj, sj, source, dest, adapter = self._create_joins(source_polymorphic=polymorphic_parent)
+        pj, sj, source, dest, secondarytable, adapter = self._create_joins(source_polymorphic=polymorphic_parent)
         
         if primary and secondary:
             return pj & sj

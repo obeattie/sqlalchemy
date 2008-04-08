@@ -514,13 +514,21 @@ class EagerLoader(AbstractRelationLoader):
         else:
             towrap = context.from_clause
         
+        #if parentclauses:
+        #    onclause = getattr(mapperutil.AliasedClass(self.parent, parentclauses.alias), self.key)
+        #else:
+        #    onclause = self.parent_property
+        #target = mapperutil.AliasedClass(self.mapper)
+        #fakeclause = mapperutil._outerjoin(towrap, target, onclause)
+        
         # create AliasedClauses object to build up the eager query.  this is cached after 1st creation.    
         try:
             clauses = self.clauses[path]
         except KeyError:
             clauses = mapperutil.PropertyAliasedClauses(self.parent_property, self.parent_property.primaryjoin, self.parent_property.secondaryjoin, parentclauses)
             self.clauses[path] = clauses
-
+        
+        
         # place the "row_decorator" from the AliasedClauses into the QueryContext, where it will
         # be picked up in create_row_processor() when results are fetched
         context.attributes[("eager_row_processor", path)] = clauses.row_decorator
@@ -544,7 +552,14 @@ class EagerLoader(AbstractRelationLoader):
                 
             if self.order_by is False and clauses.alias.default_order_by() is not None:
                 context.eager_order_by += clauses.alias.default_order_by()
-
+        
+        if not hasattr(context.eager_joins, '_orm_mappers'):
+            context.eager_joins._join_from_this = (self.mapper, clauses.alias)
+        
+        #if str(context.eager_joins) != str(fakeclause):
+        #    import pdb
+        #    pdb.set_trace()
+            
         if clauses.order_by:
             context.eager_order_by += util.to_list(clauses.order_by)
         

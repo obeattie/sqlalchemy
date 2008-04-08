@@ -226,26 +226,26 @@ class PropertyAliasedClauses(AliasedClauses):
             self.order_by = None
 
 class AliasedClass(object):
-    def __new__(cls, target):
+    def __new__(cls, target, alias=None):
         from sqlalchemy.orm import attributes
         mapper = _class_to_mapper(target)
-        alias = mapper.mapped_table.alias()
+        target = mapper.class_
+        alias = alias or mapper.mapped_table.alias()
+        adapter = sql_util.ClauseAdapter(alias)
         retcls = type(target.__name__ + "Alias", (cls,), {'alias':alias})
         retcls._class_state = mapper._class_state
         for prop in mapper.iterate_properties:
-            existing = mapper._class_state.attrs[prop.key]
-            setattr(retcls, prop.key, attributes.InstrumentedAttribute(existing.impl, comparator=AliasedComparator(alias, existing.comparator)))
+            #existing = mapper._class_state.attrs[prop.key]
+            existing = getattr(target, prop.key)
+            setattr(retcls, prop.key, attributes.InstrumentedAttribute(existing.impl, comparator=AliasedComparator(retcls, adapter, existing.comparator)))
 
         return retcls
 
-    def __init__(self, alias):
-        self.alias = alias
-
 class AliasedComparator(PropComparator):
-    def __init__(self, alias, comparator):
-        self.alias = alias
+    def __init__(self, aliasedclass, adapter, comparator):
+        self.aliasedclass = aliasedclass
         self.comparator = comparator
-        self.adapter = sql_util.ClauseAdapter(alias) 
+        self.adapter = adapter
 
     def clause_element(self):
         return self.adapter.traverse(self.comparator.clause_element(), clone=True)
@@ -286,31 +286,47 @@ class _ORMJoin(expression.Join):
     
     def __init__(self, left, right, onclause=None, isouter=False):
         if _is_mapped_class(left) or _is_mapped_class(right):
+#            if hasattr(left, '_join_from_this'):
+#                left_mapper, adapt_from = left._join_from_this
             if hasattr(left, '_orm_mappers'):
                 left_mapper = left._orm_mappers[1]
+#                adapt_from = left
                 adapt_from = left.right
-            else:
+            elif _is_mapped_class(left):
                 left_mapper = _class_to_mapper(left)
                 if _is_aliased_class(left):
                     adapt_from = left.alias
                 else:
                     adapt_from = None
-
+            else:
+                adapt_from = left
+                left_mapper = None
+                
             right_mapper = _class_to_mapper(right)
             self._orm_mappers = (left_mapper, right_mapper)
             
+            prop = None
+            from sqlalchemy.orm import attributes
+            from sqlalchemy.orm.properties import PropertyLoader
+            
             if isinstance(onclause, basestring):
                 prop = left_mapper.get_property(onclause)
-
+            elif isinstance(onclause, attributes.InstrumentedAttribute):
+                adapt_from = onclause.clause_element()
+                prop = onclause.property
+            elif isinstance(onclause, PropertyLoader):
+                prop = onclause
+                
+            if prop:
                 if _is_aliased_class(right):
                     adapt_to = right.alias
                 else:
                     adapt_to = None
 
-                pj, sj, source, dest, target_adapter = prop._create_joins(source_selectable=adapt_from, dest_selectable=adapt_to, source_polymorphic=True, dest_polymorphic=True)
+                pj, sj, source, dest, secondary, target_adapter = prop._create_joins(source_selectable=adapt_from, dest_selectable=adapt_to, source_polymorphic=True, dest_polymorphic=True)
 
                 if sj:
-                    left = sql.join(left, prop.secondary, onclause=pj)
+                    left = sql.join(left, secondary, pj, isouter)
                     onclause = sj
                 else:
                     onclause = pj
@@ -322,10 +338,10 @@ class _ORMJoin(expression.Join):
     def outerjoin(self, right, onclause=None):
         return _ORMJoin(self, right, onclause, True)
 
-def _join(left, right, onclause=None):
+def _join(left, right, onclause=None, isouter=False):
     """future functionality."""
     
-    return _ORMJoin(left, right, onclause, False)
+    return _ORMJoin(left, right, onclause, isouter)
 
 def _outerjoin(left, right, onclause=None):
     """future functionality."""
