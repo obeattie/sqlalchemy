@@ -622,7 +622,7 @@ class Query(object):
             session.query(Company).join([('employees', people.join(engineers)), Engineer.computers])
 
         """
-        return self._join(prop, id=id, outerjoin=False, create_aliases=aliased, from_joinpoint=from_joinpoint)
+        return self.__join(prop, id=id, outerjoin=False, create_aliases=aliased, from_joinpoint=from_joinpoint)
 
     def outerjoin(self, prop, id=None, aliased=False, from_joinpoint=False):
         """Create a left outer join against this ``Query`` object's criterion
@@ -643,9 +643,9 @@ class Query(object):
             session.query(Company).join([('employees', people.join(engineers)), Engineer.computers])
 
         """
-        return self._join(prop, id=id, outerjoin=True, create_aliases=aliased, from_joinpoint=from_joinpoint)
+        return self.__join(prop, id=id, outerjoin=True, create_aliases=aliased, from_joinpoint=from_joinpoint)
 
-    def _get_joinable_tables(self):
+    def __get_joinable_tables(self):
         if not self._from_obj:
             return []
         if not self.__joinable_tables or self.__joinable_tables[0] is not self._from_obj:
@@ -660,13 +660,13 @@ class Query(object):
             return self.__joinable_tables[1]
 
     
-    def _join(self, keys, id, outerjoin, create_aliases, from_joinpoint):
+    def __join(self, keys, id, outerjoin, create_aliases, from_joinpoint):
         q = self.__no_statement("join")
         q.__generate_alias_ids()
 
         start = from_joinpoint and self._joinpoint or self.mapper
         
-        currenttables = self._get_joinable_tables()
+        currenttables = self.__get_joinable_tables()
         clause = self._from_obj
         adapt_against = clause
 
@@ -1670,8 +1670,6 @@ class QueryContext(object):
             return fn(*args, **kwargs)
         finally:
             self.path = oldpath
-
-
 
 _runid = 1L
 _id_lock = util.threading.Lock()

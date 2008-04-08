@@ -347,20 +347,6 @@ class MapperProperty(object):
 
         return iter([])
 
-    def get_criterion(self, query, key, value):
-        """Return a ``WHERE`` clause suitable for this
-        ``MapperProperty`` corresponding to the given key/value pair,
-        where the key is a column or object property name, and value
-        is a value to be matched.  This is only picked up by
-        ``PropertyLoaders``.
-
-        This is called by a ``Query``'s ``join_by`` method to formulate a set
-        of key/value pairs into a ``WHERE`` criterion that spans multiple
-        tables if needed.
-        """
-
-        return None
-
     def set_parent(self, parent):
         self.parent = parent
 

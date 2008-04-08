@@ -310,7 +310,7 @@ class PropertyLoader(StrategizedProperty):
             else:
                 return self.prop._optimized_compare(other)
 
-        def _join_and_criterion(self, criterion=None, **kwargs):
+        def __join_and_criterion(self, criterion=None, **kwargs):
             if getattr(self, '_of_type', None):
                 target_mapper = self._of_type
                 to_selectable = target_mapper._with_polymorphic_selectable()
@@ -339,14 +339,14 @@ class PropertyLoader(StrategizedProperty):
         def any(self, criterion=None, **kwargs):
             if not self.prop.uselist:
                 raise exceptions.InvalidRequestError("'any()' not implemented for scalar attributes. Use has().")
-            j, criterion, from_obj = self._join_and_criterion(criterion, **kwargs)
+            j, criterion, from_obj = self.__join_and_criterion(criterion, **kwargs)
 
             return sql.exists([1], j & criterion, from_obj=from_obj)
 
         def has(self, criterion=None, **kwargs):
             if self.prop.uselist:
                 raise exceptions.InvalidRequestError("'has()' not implemented for collections.  Use any().")
-            j, criterion, from_obj = self._join_and_criterion(criterion, **kwargs)
+            j, criterion, from_obj = self.__join_and_criterion(criterion, **kwargs)
 
             return sql.exists([1], j & criterion, from_obj=from_obj)
 
@@ -356,13 +356,13 @@ class PropertyLoader(StrategizedProperty):
             clause = self.prop._optimized_compare(other)
 
             if self.prop.secondaryjoin:
-                clause.negation_clause = self._negated_contains_or_equals(other)
+                clause.negation_clause = self.__negated_contains_or_equals(other)
 
             return clause
 
-        def _negated_contains_or_equals(self, other):
+        def __negated_contains_or_equals(self, other):
             criterion = sql.and_(*[x==y for (x, y) in zip(self.prop.mapper.primary_key, self.prop.mapper.primary_key_from_instance(other))])
-            j, criterion, from_obj = self._join_and_criterion(criterion)
+            j, criterion, from_obj = self.__join_and_criterion(criterion)
             return ~sql.exists([1], j & criterion, from_obj=from_obj)
             
         def __ne__(self, other):
@@ -377,7 +377,7 @@ class PropertyLoader(StrategizedProperty):
             if self.prop.uselist and not hasattr(other, '__iter__'):
                 raise exceptions.InvalidRequestError("Can only compare a collection to an iterable object")
 
-            return self._negated_contains_or_equals(other)
+            return self.__negated_contains_or_equals(other)
 
     def compare(self, op, value, value_is_parent=False):
         if op == operators.eq:
@@ -396,7 +396,7 @@ class PropertyLoader(StrategizedProperty):
 
     def private(self):
         return self.cascade.delete_orphan
-    private = property(private)
+    private = property(util.deprecated(private))
 
     def __str__(self):
         return str(self.parent.class_.__name__) + "." + self.key + " (" + str(self.mapper.class_.__name__)  + ")"

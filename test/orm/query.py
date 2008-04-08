@@ -583,7 +583,7 @@ class JoinTest(QueryTest, AssertsCompiledSQL):
             (j2, [j1, j2, sel1, users, addresses])
 
         ):
-            ret = set(sess.query(User).select_from(from_obj)._get_joinable_tables())
+            ret = set(sess.query(User).select_from(from_obj)._Query__get_joinable_tables())
             self.assertEquals(ret, set(assert_cond).union([from_obj]), [x.description for x in ret])
 
     def test_overlapping_paths(self):

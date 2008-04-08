@@ -539,11 +539,11 @@ class EagerLoader(AbstractRelationLoader):
             
         if self.order_by is False:
             if self.secondaryjoin:
-                default_order_by = context.eager_joins.left.right
+                default_order_by = context.eager_joins.left.right.default_order_by()
             else:
-                default_order_by = context.eager_joins.right
-            if default_order_by.default_order_by():
-                context.eager_order_by += default_order_by.default_order_by()
+                default_order_by = context.eager_joins.right.default_order_by()
+            if default_order_by:
+                context.eager_order_by += default_order_by
         elif self.order_by:
             context.eager_order_by += context.eager_joins._target_adapter.copy_and_process(util.to_list(self.order_by))
 
