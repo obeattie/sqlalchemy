@@ -195,7 +195,7 @@ def row_adapter(from_, equivalent_columns=None):
     
     if equivalent_columns is None:
         equivalent_columns = {}
-
+    
     def locate_col(col):
         c = from_.corresponding_column(col)
         if c:

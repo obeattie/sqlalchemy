@@ -15,8 +15,7 @@ from sqlalchemy.sql.util import ClauseAdapter, criterion_as_pairs, find_columns
 from sqlalchemy.sql import visitors, operators, ColumnElement
 from sqlalchemy.orm import mapper, sync, strategies, attributes, dependency, object_mapper
 from sqlalchemy.orm import session as sessionlib
-from sqlalchemy.orm.mapper import _class_to_mapper
-from sqlalchemy.orm.util import CascadeOptions, PropertyAliasedClauses
+from sqlalchemy.orm.util import CascadeOptions, _class_to_mapper
 from sqlalchemy.orm.interfaces import StrategizedProperty, PropComparator, MapperProperty, ONETOMANY, MANYTOONE, MANYTOMANY
 from sqlalchemy.exceptions import ArgumentError
 
@@ -232,6 +231,7 @@ class PropertyLoader(StrategizedProperty):
         self.enable_typechecks = enable_typechecks
         self.comparator = PropertyLoader.Comparator(self)
         self.join_depth = join_depth
+        self.__join_cache = {}
         
         if strategy_class:
             self.strategy_class = strategy_class
@@ -313,7 +313,7 @@ class PropertyLoader(StrategizedProperty):
         def _join_and_criterion(self, criterion=None, **kwargs):
             if getattr(self, '_of_type', None):
                 target_mapper = self._of_type
-                to_selectable = target_mapper._with_polymorphic_selectable() #mapped_table
+                to_selectable = target_mapper._with_polymorphic_selectable()
             else:
                 to_selectable = None
 
@@ -694,37 +694,40 @@ class PropertyLoader(StrategizedProperty):
         return self.mapper.common_parent(self.parent)
     
     def _create_joins(self, source_polymorphic=False, source_selectable=None, dest_polymorphic=False, dest_selectable=None):
+        key = util.WeakCompositeKey(source_polymorphic, source_selectable, dest_polymorphic, dest_selectable)
+        try:
+            return self.__join_cache[key]
+        except KeyError:
+            pass
+
         if source_selectable is None:
             if source_polymorphic and self.parent.with_polymorphic:
                 source_selectable = self.parent._with_polymorphic_selectable()
-            else:
-                source_selectable = None
+                
         if dest_selectable is None:
             if dest_polymorphic and self.mapper.with_polymorphic:
                 dest_selectable = self.mapper._with_polymorphic_selectable()
-            else:
-                dest_selectable = None
+
             if self._is_self_referential():
                 if dest_selectable:
                     dest_selectable = dest_selectable.alias()
                 else:
                     dest_selectable = self.mapper.local_table.alias()
-        
+
         primaryjoin, secondaryjoin, secondary = self.primaryjoin, self.secondaryjoin, self.secondary
         if source_selectable or dest_selectable:
             if secondary:
                 secondary = secondary.alias()
                 primary_aliasizer = ClauseAdapter(secondary)
                 if dest_selectable:
-                    secondary_aliasizer = ClauseAdapter(dest_selectable, equivalents=self.mapper._equivalent_columns).chain(ClauseAdapter(secondary))
+                    secondary_aliasizer = ClauseAdapter(dest_selectable, equivalents=self.mapper._equivalent_columns).chain(primary_aliasizer)
                 else:
-                    secondary_aliasizer = ClauseAdapter(secondary)
+                    secondary_aliasizer = primary_aliasizer
 
                 if source_selectable:
-                    primary_aliasizer.chain(ClauseAdapter(source_selectable, equivalents=self.parent._equivalent_columns))
+                    primary_aliasizer = primary_aliasizer.copy_and_chain(ClauseAdapter(source_selectable, equivalents=self.parent._equivalent_columns))
 
                 secondaryjoin = secondary_aliasizer.traverse(secondaryjoin, clone=True)
-                primaryjoin = primary_aliasizer.traverse(primaryjoin, clone=True)
             else:
                 if dest_selectable:
                     primary_aliasizer = ClauseAdapter(dest_selectable, exclude=self.local_side, equivalents=self.mapper._equivalent_columns)
@@ -733,15 +736,16 @@ class PropertyLoader(StrategizedProperty):
                 elif source_selectable:
                     primary_aliasizer = ClauseAdapter(source_selectable, exclude=self.remote_side, equivalents=self.parent._equivalent_columns)
 
-                primaryjoin = primary_aliasizer.traverse(primaryjoin, clone=True)
-                secondary = secondaryjoin = secondary_aliasizer = None
+                secondary_aliasizer = None
         
+            primaryjoin = primary_aliasizer.traverse(primaryjoin, clone=True)
             target_adapter = secondary_aliasizer or primary_aliasizer
             target_adapter.include = target_adapter.exclude = None
         else:
             target_adapter = None
-            
-        return primaryjoin, secondaryjoin, source_selectable or self.parent.local_table, dest_selectable or self.mapper.local_table, secondary, target_adapter
+        
+        self.__join_cache[key] = ret = (primaryjoin, secondaryjoin, source_selectable or self.parent.local_table, dest_selectable or self.mapper.local_table, secondary, target_adapter)
+        return ret
         
     def _get_join(self, parent, primary=True, secondary=True, polymorphic_parent=True):
         """deprecated.  use primary_join_against(), secondary_join_against(), full_join_against()"""

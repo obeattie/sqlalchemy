@@ -275,10 +275,16 @@ class Mapper(object):
     __selectable_from_mappers = util.conditional_cache_decorator(__selectable_from_mappers)
     
     def _with_polymorphic_mappers(self, spec=None, selectable=False):
+        if not spec and not selectable and not self.with_polymorphic:
+            return [self]
+
         spec, selectable, isdefault = self.__adjust_wp_selectable(spec, selectable)
         return self.__mappers_from_spec(spec, selectable, cache=isdefault)
         
     def _with_polymorphic_selectable(self, spec=None, selectable=False):
+        if not spec and not selectable and not self.with_polymorphic:
+            return self.mapped_table
+            
         spec, selectable, isdefault = self.__adjust_wp_selectable(spec, selectable)
         if selectable:
             return selectable

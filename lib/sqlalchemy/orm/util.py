@@ -5,10 +5,10 @@
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
 from sqlalchemy import sql, util, exceptions
-from sqlalchemy.sql import util as sql_util
 from sqlalchemy.sql.util import row_adapter as create_row_adapter
-from sqlalchemy.sql import visitors
-from sqlalchemy.orm.interfaces import MapperExtension, EXT_CONTINUE, PropComparator
+from sqlalchemy.sql import visitors, expression, util as sql_util
+from sqlalchemy.orm.interfaces import MapperExtension, EXT_CONTINUE, PropComparator, MapperProperty
+from sqlalchemy.orm import attributes
 
 all_cascades = util.Set(["delete", "delete-orphan", "all", "merge",
                          "expunge", "save-update", "refresh-expire", "none"])
@@ -142,29 +142,26 @@ class ExtensionCarrier(object):
 class AliasedClauses(object):
     """Creates aliases of a mapped tables for usage in ORM queries, and provides expression adaptation."""
 
-    def __init__(self, alias, equivalents=None, chain_to=None, should_adapt=True):
-        self.alias = alias
+    def __init__(self, alias, equivalents=None, chain_to=None):
+        if _is_mapped_class(alias):
+            self.target = alias
+        else:
+            self.target = None
+        self.selectable = _orm_selectable(alias)
         self.equivalents = equivalents
         self.row_decorator = self._create_row_adapter()
-        self.should_adapt = should_adapt
-        if should_adapt:
-            self.adapter = sql_util.ClauseAdapter(self.alias, equivalents=equivalents)
-        else:
-            self.adapter = visitors.NullVisitor()
+        self.adapter = sql_util.ClauseAdapter(self.selectable, equivalents=equivalents)
 
         if chain_to:
             self.adapter.chain(chain_to.adapter)
             
     def aliased_column(self, column):
-        if not self.should_adapt:
-            return column
-            
-        conv = self.alias.corresponding_column(column)
+        conv = self.selectable.corresponding_column(column)
         if conv:
             return conv
         
         # process column-level subqueries    
-        aliased_column = sql_util.ClauseAdapter(self.alias, equivalents=self.equivalents).traverse(column, clone=True)
+        aliased_column = self.adapter.traverse(column, clone=True)
 
         # add to row decorator explicitly
         self.row_decorator({}).map[column] = aliased_column
@@ -177,60 +174,14 @@ class AliasedClauses(object):
         return self.adapter.copy_and_process(clauses)
         
     def _create_row_adapter(self):
-        return create_row_adapter(self.alias, equivalent_columns=self.equivalents)
+        return create_row_adapter(self.selectable, equivalent_columns=self.equivalents)
 
-
-class PropertyAliasedClauses(AliasedClauses):
-    """extends AliasedClauses to add support for primary/secondary joins on a relation()."""
-    
-    def __init__(self, prop, primaryjoin, secondaryjoin, parentclauses=None, alias=None, should_adapt=True):
-        self.prop = prop
-        self.mapper = self.prop.mapper
-        self.table = self.prop.table
-        self.parentclauses = parentclauses
-
-        if not alias:
-            from_obj = self.mapper._with_polymorphic_selectable()
-            alias = from_obj.alias()
-
-        super(PropertyAliasedClauses, self).__init__(alias, equivalents=self.mapper._equivalent_columns, chain_to=parentclauses, should_adapt=should_adapt)
-        
-        if prop.secondary:
-            self.secondary = prop.secondary.alias()
-            primary_aliasizer = sql_util.ClauseAdapter(self.secondary)
-            secondary_aliasizer = sql_util.ClauseAdapter(self.alias, equivalents=self.equivalents).chain(sql_util.ClauseAdapter(self.secondary))
-
-            if parentclauses is not None:
-                primary_aliasizer.chain(sql_util.ClauseAdapter(parentclauses.alias, equivalents=parentclauses.equivalents))
-
-            self.secondaryjoin = secondary_aliasizer.traverse(secondaryjoin, clone=True)
-            self.primaryjoin = primary_aliasizer.traverse(primaryjoin, clone=True)
-        else:
-            primary_aliasizer = sql_util.ClauseAdapter(self.alias, exclude=prop.local_side, equivalents=self.equivalents)
-            if parentclauses is not None: 
-                primary_aliasizer.chain(sql_util.ClauseAdapter(parentclauses.alias, exclude=prop.remote_side, equivalents=parentclauses.equivalents))
-            
-            self.primaryjoin = primary_aliasizer.traverse(primaryjoin, clone=True)
-            self.secondary = None
-            self.secondaryjoin = None
-        
-        if prop.order_by:
-            if prop.secondary:
-                # usually this is not used but occasionally someone has a sort key in their secondary
-                # table, even tho SA does not support writing this column directly
-                self.order_by = secondary_aliasizer.copy_and_process(util.to_list(prop.order_by))
-            else:
-                self.order_by = primary_aliasizer.copy_and_process(util.to_list(prop.order_by))
-                
-        else:
-            self.order_by = None
 
 class AliasedClass(object):
     def __new__(cls, target, alias=None):
-        from sqlalchemy.orm import attributes
         mapper = _class_to_mapper(target)
         target = mapper.class_
-        alias = alias or mapper.mapped_table.alias()
+        alias = alias or mapper._with_polymorphic_selectable().alias()
         adapter = sql_util.ClauseAdapter(alias)
         retcls = type(target.__name__ + "Alias", (cls,), {'alias':alias})
         retcls._class_state = mapper._class_state
@@ -247,7 +198,7 @@ class AliasedComparator(PropComparator):
         self.aliasedclass = aliasedclass
         self.comparator = comparator
         self.adapter = adapter
-
+        
     def clause_element(self):
         # this is a HACK since some ProperrtyLoader comparators return the mapped table,
         # using the adapter to "traverse" it is not the right approach
@@ -256,74 +207,71 @@ class AliasedComparator(PropComparator):
         if ca is self.aliasedclass.mapper.mapped_table:
             return self.adapter.selectable
         else:
-            return self.adapter.traverse(self.comparator.clause_element(), clone=True)
-
+            return self.adapter.traverse(ca, clone=True)
+    clause_element = util.cache_decorator(clause_element)
+    
     def operate(self, op, *other, **kwargs):
         return self.adapter.traverse(self.comparator.operate(op, *other, **kwargs), clone=True)
 
     def reverse_operate(self, op, other, **kwargs):
         return self.adapter.traverse(self.comparator.reverse_operate(op, *other, **kwargs), clone=True)
 
-def _mapped_class_to_selectable(cls):
-    if _is_aliased_class(cls):
-        return cls.alias
-    else:
-        return _class_to_mapper(cls)._with_polymorphic_selectable()
-    
-from sqlalchemy.sql import expression
-_selectable = expression._selectable
 def _orm_selectable(selectable):
-    if _is_mapped_class(selectable):
-        return _mapped_class_to_selectable(selectable)
+    if _is_aliased_class(selectable):
+        return selectable.alias
+    elif _is_mapped_class(selectable):
+        return _class_to_mapper(selectable)._with_polymorphic_selectable()
     else:
-        return _selectable(selectable)
-expression._selectable = _orm_selectable
-
+        return expression._selectable(selectable)
+        
 _literal_as_column = expression._literal_as_column
 def _orm_literal_as_column(c):
-    if _is_mapped_class(c):
-        return _mapped_class_to_selectable(c)
+    if _is_aliased_class(c):
+        return c.alias
+    elif _is_mapped_class(c):
+        return _class_to_mapper(c)._with_polymorphic_selectable()
     else:
-        return _literal_as_column(c)    
-expression._literal_as_column = _orm_literal_as_column
+        return _literal_as_column(c)
+# uncommenting this allows a mapped class or AliasedClass to be used i.e. select([MyClass])
+#expression._literal_as_column = _orm_literal_as_column  
 
 class _ORMJoin(expression.Join):
-    """future functionality."""
 
     __visit_name__ = expression.Join.__visit_name__
     
     def __init__(self, left, right, onclause=None, isouter=False):
-        if _is_mapped_class(left) or _is_mapped_class(right):
-#            if hasattr(left, '_join_from_this'):
-#                left_mapper, adapt_from = left._join_from_this
-            if hasattr(left, '_orm_mappers'):
-                left_mapper = left._orm_mappers[1]
-                adapt_from = left.right
-            elif _is_mapped_class(left):
-                left_mapper = _class_to_mapper(left)
-                if _is_aliased_class(left):
-                    adapt_from = left.alias
-                else:
-                    adapt_from = None
-            else:
-                adapt_from = left
-                left_mapper = None
-                
-            right_mapper = _class_to_mapper(right)
-            self._orm_mappers = (left_mapper, right_mapper)
+        if hasattr(left, '_orm_mappers'):
+            left_mapper = left._orm_mappers[1]
+            adapt_from = left.right
             
-            prop = None
-            from sqlalchemy.orm import attributes
-            from sqlalchemy.orm.properties import PropertyLoader
+        elif _is_mapped_class(left):
+            left_mapper = _class_to_mapper(left)
+            if _is_aliased_class(left):
+                adapt_from = left.alias
+            else:
+                adapt_from = None
+        else:
+            adapt_from = left
+            left_mapper = None
+        
+        if _is_mapped_class(right):
+            right_mapper = _class_to_mapper(right)
+        else:
+            right_mapper = None
+        
+        if left_mapper or right_mapper:
+            self._orm_mappers = (left_mapper, right_mapper)
             
             if isinstance(onclause, basestring):
                 prop = left_mapper.get_property(onclause)
             elif isinstance(onclause, attributes.InstrumentedAttribute):
                 adapt_from = onclause.clause_element()
                 prop = onclause.property
-            elif isinstance(onclause, PropertyLoader):
+            elif isinstance(onclause, MapperProperty):
                 prop = onclause
-                
+            else:
+                prop = None
+
             if prop:
                 if _is_aliased_class(right):
                     adapt_to = right.alias
@@ -333,11 +281,14 @@ class _ORMJoin(expression.Join):
                 pj, sj, source, dest, secondary, target_adapter = prop._create_joins(source_selectable=adapt_from, dest_selectable=adapt_to, source_polymorphic=True, dest_polymorphic=True)
 
                 if sj:
-                    left = sql.join(left, secondary, pj, isouter)
+                    left = sql.join(_orm_selectable(left), secondary, pj, isouter)
                     onclause = sj
                 else:
                     onclause = pj
-        expression.Join.__init__(self, left, right, onclause, isouter)
+                
+                self._target_adapter = target_adapter
+                
+        expression.Join.__init__(self, _orm_selectable(left), _orm_selectable(right), onclause, isouter)
 
     def join(self, right, onclause=None, isouter=False):
         return _ORMJoin(self, right, onclause, isouter)
@@ -346,13 +297,9 @@ class _ORMJoin(expression.Join):
         return _ORMJoin(self, right, onclause, True)
 
 def _join(left, right, onclause=None, isouter=False):
-    """future functionality."""
-    
     return _ORMJoin(left, right, onclause, isouter)
 
 def _outerjoin(left, right, onclause=None):
-    """future functionality."""
-
     return _ORMJoin(left, right, onclause, True)
     
 def has_identity(object):
@@ -457,3 +404,4 @@ def identity_equal(a, b):
         return False
     return id_a == id_b
 
+attributes.identity_equal = identity_equal

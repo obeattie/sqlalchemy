@@ -9,13 +9,14 @@ from itertools import chain
 import UserDict
 from sqlalchemy import util
 from sqlalchemy.orm import interfaces, collections
-from sqlalchemy.orm.util import identity_equal
 from sqlalchemy import exceptions
 
 PASSIVE_NORESULT = util.symbol('PASSIVE_NORESULT')
 ATTR_WAS_SET = util.symbol('ATTR_WAS_SET')
 NO_VALUE = util.symbol('NO_VALUE')
 NEVER_SET = util.symbol('NEVER_SET')
+
+identity_equal = None   # initialized by sqlalchemy.orm.util
 
 class InstrumentedAttribute(interfaces.PropComparator):
     """public-facing instrumented attribute, placed in the

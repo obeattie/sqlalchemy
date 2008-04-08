@@ -617,6 +617,9 @@ class PropertyOption(MapperOption):
     def _get_paths(self, query, raiseerr):
         path = None
         l = []
+        
+        # TODO: refactor.  _current_path logic is broken.
+        
         current_path = list(query._current_path)
 
         if self.mapper:
