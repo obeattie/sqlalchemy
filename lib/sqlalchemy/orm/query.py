@@ -746,9 +746,6 @@ class Query(object):
                     
             mapper = of_type or prop.mapper
 
-            if use_selectable:
-                adapt_against = use_selectable
-        
         q._from_obj = clause
         q._joinpoint = mapper
         q._aliases = alias
@@ -771,7 +768,7 @@ class Query(object):
         """
         q = self.__no_statement("reset_joinpoint")
         q._joinpoint = q.mapper
-        self.__setup_aliasizers()
+        q.__setup_aliasizers()
         return q
 
     def select_from(self, from_obj):
