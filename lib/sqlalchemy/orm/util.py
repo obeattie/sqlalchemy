@@ -234,8 +234,9 @@ class AliasedClass(object):
         adapter = sql_util.ClauseAdapter(alias)
         retcls = type(target.__name__ + "Alias", (cls,), {'alias':alias})
         retcls._class_state = mapper._class_state
+        retcls.mapper = mapper
         for prop in mapper.iterate_properties:
-            #existing = mapper._class_state.attrs[prop.key]
+            #existing = mapper._class_state.attrs[prop.key]  # should work in user_defined_state
             existing = getattr(target, prop.key)
             setattr(retcls, prop.key, attributes.InstrumentedAttribute(existing.impl, comparator=AliasedComparator(retcls, adapter, existing.comparator)))
 
@@ -248,7 +249,14 @@ class AliasedComparator(PropComparator):
         self.adapter = adapter
 
     def clause_element(self):
-        return self.adapter.traverse(self.comparator.clause_element(), clone=True)
+        # this is a HACK since some ProperrtyLoader comparators return the mapped table,
+        # using the adapter to "traverse" it is not the right approach
+        # (its probably not for ColumnLoaders either)
+        ca = self.comparator.clause_element()
+        if ca is self.aliasedclass.mapper.mapped_table:
+            return self.adapter.selectable
+        else:
+            return self.adapter.traverse(self.comparator.clause_element(), clone=True)
 
     def operate(self, op, *other, **kwargs):
         return self.adapter.traverse(self.comparator.operate(op, *other, **kwargs), clone=True)
@@ -290,7 +298,6 @@ class _ORMJoin(expression.Join):
 #                left_mapper, adapt_from = left._join_from_this
             if hasattr(left, '_orm_mappers'):
                 left_mapper = left._orm_mappers[1]
-#                adapt_from = left
                 adapt_from = left.right
             elif _is_mapped_class(left):
                 left_mapper = _class_to_mapper(left)
@@ -416,7 +423,10 @@ def class_mapper(class_, entity_name=None, compile=True, raiseerror=True):
 
 def _class_to_mapper(class_or_mapper, entity_name=None, compile=True):
     if isinstance(class_or_mapper, type):
-        return class_mapper(class_or_mapper, entity_name=entity_name, compile=compile)
+        if issubclass(class_or_mapper, AliasedClass):
+            return class_or_mapper.mapper
+        else:
+            return class_mapper(class_or_mapper, entity_name=entity_name, compile=compile)
     else:
         if compile:
             return class_or_mapper.compile()

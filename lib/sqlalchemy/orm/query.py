@@ -58,7 +58,6 @@ class Query(object):
         self._populate_existing = False
         self._version_check = False
         self._autoflush = True
-        self._eager_loaders = util.Set()
         self._extension = None
         self._attributes = {}
         self._current_path = ()
@@ -80,17 +79,24 @@ class Query(object):
         self._joinpoint = self.mapper
         _PrimaryMapperEntity(self, self.mapper)
     
-    def __mapper_zero(self):
+    def _mapper_zero(self):
         if not isinstance(self._entities[0], _PrimaryMapperEntity):
             raise exceptions.InvalidRequestError("No primary mapper set up for this Query.")
         return self._entities[0]
-
+    
+    def _generate_mapper_zero(self):
+        if not isinstance(self._entities[0], _PrimaryMapperEntity):
+            raise exceptions.InvalidRequestError("No primary mapper set up for this Query.")
+        entity = self._entities[0]._clone()
+        self._entities = [entity] + self._entities[1:]
+        return entity
+        
     def __mapper_zero_from_obj(self):
         if self._from_obj:
             return self._from_obj
         else:
-            return self.__mapper_zero().mapper.mapped_table
-            
+            return self._mapper_zero().mapper.mapped_table
+    
     def __generate_alias_ids(self):
         self._alias_ids = dict([
             (k, list(v)) for k, v in self._alias_ids.iteritems()
@@ -226,7 +232,8 @@ class Query(object):
 
         """
         q = self.__no_criterion('with_polymorphic')
-        q._entities[0] = q.__mapper_zero().with_polymorphic(q, cls_or_mappers, selectable=selectable)
+        entity = q._generate_mapper_zero()
+        entity.set_with_polymorphic(q, cls_or_mappers, selectable=selectable)
         return q
     
         
@@ -414,7 +421,6 @@ class Query(object):
 
         """
         q = self._clone()
-        q._eager_loaders = util.Set()
         fromclause = q.compile().correlate(None)
         return Query(self.mapper, self.session).select_from(fromclause)
         
@@ -422,7 +428,7 @@ class Query(object):
         """Return an iterator yielding result tuples corresponding to the given list of columns"""
         
         q = self.__no_entities('_values')
-        q._only_load_props = q._eager_loaders = util.Set()
+        q._only_load_props = util.Set()
         q._no_filters = True
         for column in columns:
             q._entities.append(self._add_column(column, None))
@@ -1132,7 +1138,7 @@ class Query(object):
         context.from_clause = from_obj
         context.whereclause = self._criterion
         context.order_by = self._order_by
-        context.eager_loaders = util.Set(self._eager_loaders)
+        context.eager_loaders = util.Set()
         
         for entity in self._entities:
             entity.setup_context(self, context)
@@ -1542,17 +1548,13 @@ class _PrimaryMapperEntity(_MapperEntity):
     def __init__(self, query, mapper, alias=None, id=None):
         _MapperEntity.__init__(self, mapper, alias, id)
         query._entities.append(self)
+        self.eager_loaders = util.Set(chain(*[mp._eager_loaders for mp in [m for m in self.mapper.iterate_to_root()]]))
         if mapper.with_polymorphic:
-            self.__set_with_polymorphic(query, *mapper.with_polymorphic)
+            self.set_with_polymorphic(query, *mapper.with_polymorphic)
         else:
             self._with_polymorphic = None
         
-    def with_polymorphic(self, query, cls_or_mappers, selectable):
-        q = self._clone()
-        q.__set_with_polymorphic(query, cls_or_mappers, selectable)
-        return q
-    
-    def __set_with_polymorphic(self, query, cls_or_mappers, selectable):
+    def set_with_polymorphic(self, query, cls_or_mappers, selectable):
         mappers, from_obj = self.mapper._with_polymorphic_args(cls_or_mappers, selectable)
         self._with_polymorphic = mappers
         query._set_select_from(from_obj)
@@ -1576,7 +1578,7 @@ class _PrimaryMapperEntity(_MapperEntity):
         if self.mapper.single and self.mapper.inherits is not None and self.mapper.polymorphic_on is not None and self.mapper.polymorphic_identity is not None:
             context.whereclause = sql.and_(context.whereclause, self.mapper.polymorphic_on.in_([m.polymorphic_identity for m in self.mapper.polymorphic_iterator()]))
         
-        context.eager_loaders.update(chain(*[mp._eager_loaders for mp in [m for m in self.mapper.iterate_to_root()]]))
+        context.eager_loaders.update(self.eager_loaders)
         
         if not context.from_clause:
             context.from_clause = self.mapper.mapped_table

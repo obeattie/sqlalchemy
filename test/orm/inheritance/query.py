@@ -353,6 +353,7 @@ def make_test(select_type):
             ]
             
             sess = create_session()
+            
             def go():
                 # test load Companies with lazy load to 'employees'
                 self.assertEquals(sess.query(Company).all(), assert_result)

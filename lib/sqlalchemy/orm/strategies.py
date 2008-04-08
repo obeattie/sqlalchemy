@@ -514,55 +514,85 @@ class EagerLoader(AbstractRelationLoader):
         else:
             towrap = context.from_clause
         
-        #if parentclauses:
-        #    onclause = getattr(mapperutil.AliasedClass(self.parent, parentclauses.alias), self.key)
-        #else:
-        #    onclause = self.parent_property
-        #target = mapperutil.AliasedClass(self.mapper)
-        #fakeclause = mapperutil._outerjoin(towrap, target, onclause)
         
         # create AliasedClauses object to build up the eager query.  this is cached after 1st creation.    
         try:
             clauses = self.clauses[path]
         except KeyError:
-            clauses = mapperutil.PropertyAliasedClauses(self.parent_property, self.parent_property.primaryjoin, self.parent_property.secondaryjoin, parentclauses)
+            #clauses = mapperutil.PropertyAliasedClauses(self.parent_property, self.parent_property.primaryjoin, self.parent_property.secondaryjoin, parentclauses)
+            clauses = mapperutil.AliasedClauses(self.mapper._with_polymorphic_selectable().alias(), 
+                    equivalents=self.mapper._equivalent_columns, 
+                    chain_to=parentclauses, 
+                    )
+            
             self.clauses[path] = clauses
         
+#        import pdb
+#        pdb.set_trace()
         
-        # place the "row_decorator" from the AliasedClauses into the QueryContext, where it will
-        # be picked up in create_row_processor() when results are fetched
-        context.attributes[("eager_row_processor", path)] = clauses.row_decorator
+        if parentclauses:
+            onclause = getattr(mapperutil.AliasedClass(self.parent, parentclauses.alias), self.key)
+        else:
+            onclause = self.parent_property
+        target = mapperutil.AliasedClass(self.mapper, clauses.alias)
+        context.eager_joins = mapperutil._outerjoin(towrap, target, onclause)
         
         if self.secondaryjoin is not None:
-            context.eager_joins = sql.outerjoin(towrap, clauses.secondary, clauses.primaryjoin).outerjoin(clauses.alias, clauses.secondaryjoin)
+            pass
+            #context.eager_joins = sql.outerjoin(towrap, clauses.secondary, clauses.primaryjoin).outerjoin(clauses.alias, clauses.secondaryjoin)
             
             # TODO: check for "deferred" cols on parent/child tables here ?  this would only be
             # useful if the primary/secondaryjoin are against non-PK columns on the tables (and therefore might be deferred)
             
-            if self.order_by is False and self.secondary.default_order_by() is not None:
-                context.eager_order_by += clauses.secondary.default_order_by()
+#            if self.order_by is False and self.secondary.default_order_by() is not None:
+#                context.eager_order_by += clauses.secondary.default_order_by()
         else:
-            context.eager_joins = towrap.outerjoin(clauses.alias, clauses.primaryjoin)
+            #context.eager_joins = towrap.outerjoin(clauses.alias, clauses.primaryjoin)
+
             # ensure all the cols on the parent side are actually in the
             # columns clause (i.e. are not deferred), so that aliasing applied by the Query propagates 
             # those columns outward.  This has the effect of "undefering" those columns.
-            for col in sql_util.find_columns(clauses.primaryjoin):
+            for col in sql_util.find_columns(self.primaryjoin):
                 if localparent.mapped_table.c.contains_column(col):
                     context.primary_columns.append(col)
-                
-            if self.order_by is False and clauses.alias.default_order_by() is not None:
-                context.eager_order_by += clauses.alias.default_order_by()
+            
+#            if self.order_by is False and clauses.alias.default_order_by() is not None:
+#                context.eager_order_by += clauses.alias.default_order_by()
         
-        if not hasattr(context.eager_joins, '_orm_mappers'):
-            context.eager_joins._join_from_this = (self.mapper, clauses.alias)
+        #if not hasattr(context.eager_joins, '_orm_mappers'):
+        #    context.eager_joins._join_from_this = (self.mapper, clauses.alias)
         
         #if str(context.eager_joins) != str(fakeclause):
         #    import pdb
-        #    pdb.set_trace()
-            
-        if clauses.order_by:
-            context.eager_order_by += util.to_list(clauses.order_by)
+        #   pdb.set_trace()
         
+
+        primary_adapter = clauses.adapter #sql_util.ClauseAdapter(context.eager_joins.right)
+
+        if self.secondary:
+            aliased_secondary = context.eager_joins.left.right
+            secondary_adapter = sql_util.ClauseAdapter(context.eager_joins.right, equivalents=self.mapper._equivalent_columns).chain(sql_util.ClauseAdapter(aliased_secondary))
+#            secondary_adapter = primary_adapter.copy_and_chain(sql_util.ClauseAdapter(aliased_secondary))
+            
+        if self.order_by is False:
+            if self.secondaryjoin:
+                default_order_by = context.eager_joins.left.right
+            else:
+                default_order_by = context.eager_joins.right
+            if default_order_by.default_order_by():
+                context.eager_order_by += default_order_by.default_order_by()
+        elif self.order_by:
+            if self.secondary:
+                # usually this is not used but occasionally someone has a sort key in their secondary
+                # table, even tho SA does not support writing this column directly
+                context.eager_order_by += secondary_adapter.copy_and_process(util.to_list(self.order_by))
+            else:
+                context.eager_order_by += primary_adapter.copy_and_process(util.to_list(self.order_by))
+
+        # place the "row_decorator" from the AliasedClauses into the QueryContext, where it will
+        # be picked up in create_row_processor() when results are fetched
+        context.attributes[("eager_row_processor", path)] = clauses.row_decorator
+            
         for value in self.mapper._iterate_polymorphic_properties():
             context.exec_with_path(self.mapper, value.key, value.setup, context, parentclauses=clauses, parentmapper=self.mapper)
         
@@ -662,9 +692,10 @@ class EagerLazyOption(StrategizedOption):
         return not self.lazy and self.chained
         
     def process_query_property(self, query, paths):
+        entity = query._generate_mapper_zero()
         if self.lazy:
-            if paths[-1] in query._eager_loaders:
-                query._eager_loaders = query._eager_loaders.difference(util.Set([paths[-1]]))
+            if paths[-1] in entity.eager_loaders:
+                entity.eager_loaders = entity.eager_loaders.difference(util.Set([paths[-1]]))
         else:
             if not self.chained:
                 paths = [paths[-1]]
@@ -672,7 +703,7 @@ class EagerLazyOption(StrategizedOption):
             for path in paths:
                 if len(path) - len(query._current_path) == 2:
                     res.add(path)
-            query._eager_loaders = query._eager_loaders.union(res)
+            entity.eager_loaders = entity.eager_loaders.union(res)
         super(EagerLazyOption, self).process_query_property(query, paths)
 
     def get_strategy_class(self):

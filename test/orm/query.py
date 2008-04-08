@@ -1100,7 +1100,7 @@ class InstancesTest(QueryTest):
             (user10, 0)
             ]
 
-        for aliased in (True, ): #(False, True):
+        for aliased in (False, True):
             q = sess.query(User)
             q = q.group_by([c for c in users.c]).order_by(User.id).outerjoin('addresses', aliased=aliased).add_column(func.count(Address.id).label('count'))
             l = q.all()
