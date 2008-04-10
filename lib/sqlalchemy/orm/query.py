@@ -130,6 +130,7 @@ class Query(object):
             self._aliases_head = self._aliases_tail = mapperutil.AliasedClauses(self._from_obj, equivalents=equivs)
             self._alias_ids.update([(table, [self._aliases_head]) for table in aliased_tables])
         else:
+            self._aliases_head = None
             for entity in self._entities:
                 if not getattr(entity, 'adapter', None):
                     continue
@@ -711,12 +712,19 @@ class Query(object):
                                 clause = adapt_against = entity.selectable
                                 break
                         else:
-                            clause = adapt_against = key.clause_element()
+                            raise "nope"
+                            #clause = adapt_against = key.clause_element()
             else:
                 if not mapper:
                     mapper = start
                     if not clause:
-                        clause = mapper.mapped_table
+                        for entity in self._entities:
+                            # TODO: refactor
+                            if getattr(entity, 'mapper', None) in list(mapper.iterate_to_root()):
+                                clause = entity.selectable
+                                break
+                        else:
+                            raise "nope"
                 prop = mapper.get_property(key, resolve_synonyms=True)
             
             target = None
@@ -1133,9 +1141,13 @@ class Query(object):
             else:
                 context.order_by = None
                 order_by_col_expr = []
-                
-            # TODO: need both "FROM" modes represented here
-            inner = sql.select(context.primary_columns + order_by_col_expr, context.whereclause, from_obj=context.from_clause, use_labels=True, correlate=False, order_by=context.order_by, **self._select_args).alias()
+            
+            if context.from_clause:
+                froms = [context.from_clause]  # "load from a single FROM" mode, i.e. when select_from() or join() is used
+            else:
+                froms = context.froms   # "load from discrete FROMs" mode, i.e. when each _MappedEntity has its own FROM
+
+            inner = sql.select(context.primary_columns + order_by_col_expr, context.whereclause, from_obj=froms, use_labels=True, correlate=False, order_by=context.order_by, **self._select_args).alias()
 
             local_adapter = sql_util.ClauseAdapter(inner)
 
@@ -1546,8 +1558,6 @@ class _PrimaryMapperEntity(_MapperEntity):
             self.adapter = None
         
     def set_with_polymorphic(self, query, cls_or_mappers, selectable):
-#        import pdb
-#        pdb.set_trace()
         mappers, from_obj = self.mapper._with_polymorphic_args(cls_or_mappers, selectable)
         self._with_polymorphic = mappers
         self.selectable = from_obj
