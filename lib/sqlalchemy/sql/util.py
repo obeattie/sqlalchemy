@@ -56,7 +56,40 @@ def find_columns(clause):
     visitors.traverse(clause, visit_column=visit_column)
     return cols
 
+def _recursive_splice_joins(left, right):
+    if isinstance(right, expression.Join):
+        right = right._clone()
+        right._reset_exported()
+        right.left = splice_joins(left, right.left)
+        right.onclause = ClauseAdapter(left).traverse(right.onclause, clone=True)
+        return right
+    else:
+        return ClauseAdapter(left).traverse(right, clone=True)
 
+def splice_joins(left, right):
+    if left is None:
+        return right
+        
+    stack = [(right, None)]
+
+    adapter = ClauseAdapter(left)
+    ret = None
+    while stack:
+        (right, prevright) = stack.pop()
+        if isinstance(right, expression.Join):
+            right = right._clone()
+            right._reset_exported()
+            right.onclause = adapter.traverse(right.onclause, clone=True)
+            stack.append((right.left, right))
+        else:
+            right = adapter.traverse(right, clone=True)
+        if prevright:
+            prevright.left = right
+        if not ret:
+            ret = right
+
+    return ret
+    
 def reduce_columns(columns, *clauses):
     """given a list of columns, return a 'reduced' set based on natural equivalents.
 

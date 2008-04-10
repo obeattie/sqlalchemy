@@ -489,7 +489,7 @@ class EagerLoader(AbstractRelationLoader):
         # initialize a lazy loader on the class level attribute
         self.parent_property._get_strategy(LazyLoader).init_class_attribute()
         
-    def setup_query(self, context, parentclauses=None, parentmapper=None, **kwargs):
+    def setup_query(self, context, parentclauses=None, parentmapper=None, entity=None, **kwargs):
         """Add a left outer join to the statement thats being constructed."""
         
         path = context.path
@@ -510,10 +510,22 @@ class EagerLoader(AbstractRelationLoader):
         else:
             localparent = parentmapper
         
-        if context.eager_joins:
-            towrap = context.eager_joins
+        if entity is None:
+            return
+        
+        per_path_clauses = context.query._should_nest_selectable or not context.from_clause
+        
+        # TODO: refactor
+        if per_path_clauses:
+            try:
+                towrap = context.eager_joins[entity]
+            except KeyError:
+                context.eager_joins[entity] = towrap = entity.selectable
         else:
-            towrap = context.from_clause
+            try:
+                towrap = context.eager_joins[None]
+            except KeyError:
+                context.eager_joins[None] = towrap = context.from_clause
         
         # create AliasedClauses object to build up the eager query.  this is cached after 1st creation.    
         try:
@@ -527,7 +539,11 @@ class EagerLoader(AbstractRelationLoader):
             onclause = getattr(parentclauses.target, self.key, self.parent_property)
         else:
             onclause = self.parent_property
-        context.eager_joins = mapperutil._outerjoin(towrap, clauses.target, onclause)
+        
+        if per_path_clauses:
+            context.eager_joins[entity] = eagerjoin = mapperutil._outerjoin(towrap, clauses.target, onclause)
+        else:
+            context.eager_joins[None] = eagerjoin = mapperutil._outerjoin(towrap, clauses.target, onclause)
         
         if not self.secondary:
             # ensure all the cols on the parent side are actually in the
@@ -539,20 +555,20 @@ class EagerLoader(AbstractRelationLoader):
             
         if self.order_by is False:
             if self.secondaryjoin:
-                default_order_by = context.eager_joins.left.right.default_order_by()
+                default_order_by = eagerjoin.left.right.default_order_by()
             else:
-                default_order_by = context.eager_joins.right.default_order_by()
+                default_order_by = eagerjoin.right.default_order_by()
             if default_order_by:
                 context.eager_order_by += default_order_by
         elif self.order_by:
-            context.eager_order_by += context.eager_joins._target_adapter.copy_and_process(util.to_list(self.order_by))
+            context.eager_order_by += eagerjoin._target_adapter.copy_and_process(util.to_list(self.order_by))
 
         # place the "row_decorator" from the AliasedClauses into the QueryContext, where it will
         # be picked up in create_row_processor() when results are fetched
         context.attributes[("eager_row_processor", path)] = clauses.row_decorator
             
         for value in self.mapper._iterate_polymorphic_properties():
-            context.exec_with_path(self.mapper, value.key, value.setup, context, parentclauses=clauses, parentmapper=self.mapper)
+            context.exec_with_path(self.mapper, value.key, value.setup, context, parentclauses=clauses, parentmapper=self.mapper, entity=entity)
         
     def _create_row_decorator(self, selectcontext, row, path):
         """Create a *row decorating* function that will apply eager
@@ -649,22 +665,6 @@ class EagerLazyOption(StrategizedOption):
     def is_chained(self):
         return not self.lazy and self.chained
         
-    def process_query_property(self, query, paths):
-        entity = query._generate_mapper_zero()
-        if self.lazy:
-            if paths[-1] in entity.eager_loaders:
-                entity.eager_loaders = entity.eager_loaders.difference(util.Set([paths[-1]]))
-        else:
-            if not self.chained:
-                paths = [paths[-1]]
-            res = util.Set()
-            for path in paths:
-                # TODO: this logic is broken
-                if len(path) - len(query._current_path) == 2:
-                    res.add(path)
-            entity.eager_loaders = entity.eager_loaders.union(res)
-        super(EagerLazyOption, self).process_query_property(query, paths)
-
     def get_strategy_class(self):
         if self.lazy:
             return LazyLoader

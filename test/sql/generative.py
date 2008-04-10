@@ -517,6 +517,57 @@ class ClauseAdapterTest(TestBase, AssertsCompiledSQL):
             "WHERE c.bid = anon_1.b_aid"
         )
 
+class SpliceJoinsTest(TestBase, AssertsCompiledSQL):
+    def setUpAll(self):
+        global table1, table2, table3, table4
+        def _table(name):
+            return table(name, column("col1"), column("col2"),column("col3"))
+        
+        table1, table2, table3, table4 = [_table(name) for name in ("table1", "table2", "table3", "table4")]    
+
+    def test_splice(self):
+        (t1, t2, t3, t4) = (table1, table2, table1.alias(), table2.alias())
+        j = t1.join(t2, t1.c.col1==t2.c.col1).join(t3, t2.c.col1==t3.c.col1).join(t4, t4.c.col1==t1.c.col1)
+        
+        s = select([t1]).where(t1.c.col2<5).alias()
+        
+        self.assert_compile(sql_util.splice_joins(s, j), 
+            "(SELECT table1.col1 AS col1, table1.col2 AS col2, "\
+            "table1.col3 AS col3 FROM table1 WHERE table1.col2 < :col2_1) AS anon_1 "\
+            "JOIN table2 ON anon_1.col1 = table2.col1 JOIN table1 AS table1_1 ON table2.col1 = table1_1.col1 "\
+            "JOIN table2 AS table2_1 ON table2_1.col1 = anon_1.col1")
+    
+    def test_splice_2(self):
+        t2a = table2.alias()
+        t3a = table3.alias()
+        j1 = table1.join(t2a, table1.c.col1==t2a.c.col1).join(t3a, t2a.c.col2==t3a.c.col2)
+        
+        t2b = table4.alias()
+        j2 = table1.join(t2b, table1.c.col3==t2b.c.col3)
+        
+        self.assert_compile(sql_util.splice_joins(table1, j1), 
+            "table1 JOIN table2 AS table2_1 ON table1.col1 = table2_1.col1 "\
+            "JOIN table3 AS table3_1 ON table2_1.col2 = table3_1.col2")
+            
+        self.assert_compile(sql_util.splice_joins(table1, j2), "table1 JOIN table4 AS table4_1 ON table1.col3 = table4_1.col3")
+
+        self.assert_compile(sql_util.splice_joins(sql_util.splice_joins(table1, j1), j2), 
+            "table1 JOIN table2 AS table2_1 ON table1.col1 = table2_1.col1 "\
+            "JOIN table3 AS table3_1 ON table2_1.col2 = table3_1.col2 "\
+            "JOIN table4 AS table4_1 ON table1.col3 = table4_1.col3")
+    
+    def test_overlapping_splice(self):
+        j1 = table1.join(table2, table1.c.col1==table2.c.col1).join(table3, table2.c.col2==table3.c.col2)
+        
+        from sqlalchemy.sql import visitors
+        j2 = visitors.ClauseVisitor().traverse(j1, clone=True)
+        
+        j3 = j2.join(table4, table4.c.col3==table3.c.col3)
+        self.assert_compile(j1, "table1 JOIN table2 ON table1.col1 = table2.col1 JOIN table3 ON table2.col2 = table3.col2")
+        self.assert_compile(j3, "table1 JOIN table2 ON table1.col1 = table2.col1 JOIN table3 ON table2.col2 = table3.col2 JOIN table4 ON table4.col3 = table3.col3")
+        
+        self.assert_compile(sql_util.splice_joins(j1, j3, j2), "")
+        
 class SelectTest(TestBase, AssertsCompiledSQL):
     """tests the generative capability of Select"""
 
