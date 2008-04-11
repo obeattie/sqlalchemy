@@ -6,9 +6,18 @@ CHANGES
 =====
 - orm
     - Fix to the recent relation() refactoring which fixes
-      exotic relations which join between local and remote table
+      exotic viewonly relations which join between local and remote table
       multiple times, with a common column shared between the 
       joins.
+    
+    - Also re-established viewonly relation() configurations that
+      join across multiple tables.
+      
+    - removed ancient assertion that mapped selectables require
+      "alias names" - the mapper creates its own alias now if
+      none is present.  Though in this case you need to use 
+      the class, not the mapped selectable, as the source of
+      column attributes - so a warning is still issued.
       
 - sql
     - Fixed bug with union() when applied to non-Table connected
@@ -18,6 +27,16 @@ CHANGES
     - Pool listeners can now be provided as a dictionary of
       callables or a (possibly partial) duck-type of
       PoolListener, your choice.
+
+- mssql
+    - Added "odbc_autotranslate" parameter to engine / dburi
+      parameters. Any given string will be passed through to 
+      the ODBC connection string as 
+            "AutoTranslat=%s" % odbc_autotranslate
+      [ticket:1005]
+
+
+
 
 0.4.5
 =====
