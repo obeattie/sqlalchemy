@@ -988,6 +988,8 @@ class InstancesTest(QueryTest):
         self.assert_sql_count(testing.db, go, 1)
         sess.clear()
 
+class MixedEntitiesTest(QueryTest):
+
     def test_values(self):
         sess = create_session()
 
@@ -1049,6 +1051,16 @@ class InstancesTest(QueryTest):
         self.assertEquals(sess.query(func.count(Address.email_address), User).outerjoin(User.addresses).group_by(User).order_by(User.id).all(), 
             [(1, User(name='jack',id=7)), (3, User(name='ed',id=8)), (1, User(name='fred',id=9)), (0, User(name='chuck',id=10))]
         )
+        
+        adalias = aliased(Address)
+        self.assertEquals(sess.query(User, func.count(adalias.email_address)).outerjoin(('addresses', adalias)).group_by(User).order_by(User.id).all(), 
+            [(User(name='jack',id=7), 1), (User(name='ed',id=8), 3), (User(name='fred',id=9), 1), (User(name='chuck',id=10), 0)]
+        )
+
+        self.assertEquals(sess.query(func.count(adalias.email_address), User).outerjoin((User.addresses, adalias)).group_by(User).order_by(User.id).all(),
+            [(1, User(name=u'jack',id=7)), (3, User(name=u'ed',id=8)), (1, User(name=u'fred',id=9)), (0, User(name=u'chuck',id=10))]
+        )
+            
         
     def test_multi_mappers(self):
 
@@ -1566,6 +1578,8 @@ class SelfReferentialM2MTest(ORMTest):
         )
         
 class ExternalColumnsTest(QueryTest):
+    """test mappers with SQL-expressions added as column properties."""
+    
     keep_mappers = False
 
     def setup_mappers(self):
