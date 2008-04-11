@@ -152,7 +152,7 @@ class AliasedClauses(object):
         self.row_decorator = self._create_row_adapter()
         self.chain_to = chain_to
         self.local_adapter = sql_util.ClauseAdapter(self.selectable, equivalents=equivalents)
-        self.adapter = visitors.VisitorContainer(self._iterate_adapters)
+        self.adapter = visitors.VisitorContainer(self._iterate_adapters, self.local_adapter.__traverse_options__)
 
     def _iterate(self):
         a = self

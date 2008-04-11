@@ -505,7 +505,7 @@ class EagerLoader(AbstractRelationLoader):
                     return
 
         if parentmapper is None:
-            localparent = context.mapper
+            localparent = entity.mapper
         else:
             localparent = parentmapper
         

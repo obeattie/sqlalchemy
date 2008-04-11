@@ -726,21 +726,13 @@ class Session(object):
                 raise exceptions.UnboundExecutionError("Could not locate any Engine or Connection bound to mapper '%s'" % str(mapper))
             return e
 
-    def query(self, mapper_or_class, *addtl_entities, **kwargs):
+    def query(self, *entities, **kwargs):
         """Return a new ``Query`` object corresponding to this ``Session`` and
         the mapper, or the classes' primary mapper.
         """
 
-        entity_name = kwargs.pop('entity_name', None)
 
-        if isinstance(mapper_or_class, type):
-            q = self._query_cls(_class_mapper(mapper_or_class, entity_name=entity_name), self, **kwargs)
-        else:
-            q = self._query_cls(mapper_or_class, self, **kwargs)
-
-        for ent in addtl_entities:
-            q = q.add_entity(ent)
-        return q
+        return self._query_cls(entities, self, **kwargs)
 
     def _autoflush(self):
         if self.autoflush and (self.transaction is None or self.transaction.autoflush):

@@ -615,13 +615,13 @@ class PropertyOption(MapperOption):
             mapper = self.mapper
             if isinstance(self.mapper, type):
                 mapper = class_mapper(mapper)
-            if mapper is not query.mapper and mapper not in [q.mapper for q in query._entities]:
+            if mapper not in query._entity_mappers:
                 if raiseerr:
                     raise exceptions.ArgumentError("Can't find entity %s in Query.  Current list: %r" % (str(mapper), [str(m) for m in query._entities]))
                 else:
                     return None
         else:
-            mapper = query.mapper
+            mapper = query._mapper_zero()
         if isinstance(self.key, basestring):
             tokens = self.key.split('.')
         else:

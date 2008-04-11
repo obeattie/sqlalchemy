@@ -427,6 +427,22 @@ class FromSelfTest(QueryTest):
             (User(id=8), Address(id=4)),
             (User(id=9), Address(id=5))
         ] == create_session().query(User).filter(User.id.in_([8,9]))._from_self().join('addresses').add_entity(Address).order_by(User.id, Address.id).all()
+    
+    def test_multiple_entities(self):
+        sess = create_session()
+
+        self.assertEquals(
+            sess.query(User, Address).filter(User.id==Address.user_id).filter(Address.id.in_([2, 5]))._from_self().all(),
+            [
+                (User(id=8), Address(id=2)),
+                (User(id=9), Address(id=5))
+            ]
+        )
+
+        self.assertEquals(
+            sess.query(User, Address).filter(User.id==Address.user_id).filter(Address.id.in_([2, 5]))._from_self().options(eagerload('addresses')).first(),
+            (User(id=8, addresses=[Address(), Address(), Address()]), Address(id=2)),
+        )
         
 class AggregateTest(QueryTest):
     def test_sum(self):
@@ -1325,7 +1341,7 @@ class SelectFromTest(QueryTest):
         def go():
             self.assertEquals(sess.query(User).options(eagerload('addresses')).select_from(sel)[1], User(id=8, addresses=[Address(id=2), Address(id=3), Address(id=4)]))
         self.assert_sql_count(testing.db, go, 1)
-
+    
 class CustomJoinTest(QueryTest):
     keep_mappers = False
 

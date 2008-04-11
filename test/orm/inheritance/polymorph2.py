@@ -725,6 +725,15 @@ class GenerativeTest(TestBase, AssertsExecutionResults):
         session.save(car2)
         session.flush()
 
+        e = exists([Car.c.owner], Car.c.owner==employee_join.c.person_id)
+#        from sqlalchemy.sql.util import ClauseAdapter
+#        ClauseAdapter(employee_join).traverse(e)
+        from sqlalchemy.orm.util import AliasedClauses
+        ca = AliasedClauses(employee_join)
+        ca.adapt_clause(e)
+        
+        session.query(Person).filter(exists([Car.c.owner], Car.c.owner==employee_join.c.person_id))
+        
         # test these twice because theres caching involved, as well previous issues that modified the polymorphic union
         for x in range(0, 2):
             r = session.query(Person).filter(people.c.name.like('%2')).join('status').filter_by(name="active")
