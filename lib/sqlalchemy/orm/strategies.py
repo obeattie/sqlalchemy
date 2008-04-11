@@ -24,13 +24,12 @@ class ColumnLoader(LoaderStrategy):
         self._should_log_debug = logging.is_debug_enabled(self.logger)
         self.is_composite = hasattr(self.parent_property, 'composite_class')
         
-    def setup_query(self, context, parentclauses=None, **kwargs):
+    def setup_query(self, context, column_collection=None, parentclauses=None, **kwargs):
         for c in self.columns:
             if parentclauses is not None:
-                # TODO: the primary_columns/secondary_columns logic makes no sense here
-                context.secondary_columns.append(parentclauses.aliased_column(c))
+                column_collection.append(parentclauses.aliased_column(c))
             else:
-                context.primary_columns.append(c)
+                column_collection.append(c)
         
     def init_class_attribute(self):
         self.is_class_level = True
@@ -489,7 +488,7 @@ class EagerLoader(AbstractRelationLoader):
         # initialize a lazy loader on the class level attribute
         self.parent_property._get_strategy(LazyLoader).init_class_attribute()
         
-    def setup_query(self, context, parentclauses=None, parentmapper=None, entity=None, **kwargs):
+    def setup_query(self, context, parentclauses=None, parentmapper=None, entity=None, column_collection=None, **kwargs):
         """Add a left outer join to the statement thats being constructed."""
         
         path = context.path
@@ -512,20 +511,28 @@ class EagerLoader(AbstractRelationLoader):
         
         if entity is None:
             return
+
+        # whether or not the Query will wrap the selectable in a subquery,
+        # and then attach eager load joins to that (i.e., in the case of LIMIT/OFFSET etc.)
+        should_nest_selectable = context.query._should_nest_selectable
         
-        per_path_clauses = context.query._should_nest_selectable or not context.from_clause
-        
-        # TODO: refactor
-        if per_path_clauses:
-            try:
-                towrap = context.eager_joins[entity]
-            except KeyError:
-                context.eager_joins[entity] = towrap = entity.selectable
+        if should_nest_selectable or not context.from_clause:
+            # if no from_clause, or a subquery is going to be generated, 
+            # store eager joins per _MappedEntity; Query._compile_context will 
+            # add them as separate selectables to the select(), or splice them together
+            # after the subquery is generated
+            entity_key, default_towrap = entity, entity.selectable
         else:
-            try:
-                towrap = context.eager_joins[None]
-            except KeyError:
-                context.eager_joins[None] = towrap = context.from_clause
+            # otherwise, create a single eager join from the from clause.  
+            # Query._compile_context will adapt as needed and append to the
+            # FROM clause of the select().
+            entity_key, default_towrap = None, context.from_clause
+            
+        # TODO: refactor
+        try:
+            towrap = context.eager_joins[entity_key]
+        except KeyError:
+            context.eager_joins[entity_key] = towrap = default_towrap
         
         # create AliasedClauses object to build up the eager query.  this is cached after 1st creation.    
         try:
@@ -540,17 +547,17 @@ class EagerLoader(AbstractRelationLoader):
         else:
             onclause = self.parent_property
         
-        if per_path_clauses:
-            context.eager_joins[entity] = eagerjoin = mapperutil._outerjoin(towrap, clauses.target, onclause)
-        else:
-            context.eager_joins[None] = eagerjoin = mapperutil._outerjoin(towrap, clauses.target, onclause)
+        context.eager_joins[entity_key] = eagerjoin = mapperutil._outerjoin(towrap, clauses.target, onclause)
         
-        if not self.secondary:
-            # ensure all the cols on the parent side are actually in the
+        if not self.secondary and context.query._should_nest_selectable and column_collection is context.primary_columns:
+            # for parentclause that is the non-eager end of the join,
+            # ensure all the parent cols in the primaryjoin are actually in the
             # columns clause (i.e. are not deferred), so that aliasing applied by the Query propagates 
             # those columns outward.  This has the effect of "undefering" those columns.
             for col in sql_util.find_columns(self.primaryjoin):
                 if localparent.mapped_table.c.contains_column(col):
+                    if parentclauses:
+                        col = parentclauses.aliased_column(col)
                     context.primary_columns.append(col)
             
         if self.order_by is False:
@@ -568,7 +575,7 @@ class EagerLoader(AbstractRelationLoader):
         context.attributes[("eager_row_processor", path)] = clauses.row_decorator
             
         for value in self.mapper._iterate_polymorphic_properties():
-            context.exec_with_path(self.mapper, value.key, value.setup, context, parentclauses=clauses, parentmapper=self.mapper, entity=entity)
+            context.exec_with_path(self.mapper, value.key, value.setup, context, parentclauses=clauses, parentmapper=self.mapper, entity=entity, column_collection=context.secondary_columns)
         
     def _create_row_decorator(self, selectcontext, row, path):
         """Create a *row decorating* function that will apply eager

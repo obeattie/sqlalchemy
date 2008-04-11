@@ -151,10 +151,13 @@ class AliasedClauses(object):
         self.equivalents = equivalents
         self.row_decorator = self._create_row_adapter()
         self.adapter = sql_util.ClauseAdapter(self.selectable, equivalents=equivalents)
-
+        self.chain_to = chain_to
         if chain_to:
             self.adapter.chain(chain_to.adapter)
-            
+    
+    def unchain(self):
+        self.adapter = sql_util.ClauseAdapter(self.selectable, equivalents=self.equivalents)
+
     def aliased_column(self, column):
         conv = self.selectable.corresponding_column(column)
         if conv:

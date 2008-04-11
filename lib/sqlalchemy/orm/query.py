@@ -74,7 +74,7 @@ class Query(object):
         self._entities = []
         if not self._extension:
             self._extension = self.mapper.extension
-        self._aliases_head = self._aliases_tail = None
+        self._join_start = self._aliases_head = self._aliases_tail = None
         self._alias_ids = {}
         self._joinpoint = self.mapper
         _PrimaryMapperEntity(self, self.mapper)
@@ -108,37 +108,46 @@ class Query(object):
     def __no_statement(self, meth):
         return self.__conditional_clone(meth, [self.__no_statement_condition])
 
-
-    def _set_select_from(self, from_obj):
+    def __set_select_from(self, from_obj):
         if isinstance(from_obj, expression._SelectBaseMixin):
             # alias SELECTs and unions
             from_obj = from_obj.alias()
 
         self._alias_ids = {}
         self._from_obj = from_obj
-        self._setup_aliasizers()
-
-    def _setup_aliasizers(self):
-        # TODO: refactor (yes, its a mess right now)
-        if self._from_obj:
-            aliased_tables = []
-            equivs = {}
-            for entity in self._entities:
-                if isinstance(entity, _MapperEntity):
-                    equivs.update(entity.mapper._equivalent_columns)
-                aliased_tables += entity.tables
-            self._aliases_head = self._aliases_tail = mapperutil.AliasedClauses(self._from_obj, equivalents=equivs)
-            self._alias_ids.update([(table, [self._aliases_head]) for table in aliased_tables])
-        else:
-            self._aliases_head = None
-            for entity in self._entities:
-                if not getattr(entity, 'adapter', None):
-                    continue
-                aliasizer = mapperutil.AliasedClauses(entity.selectable, equivalents=entity.mapper._equivalent_columns, chain_to=self._aliases_tail)
-                if not self._aliases_head:
-                    self._aliases_head = aliasizer
-                self._aliases_tail = aliasizer
+        mappers, tables, equivs = self.__all_equivs()
+        self._aliases_head = self._aliases_tail = self._join_start = mapperutil.AliasedClauses(self._from_obj, equivalents=equivs)
+        self._alias_ids.update([(table, [self._aliases_head]) for table in tables])
+        self._alias_ids.update([(mapper, [self._aliases_head]) for mapper in mappers])
     
+    def _append_aliasizer(self, alias, entity):
+        old_aliases = self._alias_ids.get(entity.mapper, [])
+        
+        for old_alias in old_aliases:
+            a = self._aliases_head
+            if a is old_alias:
+                self._aliases_head = self._aliases_head.chain_to
+            else:
+                while a.chain_to and a.chain_to is not old_alias:
+                    a = a.chain_to
+                a.chain_to = old_alias.chain_to
+            
+        self._aliases_tail = mapperutil.AliasedClauses(alias.target or alias.selectable, equivalents=alias.equivalents, chain_to=self._aliases_tail)
+        if self._aliases_head is None:
+            self._aliases_head = self._join_start = self._aliases_tail
+        self._alias_ids[entity.mapper] = [self._aliases_tail]
+        
+    def __all_equivs(self):
+        equivs = {}
+        tables = []
+        mappers = []
+        for entity in self._entities:
+            if isinstance(entity, _MapperEntity):
+                equivs.update(entity.mapper._equivalent_columns)
+                mappers.append(entity.mapper)
+            tables += entity.tables
+        return mappers, tables, equivs
+        
     def __no_criterion_condition(self, q, meth):
         if q._criterion or q._statement:
             util.warn(
@@ -675,7 +684,11 @@ class Query(object):
         q = self.__no_statement("join")
         q.__generate_alias_ids()
 
-        start = from_joinpoint and self._joinpoint or self.mapper
+        if from_joinpoint:
+            start = self._joinpoint
+        else:
+            q._reset_joinpoint()
+            start = self.mapper
         
         currenttables = self.__get_joinable_tables()
         clause = self._from_obj
@@ -791,9 +804,13 @@ class Query(object):
 
         """
         q = self.__no_statement("reset_joinpoint")
-        q._joinpoint = q.mapper
-        q._setup_aliasizers()
+        q._reset_joinpoint()
         return q
+    
+    def _reset_joinpoint(self):
+        self._joinpoint = self.mapper
+        if self._join_start:
+            self._aliases_tail = self._join_start
 
     def select_from(self, from_obj):
         """Set the `from_obj` parameter of the query and return the newly
@@ -809,7 +826,7 @@ class Query(object):
             util.warn_deprecated("select_from() now accepts a single Selectable as its argument, which replaces any existing FROM criterion.")
             from_obj = from_obj[-1]
 
-        new._set_select_from(from_obj)
+        new.__set_select_from(from_obj)
         return new
     
     def __getitem__(self, item):
@@ -1202,11 +1219,6 @@ class Query(object):
                     context.eager_order_by = adapter.adapt_list(context.eager_order_by)
                 statement.append_order_by(*context.eager_order_by)
             
-        # polymorphic mappers which have concrete tables in their hierarchy usually
-        # require row aliasing unconditionally.  
-        # TODO: needs to be part of _MappedEntity
-        if not context.row_adapter and self.mapper._requires_row_aliasing:
-            context.row_adapter = mapperutil.create_row_adapter(self.table, equivalent_columns=self.mapper._equivalent_columns)
             
         context.statement = statement
 
@@ -1508,7 +1520,7 @@ class _MapperEntity(_QueryEntity):
         self.alias_id = id
         self.tables = [self.mapper.mapped_table]
         
-    def _get_entity_clauses(self, query):
+    def _get_entity_clauses(self, query, context):
         if self.alias:
             return self.alias
         elif self.alias_id:
@@ -1526,7 +1538,7 @@ class _MapperEntity(_QueryEntity):
             return None
     
     def row_processor(self, query, context):
-        clauses = self._get_entity_clauses(query) 
+        clauses = self._get_entity_clauses(query, context) 
         if clauses:
             def proc(context, row):
                 return self.mapper._instance(context, clauses.row_decorator(row), None)
@@ -1537,9 +1549,9 @@ class _MapperEntity(_QueryEntity):
         return proc
     
     def setup_context(self, query, context):
-        clauses = self._get_entity_clauses(query)
+        clauses = self._get_entity_clauses(query, context)
         for value in self.mapper.iterate_properties:
-            context.exec_with_path(self.mapper, value.key, value.setup, context, parentclauses=clauses)
+            context.exec_with_path(self.mapper, value.key, value.setup, context, parentclauses=clauses, column_collection=context.primary_columns)
 
     def __str__(self):
         return str(self.mapper)
@@ -1562,21 +1574,22 @@ class _PrimaryMapperEntity(_MapperEntity):
         self._with_polymorphic = mappers
         self.selectable = from_obj
         self.adapter = mapperutil.AliasedClauses(from_obj, equivalents=self.mapper._equivalent_columns)
-        query._setup_aliasizers()
+        query._append_aliasizer(self.adapter, self)
         
     def row_processor(self, query, context):
+        row_adapter = None
         if context.row_adapter:
             row_adapter = context.row_adapter
         else:
-            # TODO: refactor
-            if context.from_clause:
-                adapter = query._aliases_head
-            else:
-                adapter = self.adapter
-            if adapter:
-                row_adapter = mapperutil.create_row_adapter(adapter.selectable, equivalent_columns=self.mapper._equivalent_columns)
-            else:
-                row_adapter = None
+            clauses = self._get_entity_clauses(query, context)
+            if clauses:
+                row_adapter = clauses.row_decorator
+        
+        # polymorphic mappers which have concrete tables in their hierarchy usually
+        # require row aliasing unconditionally.  
+        # TODO: needs to be part of _MappedEntity
+        if not row_adapter and self.mapper._requires_row_aliasing:
+            row_adapter = mapperutil.create_row_adapter(self.selectable, equivalent_columns=self.mapper._equivalent_columns)
 
         if row_adapter:
             def main(context, row):
@@ -1589,7 +1602,13 @@ class _PrimaryMapperEntity(_MapperEntity):
                     extension=context.extension, only_load_props=context.only_load_props, refresh_instance=context.refresh_instance
                 )
         return main
-
+    
+    def _get_entity_clauses(self, query, context):
+        if context.from_clause:
+            return query._aliases_head
+        else:
+            return self.adapter
+        
     def setup_context(self, query, context):
         # if single-table inheritance mapper, add "typecol IN (polymorphic)" criterion so
         # that we only load the appropriate types
@@ -1609,21 +1628,12 @@ class _PrimaryMapperEntity(_MapperEntity):
                 context.order_by = context.from_clause.default_order_by()
             else:
                 context.order_by = self.mapper.mapped_table.default_order_by()
-                
+
+        adapter = self._get_entity_clauses(query, context)
         for value in self.mapper._iterate_polymorphic_properties(self._with_polymorphic, context.from_clause):
             if query._only_load_props and value.key not in query._only_load_props:
                 continue
-            context.exec_with_path(self.mapper, value.key, value.setup, context, only_load_props=query._only_load_props, entity=self)
-
-        if context.from_clause:
-            adapter = query._aliases_head
-        else:
-            adapter = self.adapter
-        if adapter:
-            # TODO: somehow limit this to just local primary cols...proably have to break up primarycolumns into a map as well (err, enity specific context ?) 
-            context.primary_columns = adapter.adapt_list(context.primary_columns)
-            self.row_adapter = mapperutil.create_row_adapter(adapter.selectable, equivalent_columns=self.mapper._equivalent_columns)
-
+            context.exec_with_path(self.mapper, value.key, value.setup, context, only_load_props=query._only_load_props, entity=self, column_collection=context.primary_columns, parentclauses=adapter)
 
 class _ColumnEntity(_QueryEntity):
     """entity column corresponding to Table or selectable columns."""

@@ -134,7 +134,8 @@ class EagerTest(FixtureTest):
         assert [Address(id=1, user=User(id=7)), Address(id=4, user=User(id=8)), Address(id=5, user=User(id=9))] == create_session().query(Address).filter(Address.id.in_([1, 4, 5])).limit(3).all()
 
         sess = create_session()
-        a = sess.query(Address).get(1)
+        print "------------------------------------------------------------"
+        a = sess.query(Address).filter(Address.id==1).first()
         def go():
             assert a.user_id==7
         # assert that the eager loader added 'user_id' to the row

@@ -750,15 +750,20 @@ class JoinTest(QueryTest, AssertsCompiledSQL):
         assert q.count() == 1
         assert [User(id=7)] == q.all()
 
+
         # test the control version - same joins but not aliased.  rows are not returned because order 3 does not have item 1
-        # addtionally by placing this test after the previous one, test that the "aliasing" step does not corrupt the
-        # join clauses that are cached by the relationship.
-        q = sess.query(User).join('orders').filter(Order.description=="order 3").join(['orders', 'items']).filter(Order.description=="item 1")
+        q = sess.query(User).join('orders').filter(Order.description=="order 3").join(['orders', 'items']).filter(Item.description=="item 1")
         assert [] == q.all()
         assert q.count() == 0
 
         q = sess.query(User).join('orders', aliased=True).filter(Order.items.any(Item.description=='item 4'))
         assert [User(id=7)] == q.all()
+        
+        # test that aliasing gets reset when join() is called
+        q = sess.query(User).join('orders', aliased=True).filter(Order.description=="order 3").join('orders', aliased=True).filter(Order.description=="order 5")
+        assert q.count() == 1
+        assert [User(id=7)] == q.all()
+
 
     def test_aliased_add_entity(self):
         """test the usage of aliased joins with add_entity()"""
@@ -1251,6 +1256,9 @@ class SelectFromTest(QueryTest):
 
         sel = users.select(users.c.id.in_([7, 8]))
         sess = create_session()
+        
+        # TODO: remove
+        sess.query(User).select_from(sel).options(eagerload_all('orders.items.keywords')).join(['orders', 'items', 'keywords'], aliased=True).filter(Keyword.name.in_(['red', 'big', 'round'])).all()
 
         self.assertEquals(sess.query(User).select_from(sel).join(['orders', 'items', 'keywords']).filter(Keyword.name.in_(['red', 'big', 'round'])).all(), [
             User(name=u'jack',id=7)
