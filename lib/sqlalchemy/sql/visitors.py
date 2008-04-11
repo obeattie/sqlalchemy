@@ -161,6 +161,15 @@ class NoColumnVisitor(ClauseVisitor):
     
     __traverse_options__ = {'column_collections':False}
 
+class VisitorContainer(ClauseVisitor):
+    def __init__(self, iter):
+        self.__iter = iter
+        
+    def _iterate_visitors(self):
+        return self.__iter()
+    _iterate_visitors = property(_iterate_visitors)
+    
+
 def traverse(clause, **kwargs):
     """traverse the given clause, applying visit functions passed in as keyword arguments."""
     

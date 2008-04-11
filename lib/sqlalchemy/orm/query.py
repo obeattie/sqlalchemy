@@ -72,11 +72,11 @@ class Query(object):
         self.table = self.mapper.mapped_table
         self._from_obj = None
         self._entities = []
+        self._joinpoint = mapper
         if not self._extension:
             self._extension = self.mapper.extension
-        self._join_start = self._aliases_head = self._aliases_tail = None
+        self._aliases_head = self._select_from_aliases = None
         self._alias_ids = {}
-        self._joinpoint = self.mapper
         _PrimaryMapperEntity(self, self.mapper)
     
     def _mapper_zero(self):
@@ -116,26 +116,31 @@ class Query(object):
         self._alias_ids = {}
         self._from_obj = from_obj
         mappers, tables, equivs = self.__all_equivs()
-        self._aliases_head = self._aliases_tail = self._join_start = mapperutil.AliasedClauses(self._from_obj, equivalents=equivs)
+    
+        self._aliases_head = self._select_from_aliases = mapperutil.AliasedClauses(self._from_obj, equivalents=equivs)
+        
         self._alias_ids.update([(table, [self._aliases_head]) for table in tables])
         self._alias_ids.update([(mapper, [self._aliases_head]) for mapper in mappers])
     
-    def _append_aliasizer(self, alias, entity):
-        old_aliases = self._alias_ids.get(entity.mapper, [])
+    def _append_select_from_aliasizer(self, alias, entity):
+        assert self._joinpoint is self.mapper
         
-        for old_alias in old_aliases:
-            a = self._aliases_head
-            if a is old_alias:
-                self._aliases_head = self._aliases_head.chain_to
-            else:
-                while a.chain_to and a.chain_to is not old_alias:
-                    a = a.chain_to
-                a.chain_to = old_alias.chain_to
-            
-        self._aliases_tail = mapperutil.AliasedClauses(alias.target or alias.selectable, equivalents=alias.equivalents, chain_to=self._aliases_tail)
+        new = mapperutil.AliasedClauses(alias.target or alias.selectable, equivalents=alias.equivalents)
         if self._aliases_head is None:
-            self._aliases_head = self._join_start = self._aliases_tail
-        self._alias_ids[entity.mapper] = [self._aliases_tail]
+            self._aliases_head = self._select_from_aliases = new
+        else:
+            old_aliases = self._alias_ids.get(entity.mapper, [])
+            self._aliases_head = self._select_from_aliases = self._aliases_head.remove_links(old_aliases)
+            if self._aliases_head:
+                self._aliases_head.append(new)
+            else:
+                self._aliases_head = self._select_from_aliases = new
+            
+        self._alias_ids[entity.mapper] = [new]
+
+    def _reset_joinpoint(self):
+        self._joinpoint = self.mapper
+        self._aliases_head = self._select_from_aliases
         
     def __all_equivs(self):
         equivs = {}
@@ -538,8 +543,8 @@ class Query(object):
         if criterion is not None and not isinstance(criterion, sql.ClauseElement):
             raise exceptions.ArgumentError("filter() argument must be of type sqlalchemy.sql.ClauseElement or string")
 
-        if self._aliases_tail:
-            criterion = self._aliases_tail.adapt_clause(criterion)
+        if self._aliases_head:
+            criterion = self._aliases_head.adapt_clause(criterion)
 
         q = self.__no_statement("filter")
         if q._criterion is not None:
@@ -582,9 +587,9 @@ class Query(object):
 
         q = self.__no_statement("order_by")
 
-        if self._aliases_tail:
+        if self._aliases_head:
             criterion = [expression._literal_as_text(o) for o in criterion]
-            criterion = self._aliases_tail.adapt_list(criterion)
+            criterion = self._aliases_head.adapt_list(criterion)
 
         if q._order_by is False:
             q._order_by = criterion
@@ -613,8 +618,8 @@ class Query(object):
         if criterion is not None and not isinstance(criterion, sql.ClauseElement):
             raise exceptions.ArgumentError("having() argument must be of type sqlalchemy.sql.ClauseElement or string")
 
-        if self._aliases_tail:
-            criterion = self._aliases_tail.adapt_clause(criterion)
+        if self._aliases_head:
+            criterion = self._aliases_head.adapt_clause(criterion)
 
         q = self.__no_statement("having")
         if q._having is not None:
@@ -684,19 +689,19 @@ class Query(object):
         q = self.__no_statement("join")
         q.__generate_alias_ids()
 
-        if from_joinpoint:
-            start = self._joinpoint
+        if from_joinpoint and hasattr(q, '_joinpoint'):
+            start = q._joinpoint
         else:
             q._reset_joinpoint()
-            start = self.mapper
+            start = q.mapper
         
+        alias = q._aliases_head
+            
         currenttables = self.__get_joinable_tables()
         clause = self._from_obj
         adapt_against = clause
 
         mapper = None
-        
-        alias = self._aliases_tail
         
         if not isinstance(keys, list):
             keys = [keys]
@@ -788,7 +793,7 @@ class Query(object):
         q._aliases = alias
         
         if alias:
-            q._aliases_tail = alias
+            q._aliases_head = alias
 
         if id:
             q._alias_ids[id] = [alias]
@@ -807,11 +812,6 @@ class Query(object):
         q._reset_joinpoint()
         return q
     
-    def _reset_joinpoint(self):
-        self._joinpoint = self.mapper
-        if self._join_start:
-            self._aliases_tail = self._join_start
-
     def select_from(self, from_obj):
         """Set the `from_obj` parameter of the query and return the newly
         resulting ``Query``.  This replaces the table which this Query selects
@@ -1121,7 +1121,7 @@ class Query(object):
             return context
 
         from_obj = self._from_obj
-        adapter = self._aliases_head
+        adapter = self._select_from_aliases
         
         if self._lockmode:
             try:
@@ -1574,7 +1574,7 @@ class _PrimaryMapperEntity(_MapperEntity):
         self._with_polymorphic = mappers
         self.selectable = from_obj
         self.adapter = mapperutil.AliasedClauses(from_obj, equivalents=self.mapper._equivalent_columns)
-        query._append_aliasizer(self.adapter, self)
+        query._append_select_from_aliasizer(self.adapter, self)
         
     def row_processor(self, query, context):
         row_adapter = None
@@ -1604,10 +1604,7 @@ class _PrimaryMapperEntity(_MapperEntity):
         return main
     
     def _get_entity_clauses(self, query, context):
-        if context.from_clause:
-            return query._aliases_head
-        else:
-            return self.adapter
+        return query._select_from_aliases
         
     def setup_context(self, query, context):
         # if single-table inheritance mapper, add "typecol IN (polymorphic)" criterion so
@@ -1634,7 +1631,7 @@ class _PrimaryMapperEntity(_MapperEntity):
             if query._only_load_props and value.key not in query._only_load_props:
                 continue
             context.exec_with_path(self.mapper, value.key, value.setup, context, only_load_props=query._only_load_props, entity=self, column_collection=context.primary_columns, parentclauses=adapter)
-
+        
 class _ColumnEntity(_QueryEntity):
     """entity column corresponding to Table or selectable columns."""
 

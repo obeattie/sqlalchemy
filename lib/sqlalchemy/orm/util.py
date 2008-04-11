@@ -150,14 +150,65 @@ class AliasedClauses(object):
         self.selectable = _orm_selectable(alias)
         self.equivalents = equivalents
         self.row_decorator = self._create_row_adapter()
-        self.adapter = sql_util.ClauseAdapter(self.selectable, equivalents=equivalents)
         self.chain_to = chain_to
-        if chain_to:
-            self.adapter.chain(chain_to.adapter)
-    
-    def unchain(self):
-        self.adapter = sql_util.ClauseAdapter(self.selectable, equivalents=self.equivalents)
+        self.local_adapter = sql_util.ClauseAdapter(self.selectable, equivalents=equivalents)
+        self.adapter = visitors.VisitorContainer(self._iterate_adapters)
 
+    def _iterate(self):
+        a = self
+        while a:
+            yield a
+            a = a.chain_to
+    
+    def _iterate_adapters(self):
+        a = self
+        while a:
+            yield a.local_adapter
+            a = a.chain_to
+            
+    def replace_link(self, old, new):
+        if old is self:
+            new.chain_to = self.chain_to
+            self.chain_to = None
+            return new
+        else:
+            a = self
+            while a and a.chain_to is not old:
+                a = a.chain_to
+            if not a:
+                raise exceptions.InvalidRequestError("Could not find old link")
+            a.chain_to = new
+            new.chain_to = old.chain_to
+            old.chain_to = None
+            return self
+    
+    def remove_links(self, links):
+        head = self
+        
+        for link in links:
+            if link is head:
+                head = head.chain_to
+                link.chain_to = None
+            else:
+                a = head
+                while a and a.chain_to is not link:
+                    a = a.chain_to
+                if not a:
+                    raise exceptions.InvalidRequestError("Could not find old link")
+                a.chain_to = link.chain_to
+                link.chain_to = None
+        
+        return head
+    
+    def tail(self):
+        for a in self._iterate():
+            if not a.chain_to:
+                return a
+    tail = property(tail)
+    
+    def append(self, link):
+        self.tail.chain_to = link
+        
     def aliased_column(self, column):
         conv = self.selectable.corresponding_column(column)
         if conv:
@@ -167,6 +218,7 @@ class AliasedClauses(object):
         aliased_column = self.adapter.traverse(column, clone=True)
 
         # add to row decorator explicitly
+        # TODO: refactor
         self.row_decorator({}).map[column] = aliased_column
         return aliased_column
 

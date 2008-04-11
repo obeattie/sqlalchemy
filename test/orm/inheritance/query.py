@@ -220,7 +220,10 @@ def make_test(select_type):
 
         def test_join_from_polymorphic(self):
             sess = create_session()
-        
+
+            # TODO: remove
+            self.assertEquals(sess.query(Person).join('paperwork', aliased=True).filter(Person.c.name.like('%dog%')).filter(Paperwork.description.like('%#2%')).all(), [m1])
+            
             for aliased in (True, False):
                 self.assertEquals(sess.query(Person).join('paperwork', aliased=aliased).filter(Paperwork.description.like('%review%')).all(), [b1, m1])
 
