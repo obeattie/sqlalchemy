@@ -166,38 +166,20 @@ class AliasedClauses(object):
             yield a.local_adapter
             a = a.chain_to
             
-    def replace_link(self, old, new):
-        if old is self:
-            new.chain_to = self.chain_to
-            self.chain_to = None
-            return new
-        else:
-            a = self
-            while a and a.chain_to is not old:
-                a = a.chain_to
-            if not a:
-                raise exceptions.InvalidRequestError("Could not find old link")
-            a.chain_to = new
-            new.chain_to = old.chain_to
-            old.chain_to = None
-            return self
-    
-    def remove_links(self, links):
+    def remove_link(self, link):
         head = self
         
-        for link in links:
-            if link is head:
-                head = head.chain_to
-                link.chain_to = None
-            else:
-                a = head
-                while a and a.chain_to is not link:
-                    a = a.chain_to
-                if not a:
-                    raise exceptions.InvalidRequestError("Could not find old link")
+        if link is head:
+            head = head.chain_to
+            link.chain_to = None
+        else:
+            a = head
+            while a and a.chain_to is not link:
+                a = a.chain_to
+            if a:
                 a.chain_to = link.chain_to
                 link.chain_to = None
-        
+
         return head
     
     def tail(self):
@@ -271,11 +253,21 @@ class AliasedComparator(PropComparator):
     def reverse_operate(self, op, other, **kwargs):
         return self.adapter.traverse(self.comparator.reverse_operate(op, *other, **kwargs), clone=True)
 
-def _orm_selectable(selectable):
+def _orm_columns(entity):
+    if _is_aliased_class(entity):
+        return [c for c in entity.alias.c]
+    elif _is_mapped_class(entity):
+        return [c for c in _class_to_mapper(entity)._with_polymorphic_selectable().c]
+    elif isinstance(entity, expression.Selectable):
+        return [c for c in entity.c]
+    else:
+        return [entity]
+        
+def _orm_selectable(selectable, entity_name=None):
     if _is_aliased_class(selectable):
         return selectable.alias
     elif _is_mapped_class(selectable):
-        return _class_to_mapper(selectable)._with_polymorphic_selectable()
+        return _class_to_mapper(selectable, entity_name)._with_polymorphic_selectable()
     else:
         return expression._selectable(selectable)
         

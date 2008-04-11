@@ -317,6 +317,8 @@ def make_test(select_type):
                 Manager(name="dogbert", manager_name="dogbert", status="regular manager"),
                 Engineer(name="vlad", engineer_name="vlad", primary_language="cobol", status="elbonian engineer")
             ]
+            self.assertEquals(sess.query(Person).with_polymorphic('*').all(), emps_without_relations)
+            
             
             def go():
                 self.assertEquals(sess.query(Person).with_polymorphic(Engineer).filter(Engineer.primary_language=='java').all(), emps_without_relations[0:1])

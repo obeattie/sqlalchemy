@@ -1021,7 +1021,35 @@ class InstancesTest(QueryTest):
         
         q2 = q.select_from(sel).filter(users.c.id>1).values(users.c.name, sel.c.name, User.name)
         self.assertEquals(list(q2), [(u'jack', u'jack', u'jack'), (u'ed', u'ed', u'ed')])
-    
+
+    def test_column_queries(self):
+        sess = create_session()
+        
+        self.assertEquals(sess.query(User.name).all(), [(u'jack',), (u'ed',), (u'fred',), (u'chuck',)])
+        
+        sel = users.select(User.id.in_([7, 8])).alias()
+        q = sess.query(User.name)
+        q2 = q.select_from(sel).all()
+        self.assertEquals(list(q2), [(u'jack',), (u'ed',)])
+
+        self.assertEquals(sess.query(User.name, Address.email_address).filter(User.id==Address.user_id).all(), [
+            (u'jack', u'jack@bean.com'), (u'ed', u'ed@wood.com'), 
+            (u'ed', u'ed@bettyboop.com'), (u'ed', u'ed@lala.com'), 
+            (u'fred', u'fred@fred.com')
+        ])
+        
+        self.assertEquals(sess.query(User.name, func.count(Address.email_address)).outerjoin(User.addresses).group_by(User.id, User.name).order_by(User.id).all(), 
+            [(u'jack', 1), (u'ed', 3), (u'fred', 1), (u'chuck', 0)]
+        )
+
+        self.assertEquals(sess.query(User, func.count(Address.email_address)).outerjoin(User.addresses).group_by(User).order_by(User.id).all(), 
+            [(User(name='jack',id=7), 1), (User(name='ed',id=8), 3), (User(name='fred',id=9), 1), (User(name='chuck',id=10), 0)]
+        )
+
+        self.assertEquals(sess.query(func.count(Address.email_address), User).outerjoin(User.addresses).group_by(User).order_by(User.id).all(), 
+            [(1, User(name='jack',id=7)), (3, User(name='ed',id=8)), (1, User(name='fred',id=9)), (0, User(name='chuck',id=10))]
+        )
+        
     def test_multi_mappers(self):
 
         test_session = create_session()
