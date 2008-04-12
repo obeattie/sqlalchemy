@@ -278,7 +278,7 @@ class RelationTest3(TestBase):
                 self.currentversion = PageVersion(self, 1)
             def __repr__(self):
                 try:
-                    state = attributes.state_of(self)
+                    state = attributes.instance_state(self)
                     key = state.key
                 except (KeyError, AttributeError):
                     key = None

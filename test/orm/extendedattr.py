@@ -22,10 +22,10 @@ class MyTypesManager(InstrumentationManager):
     def instrument_collection_class(self, class_, key, collection_class):
         return MyListLike
 
-    def get_instance_dict(self, instance):
+    def get_instance_dict(self, class_, instance):
         return instance._goofy_dict
 
-    def initialize_instance_dict(self, instance):
+    def initialize_instance_dict(self, class_, instance):
         instance.__dict__['_goofy_dict'] = {}
 
     def install_state(self, class_, instance, state):
@@ -112,7 +112,7 @@ class UserDefinedExtensionTest(TestBase):
             u.email_address = 'lala@123.com'
 
             self.assert_(u.user_id == 7 and u.user_name == 'john' and u.email_address == 'lala@123.com')
-            attributes.state_getter(u).commit_all()
+            attributes.instance_state(u).commit_all()
             self.assert_(u.user_id == 7 and u.user_name == 'john' and u.email_address == 'lala@123.com')
 
             u.user_name = 'heythere'
@@ -129,27 +129,29 @@ class UserDefinedExtensionTest(TestBase):
                     state.dict[k] = data[k]
                 return attributes.ATTR_WAS_SET
 
-            attributes.register_class(Foo, deferred_scalar_loader=loader)
+            attributes.register_class(Foo)
+            manager = attributes.manager_of_class(Foo)
+            manager.deferred_scalar_loader = loader
             attributes.register_attribute(Foo, 'a', uselist=False, useobject=False)
             attributes.register_attribute(Foo, 'b', uselist=False, useobject=False)
             
             assert Foo in attributes.instrumentation_registry.state_finders
             f = Foo()
-            attributes.state_getter(f).expire_attributes(None)
+            attributes.instance_state(f).expire_attributes(None)
             self.assertEquals(f.a, "this is a")
             self.assertEquals(f.b, 12)
 
             f.a = "this is some new a"
-            attributes.state_getter(f).expire_attributes(None)
+            attributes.instance_state(f).expire_attributes(None)
             self.assertEquals(f.a, "this is a")
             self.assertEquals(f.b, 12)
 
-            attributes.state_getter(f).expire_attributes(None)
+            attributes.instance_state(f).expire_attributes(None)
             f.a = "this is another new a"
             self.assertEquals(f.a, "this is another new a")
             self.assertEquals(f.b, 12)
 
-            attributes.state_getter(f).expire_attributes(None)
+            attributes.instance_state(f).expire_attributes(None)
             self.assertEquals(f.a, "this is a")
             self.assertEquals(f.b, 12)
 
@@ -157,7 +159,7 @@ class UserDefinedExtensionTest(TestBase):
             self.assertEquals(f.a, None)
             self.assertEquals(f.b, 12)
 
-            attributes.state_getter(f).commit_all()
+            attributes.instance_state(f).commit_all()
             self.assertEquals(f.a, None)
             self.assertEquals(f.b, 12)
 
@@ -240,27 +242,27 @@ class UserDefinedExtensionTest(TestBase):
             f1 = Foo()
             f1.name = 'f1'
 
-            self.assertEquals(attributes.get_history(attributes.state_getter(f1), 'name'), (['f1'], [], []))
+            self.assertEquals(attributes.get_history(attributes.instance_state(f1), 'name'), (['f1'], [], []))
 
             b1 = Bar()
             b1.name = 'b1'
             f1.bars.append(b1)
-            self.assertEquals(attributes.get_history(attributes.state_getter(f1), 'bars'), ([b1], [], []))
+            self.assertEquals(attributes.get_history(attributes.instance_state(f1), 'bars'), ([b1], [], []))
 
-            attributes.state_getter(f1).commit_all()
-            attributes.state_getter(b1).commit_all()
+            attributes.instance_state(f1).commit_all()
+            attributes.instance_state(b1).commit_all()
 
-            self.assertEquals(attributes.get_history(attributes.state_getter(f1), 'name'), ([], ['f1'], []))
-            self.assertEquals(attributes.get_history(attributes.state_getter(f1), 'bars'), ([], [b1], []))
+            self.assertEquals(attributes.get_history(attributes.instance_state(f1), 'name'), ([], ['f1'], []))
+            self.assertEquals(attributes.get_history(attributes.instance_state(f1), 'bars'), ([], [b1], []))
 
             f1.name = 'f1mod'
             b2 = Bar()
             b2.name = 'b2'
             f1.bars.append(b2)
-            self.assertEquals(attributes.get_history(attributes.state_getter(f1), 'name'), (['f1mod'], [], ['f1']))
-            self.assertEquals(attributes.get_history(attributes.state_getter(f1), 'bars'), ([b2], [b1], []))
+            self.assertEquals(attributes.get_history(attributes.instance_state(f1), 'name'), (['f1mod'], [], ['f1']))
+            self.assertEquals(attributes.get_history(attributes.instance_state(f1), 'bars'), ([b2], [b1], []))
             f1.bars.remove(b1)
-            self.assertEquals(attributes.get_history(attributes.state_getter(f1), 'bars'), ([b2], [], [b1]))
+            self.assertEquals(attributes.get_history(attributes.instance_state(f1), 'bars'), ([b2], [], [b1]))
 
     def test_null_instrumentation(self):
         class Foo(MyBaseClass):

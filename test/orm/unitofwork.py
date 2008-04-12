@@ -281,11 +281,11 @@ class MutableTypesTest(ORMTest):
         Session.commit()
         Session.close()
         f2 = Session.query(Foo).filter_by(id=f1.id).one()
-        assert 'data' in attributes.state_getter(f2).unmodified
+        assert 'data' in attributes.instance_state(f2).unmodified
         assert f2.data == f1.data
         f2.data.y = 19
         assert f2 in Session.dirty
-        assert 'data' not in attributes.state_getter(f2).unmodified
+        assert 'data' not in attributes.instance_state(f2).unmodified
         Session.commit()
         Session.close()
         f3 = Session.query(Foo).filter_by(id=f1.id).one()
@@ -453,8 +453,8 @@ class PKTest(ORMTest):
         Session.close()
         e2 = Query(Entry).get((e.multi_id, 2))
         self.assert_(e is not e2)
-        state = attributes.state_getter(e)
-        state2 = attributes.state_getter(e2)
+        state = attributes.instance_state(e)
+        state2 = attributes.instance_state(e2)
         self.assert_(state.key == state2.key)
 
     # this one works with sqlite since we are manually setting up pk values
@@ -994,8 +994,8 @@ class OneToManyTest(ORMTest):
         Session.commit()
         self.assert_(a.address_id is not None)
         self.assert_(a.user_id is None)
-        self.assert_(attributes.state_getter(a).key in Session.identity_map)
-        self.assert_(attributes.state_getter(u).key not in Session.identity_map)
+        self.assert_(attributes.instance_state(a).key in Session.identity_map)
+        self.assert_(attributes.instance_state(u).key not in Session.identity_map)
 
     def test_onetoone(self):
         m = mapper(User, users, properties = dict(

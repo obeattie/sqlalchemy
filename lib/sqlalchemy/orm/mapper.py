@@ -41,6 +41,9 @@ ColumnProperty = None
 SynonymProperty = None
 ComparableProperty = None
 
+_INITIALIZED = ('mapper', 'initialized')
+_PRIMARIES = ('mapper', 'primaries')
+
 
 class Mapper(object):
     """Define the correlation of class attributes to database table
@@ -192,8 +195,9 @@ class Mapper(object):
     def _is_orphan(self, state):
         o = False
         for mapper in self.iterate_to_root():
-            for (key,klass) in mapper.delete_orphans:
-                if attributes.state_has_parent(klass, state, key, optimistic=_state_has_identity(state)):
+            for (key, cls) in mapper.delete_orphans:
+                if attributes.manager_of_class(cls).has_parent(
+                    state, key, optimistic=_state_has_identity(state)):
                     return False
             o = o or bool(mapper.delete_orphans)
         return o
@@ -305,13 +309,23 @@ class Mapper(object):
         # Disable any attribute-based compilation.
         self.compiled = True
 
+        manager = self.class_manager
         if hasattr(self.class_, 'c') and self.class_.c is self.c:
-            del self.class_.c
+            manager.uninstall_member('c')
 
-        mappers = self.class_manager.mappers
+        mappers = manager.mappers
         if not self.non_primary and self.entity_name in mappers:
             del mappers[self.entity_name]
-        if not mappers:
+        if self in manager.info[_PRIMARIES]:
+            manager.info[_PRIMARIES].remove(self)
+        if not mappers and manager.info.get(_INITIALIZED, False):
+            for legacy in _legacy_descriptors.keys():
+                manager.uninstall_member(legacy)
+            manager.events.remove_listener('on_init', _event_on_init)
+            manager.events.remove_listener('on_init_failure',
+                                           _event_on_init_failure)
+            manager.uninstall_member('__init__')
+            del manager.info[_INITIALIZED]
             attributes.unregister_class(self.class_)
 
     def compile(self):
@@ -357,7 +371,6 @@ class Mapper(object):
                 prop.init(key, self)
         self.__log("_initialize_properties() complete")
         self.compiled = True
-
 
     def _compile_extensions(self):
         """Go through the global_extensions list as well as the list
@@ -760,19 +773,23 @@ class Mapper(object):
         auto-session attachment logic.
         """
 
+        manager = attributes.manager_of_class(self.class_)
+
         if self.non_primary:
-            self.class_manager = attributes.manager_of_class(self.class_)
-            if self.class_manager is None or not None in self.class_manager.mappers:
-                raise exceptions.InvalidRequestError("Class %s has no primary mapper configured.  Configure a primary mapper first before setting up a non primary Mapper.")
+            if not manager or None not in manager.mappers:
+                raise exceptions.InvalidRequestError(
+                    "Class %s has no primary mapper configured.  Configure "
+                    "a primary mapper first before setting up a non primary "
+                    "Mapper.")
+            self.class_manager = manager
             _mapper_registry[self] = True
             return
 
-        if not self.non_primary:
-            state = attributes.manager_of_class(self.class_)
-            if state and state.class_ is not self.class_:
-                # Avoid inheritance chain to kick in.
-                state = None
-            if state is not None and self.entity_name in state.mappers:
+        if manager is not None:
+            if manager.class_ is not self.class_:
+                # An inherited manager.  Install one for this subclass.
+                manager = None
+            elif self.entity_name in manager.mappers:
                 raise exceptions.ArgumentError(
                     "Class '%s' already has a primary mapper defined "
                     "with entity name '%s'.  Use non_primary=True to "
@@ -780,64 +797,40 @@ class Mapper(object):
                     "remove *all* current mappers from all classes." %
                     (self.class_, self.entity_name))
 
-        # TODO: overhaul all of __init__, move into a managed method of
-        # ClassManager along the lines of::
-        #
-        #   def initialize_instance(self, *args, **kw):
-        #       instance = args[0]
-        #       entity_name = kw.get('entity_name', None)
-        #       for hook in self.on_initialize[entity_name]:
-        #           hook(*args, **kw)
-        #
-        # Install the add-ons below via manager.install_member, and only once
-        # per cls.
+        #attributes.register_class(
+        #    self.class_,
+        #    deferred_scalar_loader=_load_scalar_attributes)
 
-        def extra_init(class_, oldinit, instance, *args, **kwargs):
-            self.compile()
-            if 'init_instance' in self.extension.methods:
-                self.extension.init_instance(
-                    self, class_, oldinit, instance, args, kwargs)
-
-        def on_exception(class_, oldinit, instance, *args, **kwargs):
-            util.warn_exception(self.extension.init_failed, self, class_,
-                                oldinit, instance, args, kwargs)
-
-        attributes.register_class(self.class_, extra_init=extra_init, on_exception=on_exception, deferred_scalar_loader=_load_scalar_attributes)
-
-        self.class_manager = attributes.manager_of_class(self.class_)
         _mapper_registry[self] = True
 
-        self.class_manager.mappers[self.entity_name] = self
+        if manager is None:
+            manager = attributes.create_manager_for_cls(self.class_)
+        self.class_manager = manager
 
+        has_been_initialized = manager.info.get(_INITIALIZED, False)
+        primaries = manager.info.setdefault(_PRIMARIES, [])
+        primaries.append(self)
+        manager.mappers[self.entity_name] = self
+
+        # Legacy, will be removed circa 0.5
         if self.entity_name is None:
-            self.class_.c = self.c
+            manager.install_member('c', self.c)
 
-        def _instance_key(self):
-            state = attributes.state_getter(self)
-            if state.key is not None:
-                return state.key
-            else:
-                raise AttributeEror("_instance_key")
-        _instance_key = util.deprecated(None, False)(_instance_key)
-        self.class_._instance_key = property(_instance_key)
+        # The remaining members can be added by any mapper, e_name None or not.
+        if has_been_initialized:
+            return
 
-        def _sa_session_id(self):
-            state = attributes.state_getter(self)
-            if state.session_id is not None:
-                return state.session_id
-            else:
-                raise AttributeError("_sa_session_id")
-        _sa_session_id = util.deprecated(None, False)(_sa_session_id)
-        self.class_._sa_session_id = property(_sa_session_id)
+        attributes.register_class(self.class_)
+        manager.deferred_scalar_loader = _load_scalar_attributes
 
-        def entity_name(self):
-            state = attributes.state_getter(self)
-            if state.entity_name is attributes.NO_ENTITY_NAME:
-                return None
-            else:
-                return state.entity_name
-        entity_name = util.deprecated(None, False)(entity_name)
-        self.class_.entity_name = property(entity_name)
+        event_registry = manager.events
+        event_registry.add_listener('on_init', _event_on_init)
+        event_registry.add_listener('on_init_failure', _event_on_init_failure)
+
+        for key, impl in _legacy_descriptors.items():
+            manager.install_member(key, impl)
+
+        manager.info[_INITIALIZED] = True
 
     def common_parent(self, other):
         """Return true if the given mapper shares a common inherited parent as this mapper."""
@@ -964,7 +957,7 @@ class Mapper(object):
         """Return the list of primary key values for the given
         instance.
         """
-        state = attributes.state_getter(instance)
+        state = attributes.instance_state(instance)
         return self._primary_key_from_state(state)
 
     def _primary_key_from_state(self, state):
@@ -994,15 +987,15 @@ class Mapper(object):
         return self._get_col_to_prop(column).setattr(state, value, column)
 
     def _get_attr_by_column(self, obj, column):
-        state = attributes.state_getter(obj)
+        state = attributes.instance_state(obj)
         return self._get_state_attr_by_column(state, column)
 
     def _set_attr_by_column(self, obj, column, value):
-        state = attributes.state_getter(obj)
+        state = attributes.instance_state(obj)
         self._set_state_attr_by_column(state, column, value)
 
     def _get_committed_attr_by_column(self, obj, column):
-        state = attributes.state_getter(obj)
+        state = attributes.instance_state(obj)
         return self._get_committed_state_attr_by_column(state, column)
 
     def _get_committed_state_attr_by_column(self, state, column):
@@ -1059,7 +1052,7 @@ class Mapper(object):
             instance_key = mapper._identity_key_from_state(state)
             if not postupdate and not has_identity and instance_key in uowtransaction.session.identity_map:
                 instance = uowtransaction.session.identity_map[instance_key]
-                existing = attributes.state_getter(instance)
+                existing = attributes.instance_state(instance)
                 if not uowtransaction.is_deleted(existing):
                     raise exceptions.FlushError("New instance %s with identity key %s conflicts with persistent instance %s" % (state_str(state), str(instance_key), state_str(existing)))
                 if self.__should_log_debug:
@@ -1403,7 +1396,7 @@ class Mapper(object):
 
         if identitykey in session_identity_map:
             instance = session_identity_map[identitykey]
-            state = attributes.state_getter(instance)
+            state = attributes.instance_state(instance)
             loaded = False
 
             if self.__should_log_debug:
@@ -1455,7 +1448,7 @@ class Mapper(object):
             if self.__should_log_debug:
                 self.__log_debug("_instance(): created new instance %s identity %s" % (instance_str(instance), str(identitykey)))
 
-            state = attributes.state_getter(instance)
+            state = attributes.instance_state(instance)
             state.entity_name = self.entity_name
             state.key = identitykey
             state.session_id = context.session.hash_key
@@ -1574,7 +1567,7 @@ class Mapper(object):
                 for c, bind in param_names:
                     params[bind] = self._get_attr_by_column(instance, c)
                 row = selectcontext.session.connection(self).execute(statement, params).fetchone()
-                state = attributes.state_getter(instance)
+                state = attributes.instance_state(instance)
                 self.populate_instance(selectcontext, state, row, isnew=False, instancekey=identitykey, ispostselect=True, only_load_props=only_load_props)
             return post_execute
         elif hosted_mapper.polymorphic_fetch == 'deferred':
@@ -1598,7 +1591,7 @@ class Mapper(object):
 
                 for prop in props:
                     strategy = prop._get_strategy(DeferredColumnLoader)
-                    state = attributes.state_getter(instance)
+                    state = attributes.instance_state(instance)
                     state.set_callable(prop.key,
                                        strategy.setup_loader(
                                            state, props=keys,
@@ -1635,15 +1628,131 @@ class Mapper(object):
 Mapper.logger = logging.class_logger(Mapper)
 
 
+def create_instance(*mixed, **kwargs):
+    """Generically create a new instance of a mapped class.
+
+    cls
+      A mapped Python class
+    options
+      A dictionary, may contain any of:
+        entity_name: instance will have this entity_name
+        session: instance will be added to this Session
+    \*args
+    \**kwargs
+      Will be passed along to cls.__init__
+
+    """
+    try:
+        cls, options, args = mixed[0], mixed[1], mixed[1:]
+    except IndexError:
+        raise TypeError("create_instance() takes at least 2 arguments, "
+                        "(%s given)" % len(mixed))
+    manager = attributes.manager_of_class(cls)
+    if manager is None or manager.class_ is not cls or not manager.mappers:
+        raise TypeError("%s is not a mapped class." % cls.__name__)
+
+    # fixme: new_instance should not install state
+    # should always be a 2 shot process
+    instance = manager.new_instance()
+    state = manager.state_of(instance)
+    if 'entity_name' in options:
+        state.entity_name = options['entity_name']
+    session = options.get('session')
+    try:
+        if session:
+            session.save(instance)
+        state.initialize_instance(*((instance,) + args), **kwargs)
+    except:
+        if session:
+            session.expunge(instance)
+        raise
+    return instance
+
+def _initializable_mappers_for_state(state):
+    """Return a sequence of mappers eligible to run init events.
+
+    If a state has an entity name, that mapper is eligible.  Otherwise the
+    classic behavior kicks in- the last mapper defined is returned.  Running
+    -all- primary mappers is an option that can be explored in the future,
+    but may require changes in mapper extensions to cope.
+
+    """
+    if state.entity_name is attributes.NO_ENTITY_NAME:
+        return state.manager.info.get(_PRIMARIES, ())[-1:]
+    elif state.entity_name in state.manager.mappers:
+        return (state.manager.mappers[state.entity_name],)
+    else:
+        return ()
+
+def _event_on_init(state, instance, args, kwargs):
+    """Trigger mapper compilation and run init_instance hooks."""
+    for mapper in state.manager.mappers.values():
+        mapper.compile()
+    for mapper in _initializable_mappers_for_state(state):
+        if 'init_instance' in mapper.extension.methods:
+            mapper.extension.init_instance(
+                mapper, mapper.class_, state.manager.events.original_init,
+                instance, args, kwargs)
+
+def _event_on_init_failure(state, instance, args, kwargs):
+    """Run init_failed hooks."""
+    mapper = state.manager.mappers.get(state.entity_name, None)
+    for mapper in _initializable_mappers_for_state(state):
+        if 'init_failed' in mapper.extension.methods:
+            util.warn_exception(
+                mapper.extension.init_failed,
+                mapper, mapper.class_, state.manager.events.original_init,
+                instance, args, kwargs)
+
+def _legacy_descriptors():
+    """Build compatibility descriptors mapping legacy to InstanceState.
+
+    These are slated for removal in 0.5.  They were never part of the
+    official public API but were suggested as temporary workarounds in a
+    number of mailing list posts.  Permanent and public solutions for those
+    needs should be available now.  Consult the applicable mailing list
+    threads for details.
+
+    """
+    def _instance_key(self):
+        state = attributes.instance_state(self)
+        if state.key is not None:
+            return state.key
+        else:
+            raise AttributeEror("_instance_key")
+    _instance_key = util.deprecated(None, False)(_instance_key)
+    _instance_key = property(_instance_key)
+
+    def _sa_session_id(self):
+        state = attributes.instance_state(self)
+        if state.session_id is not None:
+            return state.session_id
+        else:
+            raise AttributeError("_sa_session_id")
+    _sa_session_id = util.deprecated(None, False)(_sa_session_id)
+    _sa_session_id = property(_sa_session_id)
+
+    def _entity_name(self):
+        state = attributes.instance_state(self)
+        if state.entity_name is attributes.NO_ENTITY_NAME:
+            return None
+        else:
+            return state.entity_name
+    _entity_name = util.deprecated(None, False)(_entity_name)
+    _entity_name = property(_entity_name)
+
+    return dict(locals())
+_legacy_descriptors = _legacy_descriptors()
+
 def has_identity(object):
-    state = attributes.state_getter(object)
+    state = attributes.instance_state(object)
     return _state_has_identity(state)
 
 def _state_has_identity(state):
     return bool(state.key)
 
 def has_mapper(object):
-    state = attributes.state_getter(object)
+    state = attributes.instance_state(object)
     return _state_has_mapper(state)
 
 def _state_has_mapper(state):
@@ -1696,7 +1805,7 @@ def object_mapper(object, entity_name=None, raiseerror=True):
             be located.  If False, return None.
 
     """
-    state = attributes.state_getter(object)
+    state = attributes.instance_state(object)
     if state.entity_name is not attributes.NO_ENTITY_NAME:
         # Override the given entity name if the object is not transient.
         entity_name = state.entity_name

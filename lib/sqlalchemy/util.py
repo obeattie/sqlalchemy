@@ -378,6 +378,30 @@ def unbound_method_to_callable(func_or_cls):
     else:
         return func_or_cls
 
+def class_hierarchy(cls):
+    """Return an unordered sequence of all classes related to cls.
+
+    Traverses diamond hierarchies.
+
+    Fibs slightly: subclasses of builtin types are not returned.  Thus
+    class_hierarchy(class A(object)) returns (A, object), not A plus every
+    class systemwide that derives from object.
+
+    """
+    hier = Set([cls])
+    process = list(cls.__mro__)
+    while process:
+        c = process.pop()
+        for b in [_ for _ in c.__bases__ if _ not in hier]:
+            process.append(b)
+            hier.add(b)
+        if c.__module__ == '__builtin__':
+            continue
+        for s in [_ for _ in c.__subclasses__() if _ not in hier]:
+            process.append(s)
+            hier.add(s)
+    return list(hier)
+
 # from paste.deploy.converters
 def asbool(obj):
     if isinstance(obj, (str, unicode)):

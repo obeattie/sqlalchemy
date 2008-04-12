@@ -443,7 +443,7 @@ class MergeTest(TestBase, AssertsExecutionResults):
         u2 = sess2.merge(u, dont_load=True)
         assert not sess2.dirty
         # assert merged instance has a mapper and lazy load proceeds
-        state = attributes.state_getter(u2)
+        state = attributes.instance_state(u2)
         assert state.entity_name is not attributes.NO_ENTITY_NAME
         assert mapperlib.has_mapper(u2)
         def go():
@@ -506,7 +506,7 @@ class MergeTest(TestBase, AssertsExecutionResults):
         assert not sess2.dirty
         a2 = u2.addresses[0]
         a2.email_address='somenewaddress'
-        assert not object_mapper(a2)._is_orphan(attributes.state_getter(a2))
+        assert not object_mapper(a2)._is_orphan(attributes.instance_state(a2))
         sess2.flush()
         sess2.clear()
         assert sess2.query(User).get(u2.user_id).addresses[0].email_address == 'somenewaddress'
@@ -527,7 +527,7 @@ class MergeTest(TestBase, AssertsExecutionResults):
             # if dont_load is changed to support dirty objects, this code needs to pass
             a2 = u2.addresses[0]
             a2.email_address='somenewaddress'
-            assert not object_mapper(a2)._is_orphan(attributes.state_getter(a2))
+            assert not object_mapper(a2)._is_orphan(attributes.instance_state(a2))
             sess2.flush()
             sess2.clear()
             assert sess2.query(User).get(u2.user_id).addresses[0].email_address == 'somenewaddress'

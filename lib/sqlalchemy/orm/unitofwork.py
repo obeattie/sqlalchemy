@@ -55,7 +55,7 @@ class UOWEventHandler(interfaces.AttributeExtension):
         if sess:
             # expunge pending orphans
             if self.cascade.delete_orphan and item in sess.new:
-                if self._target_mapper(state)._is_orphan(attributes.state_getter(item)):
+                if self._target_mapper(state)._is_orphan(attributes.instance_state(item)):
                     sess.expunge(item)
 
     def set(self, state, newvalue, oldvalue, initiator):
@@ -136,9 +136,9 @@ class UOWTransaction(object):
             return (added, unchanged, deleted)
         else:
             return (
-                [c is not None and attributes.state_getter(c) or None for c in added],
-                [c is not None and attributes.state_getter(c) or None for c in unchanged],
-                [c is not None and attributes.state_getter(c) or None for c in deleted],
+                [c is not None and attributes.instance_state(c) or None for c in added],
+                [c is not None and attributes.instance_state(c) or None for c in unchanged],
+                [c is not None and attributes.instance_state(c) or None for c in deleted],
                 )
 
     def register_object(self, state, isdelete=False, listonly=False, postupdate=False, post_update_cols=None):

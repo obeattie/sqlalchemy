@@ -246,7 +246,7 @@ class OneToManyDP(DependencyProcessor):
                             uowcommit.register_object(child, isdelete=True)
                             for c, m in self.mapper.cascade_iterator('delete', child):
                                 uowcommit.register_object(
-                                    attributes.state_getter(c),
+                                    attributes.instance_state(c),
                                     isdelete=True)
                 if not self.passive_updates and self._pks_changed(uowcommit, state):
                     if not unchanged:
@@ -297,11 +297,11 @@ class DetectKeySwitch(DependencyProcessor):
             for s in [elem for elem in uowcommit.session.identity_map.all_states()
                 if issubclass(elem.class_, self.parent.class_) and
                     self.key in elem.dict and
-                    attributes.state_getter(elem.dict[self.key]) in switchers
+                    attributes.instance_state(elem.dict[self.key]) in switchers
                 ]:
                 uowcommit.register_object(s, listonly=self.passive_updates)
                 self.syncrules.execute(
-                    attributes.state_getter(s.dict[self.key]),
+                    attributes.instance_state(s.dict[self.key]),
                     s, None, None, False)
 
 
@@ -359,7 +359,7 @@ class ManyToOneDP(DependencyProcessor):
                         uowcommit.register_object(child, isdelete=True)
                         for c, m in self.mapper.cascade_iterator('delete', child):
                             uowcommit.register_object(
-                                attributes.state_getter(c), isdelete=True)
+                                attributes.instance_state(c), isdelete=True)
         else:
             for state in deplist:
                 uowcommit.register_object(state)
@@ -371,7 +371,7 @@ class ManyToOneDP(DependencyProcessor):
                                 uowcommit.register_object(child, isdelete=True)
                                 for c, m in self.mapper.cascade_iterator('delete', child):
                                     uowcommit.register_object(
-                                        attributes.state_getter(c),
+                                        attributes.instance_state(c),
                                         isdelete=True)
 
 
@@ -473,7 +473,7 @@ class ManyToManyDP(DependencyProcessor):
                             uowcommit.register_object(child, isdelete=True)
                             for c, m in self.mapper.cascade_iterator('delete', child):
                                 uowcommit.register_object(
-                                    attributes.state_getter(c), isdelete=True)
+                                    attributes.instance_state(c), isdelete=True)
 
     def _synchronize(self, state, child, associationrow, clearkeys, uowcommit):
         if associationrow is None:

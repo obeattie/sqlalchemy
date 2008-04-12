@@ -327,8 +327,8 @@ def identity_equal(a, b):
     if a is None or b is None:
         return False
     try:
-        state_a = attributes.state_of(a)
-        state_b = attributes.state_of(b)
+        state_a = attributes.instance_state(a)
+        state_b = attributes.instance_state(b)
     except (KeyError, AttributeError):
         return False
     if state_a.key is None or state_b.key is None:

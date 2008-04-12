@@ -155,7 +155,7 @@ class NaturalPKTest(ORMTest):
         u1.username = 'ed'
 
         print id(a1), id(a2), id(u1)
-        print attributes.state_getter(u1).parents
+        print attributes.instance_state(u1).parents
         def go():
             sess.flush()
         if passive_updates:

@@ -71,13 +71,13 @@ class ColumnProperty(StrategizedProperty):
         state.get_impl(self.key).set(state, value, None)
 
     def merge(self, session, source, dest, dont_load, _recursive):
-        value = attributes.state_getter(source).value_as_iterable(
+        value = attributes.instance_state(source).value_as_iterable(
             self.key, passive=True)
         if value:
             setattr(dest, self.key, value[0])
         else:
             # TODO: lazy callable should merge to the new instance
-            attributes.state_getter(dest).expire_attributes([self.key])
+            attributes.instance_state(dest).expire_attributes([self.key])
 
     def get_col_value(self, column, value):
         return value
@@ -404,7 +404,7 @@ class PropertyLoader(StrategizedProperty):
 
     def _optimized_compare(self, value, value_is_parent=False):
         if value is not None:
-            value = attributes.state_getter(value)
+            value = attributes.instance_state(value)
         return self._get_strategy(strategies.LazyLoader).lazy_clause(value, reverse_direction=not value_is_parent)
 
     def private(self):
@@ -418,8 +418,8 @@ class PropertyLoader(StrategizedProperty):
         if not dont_load and self._reverse_property and (source, self._reverse_property) in _recursive:
             return
 
-        source_state = attributes.state_getter(source)
-        dest_state = attributes.state_getter(dest)
+        source_state = attributes.instance_state(source)
+        dest_state = attributes.instance_state(dest)
 
         if not "merge" in self.cascade:
             dest_state.expire_attributes([self.key])
@@ -470,7 +470,7 @@ class PropertyLoader(StrategizedProperty):
                     # cascade using the mapper local to this object, so that its individual properties are located
                     instance_mapper = object_mapper(c, entity_name=mapper.entity_name)
                     yield (c, instance_mapper)
-                    state = attributes.state_getter(c)
+                    state = attributes.instance_state(c)
                     for (c2, m) in instance_mapper.cascade_iterator(type, state, recursive):
                         yield (c2, m)
 
@@ -502,6 +502,7 @@ class PropertyLoader(StrategizedProperty):
             self.mapper = mapper.class_mapper(self.argument(), entity_name=self.entity_name, compile=False)
         else:
             raise exceptions.ArgumentError("relation '%s' expects a class or a mapper argument (received: %s)" % (self.key, type(self.argument)))
+        assert isinstance(self.mapper, mapper.Mapper), self.mapper
 
         if not self.parent.concrete:
             for inheriting in self.parent.iterate_to_root():

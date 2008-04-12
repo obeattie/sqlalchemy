@@ -34,7 +34,7 @@ class Base(object):
         try:
             # pick the entity thats not SA persisted as the source
             try:
-                state = attributes.state_of(self)
+                state = attributes.instance_state(self)
                 key = state.key
             except (KeyError, AttributeError):
                 key = None

@@ -40,12 +40,12 @@ class ExpireTest(FixtureTest):
         sess.expire(u)
         # object isnt refreshed yet, using dict to bypass trigger
         assert u.__dict__.get('name') != 'jack'
-        assert 'name' in attributes.state_getter(u).expired_attributes
+        assert 'name' in attributes.instance_state(u).expired_attributes
 
         sess.query(User).all()
         # test that it refreshed
         assert u.__dict__['name'] == 'jack'
-        assert 'name' not in attributes.state_getter(u).expired_attributes
+        assert 'name' not in attributes.instance_state(u).expired_attributes
 
         def go():
             assert u.name == 'jack'
@@ -101,7 +101,7 @@ class ExpireTest(FixtureTest):
 
         sess.expire(u, attribute_names=['name'])
         sess.expunge(u)
-        attributes.state_getter(u).key = None
+        attributes.instance_state(u).key = None
         assert 'name' not in u.__dict__
         sess.save(u)
         assert u.name == 'jack'
@@ -161,7 +161,7 @@ class ExpireTest(FixtureTest):
 
         orders.update(id=3).execute(description='order 3 modified')
         assert o.isopen == 1
-        assert attributes.state_getter(o).dict['description'] == 'order 3 modified'
+        assert attributes.instance_state(o).dict['description'] == 'order 3 modified'
         def go():
             sess.flush()
         self.assert_sql_count(testing.db, go, 0)
@@ -178,7 +178,7 @@ class ExpireTest(FixtureTest):
         u.addresses[0].email_address = 'someotheraddress'
         s.expire(u)
         u.name
-        print attributes.state_getter(u).dict
+        print attributes.instance_state(u).dict
         assert u.addresses[0].email_address == 'ed@wood.com'
 
     def test_expired_lazy(self):
@@ -305,28 +305,28 @@ class ExpireTest(FixtureTest):
         sess.expire(o, attribute_names=['description'])
         assert 'id' in o.__dict__
         assert 'description' not in o.__dict__
-        assert attributes.state_getter(o).dict['isopen'] == 1
+        assert attributes.instance_state(o).dict['isopen'] == 1
 
         orders.update(orders.c.id==3).execute(description='order 3 modified')
 
         def go():
             assert o.description == 'order 3 modified'
         self.assert_sql_count(testing.db, go, 1)
-        assert attributes.state_getter(o).dict['description'] == 'order 3 modified'
+        assert attributes.instance_state(o).dict['description'] == 'order 3 modified'
 
         o.isopen = 5
         sess.expire(o, attribute_names=['description'])
         assert 'id' in o.__dict__
         assert 'description' not in o.__dict__
         assert o.__dict__['isopen'] == 5
-        assert attributes.state_getter(o).committed_state['isopen'] == 1
+        assert attributes.instance_state(o).committed_state['isopen'] == 1
 
         def go():
             assert o.description == 'order 3 modified'
         self.assert_sql_count(testing.db, go, 1)
         assert o.__dict__['isopen'] == 5
-        assert attributes.state_getter(o).dict['description'] == 'order 3 modified'
-        assert attributes.state_getter(o).committed_state['isopen'] == 1
+        assert attributes.instance_state(o).dict['description'] == 'order 3 modified'
+        assert attributes.instance_state(o).committed_state['isopen'] == 1
 
         sess.flush()
 

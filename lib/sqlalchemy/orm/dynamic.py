@@ -43,7 +43,7 @@ class DynamicAttributeImpl(attributes.AttributeImpl):
         state.modified = True
 
         if self.trackparent and value is not None:
-            self.sethasparent(attributes.state_getter(value), True)
+            self.sethasparent(attributes.instance_state(value), True)
         for ext in self.extensions:
             ext.append(state, value, initiator or self)
 
@@ -51,7 +51,7 @@ class DynamicAttributeImpl(attributes.AttributeImpl):
         state.modified = True
 
         if self.trackparent and value is not None:
-            self.sethasparent(attributes.state_getter(value), False)
+            self.sethasparent(attributes.instance_state(value), False)
 
         for ext in self.extensions:
             ext.remove(state, value, initiator or self)
@@ -117,7 +117,7 @@ class AppenderQuery(Query):
         sess = self.__session()
         if sess is None:
             return iter(self.attr._get_collection_history(
-                attributes.state_getter(self.instance),
+                attributes.instance_state(self.instance),
                 passive=True).added_items)
         else:
             return iter(self._clone(sess))
@@ -126,7 +126,7 @@ class AppenderQuery(Query):
         sess = self.__session()
         if sess is None:
             return self.attr._get_collection_history(
-                attributes.state_getter(self.instance),
+                attributes.instance_state(self.instance),
                 passive=True).added_items.__getitem__(index)
         else:
             return self._clone(sess).__getitem__(index)
@@ -135,7 +135,7 @@ class AppenderQuery(Query):
         sess = self.__session()
         if sess is None:
             return len(self.attr._get_collection_history(
-                attributes.state_getter(self.instance),
+                attributes.instance_state(self.instance),
                 passive=True).added_items)
         else:
             return self._clone(sess).count()
@@ -164,14 +164,14 @@ class AppenderQuery(Query):
             oldlist = list(self)
         else:
             oldlist = []
-        self.attr._get_collection_history(attributes.state_getter(self.instance), passive=True).replace(oldlist, collection)
+        self.attr._get_collection_history(attributes.instance_state(self.instance), passive=True).replace(oldlist, collection)
         return oldlist
         
     def append(self, item):
-        self.attr.append(attributes.state_getter(self.instance), item, None)
+        self.attr.append(attributes.instance_state(self.instance), item, None)
 
     def remove(self, item):
-        self.attr.remove(attributes.state_getter(self.instance), item, None)
+        self.attr.remove(attributes.instance_state(self.instance), item, None)
 
             
 class CollectionHistory(object): 

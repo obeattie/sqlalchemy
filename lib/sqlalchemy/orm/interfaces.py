@@ -45,11 +45,8 @@ class MapperExtension(object):
 
     EXT_PASS is a synonym for EXT_CONTINUE and is provided for backward
     compatibility.
+
     """
-
-    def elect_instrumentation_manager(self, mapper, class_):
-        return EXT_CONTINUE
-
     def instrument_class(self, mapper, class_):
         return EXT_CONTINUE
 
@@ -793,8 +790,23 @@ class LoaderStrategy(object):
 class InstrumentationManager(object):
     """User-defined class instrumentation extension."""
 
+    # r4361 added a mandatory (cls) constructor to this interface.
+    # given that, perhaps class_ should be dropped from all of these
+    # signatures.
+
     def __init__(self, class_):
         pass
+
+    def manage(self, class_, manager):
+        setattr(class_, '_default_class_manager', manager)
+
+    def dispose(self, class_, manager):
+        delattr(class_, '_default_class_manager')
+
+    def manager_getter(self, class_):
+        def get(cls):
+            return cls._default_class_manager
+        return get
 
     def instrument_attribute(self, class_, key, inst):
         pass
@@ -817,10 +829,10 @@ class InstrumentationManager(object):
             from sqlalchemy.orm import collections
         return collections.prepare_instrumentation(collection_class)
 
-    def get_instance_dict(self, instance):
+    def get_instance_dict(self, class_, instance):
         return instance.__dict__
 
-    def initialize_instance_dict(self, instance):
+    def initialize_instance_dict(self, class_, instance):
         pass
 
     def install_state(self, class_, instance, state):

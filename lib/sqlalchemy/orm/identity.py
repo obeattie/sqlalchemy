@@ -145,10 +145,10 @@ class WeakInstanceDict(IdentityMap):
         
 class StrongInstanceDict(IdentityMap):
     def all_states(self):
-        return [attributes.state_getter(o) for o in self.values()]
+        return [attributes.instance_state(o) for o in self.values()]
     
     def contains_state(self, state):
-        return state.key in self and attributes.state_getter(self[state.key]) is state
+        return state.key in self and attributes.instance_state(self[state.key]) is state
     
     def add(self, state):
         dict.__setitem__(self, state.key, state.obj())

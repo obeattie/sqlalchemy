@@ -49,29 +49,29 @@ class MapperTest(MapperSuperTest):
     @testing.uses_deprecated(
         'Call to deprecated function _instance_key', 
         'Call to deprecated function _sa_session_id', 
-        'Call to deprecated function entity_name')
+        'Call to deprecated function _entity_name')
     def test_legacy_accesors(self):
         u1 = User()
         assert not hasattr(u1, '_instance_key')
         assert not hasattr(u1, '_sa_session_id')
-        assert not hasattr(u1, 'entity_name')
+        assert not hasattr(u1, '_entity_name')
         
         mapper(User, users)
         u1 = User()
         assert not hasattr(u1, '_instance_key')
         assert not hasattr(u1, '_sa_session_id')
-        assert u1.entity_name is None
+        assert u1._entity_name is None
         
         sess = create_session()
         sess.save(u1)
         assert not hasattr(u1, '_instance_key')
         assert u1._sa_session_id == sess.hash_key
-        assert u1.entity_name is None
+        assert u1._entity_name is None
         
         sess.flush()
         assert u1._instance_key == class_mapper(u1).identity_key_from_instance(u1)
         assert u1._sa_session_id == sess.hash_key
-        assert u1.entity_name is None
+        assert u1._entity_name is None
         sess.delete(u1)
         sess.flush()
         
@@ -113,7 +113,8 @@ class MapperTest(MapperSuperTest):
         compile_mappers()
         assert mapperlib._Mapper__new_mappers is False
         
-        m = mapper(Address, addresses, properties={'user':relation(User, backref="addresses")})
+        m = mapper(Address, addresses, properties={
+                'user': relation(User, backref="addresses")})
         
         assert m.compiled is False
         assert mapperlib._Mapper__new_mappers is True
@@ -182,7 +183,7 @@ class MapperTest(MapperSuperTest):
             Foo(_sa_session=sess)
             assert False
         except Exception, e:
-            assert isinstance(e, exceptions.SAWarning)
+            assert isinstance(e, exceptions.SAWarning), e
 
         clear_mappers()
 
@@ -439,7 +440,6 @@ class MapperTest(MapperSuperTest):
             have = set([n for n in dir(cls) if not n.startswith('_')])
             want = set(want)
             want.add('c')
-            want.add('entity_name')
             self.assert_(have == want, repr(have) + " " + repr(want))
 
         assert_props(Person, ['id', 'name', 'type'])

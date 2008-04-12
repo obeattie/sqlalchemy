@@ -832,7 +832,7 @@ class CollectionAssignmentOrphanTest(ORMTest):
         self.assertEquals(sess.query(A).get(a1.id), A(name='a1', bs=[B(name='b1'), B(name='b2'), B(name='b3')]))
 
         a1 = sess.query(A).get(a1.id)
-        assert not class_mapper(B)._is_orphan(attributes.state_getter(a1.bs[0]))
+        assert not class_mapper(B)._is_orphan(attributes.instance_state(a1.bs[0]))
         a1.bs[0].foo='b2modified'
         a1.bs[1].foo='b3modified'
         sess.flush()

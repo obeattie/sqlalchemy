@@ -21,10 +21,10 @@ class MyClassState(InstrumentationManager):
     def instrument_collection_class(self, class_, key, collection_class):
         return MyCollection
 
-    def get_instance_dict(self, instance):
+    def get_instance_dict(self, class_, instance):
         return instance._goofy_dict
 
-    def initialize_instance_dict(self, instance):
+    def initialize_instance_dict(self, class_, instance):
         instance.__dict__['_goofy_dict'] = {}
 
     def initialize_collection(self, key, state, factory):

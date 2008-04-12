@@ -763,7 +763,7 @@ class Session(object):
         refreshed.
         """
 
-        state = attributes.state_getter(instance)
+        state = attributes.instance_state(instance)
         self._validate_persistent(state)
         if self.query(_object_mapper(instance))._get(
                 state.key, refresh_instance=state,
@@ -789,7 +789,7 @@ class Session(object):
         of attribute names indicating a subset of attributes to be
         expired.
         """
-        state = attributes.state_getter(instance)
+        state = attributes.instance_state(instance)
         self._validate_persistent(state)
         if attribute_names:
             _expire_state(state, attribute_names=attribute_names)
@@ -821,7 +821,7 @@ class Session(object):
         Cascading will be applied according to the *expunge* cascade
         rule.
         """
-        self._expunge_state(attributes.state_getter(instance))
+        self._expunge_state(attributes.instance_state(instance))
         
     def _expunge_state(self, state):
         for s, m in [(state, None)] + list(_cascade_state_iterator('expunge', state)):
@@ -870,7 +870,7 @@ class Session(object):
         ``cascade="save-update"``.
         
         """
-        state = attributes.state_getter(instance)
+        state = attributes.instance_state(instance)
         self._update_impl(state)
         self._cascade_save_or_update(state, entity_name)
 
@@ -898,7 +898,7 @@ class Session(object):
         The delete operation occurs upon ``flush()``.
         """
 
-        state = attributes.state_getter(instance)
+        state = attributes.instance_state(instance)
         self._delete_impl(state)
         for state, m in _cascade_state_iterator('delete', state):
             self._delete_impl(state, ignore_transient=True)
@@ -929,7 +929,7 @@ class Session(object):
             return _recursive[instance]
 
         new_instance = False
-        state = attributes.state_getter(instance)
+        state = attributes.instance_state(instance)
         key = state.key
         if key is None:
             if dont_load:
@@ -945,7 +945,7 @@ class Session(object):
                     raise exceptions.InvalidRequestError("merge() with dont_load=True option does not support objects marked as 'dirty'.  flush() all changes on mapped instances before merging with dont_load=True.")
 
                 merged = mapper.class_manager.new_instance()
-                merged_state = attributes.state_getter(merged)
+                merged_state = attributes.instance_state(merged)
                 merged_state.key = key
                 merged_state.entity_name = entity_name
                 self._update_impl(merged_state)
@@ -955,7 +955,7 @@ class Session(object):
 
         if merged is None:
             merged = mapper.class_manager.new_instance()
-            merged_state = attributes.state_getter(merged)
+            merged_state = attributes.instance_state(merged)
             new_instance = True
             self.save(merged, entity_name=mapper.entity_name)
 
@@ -965,7 +965,7 @@ class Session(object):
             prop.merge(self, instance, merged, dont_load, _recursive)
             
         if dont_load:
-            attributes.state_getter(merged).commit_all()  # remove any history
+            attributes.instance_state(merged).commit_all()  # remove any history
 
         if new_instance:
             merged_state.XXX_reconstitution_notification(merged)
@@ -1060,7 +1060,7 @@ class Session(object):
         result of True.
 
         """
-        return self._contains_state(attributes.state_getter(instance))
+        return self._contains_state(attributes.instance_state(instance))
     
     def __iter__(self):
         """Return an iterator of all instances which are pending or persistent within this Session."""
@@ -1125,7 +1125,7 @@ class Session(object):
         # create the set of all objects we want to operate upon
         if objects:
             # specific list passed in
-            objset = util.Set([attributes.state_getter(o) for o in objects])
+            objset = util.Set([attributes.instance_state(o) for o in objects])
         else:
             # or just everything
             objset = util.Set(self.identity_map.all_states()).union(new)
@@ -1265,7 +1265,7 @@ _sessions = weakref.WeakValueDictionary()
 def _cascade_state_iterator(cascade, state, **kwargs):
     mapper = _state_mapper(state)
     for (o, m) in mapper.cascade_iterator(cascade, state, **kwargs):
-        yield attributes.state_getter(o), m
+        yield attributes.instance_state(o), m
 
 def _cascade_unknown_state_iterator(cascade, state, **kwargs):
     mapper = _state_mapper(state)
@@ -1289,7 +1289,7 @@ def _state_for_unsaved_instance(instance, entity_name):
 
 def _state_for_unknown_persistence_instance(instance, entity_name):
     try:
-        state = attributes.state_getter(instance)
+        state = attributes.instance_state(instance)
         state.entity_name = entity_name
         return state
     except AttributeError:
@@ -1298,7 +1298,7 @@ def _state_for_unknown_persistence_instance(instance, entity_name):
 def object_session(instance):
     """Return the ``Session`` to which the given instance is bound, or ``None`` if none."""
 
-    return _state_session(attributes.state_getter(instance))
+    return _state_session(attributes.instance_state(instance))
     
 def _state_session(state):
     if state.session_id is None:
