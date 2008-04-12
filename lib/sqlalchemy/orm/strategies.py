@@ -516,8 +516,10 @@ class EagerLoader(AbstractRelationLoader):
         # and then attach eager load joins to that (i.e., in the case of LIMIT/OFFSET etc.)
         should_nest_selectable = context.query._should_nest_selectable
         
-        if should_nest_selectable or not context.from_clause:
-            # if no from_clause, or a subquery is going to be generated, 
+        if entity in context.eager_joins:
+            entity_key, default_towrap = entity, entity.selectable
+        elif should_nest_selectable or not context.from_clause or not sql_util.search(context.from_clause, entity.selectable):
+            # if no from_clause, or a from_clause we can't join to, or a subquery is going to be generated, 
             # store eager joins per _MappedEntity; Query._compile_context will 
             # add them as separate selectables to the select(), or splice them together
             # after the subquery is generated
@@ -527,7 +529,7 @@ class EagerLoader(AbstractRelationLoader):
             # Query._compile_context will adapt as needed and append to the
             # FROM clause of the select().
             entity_key, default_towrap = None, context.from_clause
-            
+        
         # TODO: refactor
         try:
             towrap = context.eager_joins[entity_key]
@@ -541,7 +543,7 @@ class EagerLoader(AbstractRelationLoader):
             self.clauses[path] = clauses = mapperutil.AliasedClauses(mapperutil.AliasedClass(self.mapper), 
                     equivalents=self.mapper._equivalent_columns, 
                     chain_to=parentclauses)
-        
+
         if parentclauses and parentclauses.target:
             onclause = getattr(parentclauses.target, self.key, self.parent_property)
         else:
@@ -624,11 +626,11 @@ class EagerLoader(AbstractRelationLoader):
                         # parent object, bypassing InstrumentedAttribute
                         # event handlers.
                         #
-                        instance.__dict__[self.key] = self.mapper._instance(selectcontext, decorated_row, None)
+                        instance.__dict__[self.key] = self.mapper._instance(selectcontext, self.mapper.base_mapper, decorated_row, None)
                     else:
                         # call _instance on the row, even though the object has been created,
                         # so that we further descend into properties
-                        self.mapper._instance(selectcontext, decorated_row, None)
+                        self.mapper._instance(selectcontext, self.mapper.base_mapper, decorated_row, None)
                 else:
                     if isnew or self.key not in instance._state.appenders:
                         # appender_key can be absent from selectcontext.attributes with isnew=False
@@ -647,7 +649,7 @@ class EagerLoader(AbstractRelationLoader):
                     if self._should_log_debug:
                         self.logger.debug("eagerload list instance on %s" % mapperutil.attribute_str(instance, self.key))
                     
-                    self.mapper._instance(selectcontext, decorated_row, result_list)
+                    self.mapper._instance(selectcontext, self.mapper.base_mapper, decorated_row, result_list)
 
             if self._should_log_debug:
                 self.logger.debug("Returning eager instance loader for %s" % str(self))

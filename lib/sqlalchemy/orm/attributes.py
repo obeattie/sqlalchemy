@@ -24,7 +24,7 @@ class InstrumentedAttribute(interfaces.PropComparator):
 
     """
 
-    def __init__(self, impl, comparator=None):
+    def __init__(self, impl, comparator=None, parententity=None):
         """Construct an InstrumentedAttribute.
         comparator
           a sql.Comparator to which class-level compare/math events will be sent
@@ -32,6 +32,7 @@ class InstrumentedAttribute(interfaces.PropComparator):
 
         self.impl = impl
         self.comparator = comparator
+        self._parententity = parententity
 
     def __set__(self, instance, value):
         self.impl.set(instance._state, value, None)
@@ -65,8 +66,18 @@ class InstrumentedAttribute(interfaces.PropComparator):
     def _property(self):
         from sqlalchemy.orm.mapper import class_mapper
         return class_mapper(self.impl.class_).get_property(self.impl.key)
-    property = property(_property, doc="the MapperProperty object associated with this attribute")
+    _property = property(_property, doc="the MapperProperty object associated with this attribute")
 
+    def parententity(self):
+        if self._parententity:
+            return self._parententity
+        else:
+            from sqlalchemy.orm.mapper import class_mapper
+            return class_mapper(self.impl.class_)
+    parententity = property(parententity)
+
+    property = _property
+            
 class ProxiedAttribute(InstrumentedAttribute):
     """Adds InstrumentedAttribute class-level behavior to a regular descriptor.
 

@@ -453,7 +453,7 @@ class Query(object):
             entity = aliased(entity, alias)
             
         q._entities = list(q._entities)
-        _MapperEntity(q, entity, False, id=id)
+        _MapperEntity(q, entity, False, id_=id)
         return q
     
     def _from_self(self):
@@ -1215,8 +1215,12 @@ class Query(object):
                 order_by_col_expr = list(chain(*[sql_util.find_columns(o) for o in context.order_by]))
                 context.primary_columns += order_by_col_expr
 
+        #    import pdb
+        #    pdb.set_trace()
+            
             eager_joins = context.eager_joins.values()
             if eager_joins:
+                # TODO: would like to not have this global aliasing if possible
                 if adapter:
                     eager_joins = adapter.adapt_list(eager_joins)
                 froms += eager_joins
@@ -1507,7 +1511,7 @@ class _QueryEntity(object):
             return _MapperEntity(None, e, False)
         else:
             return _ColumnEntity(None, column=e)
-    legacy_guess_type=classmethod(legacy_guess_type)
+    legacy_guess_type = classmethod(legacy_guess_type)
 
     def _clone(self):
         q = self.__class__.__new__(self.__class__)
@@ -1517,11 +1521,19 @@ class _QueryEntity(object):
 class _MapperEntity(_QueryEntity):
     """entity column corresponding to mapped ORM instances."""
     
-    def __init__(self, query, entity, primary_entity, id=None, entity_name=None):
+    def __init__(self, query, entity, primary_entity, id_=None, entity_name=None):
         if query:
             query._entities.append(self)
-
+        
         self.mapper, self.selectable = _class_to_mapper(entity, entity_name=entity_name), _orm_selectable(entity, entity_name=entity_name)
+
+        if _is_aliased_class(entity):
+            self.path_entity = entity
+        else:
+            self.path_entity = self.mapper.base_mapper
+
+        self.path_key = (self.mapper, id(self.selectable))
+        
         if self.mapper.with_polymorphic:
             self.set_with_polymorphic(query, self.mapper.with_polymorphic[0], self.selectable)
         else:
@@ -1533,9 +1545,9 @@ class _MapperEntity(_QueryEntity):
 
         self.primary_entity = primary_entity
 
-        self.alias_id = id
+        self.alias_id = id_
         self.tables = [self.mapper.mapped_table]
-
+    
     def set_with_polymorphic(self, query, cls_or_mappers, selectable):
         mappers, from_obj = self.mapper._with_polymorphic_args(cls_or_mappers, selectable)
         self._with_polymorphic = mappers
@@ -1586,10 +1598,10 @@ class _MapperEntity(_QueryEntity):
                 
         if row_adapter:
             def main(context, row):
-                return self.mapper._instance(context, row_adapter(row), None, **kwargs)
+                return self.mapper._instance(context, self.path_entity, row_adapter(row), None, **kwargs)
         else:
             def main(context, row):
-                return self.mapper._instance(context, row, None, **kwargs)
+                return self.mapper._instance(context, self.path_entity, row, None, **kwargs)
         return main
             
     def setup_context(self, query, context):
@@ -1620,8 +1632,8 @@ class _MapperEntity(_QueryEntity):
         for value in self.mapper._iterate_polymorphic_properties(self._with_polymorphic, context.from_clause):
             if query._only_load_props and value.key not in query._only_load_props:
                 continue
-            context.exec_with_path(self.mapper, value.key, value.setup, context, only_load_props=query._only_load_props, entity=self, column_collection=context.primary_columns, parentclauses=adapter)
-
+            context.exec_with_path(self.path_entity, value.key, value.setup, context, only_load_props=query._only_load_props, entity=self, column_collection=context.primary_columns, parentclauses=adapter)
+        
     def __str__(self):
         return str(self.mapper)
 
@@ -1731,10 +1743,18 @@ class QueryContext(object):
         
         self.options = query._with_options
         self.attributes = query._attributes.copy()
-
-    def exec_with_path(self, mapper, propkey, fn, *args, **kwargs):
+    
+    def exec_with_start(self, path_key, fn, *args, **kwargs):
         oldpath = self.path
-        self.path += (mapper.base_mapper, propkey)
+        self.path += path_key
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            self.path = oldpath
+        
+    def exec_with_path(self, path_entity, propkey, fn, *args, **kwargs):
+        oldpath = self.path
+        self.path += (path_entity, propkey)
         try:
             return fn(*args, **kwargs)
         finally:

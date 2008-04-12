@@ -1329,7 +1329,7 @@ class Mapper(object):
             except StopIteration:
                 visitables.pop()
 
-    def _instance(self, context, row, result=None, polymorphic_from=None, extension=None, only_load_props=None, refresh_instance=None):
+    def _instance(self, context, path_entity, row, result=None, polymorphic_from=None, extension=None, only_load_props=None, refresh_instance=None):
         if not extension:
             extension = self.extension
 
@@ -1353,7 +1353,7 @@ class Mapper(object):
                 except KeyError:
                     raise exceptions.AssertionError("No such polymorphic_identity %r is defined" % discriminator)
                 if mapper is not self:
-                    return mapper._instance(context, row, result=result, polymorphic_from=self)
+                    return mapper._instance(context, path_entity, row, result=result, polymorphic_from=self)
 
         # determine identity key
         if refresh_instance:
@@ -1429,7 +1429,7 @@ class Mapper(object):
                 context.progress.add(state)
 
             if 'populate_instance' not in extension.methods or extension.populate_instance(self, context, row, instance, only_load_props=only_load_props, instancekey=identitykey, isnew=isnew) is EXT_CONTINUE:
-                self.populate_instance(context, instance, row, only_load_props=only_load_props, instancekey=identitykey, isnew=isnew)
+                self._populate_instance(context, path_entity, instance, row, None, isnew, only_load_props)
         
         else:
             # populate attributes on non-loading instances which have been expired
@@ -1444,7 +1444,7 @@ class Mapper(object):
                     context.partials[state] = attrs  #<-- allow query.instances to commit the subset of attrs
 
                 if 'populate_instance' not in extension.methods or extension.populate_instance(self, context, row, instance, only_load_props=attrs, instancekey=identitykey, isnew=isnew) is EXT_CONTINUE:
-                    self.populate_instance(context, instance, row, only_load_props=attrs, instancekey=identitykey, isnew=isnew)
+                    self._populate_instance(context, path_entity, instance, row, None, isnew, attrs, instancekey=identitykey)
 
         if result is not None and ('append_result' not in extension.methods or extension.append_result(self, context, row, instance, result, instancekey=identitykey, isnew=isnew) is EXT_CONTINUE):
             result.append(instance)
@@ -1452,9 +1452,14 @@ class Mapper(object):
         return instance
 
     def populate_instance(self, selectcontext, instance, row, ispostselect=None, isnew=False, only_load_props=None, **flags):
+        """compatibility layer for _populate_instance."""
+        
+        return self._populate_instance(selectcontext, self.base_mapper, instance, row, ispostselect, isnew, only_load_props, **flags)
+        
+    def _populate_instance(self, selectcontext, path_start, instance, row, ispostselect, isnew, only_load_props, **flags):
         """populate an instance from a result row."""
-
-        snapshot = selectcontext.path + (self,)
+        
+        snapshot = selectcontext.path + (path_start,)
         # retrieve a set of "row population" functions derived from the MapperProperties attached
         # to this Mapper.  These are keyed in the select context based primarily off the
         # "snapshot" of the stack, which represents a path from the lead mapper in the query to this one,
@@ -1469,7 +1474,7 @@ class Mapper(object):
             existing_populators = []
             post_processors = []
             for prop in self.__props.values():
-                (newpop, existingpop, post_proc) = selectcontext.exec_with_path(self, prop.key, prop.create_row_processor, selectcontext, self, row)
+                (newpop, existingpop, post_proc) = selectcontext.exec_with_path(path_start, prop.key, prop.create_row_processor, selectcontext, self, row)
                 if newpop:
                     new_populators.append((prop.key, newpop))
                 if existingpop:
@@ -1478,7 +1483,7 @@ class Mapper(object):
                     post_processors.append(post_proc)
 
             # install a post processor for immediate post-load of joined-table inheriting mappers
-            poly_select_loader = self._get_poly_select_loader(selectcontext, row)
+            poly_select_loader = self._get_poly_select_loader(selectcontext, path_start, row)
             if poly_select_loader:
                 post_processors.append(poly_select_loader)
 
@@ -1494,7 +1499,7 @@ class Mapper(object):
             populators = [p for p in populators if p[0] in only_load_props]
 
         for (key, populator) in populators:
-            selectcontext.exec_with_path(self, key, populator, instance, row, ispostselect=ispostselect, isnew=isnew, **flags)
+            selectcontext.exec_with_path(path_start, key, populator, instance, row, ispostselect=ispostselect, isnew=isnew, **flags)
 
         if self.non_primary:
             selectcontext.attributes[('populating_mapper', instance._state)] = self
@@ -1504,7 +1509,7 @@ class Mapper(object):
         for p in post_processors:
             p(state.obj(), **kwargs)
 
-    def _get_poly_select_loader(self, selectcontext, row):
+    def _get_poly_select_loader(self, selectcontext, path_start, row):
         """set up attribute loaders for 'select' and 'deferred' polymorphic loading.
 
         this loading uses a second SELECT statement to load additional tables,
@@ -1532,7 +1537,7 @@ class Mapper(object):
                 for c, bind in param_names:
                     params[bind] = self._get_attr_by_column(instance, c)
                 row = selectcontext.session.connection(self).execute(statement, params).fetchone()
-                self.populate_instance(selectcontext, instance, row, isnew=False, instancekey=identitykey, ispostselect=True, only_load_props=only_load_props)
+                self._populate_instance(selectcontext, path_start, instance, row, isnew=False, instancekey=identitykey, ispostselect=True, only_load_props=only_load_props)
             return post_execute
         elif hosted_mapper.polymorphic_fetch == 'deferred':
             from sqlalchemy.orm.strategies import DeferredColumnLoader

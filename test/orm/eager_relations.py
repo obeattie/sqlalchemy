@@ -938,6 +938,88 @@ class SelfReferentialM2MEagerTest(ORMTest):
 #        print l
         assert [Widget(name='w1', children=[Widget(name='w2')])] == sess.query(Widget).filter(Widget.name==u'w1').all()
 
+class MixedEntitiesTest(FixtureTest, AssertsCompiledSQL):
+    keep_mappers = True
+    keep_data = True
+    
+    def setup_mappers(self):
+        mapper(User, users, properties={
+            'addresses':relation(Address, backref='user'),
+            'orders':relation(Order, backref='user'), # o2m, m2o
+        })
+        mapper(Address, addresses)
+        mapper(Order, orders, properties={
+            'items':relation(Item, secondary=order_items, order_by=items.c.id),  #m2m
+        })
+        mapper(Item, items, properties={
+            'keywords':relation(Keyword, secondary=item_keywords) #m2m
+        })
+        mapper(Keyword, keywords)
+    
+    def test_two_entities(self):
+        sess = create_session()
+
+        # two FROM clauses
+        def go():
+            self.assertEquals(
+                [
+                    (User(id=9, addresses=[Address(id=5)]), Order(id=2, items=[Item(id=1), Item(id=2), Item(id=3)])),
+                    (User(id=9, addresses=[Address(id=5)]), Order(id=4, items=[Item(id=1), Item(id=5)])),
+                ],
+                sess.query(User, Order).filter(User.id==Order.user_id).options(eagerload(User.addresses), eagerload(Order.items)).filter(User.id==9).all(),
+            )
+        self.assert_sql_count(testing.db, go, 1)
+
+        # one FROM clause
+        def go():
+            self.assertEquals(
+                [
+                    (User(id=9, addresses=[Address(id=5)]), Order(id=2, items=[Item(id=1), Item(id=2), Item(id=3)])),
+                    (User(id=9, addresses=[Address(id=5)]), Order(id=4, items=[Item(id=1), Item(id=5)])),
+                ],
+                sess.query(User, Order).join(User.orders).options(eagerload(User.addresses), eagerload(Order.items)).filter(User.id==9).all(),
+            )
+        self.assert_sql_count(testing.db, go, 1)
+    
+    def test_aliased_entity(self):
+        sess = create_session()
+        
+        oalias = aliased(Order)
+        
+        # two FROM clauses
+        def go():
+            self.assertEquals(
+                [
+                    (User(id=9, addresses=[Address(id=5)]), Order(id=2, items=[Item(id=1), Item(id=2), Item(id=3)])),
+                    (User(id=9, addresses=[Address(id=5)]), Order(id=4, items=[Item(id=1), Item(id=5)])),
+                ],
+                sess.query(User, oalias).filter(User.id==oalias.user_id).options(eagerload(User.addresses), eagerload(oalias.items)).filter(User.id==9).all(),
+            )
+        self.assert_sql_count(testing.db, go, 1)
+
+        # one FROM clause
+        def go():
+            self.assertEquals(
+                [
+                    (User(id=9, addresses=[Address(id=5)]), Order(id=2, items=[Item(id=1), Item(id=2), Item(id=3)])),
+                    (User(id=9, addresses=[Address(id=5)]), Order(id=4, items=[Item(id=1), Item(id=5)])),
+                ],
+                sess.query(User, oalias).join((User.orders, oalias)).options(eagerload(User.addresses), eagerload(oalias.items)).filter(User.id==9).all(),
+            )
+        self.assert_sql_count(testing.db, go, 1)
+        
+        # improper setup: oalias in the columns clause but join to usual orders alias.  
+        # this should create two FROM clauses even though the query has a from_clause set up via the join
+        self.assert_compile(sess.query(User, oalias).join(User.orders).options(eagerload(oalias.items)).statement, 
+        "SELECT users.id AS users_id, users.name AS users_name, orders_1.id AS orders_1_id, "\
+        "orders_1.user_id AS orders_1_user_id, orders_1.address_id AS orders_1_address_id, "\
+        "orders_1.description AS orders_1_description, orders_1.isopen AS orders_1_isopen, items_1.id AS items_1_id, "\
+        "items_1.description AS items_1_description FROM users JOIN orders ON users.id = orders.user_id, "\
+        "orders AS orders_1 LEFT OUTER JOIN order_items AS order_items_1 ON orders_1.id = order_items_1.order_id "\
+        "LEFT OUTER JOIN items AS items_1 ON items_1.id = order_items_1.item_id ORDER BY users.oid, items_1.id"
+        )
+        
+
 class CyclicalInheritingEagerTest(ORMTest):
     def define_tables(self, metadata):
         global t1, t2

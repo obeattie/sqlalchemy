@@ -226,7 +226,7 @@ class AliasedClass(object):
         for prop in mapper.iterate_properties:
             #existing = mapper._class_state.attrs[prop.key]  # should work in user_defined_state
             existing = getattr(target, prop.key)
-            setattr(retcls, prop.key, attributes.InstrumentedAttribute(existing.impl, comparator=AliasedComparator(retcls, adapter, existing.comparator)))
+            setattr(retcls, prop.key, attributes.InstrumentedAttribute(existing.impl, parententity=retcls, comparator=AliasedComparator(retcls, adapter, existing.comparator)))
 
         return retcls
 

@@ -499,6 +499,7 @@ class StrategizedProperty(MapperProperty):
 
     def _get_context_strategy(self, context):
         path = context.path
+        print "LOOKING FOR PATH:", path, ("loaderstrategy", path) in context.attributes
         return self._get_strategy(context.attributes.get(("loaderstrategy", path), self.strategy.__class__))
 
     def _get_strategy(self, cls):
@@ -523,11 +524,11 @@ class StrategizedProperty(MapperProperty):
         if self.is_primary():
             self.strategy.init_class_attribute()
 
-def build_path(mapper, key, prev=None):
+def build_path(entity, key, prev=None):
     if prev:
-        return prev + (mapper.base_mapper, key)
+        return prev + (entity, key)
     else:
-        return (mapper.base_mapper, key)
+        return (entity, key)
 
 def serialize_path(path):
     if path is None:
@@ -593,35 +594,54 @@ class PropertyOption(MapperOption):
     def _process(self, query, raiseerr):
         if self._should_log_debug:
             self.logger.debug("applying option to Query, property key '%s'" % self.key)
-        paths = self._get_paths(query, raiseerr)
+        paths = self.__get_paths(query, raiseerr)
         if paths:
             self.process_query_property(query, paths)
 
     def process_query_property(self, query, paths):
         pass
+    
+    def __get_entity(self, mapper, raiseerr):
+        from sqlalchemy.orm.util import _class_to_mapper
+        mapper = _class_to_mapper(mapper)
 
-    def _get_paths(self, query, raiseerr):
+        if mapper not in query._entity_mappers:
+            if raiseerr:
+                raise exceptions.ArgumentError("Can't find entity %s in Query.  Current list: %r" % (str(mapper), [str(m) for m in query._entities]))
+            else:
+                return None
+    
+    def __find_entity(self, query, mapper, raiseerr):
+        from sqlalchemy.orm.util import _class_to_mapper, _is_aliased_class
+        
+        if _is_aliased_class(mapper):
+            searchfor = mapper
+        else:
+            searchfor = _class_to_mapper(mapper).base_mapper
+
+        for ent in query._entities:
+            if getattr(ent, 'path_entity', None) is searchfor:
+                return ent
+        else:
+            if raiseerr:
+                raise exceptions.ArgumentError("Can't find entity %s in Query.  Current list: %r" % (searchfor, [str(m.path_entity) for m in query._entities]))
+            else:
+                return None
+            
+    def __get_paths(self, query, raiseerr):
         path = None
+        entity = None
         l = []
         
         # TODO: refactor.  _current_path logic is broken.
         
         current_path = list(query._current_path)
-
+        
         if self.mapper:
-            global class_mapper
-            if class_mapper is None:
-                from sqlalchemy.orm import class_mapper
-            mapper = self.mapper
-            if isinstance(self.mapper, type):
-                mapper = class_mapper(mapper)
-            if mapper not in query._entity_mappers:
-                if raiseerr:
-                    raise exceptions.ArgumentError("Can't find entity %s in Query.  Current list: %r" % (str(mapper), [str(m) for m in query._entities]))
-                else:
-                    return None
-        else:
-            mapper = query._mapper_zero()
+            entity = self.__find_entity(query, self.mapper, raiseerr)
+            mapper = entity.mapper
+            path_element = entity.path_entity
+            
         if isinstance(self.key, basestring):
             tokens = self.key.split('.')
         else:
@@ -629,26 +649,33 @@ class PropertyOption(MapperOption):
             
         for token in tokens:
             if isinstance(token, basestring):
+                if not entity:
+                    entity = query._entity_zero()
+                    path_element = entity.path_entity
+                    mapper = entity.mapper
                 prop = mapper.get_property(token, resolve_synonyms=True, raiseerr=raiseerr)
             elif isinstance(token, PropComparator):
                 prop = token.property
+                if not entity:
+                    entity = self.__find_entity(query, token.parententity, raiseerr)
+                    path_element = entity.path_entity
                 token = prop.key
-                    
             else:
                 raise exceptions.ArgumentError("mapper option expects string key or list of attributes")
-                
+            
             if current_path and token == current_path[1]:
                 current_path = current_path[2:]
                 continue
                 
             if prop is None:
                 return []
-            path = build_path(mapper, prop.key, path)
+
+            path = build_path(path_element, prop.key, path)
             l.append(path)
             if getattr(token, '_of_type', None):
-                mapper = token._of_type
+                path_element = mapper = token._of_type
             else:
-                mapper = getattr(prop, 'mapper', None)
+                path_element = mapper = getattr(prop, 'mapper', None)
         return l
 
 PropertyOption.logger = logging.class_logger(PropertyOption)

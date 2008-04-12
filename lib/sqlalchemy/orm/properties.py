@@ -282,6 +282,10 @@ class PropertyLoader(StrategizedProperty):
             if of_type:
                 self._of_type = _class_to_mapper(of_type)
         
+        def parententity(self):
+            return self.prop.parent
+        parententity = property(parententity)
+        
         def clause_element(self):
             return self.prop.parent.mapped_table
             
