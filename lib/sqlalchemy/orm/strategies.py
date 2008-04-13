@@ -480,11 +480,6 @@ class EagerLoader(AbstractRelationLoader):
         self.join_depth = self.parent_property.join_depth
 
     def init_class_attribute(self):
-        # class-level eager strategy; add the PropertyLoader
-        # to the parent's list of "eager loaders"; this tells the Query
-        # that eager loaders will be used in a normal query
-        self.parent._eager_loaders.add(self.parent_property)
-        
         # initialize a lazy loader on the class level attribute
         self.parent_property._get_strategy(LazyLoader).init_class_attribute()
         
@@ -530,13 +525,14 @@ class EagerLoader(AbstractRelationLoader):
             # FROM clause of the select().
             entity_key, default_towrap = None, context.from_clause
         
-        # TODO: refactor
         try:
             towrap = context.eager_joins[entity_key]
         except KeyError:
             context.eager_joins[entity_key] = towrap = default_towrap
         
         # create AliasedClauses object to build up the eager query.  this is cached after 1st creation.
+        # this also allows ORMJoin to cache the aliased joins it produces since we pass the same
+        # args each time.
         path_key = util.WeakCompositeKey(*path)
         try:
             clauses = self.clauses[path_key]
@@ -545,12 +541,17 @@ class EagerLoader(AbstractRelationLoader):
                     equivalents=self.mapper._equivalent_columns, 
                     chain_to=parentclauses)
 
-        if parentclauses and parentclauses.target:
-            onclause = getattr(parentclauses.target, self.key, self.parent_property)
+        if parentclauses and parentclauses.aliased_class:
+            onclause = getattr(parentclauses.aliased_class, self.key, self.parent_property)
         else:
             onclause = self.parent_property
         
-        context.eager_joins[entity_key] = eagerjoin = mapperutil._outerjoin(towrap, clauses.target, onclause)
+        if parentclauses:
+            adapt_from=parentclauses.selectable
+        else:
+            adapt_from=None
+
+        context.eager_joins[entity_key] = eagerjoin = mapperutil.outerjoin(towrap, clauses.aliased_class, onclause, adapt_from=adapt_from)
         
         if not self.secondary and context.query._should_nest_selectable and column_collection is context.primary_columns:
             # for parentclause that is the non-eager end of the join,

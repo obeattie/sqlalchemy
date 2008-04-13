@@ -109,7 +109,6 @@ class Mapper(object):
         self.eager_defaults = eager_defaults
         self.column_prefix = column_prefix
         self.polymorphic_on = polymorphic_on
-        self._eager_loaders = util.Set()
         self._dependency_processors = []
         self._clause_adapter = None
         self._requires_row_aliasing = False

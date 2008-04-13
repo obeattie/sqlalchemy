@@ -618,8 +618,8 @@ class PropertyOption(MapperOption):
         else:
             searchfor = _class_to_mapper(mapper).base_mapper
 
-        for ent in query._entities:
-            if getattr(ent, 'path_entity', None) is searchfor:
+        for ent in query._mapper_entities:
+            if ent.path_entity is searchfor:
                 return ent
         else:
             if raiseerr:

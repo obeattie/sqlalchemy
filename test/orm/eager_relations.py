@@ -934,8 +934,6 @@ class SelfReferentialM2MEagerTest(ORMTest):
         sess.flush()
         sess.clear()
 
-#        l = sess.query(Widget).filter(Widget.name=='w1').all()
-#        print l
         assert [Widget(name='w1', children=[Widget(name='w2')])] == sess.query(Widget).filter(Widget.name==u'w1').all()
 
 class MixedEntitiesTest(FixtureTest, AssertsCompiledSQL):
@@ -1008,6 +1006,8 @@ class MixedEntitiesTest(FixtureTest, AssertsCompiledSQL):
             )
         self.assert_sql_count(testing.db, go, 1)
         
+        from sqlalchemy.engine.default import DefaultDialect
+        
         # improper setup: oalias in the columns clause but join to usual orders alias.  
         # this should create two FROM clauses even though the query has a from_clause set up via the join
         self.assert_compile(sess.query(User, oalias).join(User.orders).options(eagerload(oalias.items)).statement, 
@@ -1016,10 +1016,10 @@ class MixedEntitiesTest(FixtureTest, AssertsCompiledSQL):
         "orders_1.description AS orders_1_description, orders_1.isopen AS orders_1_isopen, items_1.id AS items_1_id, "\
         "items_1.description AS items_1_description FROM users JOIN orders ON users.id = orders.user_id, "\
         "orders AS orders_1 LEFT OUTER JOIN order_items AS order_items_1 ON orders_1.id = order_items_1.order_id "\
-        "LEFT OUTER JOIN items AS items_1 ON items_1.id = order_items_1.item_id ORDER BY users.oid, items_1.id"
+        "LEFT OUTER JOIN items AS items_1 ON items_1.id = order_items_1.item_id ORDER BY users.id, items_1.id",
+        dialect=DefaultDialect()
         )
         
-
 class CyclicalInheritingEagerTest(ORMTest):
     def define_tables(self, metadata):
         global t1, t2

@@ -26,6 +26,8 @@ def sort_tables(tables, reverse=False):
         return sequence
 
 def search(clause, target):
+    if not clause:
+        return False
     meth = "visit_%s" % target.__visit_name__
     ret = [False]
     def search(elem):
@@ -33,7 +35,7 @@ def search(clause, target):
             ret[0] = True
     visitors.traverse(clause, traverse_options={'column_collections':False}, **{meth:search})
     return ret[0]
-    
+
 def find_tables(clause, check_columns=False, include_aliases=False):
     """locate Table objects within the given expression."""
     

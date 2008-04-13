@@ -17,7 +17,7 @@ from sqlalchemy.orm.properties import SynonymProperty, ComparableProperty, Prope
 from sqlalchemy.orm import mapper as mapperlib
 from sqlalchemy.orm import strategies
 from sqlalchemy.orm.query import Query, aliased
-from sqlalchemy.orm.util import polymorphic_union, create_row_adapter
+from sqlalchemy.orm.util import polymorphic_union, create_row_adapter, join, outerjoin
 from sqlalchemy.orm.session import Session as _Session
 from sqlalchemy.orm.session import object_session, sessionmaker
 from sqlalchemy.orm.scoping import ScopedSession

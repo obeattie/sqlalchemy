@@ -144,10 +144,10 @@ class AliasedClauses(object):
     """Creates aliases of a mapped tables for usage in ORM queries, and provides expression adaptation."""
 
     def __init__(self, alias, equivalents=None, chain_to=None):
-        if _is_mapped_class(alias):
-            self.target = alias
+        if _is_aliased_class(alias):
+            self.aliased_class = alias
         else:
-            self.target = None
+            self.aliased_class = None
         self.selectable = _orm_selectable(alias)
         self.equivalents = equivalents
         self.row_decorator = self._create_row_adapter()
@@ -191,6 +191,10 @@ class AliasedClauses(object):
     
     def append(self, link):
         self.tail.chain_to = link
+    
+    def prepend(self, link):
+        link.chain_to = self
+        return link
         
     def aliased_column(self, column):
         conv = self.selectable.corresponding_column(column)
@@ -316,19 +320,22 @@ class _ORMJoin(expression.Join):
 
     __visit_name__ = expression.Join.__visit_name__
     
-    def __init__(self, left, right, onclause=None, isouter=False):
+    def __init__(self, left, right, onclause=None, isouter=False, adapt_from=None):
         if hasattr(left, '_orm_mappers'):
             left_mapper = left._orm_mappers[1]
-            adapt_from = left.right
+            if not adapt_from:
+                adapt_from = left.right
             
         elif _is_mapped_class(left):
             left_mapper = _class_to_mapper(left)
-            if _is_aliased_class(left):
-                adapt_from = left.alias
-            else:
-                adapt_from = None
+            if not adapt_from:
+                if _is_aliased_class(left):
+                    adapt_from = left.alias
+                else:
+                    adapt_from = None
         else:
-            adapt_from = left
+            if not adapt_from:
+                adapt_from = left
             left_mapper = None
         
         if _is_mapped_class(right):
@@ -367,17 +374,17 @@ class _ORMJoin(expression.Join):
                 
         expression.Join.__init__(self, _orm_selectable(left), _orm_selectable(right), onclause, isouter)
 
-    def join(self, right, onclause=None, isouter=False):
-        return _ORMJoin(self, right, onclause, isouter)
+    def join(self, right, onclause=None, isouter=False, adapt_from=None):
+        return _ORMJoin(self, right, onclause, isouter, adapt_from)
 
-    def outerjoin(self, right, onclause=None):
-        return _ORMJoin(self, right, onclause, True)
+    def outerjoin(self, right, onclause=None, adapt_from=None):
+        return _ORMJoin(self, right, onclause, True, adapt_from)
 
-def _join(left, right, onclause=None, isouter=False):
-    return _ORMJoin(left, right, onclause, isouter)
+def join(left, right, onclause=None, isouter=False, adapt_from=None):
+    return _ORMJoin(left, right, onclause, isouter, adapt_from)
 
-def _outerjoin(left, right, onclause=None):
-    return _ORMJoin(left, right, onclause, True)
+def outerjoin(left, right, onclause=None, adapt_from=None):
+    return _ORMJoin(left, right, onclause, True, adapt_from)
     
 def has_identity(object):
     return hasattr(object, '_instance_key')
