@@ -28,6 +28,7 @@ def suite():
         'orm.merge',
         'orm.pickled',
         'orm.memusage',
+        'orm.utils',
 
         'orm.cycles',
 

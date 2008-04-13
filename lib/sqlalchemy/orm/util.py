@@ -4,6 +4,7 @@
 # This module is part of SQLAlchemy and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
+import new
 from sqlalchemy import sql, util, exceptions
 from sqlalchemy.sql.util import row_adapter as create_row_adapter
 from sqlalchemy.sql import visitors, expression, util as sql_util
@@ -215,20 +216,49 @@ class AliasedClauses(object):
 
 
 class AliasedClass(object):
-    def __new__(cls, target, alias=None):
-        mapper = _class_to_mapper(target)
+    def __init__(self, cls, alias=None):
+        mapper = _class_to_mapper(cls)
         target = mapper.class_
+
         alias = alias or mapper._with_polymorphic_selectable().alias()
         adapter = sql_util.ClauseAdapter(alias)
-        retcls = type(target.__name__ + "Alias", (cls,), {'alias':alias})
-        retcls._class_state = mapper._class_state
-        retcls.mapper = mapper
+        self.__target = target
+        # urgh.
+        self.mapper = mapper
+        self.alias = alias
+        self.__name__ = 'AliasedClass_' + str(target)
         for prop in mapper.iterate_properties:
-            #existing = mapper._class_state.attrs[prop.key]  # should work in user_defined_state
             existing = getattr(target, prop.key)
-            setattr(retcls, prop.key, attributes.InstrumentedAttribute(existing.impl, parententity=retcls, comparator=AliasedComparator(retcls, adapter, existing.comparator)))
+            comparator = AliasedComparator(self, adapter, existing.comparator)
+            queryattr = attributes.QueryableAttribute(
+                existing.impl, parententity=self, comparator=comparator)
+            setattr(self, prop.key, queryattr)
 
-        return retcls
+    def __getattr__(self, key):
+        for base in self.__target.__mro__:
+            try:
+                attr = object.__getattribute__(base, key)
+            except AttributeError:
+                continue
+            else:
+                break
+        else:
+            raise AttributeError(key)
+
+        if hasattr(attr, 'func_code'):
+            is_method = getattr(self.__target, key, None)
+            if is_method and is_method.im_self is not None:
+                return new.instancemethod(attr.im_func, self, self)
+            else:
+                return None
+        elif hasattr(attr, '__get__'):
+            return attr.__get__(None, self)
+        else:
+            return attr
+
+    def __repr__(self):
+        return '<AliasedClass at 0x%x; %s>' % (
+            id(self), self.__target.__name__)
 
 class AliasedComparator(PropComparator):
     def __init__(self, aliasedclass, adapter, comparator):
@@ -311,7 +341,7 @@ class _ORMJoin(expression.Join):
             
             if isinstance(onclause, basestring):
                 prop = left_mapper.get_property(onclause)
-            elif isinstance(onclause, attributes.InstrumentedAttribute):
+            elif isinstance(onclause, attributes.QueryableAttribute):
                 adapt_from = onclause.clause_element()
                 prop = onclause.property
             elif isinstance(onclause, MapperProperty):
@@ -359,7 +389,7 @@ def _is_mapped_class(cls):
     return hasattr(cls, '_class_state')
 
 def _is_aliased_class(obj):
-    return isinstance(obj, type) and issubclass(obj, AliasedClass)
+    return isinstance(obj, AliasedClass)
     
 def has_mapper(object):
     """Return True if the given object has had a mapper association
@@ -417,10 +447,9 @@ def class_mapper(class_, entity_name=None, compile=True, raiseerror=True):
 
 def _class_to_mapper(class_or_mapper, entity_name=None, compile=True):
     if isinstance(class_or_mapper, type):
-        if issubclass(class_or_mapper, AliasedClass):
-            return class_or_mapper.mapper
-        else:
-            return class_mapper(class_or_mapper, entity_name=entity_name, compile=compile)
+        return class_mapper(class_or_mapper, entity_name=entity_name, compile=compile)
+    elif isinstance(class_or_mapper, AliasedClass):
+        return class_or_mapper.mapper
     else:
         if compile:
             return class_or_mapper.compile()

@@ -18,11 +18,7 @@ NEVER_SET = util.symbol('NEVER_SET')
 
 identity_equal = None   # initialized by sqlalchemy.orm.util
 
-class InstrumentedAttribute(interfaces.PropComparator):
-    """public-facing instrumented attribute, placed in the
-    class dictionary.
-
-    """
+class QueryableAttribute(interfaces.PropComparator):
 
     def __init__(self, impl, comparator=None, parententity=None):
         """Construct an InstrumentedAttribute.
@@ -33,17 +29,6 @@ class InstrumentedAttribute(interfaces.PropComparator):
         self.impl = impl
         self.comparator = comparator
         self._parententity = parententity
-
-    def __set__(self, instance, value):
-        self.impl.set(instance._state, value, None)
-
-    def __delete__(self, instance):
-        self.impl.delete(instance._state)
-
-    def __get__(self, instance, owner):
-        if instance is None:
-            return self
-        return self.impl.get(instance._state)
 
     def get_history(self, instance, **kwargs):
         return self.impl.get_history(instance._state, **kwargs)
@@ -77,7 +62,21 @@ class InstrumentedAttribute(interfaces.PropComparator):
     parententity = property(parententity)
 
     property = _property
-            
+
+class InstrumentedAttribute(QueryableAttribute):
+    """Public-facing descriptor, placed in the mapped class dictionary."""
+
+    def __set__(self, instance, value):
+        self.impl.set(instance._state, value, None)
+
+    def __delete__(self, instance):
+        self.impl.delete(instance._state)
+
+    def __get__(self, instance, owner):
+        if instance is None:
+            return self
+        return self.impl.get(instance._state)
+
 class ProxiedAttribute(InstrumentedAttribute):
     """Adds InstrumentedAttribute class-level behavior to a regular descriptor.
 

@@ -23,15 +23,14 @@ from sqlalchemy.sql import util as sql_util
 from sqlalchemy.sql import expression, visitors, operators
 from sqlalchemy.orm import mapper, object_mapper
 
-from sqlalchemy.orm.util import _state_mapper, _class_to_mapper, _is_mapped_class, _is_aliased_class, _orm_selectable, _orm_columns
+from sqlalchemy.orm.util import _state_mapper, _class_to_mapper, _is_mapped_class, _is_aliased_class, _orm_selectable, _orm_columns, AliasedClass
 from sqlalchemy.orm import util as mapperutil
 from sqlalchemy.orm import interfaces
 from sqlalchemy.orm import attributes
-from sqlalchemy.orm.util import AliasedClass
 
-aliased = AliasedClass
 
 __all__ = ['Query', 'QueryContext', 'aliased']
+aliased = AliasedClass
 
 
 class Query(object):
