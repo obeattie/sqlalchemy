@@ -374,7 +374,11 @@ def make_test(select_type):
             # in the case of select_type='', the eagerload doesn't take in this case; 
             # it eagerloads company->people, then a load for each of 5 rows, then lazyload of "machines"            
             self.assert_sql_count(testing.db, go, {'':7, 'Polymorphic':1}.get(select_type, 2))
-
+    
+        def dont_test_foo(self):
+            sess = create_session()
+            sess.query(Company).options(eagerload_all([Company.employees.of_type(Engineer), Engineer.machines])).all()
+            
         def test_eagerload_on_subclass(self):
             sess = create_session()
             def go():

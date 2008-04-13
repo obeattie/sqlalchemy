@@ -536,11 +536,12 @@ class EagerLoader(AbstractRelationLoader):
         except KeyError:
             context.eager_joins[entity_key] = towrap = default_towrap
         
-        # create AliasedClauses object to build up the eager query.  this is cached after 1st creation.    
+        # create AliasedClauses object to build up the eager query.  this is cached after 1st creation.
+        path_key = util.WeakCompositeKey(*path)
         try:
-            clauses = self.clauses[path]
+            clauses = self.clauses[path_key]
         except KeyError:
-            self.clauses[path] = clauses = mapperutil.AliasedClauses(mapperutil.AliasedClass(self.mapper), 
+            self.clauses[path_key] = clauses = mapperutil.AliasedClauses(mapperutil.AliasedClass(self.mapper), 
                     equivalents=self.mapper._equivalent_columns, 
                     chain_to=parentclauses)
 
@@ -577,7 +578,7 @@ class EagerLoader(AbstractRelationLoader):
         context.attributes[("eager_row_processor", path)] = clauses.row_decorator
             
         for value in self.mapper._iterate_polymorphic_properties():
-            context.exec_with_path(self.mapper, value.key, value.setup, context, parentclauses=clauses, parentmapper=self.mapper, entity=entity, column_collection=context.secondary_columns)
+            context.exec_with_path(self.mapper.base_mapper, value.key, value.setup, context, parentclauses=clauses, parentmapper=self.mapper, entity=entity, column_collection=context.secondary_columns)
         
     def _create_row_decorator(self, selectcontext, row, path):
         """Create a *row decorating* function that will apply eager

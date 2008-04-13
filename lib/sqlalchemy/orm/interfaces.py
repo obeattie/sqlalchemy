@@ -499,7 +499,6 @@ class StrategizedProperty(MapperProperty):
 
     def _get_context_strategy(self, context):
         path = context.path
-        print "LOOKING FOR PATH:", path, ("loaderstrategy", path) in context.attributes
         return self._get_strategy(context.attributes.get(("loaderstrategy", path), self.strategy.__class__))
 
     def _get_strategy(self, cls):
@@ -633,8 +632,6 @@ class PropertyOption(MapperOption):
         entity = None
         l = []
         
-        # TODO: refactor.  _current_path logic is broken.
-        
         current_path = list(query._current_path)
         
         if self.mapper:
@@ -654,16 +651,19 @@ class PropertyOption(MapperOption):
                     path_element = entity.path_entity
                     mapper = entity.mapper
                 prop = mapper.get_property(token, resolve_synonyms=True, raiseerr=raiseerr)
+                key = token
             elif isinstance(token, PropComparator):
                 prop = token.property
                 if not entity:
                     entity = self.__find_entity(query, token.parententity, raiseerr)
+                    if not entity:
+                        return []
                     path_element = entity.path_entity
-                token = prop.key
+                key = prop.key
             else:
                 raise exceptions.ArgumentError("mapper option expects string key or list of attributes")
             
-            if current_path and token == current_path[1]:
+            if current_path and key == current_path[1]:
                 current_path = current_path[2:]
                 continue
                 
@@ -676,6 +676,9 @@ class PropertyOption(MapperOption):
                 path_element = mapper = token._of_type
             else:
                 path_element = mapper = getattr(prop, 'mapper', None)
+            if path_element:
+                path_element = path_element.base_mapper
+            
         return l
 
 PropertyOption.logger = logging.class_logger(PropertyOption)
