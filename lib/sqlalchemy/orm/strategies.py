@@ -541,17 +541,15 @@ class EagerLoader(AbstractRelationLoader):
                     equivalents=self.mapper._equivalent_columns, 
                     chain_to=parentclauses)
 
-        if parentclauses and parentclauses.aliased_class:
-            onclause = getattr(parentclauses.aliased_class, self.key, self.parent_property)
+        if parentclauses:
+            if parentclauses.aliased_class:
+                onclause = getattr(parentclauses.aliased_class, self.key, self.parent_property)
+            else:
+                onclause = getattr(mapperutil.AliasedClass(self.parent, parentclauses.selectable), self.key, self.parent_property)
         else:
             onclause = self.parent_property
         
-        if parentclauses:
-            adapt_from=parentclauses.selectable
-        else:
-            adapt_from=None
-
-        context.eager_joins[entity_key] = eagerjoin = mapperutil.outerjoin(towrap, clauses.aliased_class, onclause, adapt_from=adapt_from)
+        context.eager_joins[entity_key] = eagerjoin = mapperutil.outerjoin(towrap, clauses.aliased_class, onclause)
         
         if not self.secondary and context.query._should_nest_selectable and column_collection is context.primary_columns:
             # for parentclause that is the non-eager end of the join,

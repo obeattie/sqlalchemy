@@ -221,24 +221,26 @@ class AliasedClauses(object):
 
 class AliasedClass(object):
     def __init__(self, cls, alias=None):
-        mapper = _class_to_mapper(cls)
-        target = mapper.class_
-
-        alias = alias or mapper._with_polymorphic_selectable().alias()
-        adapter = sql_util.ClauseAdapter(alias)
-        self.__target = target
-        # urgh.
-        self.mapper = mapper
+        self.mapper = _class_to_mapper(cls) # urgh ?
+        self.__target = self.mapper.class_
+        alias = alias or self.mapper._with_polymorphic_selectable().alias()
+        self.adapter = sql_util.ClauseAdapter(alias)
         self.alias = alias
-        self.__name__ = 'AliasedClass_' + str(target)
-        for prop in mapper.iterate_properties:
-            existing = getattr(target, prop.key)
-            comparator = AliasedComparator(self, adapter, existing.comparator)
-            queryattr = attributes.QueryableAttribute(
-                existing.impl, parententity=self, comparator=comparator)
-            setattr(self, prop.key, queryattr)
-
+        self.__name__ = 'AliasedClass_' + str(self.__target)
+    
+    def __adapt_prop(self, prop):
+        existing = getattr(self.__target, prop.key)
+        comparator = AliasedComparator(self, self.adapter, existing.comparator)
+        queryattr = attributes.QueryableAttribute(
+            existing.impl, parententity=self, comparator=comparator)
+        setattr(self, prop.key, queryattr)
+        return queryattr
+        
     def __getattr__(self, key):
+        prop = self.mapper._get_property(key, raiseerr=False)
+        if prop:
+            return self.__adapt_prop(prop)
+            
         for base in self.__target.__mro__:
             try:
                 attr = object.__getattribute__(base, key)
@@ -320,22 +322,19 @@ class _ORMJoin(expression.Join):
 
     __visit_name__ = expression.Join.__visit_name__
     
-    def __init__(self, left, right, onclause=None, isouter=False, adapt_from=None):
+    def __init__(self, left, right, onclause=None, isouter=False):
         if hasattr(left, '_orm_mappers'):
             left_mapper = left._orm_mappers[1]
-            if not adapt_from:
-                adapt_from = left.right
+            adapt_from = left.right
             
         elif _is_mapped_class(left):
             left_mapper = _class_to_mapper(left)
-            if not adapt_from:
-                if _is_aliased_class(left):
-                    adapt_from = left.alias
-                else:
-                    adapt_from = None
+            if _is_aliased_class(left):
+                adapt_from = left.alias
+            else:
+                adapt_from = None
         else:
-            if not adapt_from:
-                adapt_from = left
+            adapt_from = left
             left_mapper = None
         
         if _is_mapped_class(right):
@@ -374,17 +373,17 @@ class _ORMJoin(expression.Join):
                 
         expression.Join.__init__(self, _orm_selectable(left), _orm_selectable(right), onclause, isouter)
 
-    def join(self, right, onclause=None, isouter=False, adapt_from=None):
-        return _ORMJoin(self, right, onclause, isouter, adapt_from)
+    def join(self, right, onclause=None, isouter=False):
+        return _ORMJoin(self, right, onclause, isouter)
 
-    def outerjoin(self, right, onclause=None, adapt_from=None):
-        return _ORMJoin(self, right, onclause, True, adapt_from)
+    def outerjoin(self, right, onclause=None):
+        return _ORMJoin(self, right, onclause, True)
 
-def join(left, right, onclause=None, isouter=False, adapt_from=None):
-    return _ORMJoin(left, right, onclause, isouter, adapt_from)
+def join(left, right, onclause=None, isouter=False):
+    return _ORMJoin(left, right, onclause, isouter)
 
-def outerjoin(left, right, onclause=None, adapt_from=None):
-    return _ORMJoin(left, right, onclause, True, adapt_from)
+def outerjoin(left, right, onclause=None):
+    return _ORMJoin(left, right, onclause, True)
     
 def has_identity(object):
     return hasattr(object, '_instance_key')
