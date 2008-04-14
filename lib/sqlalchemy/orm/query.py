@@ -1571,11 +1571,6 @@ class _MapperEntity(_QueryEntity):
             return entity.base_mapper is self.path_entity
         
     def _get_entity_clauses(self, query, context):
-        if self.primary_entity and query._from_obj_alias:
-            return query._from_obj_alias
-        elif self.adapter:
-            return self.adapter
-        
         if not self.primary_entity:
             if query._alias_ids:
                 if self.alias_id:
@@ -1590,7 +1585,12 @@ class _MapperEntity(_QueryEntity):
                         raise exceptions.InvalidRequestError("Ambiguous join for entity '%s'; specify id=<someid> to query.join()/query.add_entity()" % str(self.mapper))
                     return l[0]
         
-        return query._from_obj_alias
+        if query._from_obj_alias:
+            return query._from_obj_alias
+        elif self.adapter:
+            return self.adapter
+        else:
+            return None
     
     def row_processor(self, query, context):
         row_adapter = None
