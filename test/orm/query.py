@@ -1061,6 +1061,20 @@ class MixedEntitiesTest(QueryTest):
             [(1, User(name=u'jack',id=7)), (3, User(name=u'ed',id=8)), (1, User(name=u'fred',id=9)), (0, User(name=u'chuck',id=10))]
         )
             
+    def test_self_referential(self):
+        
+        sess = create_session()
+        oalias = aliased(Order)
+        
+        self.assertEquals(
+            sess.query(Order, oalias).filter(Order.user_id==oalias.user_id).filter(Order.user_id==7).filter(Order.id>oalias.id).all(),
+            [
+                (Order(address_id=1,description=u'order 3',isopen=1,user_id=7,id=3), Order(address_id=1,description=u'order 1',isopen=0,user_id=7,id=1)), 
+                (Order(address_id=None,description=u'order 5',isopen=0,user_id=7,id=5), Order(address_id=1,description=u'order 1',isopen=0,user_id=7,id=1)), 
+                (Order(address_id=None,description=u'order 5',isopen=0,user_id=7,id=5), Order(address_id=1,description=u'order 3',isopen=1,user_id=7,id=3))                
+            ]
+        )
+        
         
     def test_multi_mappers(self):
 
@@ -1609,6 +1623,10 @@ class ExternalColumnsTest(QueryTest):
         })
 
         sess = create_session()
+        ua = aliased(User)
+        self.assertEquals(list(sess.query(Address, ua).select_from(join(Address,ua, 'user')).values(Address.id, ua.id, ua.concat, ua.count)), 
+            [(1, 7, 14, 1), (2, 8, 16, 3), (3, 8, 16, 3), (4, 8, 16, 3), (5, 9, 18, 1)]
+        )
 
         
         l = sess.query(User).all()

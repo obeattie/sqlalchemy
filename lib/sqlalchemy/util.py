@@ -194,7 +194,7 @@ def array_as_starargs_decorator(func):
     
     """
     def starargs_as_list(self, *args, **kwargs):
-        if len(args) == 1:
+        if isinstance(args, basestring) or (len(args) == 1 and not isinstance(args[0], tuple)):
             return func(self, *to_list(args[0], []), **kwargs)
         else:
             return func(self, *args, **kwargs)

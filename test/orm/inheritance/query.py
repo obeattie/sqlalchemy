@@ -375,10 +375,6 @@ def make_test(select_type):
             # it eagerloads company->people, then a load for each of 5 rows, then lazyload of "machines"            
             self.assert_sql_count(testing.db, go, {'':7, 'Polymorphic':1}.get(select_type, 2))
     
-        def dont_test_foo(self):
-            sess = create_session()
-            sess.query(Company).options(eagerload_all([Company.employees.of_type(Engineer), Engineer.machines])).all()
-            
         def test_eagerload_on_subclass(self):
             sess = create_session()
             def go():
@@ -463,6 +459,22 @@ def make_test(select_type):
             self.assertEquals(sess.query(Person).first(), all_employees[0])
         
             self.assertEquals(sess.query(Person).filter(Person.person_id==e2.person_id).one(), e2)
+    
+        def test_self_referential(self):
+            sess = create_session()
+            
+            c1_employees = [e1, e2, b1, m1]
+            
+            palias = aliased(Person)
+            self.assertEquals(
+                sess.query(Person, palias).filter(Person.company_id==palias.company_id).filter(Person.name=='dogbert').\
+                    filter(Person.person_id>palias.person_id).order_by(Person.person_id, palias.person_id).all(), 
+                [
+                    (m1, e1),
+                    (m1, e2),
+                    (m1, b1),
+                ]
+            )
     
     PolymorphicQueryTest.__name__ = "Polymorphic%sTest" % select_type
     return PolymorphicQueryTest

@@ -224,7 +224,7 @@ class AliasedClass(object):
         self.mapper = _class_to_mapper(cls) # urgh ?
         self.__target = self.mapper.class_
         alias = alias or self.mapper._with_polymorphic_selectable().alias()
-        self.adapter = sql_util.ClauseAdapter(alias)
+        self.adapter = sql_util.ClauseAdapter(alias, equivalents=self.mapper._equivalent_columns)
         self.alias = alias
         self.__name__ = 'AliasedClass_' + str(self.__target)
     

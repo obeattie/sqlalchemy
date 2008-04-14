@@ -358,7 +358,22 @@ class ClauseAdapterTest(TestBase, AssertsCompiledSQL):
         self.assert_compile(select([t1alias.c.col1, s]), "SELECT t1alias.col1, (SELECT * FROM table2 WHERE t1alias.col1 = table2.col1) AS anon_1 FROM table1 AS t1alias")
         s = ClauseVisitor().traverse(s, clone=True)
         self.assert_compile(select([t1alias.c.col1, s]), "SELECT t1alias.col1, (SELECT * FROM table2 WHERE t1alias.col1 = table2.col1) AS anon_1 FROM table1 AS t1alias")
-        
+
+    @testing.fails_on_everything_except()
+    def test_joins_dont_adapt(self):
+        # adapting to a join, i.e. ClauseAdapter(t1.join(t2)), doesn't make much sense.
+        # ClauseAdapter doesn't make any changes if it's against a straight join.
+        users = table('users', column('id'))
+        addresses = table('addresses', column('id'), column('user_id'))
+
+        ualias = users.alias()
+
+        s = select([func.count(addresses.c.id)], users.c.id==addresses.c.user_id).correlate(users) #.as_scalar().label(None)
+        s= sql_util.ClauseAdapter(ualias).traverse(s)
+
+        j1 = addresses.join(ualias, addresses.c.user_id==ualias.c.id)
+
+        self.assert_compile(sql_util.ClauseAdapter(j1).traverse(s), "SELECT count(addresses.id) AS count_1 FROM addresses WHERE users_1.id = addresses.user_id")
         
     def test_table_to_alias(self):
 
@@ -556,17 +571,6 @@ class SpliceJoinsTest(TestBase, AssertsCompiledSQL):
             "JOIN table3 AS table3_1 ON table2_1.col2 = table3_1.col2 "\
             "JOIN table4 AS table4_1 ON table1.col3 = table4_1.col3")
     
-    def test_overlapping_splice(self):
-        j1 = table1.join(table2, table1.c.col1==table2.c.col1).join(table3, table2.c.col2==table3.c.col2)
-        
-        from sqlalchemy.sql import visitors
-        j2 = visitors.ClauseVisitor().traverse(j1, clone=True)
-        
-        j3 = j2.join(table4, table4.c.col3==table3.c.col3)
-        self.assert_compile(j1, "table1 JOIN table2 ON table1.col1 = table2.col1 JOIN table3 ON table2.col2 = table3.col2")
-        self.assert_compile(j3, "table1 JOIN table2 ON table1.col1 = table2.col1 JOIN table3 ON table2.col2 = table3.col2 JOIN table4 ON table4.col3 = table3.col3")
-        
-        self.assert_compile(sql_util.splice_joins(j1, j3, j2), "")
         
 class SelectTest(TestBase, AssertsCompiledSQL):
     """tests the generative capability of Select"""

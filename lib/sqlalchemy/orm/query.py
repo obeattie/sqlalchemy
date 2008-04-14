@@ -146,11 +146,13 @@ class Query(object):
         self._from_obj = from_obj
         mappers, tables, equivs = self.__all_equivs()
     
-        self._from_obj_alias = mapperutil.AliasedClauses(self._from_obj, equivalents=equivs)
-        if self._select_from_aliases:
-            self._select_from_aliases.append(self._from_obj_alias)
-        else:
-            self._aliases_head = self._select_from_aliases = self._from_obj_alias
+        if isinstance(from_obj, expression.Alias):
+            # dont alias a regular join (since its not an alias itself)
+            self._from_obj_alias = mapperutil.AliasedClauses(self._from_obj, equivalents=equivs)
+            if self._select_from_aliases:
+                self._select_from_aliases.append(self._from_obj_alias)
+            else:
+                self._aliases_head = self._select_from_aliases = self._from_obj_alias
     
     def _append_select_from_aliasizer(self, entity, selectable):
         # TODO: this should not be called after any join()/outerjoin()
@@ -660,48 +662,60 @@ class Query(object):
             q._having = criterion
         return q
 
-    def join(self, prop, id=None, aliased=False, from_joinpoint=False):
+    def join(self, *props, **kwargs):
         """Create a join against this ``Query`` object's criterion
         and apply generatively, retunring the newly resulting ``Query``.
 
-        'prop' may be one of:
+        each element in \*props may be:
           * a string property name, i.e. "rooms"
           * a class-mapped attribute, i.e. Houses.rooms
           * a 2-tuple containing one of the above, combined with a selectable
-            which derives from the properties' mapped table
-          * a list (not a tuple) containing a combination of any of the above.
+            which derives from the properties' mapped table. 
 
         e.g.::
 
             session.query(Company).join('employees')
             session.query(Company).join(['employees', 'tasks'])
-            session.query(Houses).join([Colonials.rooms, Room.closets])
-            session.query(Company).join([('employees', people.join(engineers)), Engineer.computers])
+            
+            PAlias = aliased(Person)
+            session.query(Person).join(Palias.friends)
+            
+            session.query(Houses).join(Colonials.rooms, Room.closets)
+            session.query(Company).join(('employees', people.join(engineers)), Engineer.computers)
 
         """
-        return self.__join(prop, id=id, outerjoin=False, create_aliases=aliased, from_joinpoint=from_joinpoint)
-
-    def outerjoin(self, prop, id=None, aliased=False, from_joinpoint=False):
+        id, aliased, from_joinpoint = kwargs.get('id', None), kwargs.get('aliased', False), kwargs.get('from_joinpoint', False)
+        
+        return self.__join(props, id=id, outerjoin=False, create_aliases=aliased, from_joinpoint=from_joinpoint)
+    join = util.array_as_starargs_decorator(join)
+    
+    def outerjoin(self, *props, **kwargs):
         """Create a left outer join against this ``Query`` object's criterion
         and apply generatively, retunring the newly resulting ``Query``.
 
-        'prop' may be one of:
+        each element in \*props may be:
           * a string property name, i.e. "rooms"
           * a class-mapped attribute, i.e. Houses.rooms
           * a 2-tuple containing one of the above, combined with a selectable
-            which derives from the properties' mapped table
-          * a list (not a tuple) containing a combination of any of the above.
+            which derives from the properties' mapped table. 
 
         e.g.::
 
             session.query(Company).outerjoin('employees')
             session.query(Company).outerjoin(['employees', 'tasks'])
-            session.query(Houses).outerjoin([Colonials.rooms, Room.closets])
-            session.query(Company).join([('employees', people.join(engineers)), Engineer.computers])
+            
+            PAlias = aliased(Person)
+            session.query(Person).outerjoin(Palias.friends)
+            
+            session.query(Houses).outerjoin(Colonials.rooms, Room.closets)
+            session.query(Company).outerjoin(('employees', people.outerjoin(engineers)), Engineer.computers)
 
         """
-        return self.__join(prop, id=id, outerjoin=True, create_aliases=aliased, from_joinpoint=from_joinpoint)
 
+        id, aliased, from_joinpoint = kwargs.get('id', None), kwargs.get('aliased', False), kwargs.get('from_joinpoint', False)
+        return self.__join(props, id=id, outerjoin=True, create_aliases=aliased, from_joinpoint=from_joinpoint)
+    outerjoin = util.array_as_starargs_decorator(outerjoin)
+    
     # TODO: figure out what this really needs to do, vs. sql_util.search()
     def __get_joinable_tables(self):
         if not self._from_obj:
@@ -733,10 +747,7 @@ class Query(object):
 
         mapper = None
         
-        if not isinstance(keys, list):
-            keys = [keys]
-            
-        for key in keys:
+        for key in util.to_list(keys):
             use_selectable = None
             of_type = None
             is_aliased_class = False
@@ -1531,13 +1542,14 @@ class _MapperEntity(_QueryEntity):
 
         self.path_key = (self.mapper, id(self.selectable))
         
+        if _is_aliased_class(entity):
+            self.adapter = mapperutil.AliasedClauses(self.selectable, equivalents=self.mapper._equivalent_columns)
+        else:
+            self.adapter = None
+
         if self.mapper.with_polymorphic:
             self.set_with_polymorphic(query, self.mapper.with_polymorphic[0], self.selectable)
         else:
-            if _is_aliased_class(entity):
-                self.adapter = query._append_select_from_aliasizer(self, entity.alias)
-            else:
-                self.adapter = None
             self._with_polymorphic = None
 
         self.primary_entity = primary_entity
@@ -1548,8 +1560,9 @@ class _MapperEntity(_QueryEntity):
     def set_with_polymorphic(self, query, cls_or_mappers, selectable):
         mappers, from_obj = self.mapper._with_polymorphic_args(cls_or_mappers, selectable)
         self._with_polymorphic = mappers
-        self.selectable = from_obj
-        self.adapter = query._append_select_from_aliasizer(self, from_obj)
+        if not _is_aliased_class(self.path_entity):
+            self.selectable = from_obj
+            self.adapter = query._append_select_from_aliasizer(self, from_obj)
 
     def corresponds_to(self, entity):
         if _is_aliased_class(entity):
@@ -1558,25 +1571,26 @@ class _MapperEntity(_QueryEntity):
             return entity.base_mapper is self.path_entity
         
     def _get_entity_clauses(self, query, context):
-        if self.primary_entity:
-            return query._select_from_aliases
+        if self.primary_entity and query._from_obj_alias:
+            return query._from_obj_alias
         elif self.adapter:
             return self.adapter
+        
+        if not self.primary_entity:
+            if query._alias_ids:
+                if self.alias_id:
+                    try:
+                        return query._alias_ids[self.alias_id][0]
+                    except KeyError:
+                        raise exceptions.InvalidRequestError("Query has no alias identified by '%s'" % self.alias_id)
 
-        if query._alias_ids:
-            if self.alias_id:
-                try:
-                    return query._alias_ids[self.alias_id][0]
-                except KeyError:
-                    raise exceptions.InvalidRequestError("Query has no alias identified by '%s'" % self.alias_id)
-
-            l = query._alias_ids.get(self.mapper)
-            if l:
-                if len(l) > 1:
-                    raise exceptions.InvalidRequestError("Ambiguous join for entity '%s'; specify id=<someid> to query.join()/query.add_entity()" % str(self.mapper))
-                return l[0]
-                
-        return query._select_from_aliases
+                l = query._alias_ids.get(self.mapper)
+                if l:
+                    if len(l) > 1:
+                        raise exceptions.InvalidRequestError("Ambiguous join for entity '%s'; specify id=<someid> to query.join()/query.add_entity()" % str(self.mapper))
+                    return l[0]
+        
+        return query._from_obj_alias
     
     def row_processor(self, query, context):
         row_adapter = None
@@ -1698,9 +1712,9 @@ class _ColumnEntity(_QueryEntity):
                     return None
                     
             return Adapter().traverse(expr, clone=True)
-        
-        if query._select_from_aliases:
-            expr = query._select_from_aliases.adapt_clause(expr)
+
+        if query._from_obj_alias:
+            expr = query._from_obj_alias.adapt_clause(expr)
             
         return expr
         
