@@ -1560,6 +1560,9 @@ class _MapperEntity(_QueryEntity):
     def set_with_polymorphic(self, query, cls_or_mappers, selectable):
         mappers, from_obj = self.mapper._with_polymorphic_args(cls_or_mappers, selectable)
         self._with_polymorphic = mappers
+        
+        # TODO: do the wrapped thing here too so that with_polymorphic() can be
+        # applied to aliases
         if not _is_aliased_class(self.path_entity):
             self.selectable = from_obj
             self.adapter = query._append_select_from_aliasizer(self, from_obj)
@@ -1585,22 +1588,29 @@ class _MapperEntity(_QueryEntity):
                         raise exceptions.InvalidRequestError("Ambiguous join for entity '%s'; specify id=<someid> to query.join()/query.add_entity()" % str(self.mapper))
                     return l[0]
         
-        if query._from_obj_alias:
+        # TODO: the adapter from the _alias_ids dict needs the wrapping to occur also
+        if self.adapter:
+            if query._from_obj_alias:
+                return query._from_obj_alias.wrap(self.adapter)
+            else:
+                return self.adapter
+        elif query._from_obj_alias:
             return query._from_obj_alias
-        elif self.adapter:
-            return self.adapter
         else:
             return None
     
     def row_processor(self, query, context):
         row_adapter = None
-        if context.row_adapter:
-            row_adapter = context.row_adapter
-        else:
-            clauses = self._get_entity_clauses(query, context)
-            if clauses:
-                row_adapter = clauses.row_decorator
+        clauses = self._get_entity_clauses(query, context)
+        if clauses:
+            row_adapter = clauses.row_decorator
         
+        if context.row_adapter:
+            if row_adapter:
+                row_adapter = row_adapter.wrap(context.row_adapter)
+            else:
+                row_adapter = context.row_adapter
+                
         # polymorphic mappers which have concrete tables in their hierarchy usually
         # require row aliasing unconditionally.  
         if not row_adapter and self.mapper._requires_row_aliasing:
@@ -1711,8 +1721,10 @@ class _ColumnEntity(_QueryEntity):
 
                     return None
                     
+            # TODO: need to wrap adapters here as well ?
             return Adapter().traverse(expr, clone=True)
-
+        
+        # TODO: eager row adapter ?
         if query._from_obj_alias:
             expr = query._from_obj_alias.adapt_clause(expr)
             

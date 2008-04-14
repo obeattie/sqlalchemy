@@ -150,10 +150,18 @@ class AliasedClauses(object):
             self.aliased_class = None
         self.selectable = _orm_selectable(alias)
         self.equivalents = equivalents
-        self.row_decorator = self._create_row_adapter()
         self.chain_to = chain_to
         self.local_adapter = sql_util.ClauseAdapter(self.selectable, equivalents=equivalents)
         self.adapter = visitors.VisitorContainer(self._iterate_adapters, self.local_adapter.__traverse_options__)
+        self.__wrap = None
+        self.row_decorator = self._create_row_adapter()
+        
+    def wrap(self, aliasedclauses):
+        ac = AliasedClauses.__new__(AliasedClauses)
+        ac.__dict__ = self.__dict__.copy()
+        ac.__wrap = aliasedclauses
+        ac.row_decorator = ac._create_row_adapter()
+        return ac
 
     def _iterate(self):
         a = self
@@ -197,6 +205,9 @@ class AliasedClauses(object):
         return link
         
     def aliased_column(self, column):
+        if self.__wrap:
+            column = self.__wrap.aliased_column(column)
+            
         conv = self.selectable.corresponding_column(column)
         if conv:
             return conv
@@ -210,13 +221,23 @@ class AliasedClauses(object):
         return aliased_column
 
     def adapt_clause(self, clause):
+        if self.__wrap:
+            clause = self.__wrap.adapt_clause(clause)
+            
         return self.adapter.traverse(clause, clone=True)
     
     def adapt_list(self, clauses):
+        if self.__wrap:
+            clauses = self.clauses.adapt_list(clauses)
+            
         return self.adapter.copy_and_process(clauses)
         
     def _create_row_adapter(self):
-        return create_row_adapter(self.selectable, equivalent_columns=self.equivalents)
+        if self.__wrap:
+            adapter = self.__wrap.row_decorator
+            return adapter.wrap(create_row_adapter(self.selectable, equivalent_columns=self.equivalents))
+        else:
+            return create_row_adapter(self.selectable, equivalent_columns=self.equivalents)
 
 
 class AliasedClass(object):

@@ -234,28 +234,36 @@ class AliasedRow(object):
     def keys(self):
         return self.row.keys()
 
-def row_adapter(from_, equivalent_columns=None):
-    """create a row adapter callable against a selectable."""
-    
-    if equivalent_columns is None:
-        equivalent_columns = {}
-    
-    def locate_col(col):
-        c = from_.corresponding_column(col)
+class row_adapter(object):
+    def __init__(self, from_, equivalent_columns=None, _wrap=None):
+        self.from_ = from_
+        self.equivalent_columns = equivalent_columns or {}
+        if _wrap:
+            self.__locate_col = self.__decorate_locate(self.__locate_col, _wrap.__locate_col)
+        self.map = util.PopulateDict(self.__locate_col)
+
+    def wrap(self, adapter):
+        return row_adapter(self.from_, self.equivalent_columns, _wrap=adapter)
+        
+    def __decorate_locate(self, local, wrapped):
+        def locate(col):
+            col = local(col)
+            return wrapped(col)
+        return locate
+        
+    def __locate_col(self, col):
+        c = self.from_.corresponding_column(col)
         if c:
             return c
-        elif col in equivalent_columns:
-            for c2 in equivalent_columns[col]:
-                corr = from_.corresponding_column(c2)
+        elif col in self.equivalent_columns:
+            for c2 in self.equivalent_columns[col]:
+                corr = self.from_.corresponding_column(c2)
                 if corr:
                     return corr
         return col
-        
-    map = util.PopulateDict(locate_col)
-    
-    def adapt(row):
-        return AliasedRow(row, map)
-    return adapt
+
+    def __call__(self, row):
+        return AliasedRow(row, self.map)
 
 class ColumnsInClause(visitors.ClauseVisitor):
     """Given a selectable, visit clauses and determine if any columns
