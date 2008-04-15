@@ -7,7 +7,7 @@
 import new
 from sqlalchemy import sql, util, exceptions
 from sqlalchemy.sql.util import row_adapter as create_row_adapter
-from sqlalchemy.sql import visitors, expression, util as sql_util
+from sqlalchemy.sql import visitors, expression, util as sql_util, operators
 from sqlalchemy.orm.interfaces import MapperExtension, EXT_CONTINUE, PropComparator, MapperProperty
 from sqlalchemy.orm import attributes
 
@@ -405,7 +405,30 @@ def join(left, right, onclause=None, isouter=False):
 
 def outerjoin(left, right, onclause=None):
     return _ORMJoin(left, right, onclause, True)
+
+def with_parent(instance, prop):
+    """Return criterion which selects instances with a given parent.
     
+    instance
+      a parent instance, which should be persistent or detached.
+
+     property
+       a class-attached descriptor, MapperProperty or string property name
+       attached to the parent instance.  
+
+     \**kwargs
+       all extra keyword arguments are propagated to the constructor of
+       Query.
+
+    """
+    if isinstance(prop, basestring):
+        mapper = object_mapper(instance)
+        prop = mapper.get_property(prop, resolve_synonyms=True)
+    elif isinstance(prop, attributes.QueryableAttribute):
+        prop = prop.property
+
+    return prop.compare(operators.eq, instance, value_is_parent=True)
+
 def has_identity(object):
     return hasattr(object, '_instance_key')
 

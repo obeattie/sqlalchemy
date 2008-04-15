@@ -53,7 +53,6 @@ class Query(object):
         self._criterion = None
         self.__joinable_tables = None
         self._having = None
-        self._column_aggregate = None
         self._populate_existing = False
         self._version_check = False
         self._autoflush = True
@@ -69,12 +68,10 @@ class Query(object):
         self._from_obj = None
         self._entities = []
         self._aliases_head = self._select_from_aliases = self._from_obj_alias = None
-        self._alias_ids = {}
+        self._anonymous_alias_ids = {}
 
         for ent in entities:
-            if isinstance(ent, _QueryEntity):
-                self._entities.append(ent._clone())
-            elif _is_mapped_class(ent):
+            if _is_mapped_class(ent):
                 if not self._entities:
                     ent = _MapperEntity(self, ent, True, entity_name=entity_name)
                     self._joinpoint = ent.mapper
@@ -126,9 +123,9 @@ class Query(object):
         else:
             return self._entity_zero().selectable
     
-    def __generate_alias_ids(self):
-        self._alias_ids = dict([
-            (k, list(v)) for k, v in self._alias_ids.iteritems()
+    def __generate_anonymous_alias_ids(self):
+        self._anonymous_alias_ids = dict([
+            (k, list(v)) for k, v in self._anonymous_alias_ids.iteritems()
         ])
 
     def __no_criterion(self, meth):
@@ -142,9 +139,8 @@ class Query(object):
             # alias SELECTs and unions
             from_obj = from_obj.alias()
 
-        self._alias_ids = {}
         self._from_obj = from_obj
-        mappers, tables, equivs = self.__all_equivs()
+        equivs = self.__all_equivs()
     
         if isinstance(from_obj, expression.Alias):
             # dont alias a regular join (since its not an alias itself)
@@ -178,14 +174,9 @@ class Query(object):
         
     def __all_equivs(self):
         equivs = {}
-        tables = []
-        mappers = []
-        for entity in self._entities:
-            if isinstance(entity, _MapperEntity):
-                equivs.update(entity.mapper._equivalent_columns)
-                mappers.append(entity.mapper)
-            tables += entity.tables
-        return mappers, tables, equivs
+        for ent in self._mapper_entities:
+            equivs.update(ent.mapper._equivalent_columns)
+        return equivs
         
     def __no_criterion_condition(self, q, meth):
         if q._criterion or q._statement:
@@ -366,14 +357,17 @@ class Query(object):
          \**kwargs
            all extra keyword arguments are propagated to the constructor of
            Query.
+           
+           deprecated.  use sqlalchemy.orm.with_parent in conjunction with 
+           filter().
         """
-
+        
         mapper = object_mapper(instance)
         prop = mapper.get_property(property, resolve_synonyms=True)
         target = prop.mapper
         criterion = prop.compare(operators.eq, instance, value_is_parent=True)
         return Query(target, **kwargs).filter(criterion)
-    query_from_parent = classmethod(query_from_parent)
+    query_from_parent = classmethod(util.deprecated(None, False)(query_from_parent))
 
     def autoflush(self, setting):
         """Return a Query with a specific 'autoflush' setting.
@@ -433,30 +427,8 @@ class Query(object):
         return self.filter(prop.compare(operators.eq, instance, value_is_parent=True))
 
     def add_entity(self, entity, alias=None, id=None):
-        """add a mapped entity to the list of result columns to be returned.
+        """add a mapped entity to the list of result columns to be returned."""
 
-        This will have the effect of all result-returning methods returning a tuple
-        of results, the first element being an instance of the primary class for this
-        Query, and subsequent elements matching columns or entities which were
-        specified via add_column or add_entity.
-
-        When adding entities to the result, its generally desirable to add
-        limiting criterion to the query which can associate the primary entity
-        of this Query along with the additional entities.  The Query selects
-        from all tables with no joining criterion by default.
-
-            entity
-                a class or mapper which will be added to the results.
-
-            alias
-                a sqlalchemy.sql.Alias object which will be used to select rows.  this
-                will match the usage of the given Alias in filter(), order_by(), etc. expressions
-
-            id
-                a string ID matching that given to query.join() or query.outerjoin(); rows will be
-                selected from the aliased join created via those methods.
-
-        """
         q = self._clone()
         if alias:
             entity = aliased(entity, alias)
@@ -473,7 +445,11 @@ class Query(object):
         """
         q = self._clone()
         fromclause = q.compile().correlate(None)
-        return Query(self._entities, self.session).select_from(fromclause)
+        q._statement = q._criterion = None
+        q._order_by = q._group_by = q._distinct = False
+        q._limit = q._offset = None
+        q.__set_select_from(fromclause)
+        return q
         
     def values(self, *columns):
         """Return an iterator yielding result tuples corresponding to the given list of columns"""
@@ -489,24 +465,8 @@ class Query(object):
     _values = values
     
     def add_column(self, column, id=None):
-        """Add a SQL ColumnElement to the list of result columns to be returned.
-
-        This will have the effect of all result-returning methods returning a
-        tuple of results, the first element being an instance of the primary
-        class for this Query, and subsequent elements matching columns or
-        entities which were specified via add_column or add_entity.
-
-        When adding columns to the result, its generally desirable to add
-        limiting criterion to the query which can associate the primary entity
-        of this Query along with the additional columns, if the column is
-        based on a table or selectable that is not the primary mapped
-        selectable.  The Query selects from all tables with no joining
-        criterion by default.
-
-        column
-          a string column name or sql.ColumnElement to be added to the results.
-
-        """
+        """Add a SQL ColumnElement to the list of result columns to be returned."""
+        
         q = self._clone()
         q._entities = list(q._entities)
         _ColumnEntity(q, column, id)
@@ -734,7 +694,7 @@ class Query(object):
     
     def __join(self, keys, id, outerjoin, create_aliases, from_joinpoint):
         q = self.__no_statement("join")
-        q.__generate_alias_ids()
+        q.__generate_anonymous_alias_ids()
 
         if not from_joinpoint:
             q._reset_joinpoint()
@@ -825,8 +785,8 @@ class Query(object):
                             equivalents=prop.mapper._equivalent_columns, 
                             chain_to=alias)
 
-                    q._alias_ids.setdefault(prop.mapper, []).append(alias)
-                    q._alias_ids.setdefault(prop.table, []).append(alias)
+                    q._anonymous_alias_ids.setdefault(prop.mapper, []).append(alias)
+                    q._anonymous_alias_ids.setdefault(prop.table, []).append(alias)
                     
             mapper = of_type or prop.mapper
 
@@ -838,7 +798,7 @@ class Query(object):
             q._aliases_head = alias
 
         if id:
-            q._alias_ids[id] = [alias]
+            q._anonymous_alias_ids[id] = [alias]
         return q
     
     def reset_joinpoint(self):
@@ -953,7 +913,7 @@ class Query(object):
         This results in an execution of the underlying query.
 
         """
-        if self._column_aggregate is not None:
+        if hasattr(self, '_column_aggregate'):
             return self._col_aggregate(*self._column_aggregate)
 
         ret = list(self[0:1])
@@ -968,7 +928,7 @@ class Query(object):
         This results in an execution of the underlying query.
 
         """
-        if self._column_aggregate is not None:
+        if hasattr(self, '_column_aggregate'):
             return self._col_aggregate(*self._column_aggregate)
 
         ret = list(self[0:2])
@@ -1005,19 +965,22 @@ class Query(object):
 
         entities = self._entities + [_QueryEntity.legacy_guess_type(mc) for mc in mappers_or_columns]
         
-        if getattr(self, '_no_filters', False):
-            filter = None
-            as_instances = False
-        else:
-            as_instances = getattr(self._entities[0], 'primary_entity', False) and len(entities) == 1
-
-            if as_instances:
+        filtered = as_instances = False
+        process = []
+        for query_entity in entities:
+            if isinstance(query_entity, _MapperEntity):
+                filtered = True
+            process.append(query_entity.row_processor(self, context))
+        
+        if filtered:
+            if getattr(self._entities[0], 'primary_entity', False) and len(entities) == 1:
+                as_instances = True
                 filter = util.OrderedIdentitySet
             else:
                 filter = util.OrderedSet
+        else:
+            filter = None
         
-        process = [query_entity.row_processor(self, context) for query_entity in entities]
-
         while True:
             context.progress = util.Set()
             context.partials = {}
@@ -1037,8 +1000,8 @@ class Query(object):
             if filter:
                 rows = filter(rows)
 
-            if context.refresh_instance and context.only_load_props and context.refresh_instance in context.progress:
-                context.refresh_instance.commit(context.only_load_props)
+            if context.refresh_instance and self._only_load_props and context.refresh_instance in context.progress:
+                context.refresh_instance.commit(self._only_load_props)
                 context.progress.remove(context.refresh_instance)
 
             for ii in context.progress:
@@ -1205,7 +1168,7 @@ class Query(object):
 
             local_adapter = sql_util.ClauseAdapter(inner)
 
-            mappers, tables, equivs = self.__all_equivs()
+            equivs = self.__all_equivs()
 
             context.row_adapter = mapperutil.create_row_adapter(inner, equivalent_columns=equivs)
 
@@ -1257,7 +1220,8 @@ class Query(object):
         """apply the given aggregate function to the query and return the newly
         resulting ``Query``. (deprecated)
         """
-        if self._column_aggregate is not None:
+        
+        if getattr(self, '_column_aggregate', None):
             raise exceptions.InvalidRequestError("Query already contains an aggregate column or function")
         q = self.__no_statement("aggregate")
         q._column_aggregate = (col, func)
@@ -1537,14 +1501,9 @@ class _MapperEntity(_QueryEntity):
 
         if _is_aliased_class(entity):
             self.path_entity = entity
-        else:
-            self.path_entity = self.mapper.base_mapper
-
-        self.path_key = (self.mapper, id(self.selectable))
-        
-        if _is_aliased_class(entity):
             self.adapter = mapperutil.AliasedClauses(self.selectable, equivalents=self.mapper._equivalent_columns)
         else:
+            self.path_entity = self.mapper.base_mapper
             self.adapter = None
 
         if self.mapper.with_polymorphic:
@@ -1555,7 +1514,6 @@ class _MapperEntity(_QueryEntity):
         self.primary_entity = primary_entity
 
         self.alias_id = id_
-        self.tables = [self.mapper.mapped_table]
     
     def set_with_polymorphic(self, query, cls_or_mappers, selectable):
         mappers, from_obj = self.mapper._with_polymorphic_args(cls_or_mappers, selectable)
@@ -1574,30 +1532,32 @@ class _MapperEntity(_QueryEntity):
             return entity.base_mapper is self.path_entity
         
     def _get_entity_clauses(self, query, context):
-        if not self.primary_entity:
-            if query._alias_ids:
-                if self.alias_id:
-                    try:
-                        return query._alias_ids[self.alias_id][0]
-                    except KeyError:
-                        raise exceptions.InvalidRequestError("Query has no alias identified by '%s'" % self.alias_id)
-
-                l = query._alias_ids.get(self.mapper)
+        adapter = None
+        
+        if not self.primary_entity and query._anonymous_alias_ids:
+            if self.alias_id:
+                try:
+                    adapter = query._anonymous_alias_ids[self.alias_id][0]
+                except KeyError:
+                    raise exceptions.InvalidRequestError("Query has no alias identified by '%s'" % self.alias_id)
+            else:
+                l = query._anonymous_alias_ids.get(self.mapper)
                 if l:
                     if len(l) > 1:
                         raise exceptions.InvalidRequestError("Ambiguous join for entity '%s'; specify id=<someid> to query.join()/query.add_entity()" % str(self.mapper))
-                    return l[0]
-        
-        # TODO: the adapter from the _alias_ids dict needs the wrapping to occur also
-        if self.adapter:
+                    adapter = l[0]
+                    
+        if not adapter and self.adapter:
+            adapter = self.adapter
+                
+        if adapter:
             if query._from_obj_alias:
-                return query._from_obj_alias.wrap(self.adapter)
+                return query._from_obj_alias.wrap(adapter)
             else:
-                return self.adapter
-        elif query._from_obj_alias:
-            return query._from_obj_alias
+                return adapter
         else:
-            return None
+            return query._from_obj_alias
+            
     
     def row_processor(self, query, context):
         row_adapter = None
@@ -1617,7 +1577,7 @@ class _MapperEntity(_QueryEntity):
             row_adapter = mapperutil.create_row_adapter(self.selectable, equivalent_columns=self.mapper._equivalent_columns)
         
         if self.primary_entity:
-            kwargs = dict(extension=context.extension, only_load_props=context.only_load_props, refresh_instance=context.refresh_instance)
+            kwargs = dict(extension=query._extension, only_load_props=query._only_load_props, refresh_instance=context.refresh_instance)
         else:
             kwargs = {}
                 
@@ -1684,47 +1644,42 @@ class _ColumnEntity(_QueryEntity):
 
         self.column = column
         self.alias_id = id
-        self.tables = sql_util.find_tables(column)
     
     def __resolve_expr_against_query_aliases(self, query, expr, context):
-        # TODO: cache result in context ?
-        if query._alias_ids:
+        if query._anonymous_alias_ids:
             if self.alias_id:
                 try:
-                    aliases = query._alias_ids[self.alias_id][0]
+                    aliases = query._anonymous_alias_ids[self.alias_id][0]
                 except KeyError:
                     raise exceptions.InvalidRequestError("Query has no alias identified by '%s'" % self.alias_id)
 
                 def _locate_aliased(element):
-                    if element in query._alias_ids:
+                    if element in query._anonymous_alias_ids:
                         return aliases
             else:
                 def _locate_aliased(element):
-                    if element in query._alias_ids:
-                        aliases = query._alias_ids[element]
+                    if element in query._anonymous_alias_ids:
+                        aliases = query._anonymous_alias_ids[element]
                         if len(aliases) > 1:
                             raise exceptions.InvalidRequestError("Ambiguous join for entity '%s'; specify id=<someid> to query.join()/query.add_column(), or use the aliased() function to use explicit class aliases." % expr)
                         return aliases[0]
                     return None
 
-            class Adapter(visitors.ClauseVisitor):
-                def before_clone(self, element):
-                    if isinstance(element, expression.FromClause):
-                        alias = _locate_aliased(element)
-                        if alias:
-                            return alias.selectable
-                
-                    if hasattr(element, 'table'):
-                        alias = _locate_aliased(element.table)
-                        if alias:
-                            return alias.aliased_column(element)
+            def adapt_element(element):
+                if isinstance(element, expression.FromClause):
+                    alias = _locate_aliased(element)
+                    if alias:
+                        return alias.selectable
+            
+                if hasattr(element, 'table'):
+                    alias = _locate_aliased(element.table)
+                    if alias:
+                        return alias.aliased_column(element)
 
-                    return None
+                return None
                     
-            # TODO: need to wrap adapters here as well ?
-            return Adapter().traverse(expr, clone=True)
-        
-        # TODO: eager row adapter ?
+            expr = visitors.traverse(expr, before_clone=adapt_element, clone=True)
+            
         if query._from_obj_alias:
             expr = query._from_obj_alias.adapt_clause(expr)
             
@@ -1732,6 +1687,10 @@ class _ColumnEntity(_QueryEntity):
         
     def row_processor(self, query, context):
         column = self.__resolve_expr_against_query_aliases(query, self.column, context)
+
+        if context.row_adapter:
+            column = context.row_adapter.translate_col(column)
+            
         def proc(context, row):
             return row[column]
         return proc
@@ -1750,11 +1709,8 @@ class QueryContext(object):
     def __init__(self, query):
         self.query = query
         self.session = query.session
-        self.extension = query._extension
-        self.statement = None
         self.populate_existing = query._populate_existing
         self.version_check = query._version_check
-        self.only_load_props = query._only_load_props
         self.refresh_instance = query._refresh_instance
         self.path = ()
         self.primary_columns = []
@@ -1769,14 +1725,6 @@ class QueryContext(object):
         self.options = query._with_options
         self.attributes = query._attributes.copy()
     
-    def exec_with_start(self, path_key, fn, *args, **kwargs):
-        oldpath = self.path
-        self.path += path_key
-        try:
-            return fn(*args, **kwargs)
-        finally:
-            self.path = oldpath
-        
     def exec_with_path(self, path_entity, propkey, fn, *args, **kwargs):
         oldpath = self.path
         self.path += (path_entity, propkey)

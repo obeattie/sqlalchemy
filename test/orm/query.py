@@ -10,7 +10,7 @@ from testlib import *
 from testlib import engines
 from testlib.fixtures import *
 
-from sqlalchemy.orm.util import join, outerjoin
+from sqlalchemy.orm.util import join, outerjoin, with_parent
 
 class QueryTest(FixtureTest):
     keep_mappers = True
@@ -547,10 +547,16 @@ class ParentTest(QueryTest):
         o = sess.query(Order).with_parent(u1, property='orders').all()
         assert [Order(description="order 1"), Order(description="order 3"), Order(description="order 5")] == o
 
-        # test static method
-        o = Query.query_from_parent(u1, property='orders', session=sess).all()
+        o = sess.query(Order).filter(with_parent(u1, User.orders)).all()
         assert [Order(description="order 1"), Order(description="order 3"), Order(description="order 5")] == o
-
+        
+        # test static method
+        @testing.uses_deprecated(".*query_from_parent")
+        def go():
+            o = Query.query_from_parent(u1, property='orders', session=sess).all()
+            assert [Order(description="order 1"), Order(description="order 3"), Order(description="order 5")] == o
+        go()
+        
         # test generative criterion
         o = sess.query(Order).with_parent(u1).filter(orders.c.id>2).all()
         assert [Order(description="order 3"), Order(description="order 5")] == o
@@ -721,9 +727,9 @@ class JoinTest(QueryTest):
         q4 = q2.join('addresses', aliased=True, id='someid')
         q5 = q2.join('addresses', aliased=True, id='someid')
         q6 = q5.join('addresses', aliased=True, id='someid')
-        assert q1._alias_ids[class_mapper(Address)] != q2._alias_ids[class_mapper(Address)]
-        assert q2._alias_ids[class_mapper(Address)] != q3._alias_ids[class_mapper(Address)]
-        assert q4._alias_ids['someid'] != q5._alias_ids['someid']
+        assert q1._anonymous_alias_ids[class_mapper(Address)] != q2._anonymous_alias_ids[class_mapper(Address)]
+        assert q2._anonymous_alias_ids[class_mapper(Address)] != q3._anonymous_alias_ids[class_mapper(Address)]
+        assert q4._anonymous_alias_ids['someid'] != q5._anonymous_alias_ids['someid']
         
     def test_reset_joinpoint(self):
         for aliased in (True, False):
@@ -840,11 +846,10 @@ class MultiplePathTest(ORMTest):
         })
         mapper(T2, t2)
 
-        try:
-            create_session().query(T1).join('t2s_1').filter(t2.c.id==5).reset_joinpoint().join('t2s_2')
-            assert False
-        except exceptions.InvalidRequestError, e:
-            assert str(e) == "Can't join to property 't2s_2'; a path to this table along a different secondary table already exists.  Use the `alias=True` argument to `join()`."
+        q = create_session().query(T1).join('t2s_1').filter(t2.c.id==5).reset_joinpoint()
+        self.assertRaisesMessage(exceptions.InvalidRequestError, "a path to this table along a different secondary table already exists.",
+            q.join, 't2s_2'
+        )
 
         create_session().query(T1).join('t2s_1', aliased=True).filter(t2.c.id==5).reset_joinpoint().join('t2s_2').all()
         create_session().query(T1).join('t2s_1').filter(t2.c.id==5).reset_joinpoint().join('t2s_2', aliased=True).all()
@@ -1060,33 +1065,76 @@ class MixedEntitiesTest(QueryTest):
         self.assertEquals(sess.query(func.count(adalias.email_address), User).outerjoin((User.addresses, adalias)).group_by(User).order_by(User.id).all(),
             [(1, User(name=u'jack',id=7)), (3, User(name=u'ed',id=8)), (1, User(name=u'fred',id=9)), (0, User(name=u'chuck',id=10))]
         )
+
+        # select from aliasing
+        self.assertEquals(
+            sess.query(User, adalias.email_address).outerjoin((User.addresses, adalias))._from_self().all(),
+            [
+                (User(name=u'jack',id=7), u'jack@bean.com'), 
+                (User(name=u'ed',id=8), u'ed@wood.com'), 
+                (User(name=u'ed',id=8), u'ed@bettyboop.com'),
+                (User(name=u'ed',id=8), u'ed@lala.com'), 
+                (User(name=u'fred',id=9), u'fred@fred.com'), 
+                (User(name=u'chuck',id=10), None)
+            ]
+        )
+        
+        # anon + select from aliasing
+        self.assertEquals(
+            sess.query(User, Address.email_address).outerjoin(User.addresses, aliased=True)._from_self().all(),
+            [
+                (User(name=u'jack',id=7), u'jack@bean.com'), 
+                (User(name=u'ed',id=8), u'ed@wood.com'), 
+                (User(name=u'ed',id=8), u'ed@bettyboop.com'),
+                (User(name=u'ed',id=8), u'ed@lala.com'), 
+                (User(name=u'fred',id=9), u'fred@fred.com'), 
+                (User(name=u'chuck',id=10), None)
+            ]
+        )
+        
+        # test eager aliasing, with/without select_from aliasing
+        for q in [
+            sess.query(User, adalias.email_address).outerjoin((User.addresses, adalias)).options(eagerload(User.addresses)).limit(10),
+            sess.query(User, adalias.email_address).outerjoin((User.addresses, adalias))._from_self().options(eagerload(User.addresses)).limit(10),
+            
+        ]:
+            self.assertEquals(
+                q.all(),
+                [(User(addresses=[Address(user_id=7,email_address=u'jack@bean.com',id=1)],name=u'jack',id=7), u'jack@bean.com'), 
+                (User(addresses=[
+                                    Address(user_id=8,email_address=u'ed@wood.com',id=2), 
+                                    Address(user_id=8,email_address=u'ed@bettyboop.com',id=3), 
+                                    Address(user_id=8,email_address=u'ed@lala.com',id=4)],name=u'ed',id=8), u'ed@wood.com'), 
+                (User(addresses=[
+                            Address(user_id=8,email_address=u'ed@wood.com',id=2), 
+                            Address(user_id=8,email_address=u'ed@bettyboop.com',id=3), 
+                            Address(user_id=8,email_address=u'ed@lala.com',id=4)],name=u'ed',id=8), u'ed@bettyboop.com'), 
+                (User(addresses=[
+                            Address(user_id=8,email_address=u'ed@wood.com',id=2), 
+                            Address(user_id=8,email_address=u'ed@bettyboop.com',id=3), 
+                            Address(user_id=8,email_address=u'ed@lala.com',id=4)],name=u'ed',id=8), u'ed@lala.com'), 
+                (User(addresses=[Address(user_id=9,email_address=u'fred@fred.com',id=5)],name=u'fred',id=9), u'fred@fred.com'), 
+                (User(addresses=[],name=u'chuck',id=10), None)]
+        )
             
     def test_self_referential(self):
         
         sess = create_session()
         oalias = aliased(Order)
         
-        self.assertEquals(
-            sess.query(Order, oalias).filter(Order.user_id==oalias.user_id).filter(Order.user_id==7).filter(Order.id>oalias.id).all(),
-            [
-                (Order(address_id=1,description=u'order 3',isopen=1,user_id=7,id=3), Order(address_id=1,description=u'order 1',isopen=0,user_id=7,id=1)), 
-                (Order(address_id=None,description=u'order 5',isopen=0,user_id=7,id=5), Order(address_id=1,description=u'order 1',isopen=0,user_id=7,id=1)), 
-                (Order(address_id=None,description=u'order 5',isopen=0,user_id=7,id=5), Order(address_id=1,description=u'order 3',isopen=1,user_id=7,id=3))                
-            ]
-        )
+        for q in [
+            sess.query(Order, oalias).filter(Order.user_id==oalias.user_id).filter(Order.user_id==7).filter(Order.id>oalias.id),
+            sess.query(Order, oalias)._from_self().filter(Order.user_id==oalias.user_id).filter(Order.user_id==7).filter(Order.id>oalias.id),
+            # here we go....two layers of aliasing
+            sess.query(Order, oalias).filter(Order.user_id==oalias.user_id).filter(Order.user_id==7).filter(Order.id>oalias.id)._from_self().limit(10).options(eagerload(Order.items)),
 
-        self.assertEquals(
-            sess.query(Order, oalias)._from_self().filter(Order.user_id==oalias.user_id).filter(Order.user_id==7).filter(Order.id>oalias.id).all(),
-            [
-                (Order(address_id=1,description=u'order 3',isopen=1,user_id=7,id=3), Order(address_id=1,description=u'order 1',isopen=0,user_id=7,id=1)), 
-                (Order(address_id=None,description=u'order 5',isopen=0,user_id=7,id=5), Order(address_id=1,description=u'order 1',isopen=0,user_id=7,id=1)), 
-                (Order(address_id=None,description=u'order 5',isopen=0,user_id=7,id=5), Order(address_id=1,description=u'order 3',isopen=1,user_id=7,id=3))                
-            ]
-        )
+            # gratuitous four layers
+            sess.query(Order, oalias).filter(Order.user_id==oalias.user_id).filter(Order.user_id==7).filter(Order.id>oalias.id)._from_self()._from_self()._from_self().limit(10).options(eagerload(Order.items)),
 
-        # here we go....two layers of aliasing
-        self.assertEquals(
-            sess.query(Order, oalias).filter(Order.user_id==oalias.user_id).filter(Order.user_id==7).filter(Order.id>oalias.id)._from_self().limit(10).options(eagerload(Order.items)).all(),
+        ]:
+        
+            self.assertEquals(
+            q.all(),
             [
                 (Order(address_id=1,description=u'order 3',isopen=1,user_id=7,id=3), Order(address_id=1,description=u'order 1',isopen=0,user_id=7,id=1)), 
                 (Order(address_id=None,description=u'order 5',isopen=0,user_id=7,id=5), Order(address_id=1,description=u'order 1',isopen=0,user_id=7,id=1)), 
@@ -1510,6 +1558,79 @@ class SelfReferentialTest(ORMTest):
             list(sess.query(Node).select_from(join(Node, n1, 'parent').join(n2, 'parent')).\
             filter(and_(Node.data=='n122', n1.data=='n12', n2.data=='n1')).values(Node.data, n1.data, n2.data)),
             [('n122', 'n12', 'n1')])
+    
+    def test_multiple_inline_entities(self):
+        sess = create_session()
+        
+        self.assertEquals(
+            sess.query(Node).add_entity(Node, id='parent').\
+            add_entity(Node, id='grandparent').\
+            filter_by(data='n122').join('parent', aliased=True, id='parent').filter_by(data='n12').\
+                join('parent', aliased=True, from_joinpoint=True, id='grandparent').filter_by(data='n1').first(),
+            (Node(data='n122'), Node(data='n12'), Node(data='n1'))
+        )
+
+        self.assertEquals(
+            sess.query(Node).add_entity(Node, id='parent').\
+            add_entity(Node, id='grandparent').\
+            filter_by(data='n122').join('parent', aliased=True, id='parent').filter_by(data='n12').\
+                join('parent', aliased=True, from_joinpoint=True, id='grandparent').filter_by(data='n1').
+                _from_self().first(),
+            (Node(data='n122'), Node(data='n12'), Node(data='n1'))
+        )
+
+        # eagerloading doesn't have an effect for entities with "id" set; there's
+        # no way to keep them straight at that level
+        self.assertEquals(
+            sess.query(Node).add_entity(Node, id='parent').\
+            add_entity(Node, id='grandparent').\
+            filter_by(data='n122').join('parent', aliased=True, id='parent').filter_by(data='n12').\
+                join('parent', aliased=True, from_joinpoint=True, id='grandparent').filter_by(data='n1').\
+                options(eagerload("children")).first(),
+            (Node(data='n122'), Node(data='n12'), Node(data='n1'))
+        )
+        
+        
+
+    def test_multiple_explicit_entities(self):
+        sess = create_session()
+        
+        parent = aliased(Node)
+        grandparent = aliased(Node)
+        self.assertEquals(
+            sess.query(Node, parent, grandparent).\
+                join((Node.parent, parent), (parent.parent, grandparent)).\
+                    filter(Node.data=='n122').filter(parent.data=='n12').\
+                    filter(grandparent.data=='n1').first(),
+            (Node(data='n122'), Node(data='n12'), Node(data='n1'))
+        )
+
+        self.assertEquals(
+            sess.query(Node, parent, grandparent).\
+                join((Node.parent, parent), (parent.parent, grandparent)).\
+                    filter(Node.data=='n122').filter(parent.data=='n12').\
+                    filter(grandparent.data=='n1')._from_self().first(),
+            (Node(data='n122'), Node(data='n12'), Node(data='n1'))
+        )
+
+        self.assertEquals(
+            sess.query(Node, parent, grandparent).\
+                join((Node.parent, parent), (parent.parent, grandparent)).\
+                    filter(Node.data=='n122').filter(parent.data=='n12').\
+                    filter(grandparent.data=='n1').\
+                    options(eagerload(Node.children)).first(),
+            (Node(data='n122'), Node(data='n12'), Node(data='n1'))
+        )
+
+        self.assertEquals(
+            sess.query(Node, parent, grandparent).\
+                join((Node.parent, parent), (parent.parent, grandparent)).\
+                    filter(Node.data=='n122').filter(parent.data=='n12').\
+                    filter(grandparent.data=='n1')._from_self().\
+                    options(eagerload(Node.children)).first(),
+            (Node(data='n122'), Node(data='n12'), Node(data='n1'))
+        )
+        
         
     def test_any(self):
         sess = create_session()
@@ -1637,23 +1758,19 @@ class ExternalColumnsTest(QueryTest):
         })
 
         mapper(Address, addresses, properties={
-            'user':relation(User, lazy=True)
+            'user':relation(User)
         })
 
         sess = create_session()
-        ua = aliased(User)
-        self.assertEquals(list(sess.query(Address, ua).select_from(join(Address,ua, 'user')).values(Address.id, ua.id, ua.concat, ua.count)), 
-            [(1, 7, 14, 1), (2, 8, 16, 3), (3, 8, 16, 3), (4, 8, 16, 3), (5, 9, 18, 1)]
-        )
-
         
-        l = sess.query(User).all()
-        assert [
-            User(id=7, concat=14, count=1),
-            User(id=8, concat=16, count=3),
-            User(id=9, concat=18, count=1),
-            User(id=10, concat=20, count=0),
-        ] == l
+        self.assertEquals(sess.query(User).all(), 
+            [
+                User(id=7, concat=14, count=1),
+                User(id=8, concat=16, count=3),
+                User(id=9, concat=18, count=1),
+                User(id=10, concat=20, count=0),
+            ]
+        )
 
         address_result = [
             Address(id=1, user=User(id=7, concat=14, count=1)),
@@ -1672,12 +1789,13 @@ class ExternalColumnsTest(QueryTest):
                self.assertEquals(sess.query(Address).options(eagerload('user')).all(), address_result)
             self.assert_sql_count(testing.db, go, 1)
         
-        tuple_address_result = [(address, address.user) for address in address_result]
-        
         q =sess.query(Address).join('user', aliased=True, id='ualias').join('user', aliased=True).add_column(User.concat)
         self.assertRaisesMessage(exceptions.InvalidRequestError, "Ambiguous", q.all)
         
-        self.assertEquals(sess.query(Address).join('user', aliased=True, id='ualias').add_entity(User, id='ualias').all(), tuple_address_result)
+        self.assertEquals(
+        sess.query(Address).join('user', aliased=True, id='ualias').add_entity(User, id='ualias').all(), 
+            [(address, address.user) for address in address_result]
+        )
 
         self.assertEquals(sess.query(Address).join('user', aliased=True, id='ualias').join('user', aliased=True).\
                 add_column(User.concat, id='ualias').add_column(User.count, id='ualias').all(),
@@ -1690,6 +1808,17 @@ class ExternalColumnsTest(QueryTest):
             ]
         )
 
+        ua = aliased(User)
+        self.assertEquals(sess.query(Address, ua.concat, ua.count).select_from(join(Address, ua, 'user')).options(eagerload(Address.user)).all(),
+            [
+                (Address(id=1, user=User(id=7, concat=14, count=1)), 14, 1),
+                (Address(id=2, user=User(id=8, concat=16, count=3)), 16, 3),
+                (Address(id=3, user=User(id=8, concat=16, count=3)), 16, 3),
+                (Address(id=4, user=User(id=8, concat=16, count=3)), 16, 3),
+                (Address(id=5, user=User(id=9, concat=18, count=1)), 18, 1)
+            ]
+        )
+
         self.assertEquals(list(sess.query(Address).join('user').values(Address.id, User.id, User.concat, User.count)), 
             [(1, 7, 14, 1), (2, 8, 16, 3), (3, 8, 16, 3), (4, 8, 16, 3), (5, 9, 18, 1)]
         )
@@ -1698,7 +1827,6 @@ class ExternalColumnsTest(QueryTest):
             [(1, 7, 14, 1), (2, 8, 16, 3), (3, 8, 16, 3), (4, 8, 16, 3), (5, 9, 18, 1)]
         )
 
-        ua = aliased(User)
         self.assertEquals(list(sess.query(Address, ua).select_from(join(Address,ua, 'user')).values(Address.id, ua.id, ua.concat, ua.count)), 
             [(1, 7, 14, 1), (2, 8, 16, 3), (3, 8, 16, 3), (4, 8, 16, 3), (5, 9, 18, 1)]
         )

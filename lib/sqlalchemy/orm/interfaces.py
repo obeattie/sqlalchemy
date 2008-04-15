@@ -600,16 +600,6 @@ class PropertyOption(MapperOption):
     def process_query_property(self, query, paths):
         pass
     
-    def __get_entity(self, mapper, raiseerr):
-        from sqlalchemy.orm.util import _class_to_mapper
-        mapper = _class_to_mapper(mapper)
-
-        if mapper not in query._entity_mappers:
-            if raiseerr:
-                raise exceptions.ArgumentError("Can't find entity %s in Query.  Current list: %r" % (str(mapper), [str(m) for m in query._entities]))
-            else:
-                return None
-    
     def __find_entity(self, query, mapper, raiseerr):
         from sqlalchemy.orm.util import _class_to_mapper, _is_aliased_class
         

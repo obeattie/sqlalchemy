@@ -244,6 +244,9 @@ class row_adapter(object):
 
     def wrap(self, adapter):
         return row_adapter(self.from_, self.equivalent_columns, _wrap=adapter)
+    
+    def translate_col(self, col):
+        return self.__locate_col(col)
         
     def __decorate_locate(self, local, wrapped):
         def locate(col):

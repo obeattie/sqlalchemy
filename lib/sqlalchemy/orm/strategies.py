@@ -504,7 +504,7 @@ class EagerLoader(AbstractRelationLoader):
         else:
             localparent = parentmapper
         
-        if entity is None:
+        if entity is None or entity.alias_id:
             return
 
         # whether or not the Query will wrap the selectable in a subquery,
