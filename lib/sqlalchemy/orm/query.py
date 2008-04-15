@@ -1125,8 +1125,6 @@ class Query(object):
             context.statement = self._statement
             return context
 
-        adapter = self._from_obj_alias
-        
         if self._lockmode:
             try:
                 for_update = {'read':'read','update':True,'update_nowait':'nowait',None:False}[self._lockmode]
@@ -1144,8 +1142,6 @@ class Query(object):
 
         if context.order_by:
             context.order_by = [expression._literal_as_text(o) for o in util.to_list(context.order_by)]
-            if adapter:
-                context.order_by = adapter.adapt_list(context.order_by)
         
         eager_joins = context.eager_joins.values()
 
@@ -1166,8 +1162,6 @@ class Query(object):
             
             inner = sql.select(context.primary_columns + order_by_col_expr, context.whereclause, from_obj=froms, use_labels=True, correlate=False, order_by=context.order_by, **self._select_args).alias()
 
-            local_adapter = sql_util.ClauseAdapter(inner)
-
             equivs = self.__all_equivs()
 
             context.row_adapter = mapperutil.create_row_adapter(inner, equivalent_columns=equivs)
@@ -1181,6 +1175,7 @@ class Query(object):
             statement.append_from(from_clause)
 
             if context.order_by:
+                local_adapter = sql_util.ClauseAdapter(inner)
                 statement.append_order_by(*local_adapter.copy_and_process(context.order_by))
 
             statement.append_order_by(*context.eager_order_by)
@@ -1192,16 +1187,11 @@ class Query(object):
                 order_by_col_expr = list(chain(*[sql_util.find_columns(o) for o in context.order_by]))
                 context.primary_columns += order_by_col_expr
 
-            eager_joins = context.eager_joins.values()
-            if adapter:
-                eager_joins = adapter.adapt_list(eager_joins)
-            froms += eager_joins
+            froms += context.eager_joins.values()
                 
             statement = sql.select(context.primary_columns + context.secondary_columns, context.whereclause, from_obj=froms, use_labels=True, for_update=for_update, order_by=context.order_by, **self._select_args)
 
             if context.eager_order_by:
-                if adapter:
-                    context.eager_order_by = adapter.adapt_list(context.eager_order_by)
                 statement.append_order_by(*context.eager_order_by)
             
         context.statement = statement
