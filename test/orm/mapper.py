@@ -1648,5 +1648,91 @@ class RequirementsTest(TestBase, AssertsExecutionResults):
         self.assertEqual(len(h1s), 5)
 
 
+class MagicNamesTest(ORMTest):
+
+    def define_tables(self, metadata):
+        Table('cartographers', metadata,
+              Column('id', Integer, primary_key=True),
+              Column('name', String(50)),
+              Column('alias', String(50)),
+              Column('quip', String(100)))
+        Table('maps', metadata,
+              Column('id', Integer, primary_key=True),
+              Column('cart_id', Integer,
+                     ForeignKey('cartographers.id')),
+              Column('state', String(2)),
+              Column('data', Text))
+
+    def tables(self):
+        cat = testing._otest_metadata.tables
+        return cat['cartographers'], cat['maps']
+
+    def classes(self):
+        class Base(object):
+            def __init__(self, **kw):
+                for key, value in kw.iteritems():
+                    setattr(self, key, value)
+        class Cartographer(Base): pass
+        class Map(Base): pass
+
+        return Cartographer, Map
+
+    @testing.future
+    def test_mappish(self):
+        t1, t2 = self.tables()
+        Cartographer, Map = self.classes()
+        mapper(Cartographer, t1, properties=dict(
+            query=t1.c.quip))
+        mapper(Map, t2, properties=dict(
+            mapper=relation(Cartographer, backref='maps')))
+
+        c = Cartographer(name='Lenny', alias='The Dude',
+                         query='Where be dragons?')
+        m = Map(state='AK', mapper=c)
+
+        sess = create_session()
+        sess.save(c)
+        sess.flush()
+        sess.clear()
+
+        for C, M in ((Cartographer, Map), (aliased(Cartographer), aliased(Map))):
+            print C, M
+            c1 = (sess.query(C).
+                  filter(C.alias=='The Dude').
+                  filter(C.query=='Where be dragons?')).one()
+            m1 = sess.query(M).filter(M.mapper==c1).one()
+
+    @testing.future
+    def test_stateish(self):
+        from sqlalchemy.orm import attributes
+        if hasattr(attributes, 'ClassManager'):
+            syn1 = attributes.ClassManager.STATE_ATTR
+            syn2 = attributes.ClassManager.MANAGER_ATTR
+        else:
+            syn1 = '_state'
+            syn2 = '_class_state'
+
+
+        t1, t2 = self.tables()
+        Cartographer, Map = self.classes()
+        mapper(Map, t2, properties=dict(
+            syn1=t2.c.state,
+            syn2=t2.c.data))
+
+        m = Map()
+        setattr(m, syn1, 'AK')
+        setattr(m, syn2, '10x10')
+
+        sess = create_session()
+        sess.save(m)
+        sess.flush()
+        sess.clear()
+
+        for M in (Map, aliased(Map)):
+            print M
+            sess.query(M).filter(getattr(M, syn1) == 'AK').one()
+            sess.query(M).filter(getattr(M, syn2) == '10x10').one()
+
+
 if __name__ == "__main__":
     testenv.main()
