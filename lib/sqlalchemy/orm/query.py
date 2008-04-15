@@ -32,7 +32,26 @@ from sqlalchemy.orm import attributes
 __all__ = ['Query', 'QueryContext', 'aliased']
 aliased = AliasedClass
 
-
+def _generative(*assertions):
+    """mark a method as generative."""
+    
+    def decorate(fn):
+        argspec = util.format_argspec_plus(fn)
+        run_assertions = assertions
+        code = "\n".join([
+            "def %s%s:",
+            "    %r",
+            "    self = self._clone()",
+            "    for a in run_assertions:",
+            "        a(self, %r)",
+            "    fn%s",
+            "    return self"
+        ]) % (fn.__name__, argspec['args'], fn.__doc__, fn.__name__, argspec['apply_pos'])
+        env = locals().copy()
+        exec code in env
+        return env[fn.__name__]
+    return decorate
+    
 class Query(object):
     """Encapsulates the object-fetching operations provided by Mappers."""
 
@@ -64,6 +83,7 @@ class Query(object):
         
         self.__init_mapper(util.to_list(entities), entity_name)
 
+    
     def __init_mapper(self, entities, entity_name=None):
         self._from_obj = None
         self._entities = []
@@ -128,12 +148,6 @@ class Query(object):
             (k, list(v)) for k, v in self._anonymous_alias_ids.iteritems()
         ])
 
-    def __no_criterion(self, meth):
-        return self.__conditional_clone(meth, [self.__no_criterion_condition])
-
-    def __no_statement(self, meth):
-        return self.__conditional_clone(meth, [self.__no_statement_condition])
-
     def __set_select_from(self, from_obj):
         if isinstance(from_obj, expression._SelectBaseMixin):
             # alias SELECTs and unions
@@ -151,9 +165,6 @@ class Query(object):
                 self._aliases_head = self._select_from_aliases = self._from_obj_alias
     
     def _append_select_from_aliasizer(self, entity, selectable):
-        # TODO: this should not be called after any join()/outerjoin()
-        # is performed; add assertions
-        
         new = mapperutil.AliasedClauses(selectable, equivalents=entity.mapper._equivalent_columns)
         old = getattr(entity, 'adapter', None)
         
@@ -168,7 +179,7 @@ class Query(object):
                 self._aliases_head = self._select_from_aliases = new
         return new
         
-    def _reset_joinpoint(self):
+    def __reset_joinpoint(self):
         self._joinpoint = self._mapper_zero_or_none()
         self._aliases_head = self._select_from_aliases
         
@@ -177,37 +188,37 @@ class Query(object):
         for ent in self._mapper_entities:
             equivs.update(ent.mapper._equivalent_columns)
         return equivs
-        
-    def __no_criterion_condition(self, q, meth):
-        if q._criterion or q._statement:
+    
+    def __no_criterion_condition(self, meth):
+        if self._criterion or self._statement:
             util.warn(
                 ("Query.%s() being called on a Query with existing criterion; "
-                 "criterion is being ignored.") % meth)
+                 "criterion is being ignored.  This usage is deprecated.") % meth)
 
-        q._statement = q._criterion = None
-        q._order_by = q._group_by = q._distinct = False
-        
-    def __no_entities(self, meth):
-        q = self.__no_statement(meth)
-        if len(q._entities) > 1 and not getattr(self._entities[0], 'primary_entity', False):
-            raise exceptions.InvalidRequestError(
-                ("Query.%s() being called on a Query with existing  "
-                 "additional entities or columns - can't replace columns") % meth)
-        q._entities = []
-        return q
+        self._statement = self._criterion = None
+        self._order_by = self._group_by = self._distinct = False
+    
+    def __no_from_condition(self, meth):
+        if self._from_obj:
+            raise exceptions.InvalidRequestError("Query.%s() being called on a Query which already has a FROM clause established.  This usage is deprecated.")
 
-    def __no_statement_condition(self, q, meth):
-        if q._statement:
+    def __no_statement_condition(self, meth):
+        if self._statement:
             raise exceptions.InvalidRequestError(
                 ("Query.%s() being called on a Query with an existing full "
                  "statement - can't apply criterion.") % meth)
-
-    def __conditional_clone(self, methname=None, conditions=None):
-        q = self._clone()
-        if conditions:
-            for condition in conditions:
-                condition(q, methname)
-        return q
+    
+    def __no_limit_offset(self, meth):
+        if self._limit or self._offset:
+            util.warn("Query.%s() being called on a Query which already has LIMIT or OFFSET applied. "
+            "This usage is deprecated. Apply filtering and joins before LIMIT or OFFSET are applied, "
+            "or to filter/join to the row-limited results of the query, call from_self() first."
+            "In release 0.5, from_self() will be called automatically in this scenario."
+            )
+            
+    def __no_criterion(self):
+        """generate a Query with no criterion, warn if criterion was present"""
+    __no_criterion = _generative(__no_criterion_condition)(__no_criterion)
 
     def __get_options(self, populate_existing=None, version_check=None, only_load_props=None, refresh_instance=None):
         if populate_existing:
@@ -250,10 +261,9 @@ class Query(object):
         for the deferred load.
         
         """
-        q = self._clone()
-        q._current_path = path
-        return q
-
+        self._current_path = path
+    _with_current_path = _generative()(_with_current_path)
+    
     def with_polymorphic(self, cls_or_mappers, selectable=None):
         """Load columns for descendant mappers of this Query's mapper.
         
@@ -279,11 +289,9 @@ class Query(object):
         clause which will usually lead to incorrect results.
 
         """
-        q = self.__no_criterion('with_polymorphic')
-        entity = q.__generate_mapper_zero()
-        entity.set_with_polymorphic(q, cls_or_mappers, selectable=selectable)
-        return q
-    
+        entity = self.__generate_mapper_zero()
+        entity.set_with_polymorphic(self, cls_or_mappers, selectable=selectable)
+    with_polymorphic = _generative(__no_criterion_condition, __no_from_condition)(with_polymorphic)
         
     def yield_per(self, count):
         """Yield only ``count`` rows at a time.
@@ -296,12 +304,11 @@ class Query(object):
         eagerly loaded collections (i.e. any lazy=False) since those
         collections will be cleared for a new load when encountered in a
         subsequent result batch.
+
         """
-
-        q = self._clone()
-        q._yield_per = count
-        return q
-
+        self._yield_per = count
+    yield_per = _generative()(yield_per)
+    
     def get(self, ident, **kwargs):
         """Return an instance of the object based on the given identifier, or None if not found.
 
@@ -358,8 +365,8 @@ class Query(object):
            all extra keyword arguments are propagated to the constructor of
            Query.
            
-           deprecated.  use sqlalchemy.orm.with_parent in conjunction with 
-           filter().
+       deprecated.  use sqlalchemy.orm.with_parent in conjunction with 
+       filter().
         """
         
         mapper = object_mapper(instance)
@@ -378,10 +385,9 @@ class Query(object):
         to disable autoflush for a specific Query.
         
         """
-        q = self._clone()
-        q._autoflush = setting
-        return q
-
+        self._autoflush = setting
+    autoflush = _generative()(autoflush)
+    
     def populate_existing(self):
         """Return a Query that will refresh all instances loaded.
 
@@ -395,10 +401,9 @@ class Query(object):
         fully using session.expire_all().
         
         """
-        q = self._clone()
-        q._populate_existing = True
-        return q
-
+        self._populate_existing = True
+    populate_existing = _generative()(populate_existing)
+    
     def with_parent(self, instance, property=None):
         """add a join criterion corresponding to a relationship to the given parent instance.
 
@@ -429,81 +434,73 @@ class Query(object):
     def add_entity(self, entity, alias=None, id=None):
         """add a mapped entity to the list of result columns to be returned."""
 
-        q = self._clone()
         if alias:
             entity = aliased(entity, alias)
             
-        q._entities = list(q._entities)
-        _MapperEntity(q, entity, False, id_=id)
-        return q
+        self._entities = list(self._entities)
+        _MapperEntity(self, entity, False, id_=id)
+    add_entity = _generative()(add_entity)
     
-    def _from_self(self):
-        """return a Query that selects from this Query's SELECT statement.
+    def from_self(self):
+        """return a Query that selects from this Query's SELECT statement."""
         
-        The API for this method hasn't been decided yet and is subject to change.
+        fromclause = self.compile().correlate(None)
+        self._statement = self._criterion = None
+        self._order_by = self._group_by = self._distinct = False
+        self._limit = self._offset = None
+        self.__set_select_from(fromclause)
+    from_self = _generative()(from_self)
+    _from_self = from_self
 
-        """
-        q = self._clone()
-        fromclause = q.compile().correlate(None)
-        q._statement = q._criterion = None
-        q._order_by = q._group_by = q._distinct = False
-        q._limit = q._offset = None
-        q.__set_select_from(fromclause)
-        return q
-        
     def values(self, *columns):
         """Return an iterator yielding result tuples corresponding to the given list of columns"""
         
-        q = self.__no_entities('_values')
-        q._only_load_props = util.Set()
-        q._no_filters = True
+        q = self._clone()
+        q._entities = []
         for column in columns:
             _ColumnEntity(q, column, None)
         if not q._yield_per:
-            q = q.yield_per(10)
+            q._yield_per = 10
         return iter(q)
     _values = values
     
     def add_column(self, column, id=None):
         """Add a SQL ColumnElement to the list of result columns to be returned."""
         
-        q = self._clone()
-        q._entities = list(q._entities)
-        _ColumnEntity(q, column, id)
-        return q
+        self._entities = list(self._entities)
+        _ColumnEntity(self, column, id)
+    add_column = _generative()(add_column)
     
     def options(self, *args):
         """Return a new Query object, applying the given list of
         MapperOptions.
 
         """
-        return self._options(False, *args)
+        return self.__options(False, *args)
 
     def _conditional_options(self, *args):
-        return self._options(True, *args)
+        return self.__options(True, *args)
 
-    def _options(self, conditional, *args):
-        q = self._clone()
+    def __options(self, conditional, *args):
         # most MapperOptions write to the '_attributes' dictionary,
         # so copy that as well
-        q._attributes = q._attributes.copy()
+        self._attributes = self._attributes.copy()
         opts = [o for o in util.flatten_iterator(args)]
-        q._with_options = q._with_options + opts
+        self._with_options = self._with_options + opts
         if conditional:
             for opt in opts:
-                opt.process_query_conditionally(q)
+                opt.process_query_conditionally(self)
         else:
             for opt in opts:
-                opt.process_query(q)
-        return q
-
+                opt.process_query(self)
+    __options = _generative()(__options)
+    
     def with_lockmode(self, mode):
         """Return a new Query object with the specified locking mode."""
         
-        q = self._clone()
-        q._lockmode = mode
-        return q
-
+        self._lockmode = mode
+    with_lockmode = _generative()(with_lockmode)
+    
     def params(self, *args, **kwargs):
         """add values for bind parameters which may have been specified in filter().
 
@@ -513,15 +510,14 @@ class Query(object):
         \**kwargs cannot be used.
 
         """
-        q = self._clone()
         if len(args) == 1:
             kwargs.update(args[0])
         elif len(args) > 0:
             raise exceptions.ArgumentError("params() takes zero or one positional argument, which is a dictionary.")
-        q._params = q._params.copy()
-        q._params.update(kwargs)
-        return q
-
+        self._params = self._params.copy()
+        self._params.update(kwargs)
+    params = _generative()(params)
+    
     def filter(self, criterion):
         """apply the given filtering criterion to the query and return the newly resulting ``Query``
 
@@ -536,14 +532,13 @@ class Query(object):
 
         if self._aliases_head:
             criterion = self._aliases_head.adapt_clause(criterion)
-
-        q = self.__no_statement("filter")
-        if q._criterion is not None:
-            q._criterion = q._criterion & criterion
+        
+        if self._criterion is not None:
+            self._criterion = self._criterion & criterion
         else:
-            q._criterion = criterion
-        return q
-
+            self._criterion = criterion
+    filter = _generative(__no_statement_condition, __no_limit_offset)(filter)
+    
     def filter_by(self, **kwargs):
         """apply the given filtering criterion to the query and return the newly resulting ``Query``."""
 
@@ -576,32 +571,28 @@ class Query(object):
     def order_by(self, *criterion):
         """apply one or more ORDER BY criterion to the query and return the newly resulting ``Query``"""
 
-        q = self.__no_statement("order_by")
-
         if self._aliases_head:
             criterion = [expression._literal_as_text(o) for o in criterion]
             criterion = self._aliases_head.adapt_list(criterion)
 
-        if q._order_by is False:
-            q._order_by = criterion
+        if self._order_by is False:
+            self._order_by = criterion
         else:
-            q._order_by = q._order_by + criterion
-        return q
+            self._order_by = self._order_by + criterion
     order_by = util.array_as_starargs_decorator(order_by)
+    order_by = _generative(__no_statement_condition)(order_by)
     
     def group_by(self, *criterion):
         """apply one or more GROUP BY criterion to the query and return the newly resulting ``Query``"""
 
-        q = self.__no_statement("group_by")
-        
         criterion = list(chain(*[_orm_columns(c) for c in criterion]))
         
-        if q._group_by is False:
-            q._group_by = criterion
+        if self._group_by is False:
+            self._group_by = criterion
         else:
-            q._group_by = q._group_by + criterion
-        return q
+            self._group_by = self._group_by + criterion
     group_by = util.array_as_starargs_decorator(group_by)
+    group_by = _generative(__no_statement_condition)(group_by)
     
     def having(self, criterion):
         """apply a HAVING criterion to the query and return the newly resulting ``Query``."""
@@ -615,13 +606,12 @@ class Query(object):
         if self._aliases_head:
             criterion = self._aliases_head.adapt_clause(criterion)
 
-        q = self.__no_statement("having")
-        if q._having is not None:
-            q._having = q._having & criterion
+        if self._having is not None:
+            self._having = self._having & criterion
         else:
-            q._having = criterion
-        return q
-
+            self._having = criterion
+    having = _generative(__no_statement_condition)(having)
+    
     def join(self, *props, **kwargs):
         """Create a join against this ``Query`` object's criterion
         and apply generatively, retunring the newly resulting ``Query``.
@@ -645,7 +635,6 @@ class Query(object):
 
         """
         id, aliased, from_joinpoint = kwargs.get('id', None), kwargs.get('aliased', False), kwargs.get('from_joinpoint', False)
-        
         return self.__join(props, id=id, outerjoin=False, create_aliases=aliased, from_joinpoint=from_joinpoint)
     join = util.array_as_starargs_decorator(join)
     
@@ -671,7 +660,6 @@ class Query(object):
             session.query(Company).outerjoin(('employees', people.outerjoin(engineers)), Engineer.computers)
 
         """
-
         id, aliased, from_joinpoint = kwargs.get('id', None), kwargs.get('aliased', False), kwargs.get('from_joinpoint', False)
         return self.__join(props, id=id, outerjoin=True, create_aliases=aliased, from_joinpoint=from_joinpoint)
     outerjoin = util.array_as_starargs_decorator(outerjoin)
@@ -691,15 +679,13 @@ class Query(object):
         else:
             return self.__joinable_tables[1]
 
-    
     def __join(self, keys, id, outerjoin, create_aliases, from_joinpoint):
-        q = self.__no_statement("join")
-        q.__generate_anonymous_alias_ids()
+        self.__generate_anonymous_alias_ids()
 
         if not from_joinpoint:
-            q._reset_joinpoint()
+            self.__reset_joinpoint()
         
-        alias = q._aliases_head
+        alias = self._aliases_head
             
         currenttables = self.__get_joinable_tables()
         clause = self._from_obj
@@ -733,7 +719,7 @@ class Query(object):
                             clause = adapt_against = key.clause_element()
             else:
                 if not mapper:
-                    mapper = q._joinpoint
+                    mapper = self._joinpoint
                     if mapper is None:
                         # TODO: coverage
                         raise exceptions.InvalidRequestError("no primary mapper to join from")
@@ -785,21 +771,22 @@ class Query(object):
                             equivalents=prop.mapper._equivalent_columns, 
                             chain_to=alias)
 
-                    q._anonymous_alias_ids.setdefault(prop.mapper, []).append(alias)
-                    q._anonymous_alias_ids.setdefault(prop.table, []).append(alias)
+                    self._anonymous_alias_ids.setdefault(prop.mapper, []).append(alias)
+                    self._anonymous_alias_ids.setdefault(prop.table, []).append(alias)
                     
             mapper = of_type or prop.mapper
 
-        q._from_obj = clause
-        q._joinpoint = mapper
-        q._aliases = alias
+        self._from_obj = clause
+        self._joinpoint = mapper
+        self._aliases = alias
         
         if alias:
-            q._aliases_head = alias
+            self._aliases_head = alias
 
         if id:
-            q._anonymous_alias_ids[id] = [alias]
-        return q
+            self._anonymous_alias_ids[id] = [alias]
+    __join = _generative(__no_statement_condition, __no_limit_offset)(__join)
+
     
     def reset_joinpoint(self):
         """return a new Query reset the 'joinpoint' of this Query reset
@@ -810,9 +797,8 @@ class Query(object):
         the root.
 
         """
-        q = self.__no_statement("reset_joinpoint")
-        q._reset_joinpoint()
-        return q
+        self.__reset_joinpoint()
+    reset_joinpoint = _generative(__no_statement_condition)(reset_joinpoint)
     
     def select_from(self, from_obj):
         """Set the `from_obj` parameter of the query and return the newly
@@ -823,13 +809,12 @@ class Query(object):
         `from_obj` is a single table or selectable.
 
         """
-        new = self.__no_criterion('select_from')
         if isinstance(from_obj, (tuple, list)):
             util.warn_deprecated("select_from() now accepts a single Selectable as its argument, which replaces any existing FROM criterion.")
             from_obj = from_obj[-1]
 
-        new.__set_select_from(from_obj)
-        return new
+        self.__set_select_from(from_obj)
+    select_from = _generative(__no_criterion_condition, __no_from_condition)(select_from)
     
     def __getitem__(self, item):
         if isinstance(item, slice):
@@ -875,10 +860,9 @@ class Query(object):
         ``Query``.
 
         """
-        new = self.__no_statement("distinct")
-        new._distinct = True
-        return new
-
+        self._distinct = True
+    distinct = _generative(__no_statement_condition)(distinct)
+    
     def all(self):
         """Return the results represented by this ``Query`` as a list.
 
@@ -886,7 +870,6 @@ class Query(object):
 
         """
         return list(self)
-
 
     def from_statement(self, statement):
         """Execute the given SELECT statement and return results.
@@ -903,10 +886,9 @@ class Query(object):
         """
         if isinstance(statement, basestring):
             statement = sql.text(statement)
-        q = self.__no_criterion('from_statement')
-        q._statement = statement
-        return q
-
+        self._statement = statement
+    from_statement = _generative(__no_criterion_condition)(from_statement)
+    
     def first(self):
         """Return the first result of this ``Query`` or None if the result doesn't contain any row.
 
@@ -1033,7 +1015,7 @@ class Query(object):
             ident = util.to_list(ident)
 
         if refresh_instance is None:
-            q = self.__conditional_clone("get", [self.__no_criterion_condition])
+            q = self.__no_criterion()
         else:
             q = self._clone()
         q.__init_mapper([self._only_mapper_zero()])
@@ -1213,10 +1195,9 @@ class Query(object):
         
         if getattr(self, '_column_aggregate', None):
             raise exceptions.InvalidRequestError("Query already contains an aggregate column or function")
-        q = self.__no_statement("aggregate")
-        q._column_aggregate = (col, func)
-        return q
-
+        self._column_aggregate = (col, func)
+    _generative_col_aggregate = _generative(__no_statement_condition)(_generative_col_aggregate)
+    
     def apply_min(self, col):
         """apply the SQL ``min()`` function against the given column to the
         query and return the newly resulting ``Query``.
@@ -1300,7 +1281,6 @@ class Query(object):
         if "offset" in kwargs:
             q = q.offset(kwargs['offset'])
         return q
-
 
     def get_by(self, *args, **params): #pragma: no cover
         """DEPRECATED.  use query.filter_by(\**params).first()"""

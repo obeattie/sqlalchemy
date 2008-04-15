@@ -216,8 +216,7 @@ class AliasedClauses(object):
         aliased_column = self.adapter.traverse(column, clone=True)
 
         # add to row decorator explicitly
-        # TODO: refactor
-        self.row_decorator({}).map[column] = aliased_column
+        self.row_decorator.map[column] = aliased_column
         return aliased_column
 
     def adapt_clause(self, clause):
@@ -233,11 +232,11 @@ class AliasedClauses(object):
         return self.adapter.copy_and_process(clauses)
         
     def _create_row_adapter(self):
+        adapter = create_row_adapter(self.selectable, equivalent_columns=self.equivalents)
         if self.__wrap:
-            adapter = self.__wrap.row_decorator
-            return adapter.wrap(create_row_adapter(self.selectable, equivalent_columns=self.equivalents))
+            return self.__wrap.row_decorator.wrap(adapter)
         else:
-            return create_row_adapter(self.selectable, equivalent_columns=self.equivalents)
+            return adapter
 
 
 class AliasedClass(object):

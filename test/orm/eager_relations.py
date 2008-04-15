@@ -129,12 +129,17 @@ class EagerTest(FixtureTest):
         })
         mapper(User, users)
 
-        assert [Address(id=1, user=User(id=7)), Address(id=4, user=User(id=8)), Address(id=5, user=User(id=9))] == create_session().query(Address).filter(Address.id.in_([1, 4, 5])).all()
-
-        assert [Address(id=1, user=User(id=7)), Address(id=4, user=User(id=8)), Address(id=5, user=User(id=9))] == create_session().query(Address).filter(Address.id.in_([1, 4, 5])).limit(3).all()
-
         sess = create_session()
-        print "------------------------------------------------------------"
+        
+        for q in [
+            sess.query(Address).filter(Address.id.in_([1, 4, 5])),
+            sess.query(Address).filter(Address.id.in_([1, 4, 5])).limit(3)
+        ]:
+            sess.clear()
+            self.assertEquals(q.all(), 
+                [Address(id=1, user=User(id=7)), Address(id=4, user=User(id=8)), Address(id=5, user=User(id=9))]
+            )
+
         a = sess.query(Address).filter(Address.id==1).first()
         def go():
             assert a.user_id==7
@@ -151,12 +156,17 @@ class EagerTest(FixtureTest):
             'user_id':deferred(addresses.c.user_id),
         })
         mapper(User, users, properties={'addresses':relation(Address, lazy=False)})
+        
+        for q in [
+            sess.query(User).filter(User.id==7),
+            sess.query(User).filter(User.id==7).limit(1)
+        ]:
+            sess.clear()
+            self.assertEquals(q.all(), 
+                [User(id=7, addresses=[Address(id=1)])]
+            )
 
-        assert [User(id=7, addresses=[Address(id=1)])] == create_session().query(User).filter(User.id==7).all()
-
-        assert [User(id=7, addresses=[Address(id=1)])] == create_session().query(User).limit(1).filter(User.id==7).all()
-
-        sess = create_session()
+        sess.clear()
         u = sess.query(User).get(7)
         def go():
             assert u.addresses[0].user_id==7
@@ -174,9 +184,9 @@ class EagerTest(FixtureTest):
         mapper(Dingaling, dingalings, properties={
             'address_id':deferred(dingalings.c.address_id)
         })
-        sess = create_session()
+        sess.clear()
         def go():
-            u = sess.query(User).limit(1).get(8)
+            u = sess.query(User).get(8)
             assert User(id=8, addresses=[Address(id=2, dingalings=[Dingaling(id=1)]), Address(id=3), Address(id=4)]) == u
         self.assert_sql_count(testing.db, go, 1)
 

@@ -68,11 +68,8 @@ class GetTest(QueryTest):
 
         s = create_session()
         
-        try:
-            s.query(User).join('addresses').filter(Address.user_id==8).get(7)
-            assert False
-        except exceptions.SAWarning, e:
-            assert str(e) == "Query.get() being called on a Query with existing criterion; criterion is being ignored.", str(e)
+        q = s.query(User).join('addresses').filter(Address.user_id==8)
+        self.assertRaises(exceptions.SAWarning, q.get, 7)
 
         @testing.emits_warning('Query.*')
         def warns():
@@ -193,6 +190,29 @@ class GetTest(QueryTest):
         assert u.addresses[0].email_address == 'jack@bean.com'
         assert u.orders[1].items[2].description == 'item 5'
 
+class InvalidGenerationsTest(QueryTest):
+    def test_no_limit_offset(self):
+        s = create_session()
+        
+        q = s.query(User).limit(2)
+        self.assertRaises(exceptions.SAWarning, q.join, "addresses")
+
+        self.assertRaises(exceptions.SAWarning, q.filter, User.name=='ed')
+
+        self.assertRaises(exceptions.SAWarning, q.filter_by, name='ed')
+    
+    def test_no_from(self):
+        s = create_session()
+    
+        q = s.query(User).select_from(users)
+        self.assertRaises(exceptions.InvalidRequestError, q.select_from, users)
+
+        q = s.query(User).join('addresses')
+        self.assertRaises(exceptions.InvalidRequestError, q.select_from, users)
+        
+        # this is fine, however
+        q.from_self()
+        
 class OperatorTest(QueryTest):
     """test sql.Comparator implementation for MapperProperties"""
 

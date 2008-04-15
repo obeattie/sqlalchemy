@@ -525,10 +525,7 @@ class EagerLoader(AbstractRelationLoader):
             # FROM clause of the select().
             entity_key, default_towrap = None, context.from_clause
         
-        try:
-            towrap = context.eager_joins[entity_key]
-        except KeyError:
-            context.eager_joins[entity_key] = towrap = default_towrap
+        towrap = context.eager_joins.setdefault(entity_key, default_towrap)
         
         # create AliasedClauses object to build up the eager query.  this is cached after 1st creation.
         # this also allows ORMJoin to cache the aliased joins it produces since we pass the same

@@ -188,17 +188,19 @@ def to_list(x, default=None):
     else:
         return x
 
-def array_as_starargs_decorator(func):
+def array_as_starargs_decorator(fn):
     """Interpret a single positional array argument as
     *args for the decorated method.
     
     """
+
     def starargs_as_list(self, *args, **kwargs):
         if isinstance(args, basestring) or (len(args) == 1 and not isinstance(args[0], tuple)):
-            return func(self, *to_list(args[0], []), **kwargs)
+            return fn(self, *to_list(args[0], []), **kwargs)
         else:
-            return func(self, *args, **kwargs)
-    return starargs_as_list
+            return fn(self, *args, **kwargs)
+    starargs_as_list.__doc__ = fn.__doc__
+    return function_named(starargs_as_list, fn.__name__)
     
 def to_set(x):
     if x is None:
@@ -280,6 +282,51 @@ def get_cls_kwargs(cls):
 def get_func_kwargs(func):
     """Return the full set of legal kwargs for the given `func`."""
     return inspect.getargspec(func)[0]
+
+def format_argspec_plus(fn, grouped=True):
+    """Returns a dictionary of formatted, introspected function arguments.
+
+    A enhanced variant of inspect.formatargspec to support code generation.
+
+    fn
+       An inspectable callable
+    grouped
+      Defaults to True; include (parens, around, argument) lists
+
+    Returns:
+
+    args
+      Full inspect.formatargspec for fn
+    self_arg
+      The name of the first positional argument, or None
+    apply_pos
+      args, re-written in calling rather than receiving syntax.  Arguments are
+      passed positionally.
+    apply_kw
+      Like apply_pos, except keyword-ish args are passed as keywords.
+
+    Example::
+
+      >>> format_argspec_plus(lambda self, a, b, c=3, **d: 123)
+      {'args': '(self, a, b, c=3, **d)',
+       'self_arg': 'self',
+       'apply_kw': '(self, a, b, c=c, **d)',
+       'apply_pos': '(self, a, b, c, **d)'}
+
+    """
+    spec = inspect.getargspec(fn)
+    args = inspect.formatargspec(*spec)
+    self_arg = spec[0] and spec[0][0] or None
+    apply_pos = inspect.formatargspec(spec[0], spec[1], spec[2])
+    defaulted_vals = spec[3] is not None and spec[0][0-len(spec[3]):] or ()
+    apply_kw = inspect.formatargspec(spec[0], spec[1], spec[2], defaulted_vals,
+                                     formatvalue=lambda x: '=' + x)
+    if grouped:
+        return dict(args=args, self_arg=self_arg,
+                    apply_pos=apply_pos, apply_kw=apply_kw)
+    else:
+        return dict(args=args[1:-1], self_arg=self_arg,
+                    apply_pos=apply_pos[1:-1], apply_kw=apply_kw[1:-1])
 
 def unbound_method_to_callable(func_or_cls):
     """Adjust the incoming callable such that a 'self' argument is not required."""
