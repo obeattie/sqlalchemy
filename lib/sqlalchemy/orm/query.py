@@ -451,6 +451,8 @@ class Query(object):
     def values(self, *columns):
         """Return an iterator yielding result tuples corresponding to the given list of columns"""
         
+        if not columns:
+            return iter(())
         q = self._clone()
         q._entities = []
         for column in columns:

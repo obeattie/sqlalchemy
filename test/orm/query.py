@@ -977,6 +977,8 @@ class MixedEntitiesTest(QueryTest):
     def test_values(self):
         sess = create_session()
 
+        assert list(sess.query(User).values()) == list()
+
         sel = users.select(User.id.in_([7, 8])).alias()
         q = sess.query(User)
         q2 = q.select_from(sel).values(User.name)
