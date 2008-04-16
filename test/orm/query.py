@@ -700,6 +700,9 @@ class JoinTest(QueryTest):
         l = q.join(AdAlias.user).filter(User.name=='ed')
         self.assertEquals(l.all(), [(user8, address2),(user8, address3),(user8, address4),])
 
+        q = sess.query(User, AdAlias).select_from(join(AdAlias, User, AdAlias.user)).filter(User.name=='ed')
+        self.assertEquals(l.all(), [(user8, address2),(user8, address3),(user8, address4),])
+        
         
     def test_aliased_classes_m2m(self):
         sess = create_session()
@@ -1579,6 +1582,17 @@ class SelfReferentialTest(ORMTest):
             filter(and_(Node.data=='n122', n1.data=='n12', n2.data=='n1')).values(Node.data, n1.data, n2.data)),
             [('n122', 'n12', 'n1')])
     
+    def test_join_to_nonaliased(self):
+        sess = create_session()
+        
+        n1 = aliased(Node)
+        self.assertRaises(exceptions.InvalidRequestError, sess.query(n1).join, n1.parent)
+
+        self.assertEquals(
+            sess.query(n1).join((n1.parent, Node)).filter(Node.data=='n1').all(),
+            [Node(parent_id=1,data=u'n11',id=2), Node(parent_id=1,data=u'n12',id=3), Node(parent_id=1,data=u'n13',id=4)]
+        )
+        
     def test_multiple_inline_entities(self):
         sess = create_session()
         

@@ -727,11 +727,8 @@ class Session(object):
             return e
 
     def query(self, *entities, **kwargs):
-        """Return a new ``Query`` object corresponding to this ``Session`` and
-        the mapper, or the classes' primary mapper.
-        """
-
-
+        """Return a new ``Query`` object corresponding to this ``Session``."""
+        
         return self._query_cls(entities, self, **kwargs)
 
     def _autoflush(self):

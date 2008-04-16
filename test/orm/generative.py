@@ -238,27 +238,6 @@ class CaseSensitiveTest(TestBase):
         res = q.filter(and_(table1.c.ID==table2.c.T1ID,table2.c.T1ID==1)).distinct()
         self.assertEqual(res.count(), 1)
 
-class SelfRefTest(ORMTest):
-    def define_tables(self, metadata):
-        global t1
-        t1 = Table('t1', metadata,
-            Column('id', Integer, primary_key=True),
-            Column('parent_id', Integer, ForeignKey('t1.id'))
-            )
-    def test_noautojoin(self):
-        class T(object):pass
-        mapper(T, t1, properties={'children':relation(T)})
-        sess = create_session(bind=testing.db)
-        def go():
-            sess.query(T).join('children')
-        self.assertRaisesMessage(exceptions.InvalidRequestError, 
-            "Self-referential query on 'T\.children \(T\)' property requires aliased=True argument.", go)
-
-        def go():
-            sess.query(T).join(['children']).select_by(id=7)
-        self.assertRaisesMessage(exceptions.InvalidRequestError, 
-            "Self-referential query on 'T\.children \(T\)' property requires aliased=True argument.", go)
-
 
 
 if __name__ == "__main__":

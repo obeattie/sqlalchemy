@@ -1230,21 +1230,12 @@ def function_named(fn, name):
                           fn.func_defaults, fn.func_closure)
     return fn
 
-def conditional_cache_decorator(func):
-    """apply conditional caching to the return value of a function."""
-
-    return cache_decorator(func, conditional=True)
-
-def cache_decorator(func, conditional=False):
+def cache_decorator(func):
     """apply caching to the return value of a function."""
 
     name = '_cached_' + func.__name__
     
     def do_with_cache(self, *args, **kwargs):
-        if conditional:
-            cache = kwargs.pop('cache', False)
-            if not cache:
-                return func(self, *args, **kwargs)
         try:
             return getattr(self, name)
         except AttributeError:

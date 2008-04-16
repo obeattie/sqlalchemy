@@ -142,11 +142,6 @@ class Query(object):
             return self._from_obj
         else:
             return self._entity_zero().selectable
-    
-    def __generate_anonymous_alias_ids(self):
-        self._anonymous_alias_ids = dict([
-            (k, list(v)) for k, v in self._anonymous_alias_ids.iteritems()
-        ])
 
     def __set_select_from(self, from_obj):
         if isinstance(from_obj, expression._SelectBaseMixin):
@@ -314,8 +309,8 @@ class Query(object):
 
         The `ident` argument is a scalar or tuple of primary key column values
         in the order of the table def's primary key columns.
-        """
 
+        """
         ret = self._extension.get(self, ident, **kwargs)
         if ret is not mapper.EXT_CONTINUE:
             return ret
@@ -336,8 +331,8 @@ class Query(object):
         pending changes** to the object already existing in the Session.  The
         `ident` argument is a scalar or tuple of primary key column values in
         the order of the table def's primary key columns.
-        """
 
+        """
         ret = self._extension.load(self, ident, **kwargs)
         if ret is not mapper.EXT_CONTINUE:
             return ret
@@ -367,8 +362,8 @@ class Query(object):
            
        deprecated.  use sqlalchemy.orm.with_parent in conjunction with 
        filter().
+
         """
-        
         mapper = object_mapper(instance)
         prop = mapper.get_property(property, resolve_synonyms=True)
         target = prop.mapper
@@ -680,43 +675,51 @@ class Query(object):
             return self.__joinable_tables[1]
 
     def __join(self, keys, id, outerjoin, create_aliases, from_joinpoint):
-        self.__generate_anonymous_alias_ids()
+        self._anonymous_alias_ids = dict([
+            (k, list(v)) for k, v in self._anonymous_alias_ids.iteritems()
+        ])
 
         if not from_joinpoint:
             self.__reset_joinpoint()
         
-        alias = self._aliases_head
-            
+        # figure out what tables are currently available to join 
+        # against in our FROM clause.
         currenttables = self.__get_joinable_tables()
+        
         clause = self._from_obj
-        adapt_against = clause
-
+        alias = self._aliases_head
         mapper = None
         
         for key in util.to_list(keys):
-            use_selectable = None
-            of_type = None
-            is_aliased_class = False
+            use_selectable = None   # pre-chosen selectable to join to, either user-specified or mapper.with_polymorphic
+
+            alias_criterion = False  # indicate to adapt future filter(), order_by(), etc. criterion to this selectable
             
+            is_anonymous_alias = False # indicate that entities/columns should try loading data from this selectable
+                                       # only occurs when create_aliases=True, or a plain expression construct is
+                                       # used for use_selectable (AliasedClass handles both of these use cases with
+                                       # less guesswork)
+
             if isinstance(key, tuple):
                 key, use_selectable = key
 
             if isinstance(key, interfaces.PropComparator):
+                descriptor = key
                 prop = key.property
 
-                of_type = getattr(key, '_of_type', None)
+                of_type = getattr(descriptor, '_of_type', None)
                 if of_type and not use_selectable:
-                    use_selectable = key._of_type.mapped_table
-                        
-                if not mapper:
-                    entity = key.parententity
-                    if not clause:
-                        for ent in self._mapper_entities:
-                            if ent.corresponds_to(entity):
-                                clause = adapt_against = ent.selectable
-                                break
-                        else:
-                            clause = adapt_against = key.clause_element()
+                    use_selectable = of_type.mapped_table
+                
+                if not clause:
+                    entity = descriptor.parententity
+                    for ent in self._mapper_entities:
+                        if ent.corresponds_to(entity):
+                            clause = ent.selectable
+                            break
+                    else:
+                        clause = descriptor.clause_element()
+                mapper = of_type or prop.mapper
             else:
                 if not mapper:
                     mapper = self._joinpoint
@@ -732,62 +735,72 @@ class Query(object):
                             raise exceptions.InvalidRequestError("No clause to join from")
                             
                 prop = mapper.get_property(key, resolve_synonyms=True)
-            
+                descriptor = prop.comparator
+                mapper = prop.mapper
+
             target = None
             
             if use_selectable:
                 if _is_aliased_class(use_selectable):
                     target = use_selectable
-                    is_aliased_class = True
-                    
+                    alias_criterion = False
+
+                elif _is_mapped_class(use_selectable):
+                    target = use_selectable
+                    alias_criterion = False
+
                 elif not use_selectable.is_derived_from(prop.mapper.mapped_table):
                     raise exceptions.InvalidRequestError("Selectable '%s' is not derived from '%s'" % (use_selectable.description, prop.mapper.mapped_table.description))
                     
                 elif not isinstance(use_selectable, expression.Alias):
                     use_selectable = use_selectable.alias()
+                    alias_criterion = is_anonymous_alias = True
                     
             elif prop.mapper.with_polymorphic:
-                use_selectable = prop.mapper._with_polymorphic_selectable()
+                use_selectable = prop.mapper._with_polymorphic_selectable
                 if not isinstance(use_selectable, expression.Alias):
                     use_selectable = use_selectable.alias()
-
+                alias_criterion = True
+                is_anonymous_alias = False
+                
             if prop._is_self_referential() and not create_aliases and not use_selectable:
-                raise exceptions.InvalidRequestError("Self-referential query on '%s' property requires aliased=True argument." % str(prop))
+                raise exceptions.InvalidRequestError("Self-referential join on %s requires target selectable, or the aliased=True flag" % descriptor)
             
             if not target:
                 if create_aliases or use_selectable:
                     target = aliased(prop.mapper, alias=use_selectable)
+                    alias_criterion = True
+                    is_anonymous_alias = create_aliases
                 elif prop.table not in currenttables:
                     target = prop.mapper
                 elif not create_aliases and prop.secondary is not None and prop.secondary not in currenttables:
                     # TODO: this check is not strong enough for different paths to the same endpoint which
                     # does not use secondary tables
-                    raise exceptions.InvalidRequestError("Can't join to property '%s'; a path to this table along a different secondary table already exists.  Use the `alias=True` argument to `join()`." % prop.key)
-                
+                    raise exceptions.InvalidRequestError("Can't join to property '%s'; a path to this table along a different secondary table already exists.  Use the `alias=True` argument to `join()`." % descriptor)
+            
             if target:
                 clause = mapperutil.join(clause, target, prop, isouter=outerjoin)
-                if (use_selectable or create_aliases) and not is_aliased_class:
+                if alias_criterion: 
                     alias = mapperutil.AliasedClauses(target, 
                             equivalents=prop.mapper._equivalent_columns, 
                             chain_to=alias)
-
-                    self._anonymous_alias_ids.setdefault(prop.mapper, []).append(alias)
-                    self._anonymous_alias_ids.setdefault(prop.table, []).append(alias)
                     
-            mapper = of_type or prop.mapper
-
+                    if is_anonymous_alias:
+                        self._anonymous_alias_ids.setdefault(prop.mapper, []).append(alias)
+                        self._anonymous_alias_ids.setdefault(prop.table, []).append(alias)
+                    
         self._from_obj = clause
         self._joinpoint = mapper
-        self._aliases = alias
         
         if alias:
             self._aliases_head = alias
 
-        if id:
-            self._anonymous_alias_ids[id] = [alias]
+            if id:
+                self._anonymous_alias_ids[id] = [alias]
+
     __join = _generative(__no_statement_condition, __no_limit_offset)(__join)
 
-    
+
     def reset_joinpoint(self):
         """return a new Query reset the 'joinpoint' of this Query reset
         back to the starting mapper.  Subsequent generative calls will
@@ -970,7 +983,7 @@ class Query(object):
             if self._yield_per:
                 fetch = cursor.fetchmany(self._yield_per)
                 if not fetch:
-                    return
+                    break
             else:
                 fetch = cursor.fetchall()
 
@@ -1004,6 +1017,7 @@ class Query(object):
         lockmode = lockmode or self._lockmode
         if not self._populate_existing and not refresh_instance and not self._mapper_zero().always_refresh and lockmode is None:
             try:
+                # TODO: expire check here
                 return self.session.identity_map[key]
             except KeyError:
                 pass
@@ -1586,7 +1600,7 @@ class _MapperEntity(_QueryEntity):
             if context.order_by and query._aliases_head:
                 context.order_by = query._aliases_head.adapt_list([expression._literal_as_text(o) for o in util.to_list(context.order_by)])
                 
-        for value in self.mapper._iterate_polymorphic_properties(self._with_polymorphic, context.from_clause):
+        for value in self.mapper._iterate_polymorphic_properties(self._with_polymorphic):
             if query._only_load_props and value.key not in query._only_load_props:
                 continue
             context.exec_with_path(self.path_entity, value.key, value.setup, context, only_load_props=query._only_load_props, entity=self, column_collection=context.primary_columns, parentclauses=adapter)

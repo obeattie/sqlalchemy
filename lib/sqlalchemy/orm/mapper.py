@@ -221,20 +221,6 @@ class Mapper(object):
         return self.__props.itervalues()
     iterate_properties = property(iterate_properties, doc="returns an iterator of all MapperProperty objects.")
 
-    def __adjust_wp_selectable(self, spec=None, selectable=False):
-        """given a with_polymorphic() argument, resolve it against this mapper's with_polymorphic setting"""
-        
-        isdefault = False
-        if self.with_polymorphic:
-            isdefault = not spec and selectable is False
-
-            if not spec:
-                spec = self.with_polymorphic[0]
-            if selectable is False:
-                selectable = self.with_polymorphic[1]
-                
-        return spec, selectable, isdefault
-        
     def __mappers_from_spec(self, spec, selectable):
         """given a with_polymorphic() argument, return the set of mappers it represents.
         
@@ -254,7 +240,6 @@ class Mapper(object):
             mappers = [m for m in mappers if m.local_table in tables]
             
         return mappers
-    __mappers_from_spec = util.conditional_cache_decorator(__mappers_from_spec)
     
     def __selectable_from_mappers(self, mappers):
         """given a list of mappers (assumed to be within this mapper's inheritance hierarchy),
@@ -271,36 +256,42 @@ class Mapper(object):
                 from_obj = from_obj.outerjoin(m.local_table, m.inherit_condition)
         
         return from_obj
-    __selectable_from_mappers = util.conditional_cache_decorator(__selectable_from_mappers)
     
-    def _with_polymorphic_mappers(self, spec=None, selectable=False):
-        if not spec and not selectable and not self.with_polymorphic:
+    def _with_polymorphic_mappers(self):
+        if not self.with_polymorphic:
             return [self]
-
-        spec, selectable, isdefault = self.__adjust_wp_selectable(spec, selectable)
-        return self.__mappers_from_spec(spec, selectable, cache=isdefault)
-        
-    def _with_polymorphic_selectable(self, spec=None, selectable=False):
-        if not spec and not selectable and not self.with_polymorphic:
+        return self.__mappers_from_spec(*self.with_polymorphic)
+    _with_polymorphic_mappers = property(util.cache_decorator(_with_polymorphic_mappers))
+    
+    def _with_polymorphic_selectable(self):
+        if not self.with_polymorphic:
             return self.mapped_table
-            
-        spec, selectable, isdefault = self.__adjust_wp_selectable(spec, selectable)
+        
+        spec, selectable = self.with_polymorphic
         if selectable:
             return selectable
         else:
-            return self.__selectable_from_mappers(self.__mappers_from_spec(spec, selectable, cache=isdefault), cache=isdefault)
+            return self.__selectable_from_mappers(self.__mappers_from_spec(spec, selectable))
+    _with_polymorphic_selectable = property(util.cache_decorator(_with_polymorphic_selectable))
     
     def _with_polymorphic_args(self, spec=None, selectable=False):
-        spec, selectable, isdefault = self.__adjust_wp_selectable(spec, selectable)
-        mappers = self.__mappers_from_spec(spec, selectable, cache=isdefault)
+        if self.with_polymorphic:
+            if not spec:
+                spec = self.with_polymorphic[0]
+            if selectable is False:
+                selectable = self.with_polymorphic[1]
+        
+        mappers = self.__mappers_from_spec(spec, selectable)
         if selectable:
             return mappers, selectable
         else:
-            return mappers, self.__selectable_from_mappers(mappers, cache=isdefault)
+            return mappers, self.__selectable_from_mappers(mappers)
         
-    def _iterate_polymorphic_properties(self, spec=None, selectable=False):
+    def _iterate_polymorphic_properties(self, mappers=None):
+        if mappers is None:
+            mappers = self._with_polymorphic_mappers
         return iter(util.OrderedSet(
-            chain(*[list(mapper.iterate_properties) for mapper in [self] + self._with_polymorphic_mappers(spec, selectable)])
+            chain(*[list(mapper.iterate_properties) for mapper in [self] + mappers])
         ))
 
     def properties(self):
@@ -866,6 +857,10 @@ class Mapper(object):
         self._init_properties[key] = prop
         self._compile_property(key, prop, init=self.__props_init)
 
+    def __repr__(self):
+        return '<Mapper at 0x%x; %s>' % (
+            id(self), self.class_.__name__)
+        
     def __str__(self):
         return "Mapper|" + self.class_.__name__ + "|" + (self.entity_name is not None and "/%s" % self.entity_name or "") + (self.local_table and self.local_table.description or str(self.local_table)) + (self.non_primary and "|non-primary" or "")
 

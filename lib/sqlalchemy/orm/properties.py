@@ -287,7 +287,7 @@ class PropertyLoader(StrategizedProperty):
         parententity = property(parententity)
         
         def clause_element(self):
-            return self.prop.parent.mapped_table
+            return self.prop.parent._with_polymorphic_selectable
             
         def of_type(self, cls):
             return PropertyLoader.Comparator(self.prop, cls)
@@ -317,7 +317,7 @@ class PropertyLoader(StrategizedProperty):
         def __join_and_criterion(self, criterion=None, **kwargs):
             if getattr(self, '_of_type', None):
                 target_mapper = self._of_type
-                to_selectable = target_mapper._with_polymorphic_selectable()
+                to_selectable = target_mapper._with_polymorphic_selectable
             else:
                 to_selectable = None
 
@@ -715,17 +715,18 @@ class PropertyLoader(StrategizedProperty):
 
         if source_selectable is None:
             if source_polymorphic and self.parent.with_polymorphic:
-                source_selectable = self.parent._with_polymorphic_selectable()
+                source_selectable = self.parent._with_polymorphic_selectable
                 
         if dest_selectable is None:
             if dest_polymorphic and self.mapper.with_polymorphic:
-                dest_selectable = self.mapper._with_polymorphic_selectable()
+                dest_selectable = self.mapper._with_polymorphic_selectable
 
             if self._is_self_referential():
-                if dest_selectable:
-                    dest_selectable = dest_selectable.alias()
-                else:
-                    dest_selectable = self.mapper.local_table.alias()
+                if source_selectable is dest_selectable:
+                    if dest_selectable:
+                        dest_selectable = dest_selectable.alias()
+                    else:
+                        dest_selectable = self.mapper.local_table.alias()
 
         primaryjoin, secondaryjoin, secondary = self.primaryjoin, self.secondaryjoin, self.secondary
         if source_selectable or dest_selectable:

@@ -61,6 +61,9 @@ class QueryableAttribute(interfaces.PropComparator):
             return class_mapper(self.impl.class_)
     parententity = property(parententity)
 
+    def __str__(self):
+        return repr(self.parententity) + "." + self._property.key
+
     property = _property
 
 class InstrumentedAttribute(QueryableAttribute):

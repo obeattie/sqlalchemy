@@ -241,23 +241,23 @@ class AliasedClauses(object):
 
 class AliasedClass(object):
     def __init__(self, cls, alias=None):
-        self.mapper = _class_to_mapper(cls) # urgh ?
-        self.__target = self.mapper.class_
-        alias = alias or self.mapper._with_polymorphic_selectable().alias()
-        self.adapter = sql_util.ClauseAdapter(alias, equivalents=self.mapper._equivalent_columns)
-        self.alias = alias
+        self.__mapper = _class_to_mapper(cls)
+        self.__target = self.__mapper.class_
+        alias = alias or self.__mapper._with_polymorphic_selectable.alias()
+        self.__adapter = sql_util.ClauseAdapter(alias, equivalents=self.__mapper._equivalent_columns)
+        self.__alias = alias
         self.__name__ = 'AliasedClass_' + str(self.__target)
     
     def __adapt_prop(self, prop):
         existing = getattr(self.__target, prop.key)
-        comparator = AliasedComparator(self, self.adapter, existing.comparator)
+        comparator = AliasedComparator(self, self.__adapter, existing.comparator)
         queryattr = attributes.QueryableAttribute(
             existing.impl, parententity=self, comparator=comparator)
         setattr(self, prop.key, queryattr)
         return queryattr
         
     def __getattr__(self, key):
-        prop = self.mapper._get_property(key, raiseerr=False)
+        prop = self.__mapper._get_property(key, raiseerr=False)
         if prop:
             return self.__adapt_prop(prop)
             
@@ -293,14 +293,7 @@ class AliasedComparator(PropComparator):
         self.adapter = adapter
         
     def clause_element(self):
-        # this is a HACK since some ProperrtyLoader comparators return the mapped table,
-        # using the adapter to "traverse" it is not the right approach
-        # (its probably not for ColumnLoaders either)
-        ca = self.comparator.clause_element()
-        if ca is self.aliasedclass.mapper.mapped_table:
-            return self.adapter.selectable
-        else:
-            return self.adapter.traverse(ca, clone=True)
+        return self.adapter.traverse(self.comparator.clause_element(), clone=True)
     clause_element = util.cache_decorator(clause_element)
     
     def operate(self, op, *other, **kwargs):
@@ -313,7 +306,7 @@ def _orm_columns(entity):
     if _is_aliased_class(entity):
         return [c for c in entity.alias.c]
     elif _is_mapped_class(entity):
-        return [c for c in _class_to_mapper(entity)._with_polymorphic_selectable().c]
+        return [c for c in _class_to_mapper(entity)._with_polymorphic_selectable.c]
     elif isinstance(entity, expression.Selectable):
         return [c for c in entity.c]
     else:
@@ -321,9 +314,9 @@ def _orm_columns(entity):
         
 def _orm_selectable(selectable, entity_name=None):
     if _is_aliased_class(selectable):
-        return selectable.alias
+        return selectable._AliasedClass__alias
     elif _is_mapped_class(selectable):
-        return _class_to_mapper(selectable, entity_name)._with_polymorphic_selectable()
+        return _class_to_mapper(selectable, entity_name)._with_polymorphic_selectable
     else:
         return expression._selectable(selectable)
         
@@ -332,7 +325,7 @@ def _orm_literal_as_column(c):
     if _is_aliased_class(c):
         return c.alias
     elif _is_mapped_class(c):
-        return _class_to_mapper(c)._with_polymorphic_selectable()
+        return _class_to_mapper(c)._with_polymorphic_selectable
     else:
         return _literal_as_column(c)
 # uncommenting this allows a mapped class or AliasedClass to be used i.e. select([MyClass])
@@ -350,7 +343,7 @@ class _ORMJoin(expression.Join):
         elif _is_mapped_class(left):
             left_mapper = _class_to_mapper(left)
             if _is_aliased_class(left):
-                adapt_from = left.alias
+                adapt_from = _orm_selectable(left)
             else:
                 adapt_from = None
         else:
@@ -377,7 +370,7 @@ class _ORMJoin(expression.Join):
 
             if prop:
                 if _is_aliased_class(right):
-                    adapt_to = right.alias
+                    adapt_to = right._AliasedClass__alias
                 else:
                     adapt_to = None
 
@@ -498,7 +491,7 @@ def _class_to_mapper(class_or_mapper, entity_name=None, compile=True):
     if isinstance(class_or_mapper, type):
         return class_mapper(class_or_mapper, entity_name=entity_name, compile=compile)
     elif isinstance(class_or_mapper, AliasedClass):
-        return class_or_mapper.mapper
+        return class_or_mapper._AliasedClass__mapper
     else:
         if compile:
             return class_or_mapper.compile()
