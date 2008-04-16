@@ -485,7 +485,10 @@ class EagerLoader(AbstractRelationLoader):
         
     def setup_query(self, context, parentclauses=None, parentmapper=None, entity=None, column_collection=None, **kwargs):
         """Add a left outer join to the statement thats being constructed."""
-        
+
+        if entity is None or entity.alias_id:
+            return
+
         path = context.path
         
         # check for join_depth or basic recursion,
@@ -504,9 +507,6 @@ class EagerLoader(AbstractRelationLoader):
         else:
             localparent = parentmapper
         
-        if entity is None or entity.alias_id:
-            return
-
         # whether or not the Query will wrap the selectable in a subquery,
         # and then attach eager load joins to that (i.e., in the case of LIMIT/OFFSET etc.)
         should_nest_selectable = context.query._should_nest_selectable
@@ -529,7 +529,7 @@ class EagerLoader(AbstractRelationLoader):
         
         # create AliasedClauses object to build up the eager query.  this is cached after 1st creation.
         # this also allows ORMJoin to cache the aliased joins it produces since we pass the same
-        # args each time.
+        # args each time in the typical case.
         path_key = util.WeakCompositeKey(*path)
         try:
             clauses = self.clauses[path_key]
@@ -548,7 +548,7 @@ class EagerLoader(AbstractRelationLoader):
         
         context.eager_joins[entity_key] = eagerjoin = mapperutil.outerjoin(towrap, clauses.aliased_class, onclause)
         
-        if not self.secondary and context.query._should_nest_selectable and column_collection is context.primary_columns:
+        if not self.secondary and context.query._should_nest_selectable and not parentmapper:
             # for parentclause that is the non-eager end of the join,
             # ensure all the parent cols in the primaryjoin are actually in the
             # columns clause (i.e. are not deferred), so that aliasing applied by the Query propagates 

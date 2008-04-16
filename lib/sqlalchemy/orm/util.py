@@ -157,6 +157,8 @@ class AliasedClauses(object):
         self.row_decorator = self._create_row_adapter()
         
     def wrap(self, aliasedclauses):
+        """Wrap the operations performed by this AliasedClauses by another AliasedClauses."""
+        
         ac = AliasedClauses.__new__(AliasedClauses)
         ac.__dict__ = self.__dict__.copy()
         ac.__wrap = aliasedclauses

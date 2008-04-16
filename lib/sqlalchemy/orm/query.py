@@ -612,22 +612,45 @@ class Query(object):
         and apply generatively, retunring the newly resulting ``Query``.
 
         each element in \*props may be:
-          * a string property name, i.e. "rooms"
-          * a class-mapped attribute, i.e. Houses.rooms
+          * a string property name, i.e. "rooms".  This will join along
+          the relation of the same name from this Query's "primary"
+          mapper, if one is present.
+          
+          * a class-mapped attribute, i.e. Houses.rooms.  This will create a 
+          join from "Houses" table to that of the "rooms" relation.
+          
           * a 2-tuple containing one of the above, combined with a selectable
-            which derives from the properties' mapped table. 
+            which derives from the destination table.   This will cause the join
+            to link to the given selectable instead of the relation's 
+            usual target table.  This argument can be used to join to table 
+            or class aliases, or "polymorphic" selectables.
 
         e.g.::
 
             session.query(Company).join('employees')
-            session.query(Company).join(['employees', 'tasks'])
+            session.query(Company).join('employees', 'tasks')
             
             PAlias = aliased(Person)
-            session.query(Person).join(Palias.friends)
+            session.query(Person).join((Person.friends, Palias))
             
             session.query(Houses).join(Colonials.rooms, Room.closets)
             session.query(Company).join(('employees', people.join(engineers)), Engineer.computers)
 
+        \**kwargs include:
+        
+            aliased - when joining, create anonymous aliases of each table.  This is
+            used for self-referential joins or multiple joins to the same table.
+            Consider usage of the aliased(SomeClass) construct as a more explicit
+            approach to this.
+            
+            id - a string identifier for the join, when "aliased" is used or when 
+            a plain selectable is used as the target of an add_entity() or 
+            add_column() call.  Consider usage of the aliased(SomeClass) construct 
+            as a more explicit approach to this.
+        
+            from_joinpoint - when joins are specified using string property names,
+            locate the property from the mapper found in the most recent join() call,
+            instead of from the root entity.
         """
         id, aliased, from_joinpoint = kwargs.get('id', None), kwargs.get('aliased', False), kwargs.get('from_joinpoint', False)
         return self.__join(props, id=id, outerjoin=False, create_aliases=aliased, from_joinpoint=from_joinpoint)
@@ -638,22 +661,45 @@ class Query(object):
         and apply generatively, retunring the newly resulting ``Query``.
 
         each element in \*props may be:
-          * a string property name, i.e. "rooms"
-          * a class-mapped attribute, i.e. Houses.rooms
+          * a string property name, i.e. "rooms".  This will join along
+          the relation of the same name from this Query's "primary"
+          mapper, if one is present.
+          
+          * a class-mapped attribute, i.e. Houses.rooms.  This will create a 
+          join from "Houses" table to that of the "rooms" relation.
+          
           * a 2-tuple containing one of the above, combined with a selectable
-            which derives from the properties' mapped table. 
+            which derives from the destination table.   This will cause the join
+            to link to the given selectable instead of the relation's 
+            usual target table.  This argument can be used to join to table 
+            or class aliases, or "polymorphic" selectables.
 
         e.g.::
 
             session.query(Company).outerjoin('employees')
-            session.query(Company).outerjoin(['employees', 'tasks'])
+            session.query(Company).outerjoin('employees', 'tasks')
             
             PAlias = aliased(Person)
-            session.query(Person).outerjoin(Palias.friends)
+            session.query(Person).outerjoin((Person.friends, Palias))
             
             session.query(Houses).outerjoin(Colonials.rooms, Room.closets)
             session.query(Company).outerjoin(('employees', people.outerjoin(engineers)), Engineer.computers)
 
+        \**kwargs include:
+
+            aliased - when joining, create anonymous aliases of each table.  This is
+            used for self-referential joins or multiple joins to the same table.
+            Consider usage of the aliased(SomeClass) construct as a more explicit
+            approach to this.
+
+            id - a string identifier for the join, when "aliased" is used or when 
+            a plain selectable is used as the target of an add_entity() or 
+            add_column() call.  Consider usage of the aliased(SomeClass) construct 
+            as a more explicit approach to this.
+
+            from_joinpoint - when joins are specified using string property names,
+            locate the property from the mapper found in the most recent join() call,
+            instead of from the root entity.
         """
         id, aliased, from_joinpoint = kwargs.get('id', None), kwargs.get('aliased', False), kwargs.get('from_joinpoint', False)
         return self.__join(props, id=id, outerjoin=True, create_aliases=aliased, from_joinpoint=from_joinpoint)
