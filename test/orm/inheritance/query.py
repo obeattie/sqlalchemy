@@ -475,6 +475,55 @@ def make_test(select_type):
                     (m1, b1),
                 ]
             )
+            
+        def test_mixed_entities(self):
+            sess = create_session()
+            
+            self.assertEquals(
+                sess.query(Company.name, Person).join(Company.employees).filter(Company.name=='Elbonia, Inc.').all(),
+                [(u'Elbonia, Inc.', 
+                    Engineer(status=u'elbonian engineer',engineer_name=u'vlad',name=u'vlad',primary_language=u'cobol'))]
+            )
+
+            self.assertEquals(
+                sess.query(Person, Company.name).join(Company.employees).filter(Company.name=='Elbonia, Inc.').all(),
+                [(Engineer(status=u'elbonian engineer',engineer_name=u'vlad',name=u'vlad',primary_language=u'cobol'),
+                    u'Elbonia, Inc.')]
+            )
+
+            self.assertEquals(
+                sess.query(Person.name, Company.name).join(Company.employees).filter(Company.name=='Elbonia, Inc.').all(),
+                [(u'vlad',u'Elbonia, Inc.')]
+            )
+
+            palias = aliased(Person)
+            self.assertEquals(
+                sess.query(Person, Company.name, palias).join(Company.employees).filter(Company.name=='Elbonia, Inc.').filter(palias.name=='dilbert').all(),
+                [(Engineer(status=u'elbonian engineer',engineer_name=u'vlad',name=u'vlad',primary_language=u'cobol'),
+                    u'Elbonia, Inc.', 
+                    Engineer(status=u'regular engineer',engineer_name=u'dilbert',name=u'dilbert',company_id=1,primary_language=u'java',person_id=1,type=u'engineer'))]
+            )
+
+            self.assertEquals(
+                sess.query(palias, Company.name, Person).join(Company.employees).filter(Company.name=='Elbonia, Inc.').filter(palias.name=='dilbert').all(),
+                [(Engineer(status=u'regular engineer',engineer_name=u'dilbert',name=u'dilbert',company_id=1,primary_language=u'java',person_id=1,type=u'engineer'),
+                    u'Elbonia, Inc.', 
+                    Engineer(status=u'elbonian engineer',engineer_name=u'vlad',name=u'vlad',primary_language=u'cobol'),)
+                ]
+            )
+
+            self.assertEquals(
+                sess.query(Person.name, Company.name, palias.name).join(Company.employees).filter(Company.name=='Elbonia, Inc.').filter(palias.name=='dilbert').all(),
+                [(u'vlad', u'Elbonia, Inc.', u'dilbert')]
+            )
+            
+            self.assertEquals(
+                sess.query(Person.name, Paperwork.description).filter(Person.person_id==Paperwork.person_id).all(), 
+                [(u'dilbert', u'tps report #1'), (u'dilbert', u'tps report #2'), (u'wally', u'tps report #3'), 
+                (u'wally', u'tps report #4'), (u'pointy haired boss', u'review #1'), (u'dogbert', u'review #2'), 
+                (u'dogbert', u'review #3'), (u'vlad', u'elbonian missive #3')]
+            )
+    
     
     PolymorphicQueryTest.__name__ = "Polymorphic%sTest" % select_type
     return PolymorphicQueryTest

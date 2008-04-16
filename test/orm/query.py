@@ -606,28 +606,6 @@ class ParentTest(QueryTest):
 
 class JoinTest(QueryTest):
 
-    def test_getjoinable_tables(self):
-        sess = create_session()
-
-        sel1 = select([users]).alias()
-        sel2 = select([users], from_obj=users.join(addresses)).alias()
-
-        j1 = sel1.join(users, sel1.c.id==users.c.id)
-        j2 = j1.join(addresses)
-
-        for from_obj, assert_cond in (
-            (users, [users]),
-            (users.join(addresses), [users, addresses]),
-            (sel1, [sel1]),
-            (sel2, [sel2]),
-            (sel1.join(users, sel1.c.id==users.c.id), [sel1, users]),
-            (sel2.join(users, sel2.c.id==users.c.id), [sel2, users]),
-            (j2, [j1, j2, sel1, users, addresses])
-
-        ):
-            ret = set(sess.query(User).select_from(from_obj)._Query__get_joinable_tables())
-            self.assertEquals(ret, set(assert_cond).union([from_obj]), [x.description for x in ret])
-
     def test_overlapping_paths(self):
         for aliased in (True,False):
             # load a user who has an order that contains item id 3 and address id 1 (order 3, owned by jack)
@@ -740,20 +718,6 @@ class JoinTest(QueryTest):
             ]
         )
         
-    def test_generative_join(self):
-        # test that alised_ids is copied
-        sess = create_session()
-        q = sess.query(User).add_entity(Address)
-        q1 = q.join('addresses', aliased=True)
-        q2 = q.join('addresses', aliased=True)
-        q3 = q2.join('addresses', aliased=True)
-        q4 = q2.join('addresses', aliased=True, id='someid')
-        q5 = q2.join('addresses', aliased=True, id='someid')
-        q6 = q5.join('addresses', aliased=True, id='someid')
-        assert q1._anonymous_alias_ids[class_mapper(Address)] != q2._anonymous_alias_ids[class_mapper(Address)]
-        assert q2._anonymous_alias_ids[class_mapper(Address)] != q3._anonymous_alias_ids[class_mapper(Address)]
-        assert q4._anonymous_alias_ids['someid'] != q5._anonymous_alias_ids['someid']
-        
     def test_reset_joinpoint(self):
         for aliased in (True, False):
             # load a user who has an order that contains item id 3 and address id 1 (order 3, owned by jack)
@@ -811,31 +775,23 @@ class JoinTest(QueryTest):
 
     def test_aliased_add_entity(self):
         """test the usage of aliased joins with add_entity()"""
+
         sess = create_session()
-        q = sess.query(User).join('orders', aliased=True, id='order1').filter(Order.description=="order 3").join(['orders', 'items'], aliased=True, id='item1').filter(Item.description=="item 1")
+        q = sess.query(User).join('orders', aliased=True, id='order1').filter(Order.description=="order 3").\
+            join(['orders', 'items'], aliased=True, id='item1').filter(Item.description=="item 1")
 
-        try:
-            q.add_entity(Order, id='fakeid').compile()
-            assert False
-        except exceptions.InvalidRequestError, e:
-            assert str(e) == "Query has no alias identified by 'fakeid'"
-
-        try:
-            q.add_entity(Order, id='fakeid').instances(None)
-            assert False
-        except exceptions.InvalidRequestError, e:
-            assert str(e) == "Query has no alias identified by 'fakeid'"
+        self.assertRaises(exceptions.InvalidRequestError, q.add_entity(Order, id='fakeid').compile)
 
         q = q.add_entity(Order, id='order1').add_entity(Item, id='item1')
         assert q.count() == 1
-        assert [(User(id=7), Order(description='order 3'), Item(description='item 1'))] == q.all()
+        self.assertEquals(q.all(), 
+            [(User(id=7), Order(description='order 3'), Item(description='item 1'))]
+        )
 
-        q = sess.query(User).add_entity(Order).join('orders', aliased=True).filter(Order.description=="order 3").join('orders', aliased=True).filter(Order.description=='order 4')
-        try:
-            q.compile()
-            assert False
-        except exceptions.InvalidRequestError, e:
-            assert str(e) == "Ambiguous join for entity 'Mapper|Order|orders'; specify id=<someid> to query.join()/query.add_entity()"
+        q = sess.query(User).add_entity(Order).join('orders', aliased=True).\
+        filter(Order.description=="order 3").join('orders', aliased=True).filter(Order.description=='order 4')
+        # "Ambiguous join for entity..."
+        self.assertRaises(exceptions.InvalidRequestError, q.compile)
 
 class MultiplePathTest(ORMTest):
     def define_tables(self, metadata):
@@ -1548,6 +1504,9 @@ class SelfReferentialTest(ORMTest):
         node = sess.query(Node).join('children', aliased=True).filter_by(data='n122').first()
         assert node.data=='n12'
 
+        # ambiguous error.
+        self.assertRaises(exceptions.InvalidRequestError, sess.query(Node.data).join(Node.children, aliased=True).filter_by(data='n122').all)
+        
         node = sess.query(Node).join(['children', 'children'], aliased=True).filter_by(data='n122').first()
         assert node.data=='n1'
 
@@ -1796,7 +1755,7 @@ class ExternalColumnsTest(QueryTest):
         })
 
         sess = create_session()
-        
+
         self.assertEquals(sess.query(User).all(), 
             [
                 User(id=7, concat=14, count=1),
@@ -1830,6 +1789,18 @@ class ExternalColumnsTest(QueryTest):
         sess.query(Address).join('user', aliased=True, id='ualias').add_entity(User, id='ualias').all(), 
             [(address, address.user) for address in address_result]
         )
+
+        self.assertEquals(
+                sess.query(Address).join('user', aliased=True, id='ualias').join('user', aliased=True).\
+                add_column(User.count, id='ualias').all(),
+                [
+                    (Address(id=1), 1),
+                    (Address(id=2), 3),
+                    (Address(id=3), 3),
+                    (Address(id=4), 3),
+                    (Address(id=5), 1)
+                ]
+            )
 
         self.assertEquals(sess.query(Address).join('user', aliased=True, id='ualias').join('user', aliased=True).\
                 add_column(User.concat, id='ualias').add_column(User.count, id='ualias').all(),
