@@ -170,7 +170,17 @@ class VisitorContainer(ClauseVisitor):
         return self.__iter()
     _iterate_visitors = property(_iterate_visitors)
 
-
+class VisitorSet(VisitorContainer):
+    def __init__(self, traverse_options):
+        self.collection = util.Set()
+        VisitorContainer.__init__(self, self.collection.__iter__, traverse_options)
+    
+    def add(self, elem):
+        self.collection.add(elem)
+    
+    def discard(self, elem):
+        self.collection.discard(elem)
+        
 def traverse(clause, **kwargs):
     """traverse the given clause, applying visit functions passed in as keyword arguments."""
     

@@ -34,8 +34,10 @@ class QueryableAttribute(interfaces.PropComparator):
         self.property = mapper._get_property(self.impl.key)
 
         if self.comparator:
-            self.__clause_element = self.comparator.clause_element() # TODO: breaks for composite types
-
+            self.__clause_element = self.comparator.__clause_element__() # TODO: breaks for composite types
+        else:
+            self.__clause_element = None
+            
     def get_history(self, instance, **kwargs):
         return self.impl.get_history(instance._state, **kwargs)
     
@@ -48,13 +50,8 @@ class QueryableAttribute(interfaces.PropComparator):
         # TODO: do we use __getattr__ for this ?  or something more explicit ?
         return getattr(self.__clause_element, key)
     
-    def clause_element(self):
-        return self
-#        return self.comparator.clause_element()
-
-    def expression_element(self):
-        return self
-#        return self.comparator.expression_element()
+    def __clause_element__(self):
+        return self.__clause_element
 
     def operate(self, op, *other, **kwargs):
         return op(self.comparator, *other, **kwargs)
@@ -133,11 +130,12 @@ def proxied_attribute_factory(descriptor):
     class Proxy(InstrumentedAttribute):
         """A combination of InsturmentedAttribute and a regular descriptor."""
 
-        def __init__(self, key, descriptor, comparator):
+        def __init__(self, key, descriptor, comparator, parententity):
             self.key = key
             # maintain ProxiedAttribute.user_prop compatability.
             self.descriptor = self.user_prop = descriptor
             self._comparator = comparator
+            self._parententity = parententity
             self.impl = ProxyImpl(key)
 
         def comparator(self):
@@ -164,6 +162,11 @@ def proxied_attribute_factory(descriptor):
         def __getattr__(self, attribute):
             """Delegate __getattr__ to the original descriptor."""
             return getattr(descriptor, attribute)
+            
+        def _property(self):
+            return self._parententity.get_property(self.key, resolve_synonyms=True)
+        property = property(_property)
+        
     Proxy.__name__ = type(descriptor).__name__ + 'Proxy'
 
     util.monkeypatch_proxied_specials(Proxy, type(descriptor),
@@ -1296,7 +1299,7 @@ def register_attribute(class_, key, uselist, useobject, callable_=None, proxy_pr
 
     if proxy_property:
         proxy_type = proxied_attribute_factory(proxy_property)
-        inst = proxy_type(key, proxy_property, comparator)
+        inst = proxy_type(key, proxy_property, comparator, parententity)
     else:
         inst = InstrumentedAttribute(_create_prop(class_, key, uselist, callable_, useobject=useobject,
                                        typecallable=typecallable, mutable_scalars=mutable_scalars, impl_class=impl_class, **kwargs), comparator=comparator, parententity=parententity)

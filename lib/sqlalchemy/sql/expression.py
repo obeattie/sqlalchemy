@@ -1158,9 +1158,6 @@ class Operators(object):
             return self.operate(operators.op, opstring, b)
         return op
 
-    def clause_element(self):
-        raise NotImplementedError()
-
     def operate(self, op, *other, **kwargs):
         raise NotImplementedError()
 

@@ -413,10 +413,10 @@ class PropComparator(expression.ColumnOperators):
     which returns the MapperProperty associated with this
     PropComparator.
     """
-
-    def expression_element(self):
-        return self.clause_element()
-
+    
+    def __clause_element__(self):
+        raise NotImplementedError("%r" % self)
+        
     def contains_op(a, b):
         return a.contains(b)
     contains_op = staticmethod(contains_op)

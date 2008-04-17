@@ -80,7 +80,7 @@ class ColumnProperty(StrategizedProperty):
         return value
 
     class ColumnComparator(PropComparator):
-        def clause_element(self):
+        def __clause_element__(self):
             return self.prop.columns[0]
 
         def operate(self, op, *other, **kwargs):
@@ -173,7 +173,7 @@ class SynonymProperty(MapperProperty):
                         return s
                     return getattr(obj, self.name)
             self.descriptor = SynonymProp()
-        sessionlib.register_attribute(class_, self.key, uselist=False, proxy_property=self.descriptor, useobject=False, comparator=comparator)
+        sessionlib.register_attribute(class_, self.key, uselist=False, proxy_property=self.descriptor, useobject=False, comparator=comparator, parententity=self.parent)
 
     def merge(self, session, source, dest, _recursive):
         pass
@@ -286,7 +286,7 @@ class PropertyLoader(StrategizedProperty):
             return self.prop.parent
         parententity = property(parententity)
         
-        def clause_element(self):
+        def __clause_element__(self):
             return self.prop.parent._with_polymorphic_selectable
             
         def of_type(self, cls):
@@ -384,16 +384,18 @@ class PropertyLoader(StrategizedProperty):
             return self.__negated_contains_or_equals(other)
 
     def compare(self, op, value, value_is_parent=False):
-        if op == operators.eq:
-            if value is None:
-                if self.uselist:
-                    return ~sql.exists([1], self.primaryjoin)
-                else:
-                    return self._optimized_compare(None, value_is_parent=value_is_parent)
-            else:
-                return self._optimized_compare(value, value_is_parent=value_is_parent)
-        else:
-            return op(self.comparator, value)
+        return op(self.comparator, value)
+
+#        if op == operators.eq:
+#            if value is None:
+ #               if self.uselist:
+ #                   return ~sql.exists([1], self.primaryjoin)
+ #               else:
+ #                   return self._optimized_compare(None, value_is_parent=value_is_parent)
+ #           else:
+ #               return self._optimized_compare(value, value_is_parent=value_is_parent)
+ #       else:
+ #           return op(self.comparator, value)
 
     def _optimized_compare(self, value, value_is_parent=False):
         return self._get_strategy(strategies.LazyLoader).lazy_clause(value, reverse_direction=not value_is_parent)

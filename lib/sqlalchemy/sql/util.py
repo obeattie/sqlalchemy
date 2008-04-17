@@ -347,18 +347,24 @@ class ClauseAdapter(visitors.ClauseVisitor):
         if isinstance(col, expression.FromClause):
             if self.selectable.is_derived_from(col):
                 return self.selectable
-        if not hasattr(col, 'proxy_set'): #isinstance(col, (expression.ColumnElement, expression.Operators)):
+                
+        if not hasattr(col, 'proxy_set'):
             return None
-        if self.include is not None:
+        if self.include:
             if col not in self.include:
                 return None
-        if self.exclude is not None:
+        if self.exclude:
             if col in self.exclude:
                 return None
+                
         newcol = self.selectable.corresponding_column(col, require_embedded=True)
-        if newcol is None and self.equivalents is not None and col in self.equivalents:
-            for equiv in self.equivalents[col]:
-                newcol = self.selectable.corresponding_column(equiv, require_embedded=True)
-                if newcol:
-                    return newcol
+        
+        if not newcol and self.equivalents:
+            if hasattr(col, '__clause_element__'):
+                col = col.__clause_element__()
+            if col in self.equivalents:
+                for equiv in self.equivalents[col]:
+                    newcol = self.selectable.corresponding_column(equiv, require_embedded=True)
+                    if newcol:
+                        return newcol
         return newcol

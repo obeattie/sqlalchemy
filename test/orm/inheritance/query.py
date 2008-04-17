@@ -537,6 +537,15 @@ def make_test(select_type):
                 [(u'vlad', u'Elbonia, Inc.', u'dilbert')]
             )
             
+            palias = aliased(Person)
+            self.assertEquals(
+                sess.query(Person.type, Person.name, palias.type, palias.name).filter(Person.company_id==palias.company_id).filter(Person.name=='dogbert').\
+                    filter(Person.person_id>palias.person_id).order_by(Person.person_id, palias.person_id).all(), 
+                [(u'manager', u'dogbert', u'engineer', u'dilbert'), 
+                (u'manager', u'dogbert', u'engineer', u'wally'), 
+                (u'manager', u'dogbert', u'boss', u'pointy haired boss')]
+            )
+        
             self.assertEquals(
                 sess.query(Person.name, Paperwork.description).filter(Person.person_id==Paperwork.person_id).order_by(Person.name, Paperwork.description).all(), 
                 [(u'dilbert', u'tps report #1'), (u'dilbert', u'tps report #2'), (u'dogbert', u'review #2'), 
@@ -547,7 +556,13 @@ def make_test(select_type):
                 (u'wally', u'tps report #4'),
                 ]
             )
-    
+
+        def test_foo(self):
+            sess = create_session()
+            self.assertEquals(
+                sess.query(Person.name, Company.name).join(Company.employees).filter(Company.name=='Elbonia, Inc.').all(),
+                [(u'vlad',u'Elbonia, Inc.')]
+            )
     
     PolymorphicQueryTest.__name__ = "Polymorphic%sTest" % select_type
     return PolymorphicQueryTest

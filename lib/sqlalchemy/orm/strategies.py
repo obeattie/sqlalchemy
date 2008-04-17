@@ -26,7 +26,7 @@ class ColumnLoader(LoaderStrategy):
         
     def setup_query(self, context, column_collection=None, parentclauses=None, **kwargs):
         for c in self.columns:
-            if parentclauses is not None:
+            if parentclauses:
                 column_collection.append(parentclauses.aliased_column(c))
             else:
                 column_collection.append(c)

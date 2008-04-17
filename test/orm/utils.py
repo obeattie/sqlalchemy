@@ -28,8 +28,8 @@ class AliasedClassTest(TestBase):
         assert alias.x
         assert alias.y
 
-        assert Point.id.clause_element().table is table
-        assert alias.id.clause_element().table is not table
+        assert Point.id.__clause_element__().table is table
+        assert alias.id.__clause_element__().table is not table
 
     def test_notcallable(self):
         class Point(object):
@@ -154,7 +154,7 @@ class AliasedClassTest(TestBase):
 
         table = self.point_map(Point)
         alias = aliased(Point)
-        alias_table = alias.x.clause_element().table
+        alias_table = alias.x.__clause_element__().table
         assert table is not alias_table
 
         p1 = Point(-10, -10)

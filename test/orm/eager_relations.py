@@ -618,7 +618,7 @@ class AddEntityTest(FixtureTest):
               )
         ]
 
-    def test_basic(self):
+    def test_mapper_configured(self):
         mapper(User, users, properties={
             'addresses':relation(Address, lazy=False),
             'orders':relation(Order)
@@ -631,8 +631,9 @@ class AddEntityTest(FixtureTest):
 
 
         sess = create_session()
+        oalias = aliased(Order)
         def go():
-            ret = sess.query(User).add_entity(Order).join('orders', aliased=True).order_by(User.id).order_by(Order.id).all()
+            ret = sess.query(User, oalias).join(('orders', oalias)).order_by(User.id, oalias.id).all()
             self.assertEquals(ret, self._assert_result())
         self.assert_sql_count(testing.db, go, 1)
 
@@ -649,14 +650,15 @@ class AddEntityTest(FixtureTest):
 
         sess = create_session()
 
+        oalias = aliased(Order)
         def go():
-            ret = sess.query(User).options(eagerload('addresses')).add_entity(Order).join('orders', aliased=True).order_by(User.id).order_by(Order.id).all()
+            ret = sess.query(User, oalias).options(eagerload('addresses')).join(('orders', oalias)).order_by(User.id, oalias.id).all()
             self.assertEquals(ret, self._assert_result())
         self.assert_sql_count(testing.db, go, 6)
 
         sess.clear()
         def go():
-            ret = sess.query(User).options(eagerload('addresses')).add_entity(Order).options(eagerload('items', Order)).join('orders', aliased=True).order_by(User.id).order_by(Order.id).all()
+            ret = sess.query(User, oalias).options(eagerload('addresses'), eagerload(oalias.items)).join(('orders', oalias)).order_by(User.id, oalias.id).all()
             self.assertEquals(ret, self._assert_result())
         self.assert_sql_count(testing.db, go, 1)
 

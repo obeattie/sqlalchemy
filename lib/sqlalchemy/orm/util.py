@@ -293,10 +293,10 @@ class AliasedComparator(PropComparator):
         self.aliasedclass = aliasedclass
         self.comparator = comparator
         self.adapter = adapter
-        
-    def clause_element(self):
-        return self.adapter.traverse(self.comparator.clause_element(), clone=True)
-    clause_element = util.cache_decorator(clause_element)
+        self.__clause_element = self.adapter.traverse(self.comparator.__clause_element__(), clone=True)
+
+    def __clause_element__(self):
+        return self.__clause_element
     
     def operate(self, op, *other, **kwargs):
         return self.adapter.traverse(self.comparator.operate(op, *other, **kwargs), clone=True)
@@ -332,7 +332,7 @@ class _ORMJoin(expression.Join):
             if isinstance(onclause, basestring):
                 prop = left_mapper.get_property(onclause)
             elif isinstance(onclause, attributes.QueryableAttribute):
-                adapt_from = onclause.clause_element()
+                adapt_from = onclause.__clause_element__()
                 prop = onclause.property
             elif isinstance(onclause, MapperProperty):
                 prop = onclause
@@ -408,6 +408,17 @@ def _entity_info(entity, entity_name=None, compile=True):
     else:
         return None, entity, False
 
+def _entity_descriptor(entity, key):
+    if isinstance(entity, AliasedClass):
+        desc = getattr(entity, key)
+        return desc, desc.property
+    elif isinstance(entity, type):
+        desc = getattr(entity, key)  # class_state thing
+        return desc, desc.property
+    else:
+        desc = getattr(entity.class_, key)
+        return desc, desc.property
+    
 def _orm_columns(entity):
     mapper, selectable, is_aliased_class = _entity_info(entity)
     if isinstance(selectable, expression.Selectable):
