@@ -347,7 +347,7 @@ class ClauseAdapter(visitors.ClauseVisitor):
         if isinstance(col, expression.FromClause):
             if self.selectable.is_derived_from(col):
                 return self.selectable
-        if not isinstance(col, expression.ColumnElement):
+        if not hasattr(col, 'proxy_set'): #isinstance(col, (expression.ColumnElement, expression.Operators)):
             return None
         if self.include is not None:
             if col not in self.include:

@@ -393,14 +393,17 @@ def has_identity(object):
 def _state_has_identity(state):
     return '_instance_key' in state.dict
 
-def _entity_info(entity, entity_name=None):
+def _entity_info(entity, entity_name=None, compile=True):
     if isinstance(entity, AliasedClass):
         return entity._AliasedClass__mapper, entity._AliasedClass__alias, True
     elif hasattr(entity, '_class_state'):
         if isinstance(entity, type):
-            mapper = class_mapper(entity, entity_name=entity_name)
+            mapper = class_mapper(entity, entity_name, compile)
         else:
-            mapper = entity.compile()
+            if compile:
+                mapper = entity.compile()
+            else:
+                mapper = entity
         return mapper, mapper._with_polymorphic_selectable, False
     else:
         return None, entity, False
@@ -506,3 +509,5 @@ def identity_equal(a, b):
     return id_a == id_b
 
 attributes.identity_equal = identity_equal
+attributes._is_aliased_class = _is_aliased_class
+attributes._entity_info = _entity_info

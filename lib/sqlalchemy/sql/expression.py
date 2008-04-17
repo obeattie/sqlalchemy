@@ -864,28 +864,22 @@ def _compound_select(keyword, *selects, **kwargs):
     return CompoundSelect(keyword, *selects, **kwargs)
 
 def _is_literal(element):
-    return not isinstance(element, ClauseElement)
+    return not isinstance(element, (ClauseElement, Operators))
 
 def _literal_as_text(element):
-    if isinstance(element, Operators):
-        return element.expression_element()
-    elif _is_literal(element):
+    if _is_literal(element):
         return _TextClause(unicode(element))
     else:
         return element
 
 def _literal_as_column(element):
-    if isinstance(element, Operators):
-        return element.clause_element()
-    elif _is_literal(element):
+    if _is_literal(element):
         return literal_column(str(element))
     else:
         return element
 
 def _literal_as_binds(element, name=None, type_=None):
-    if isinstance(element, Operators):
-        return element.expression_element()
-    elif _is_literal(element):
+    if _is_literal(element):
         if element is None:
             return null()
         else:
@@ -894,9 +888,7 @@ def _literal_as_binds(element, name=None, type_=None):
         return element
 
 def _no_literals(element):
-    if isinstance(element, Operators):
-        return element.expression_element()
-    elif _is_literal(element):
+    if _is_literal(element):
         raise exceptions.ArgumentError("Ambiguous literal: %r.  Use the 'text()' function to indicate a SQL expression literal, or 'literal()' to indicate a bound value." % element)
     else:
         return element
@@ -1268,18 +1260,18 @@ class _CompareMixin(ColumnOperators):
     def __compare(self, op, obj, negate=None, reverse=False, **kwargs):
         if obj is None or isinstance(obj, _Null):
             if op == operators.eq:
-                return _BinaryExpression(self.expression_element(), null(), operators.is_, negate=operators.isnot)
+                return _BinaryExpression(self, null(), operators.is_, negate=operators.isnot)
             elif op == operators.ne:
-                return _BinaryExpression(self.expression_element(), null(), operators.isnot, negate=operators.is_)
+                return _BinaryExpression(self, null(), operators.isnot, negate=operators.is_)
             else:
                 raise exceptions.ArgumentError("Only '='/'!=' operators can be used with NULL")
         else:
             obj = self._check_literal(obj)
 
         if reverse:
-            return _BinaryExpression(obj, self.expression_element(), op, type_=sqltypes.Boolean, negate=negate, modifiers=kwargs)
+            return _BinaryExpression(obj, self, op, type_=sqltypes.Boolean, negate=negate, modifiers=kwargs)
         else:
-            return _BinaryExpression(self.expression_element(), obj, op, type_=sqltypes.Boolean, negate=negate, modifiers=kwargs)
+            return _BinaryExpression(self, obj, op, type_=sqltypes.Boolean, negate=negate, modifiers=kwargs)
 
     def __operate(self, op, obj, reverse=False):
         obj = self._check_literal(obj)
@@ -1287,9 +1279,9 @@ class _CompareMixin(ColumnOperators):
         type_ = self._compare_type(obj)
 
         if reverse:
-            return _BinaryExpression(obj, self.expression_element(), type_.adapt_operator(op), type_=type_)
+            return _BinaryExpression(obj, self, type_.adapt_operator(op), type_=type_)
         else:
-            return _BinaryExpression(self.expression_element(), obj, type_.adapt_operator(op), type_=type_)
+            return _BinaryExpression(self, obj, type_.adapt_operator(op), type_=type_)
 
     # a mapping of operators with the method they use, along with their negated
     # operator for comparison operators
@@ -1415,21 +1407,10 @@ class _CompareMixin(ColumnOperators):
         if isinstance(other, _BindParamClause) and isinstance(other.type, sqltypes.NullType):
             other.type = self.type
             return other
-        elif isinstance(other, Operators):
-            return other.expression_element()
         elif _is_literal(other):
             return self._bind_param(other)
         else:
             return other
-
-    def clause_element(self):
-        """Allow ``_CompareMixins`` to return the underlying ``ClauseElement``, for non-``ClauseElement`` ``_CompareMixins``."""
-        return self
-
-    def expression_element(self):
-        """Allow ``_CompareMixins`` to return the appropriate object to be used in expressions."""
-
-        return self
 
     def _compare_type(self, obj):
         """Allow subclasses to override the type used in constructing
@@ -2544,9 +2525,6 @@ class _Label(ColumnElement):
     proxy_set = _proxy_attr('proxy_set')
     primary_key = _proxy_attr('primary_key')
     foreign_keys = _proxy_attr('foreign_keys')
-
-    def expression_element(self):
-        return self.obj
 
     def get_children(self, **kwargs):
         return self.obj,

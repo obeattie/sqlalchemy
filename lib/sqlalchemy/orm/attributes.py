@@ -17,6 +17,7 @@ NO_VALUE = util.symbol('NO_VALUE')
 NEVER_SET = util.symbol('NEVER_SET')
 
 identity_equal = None   # initialized by sqlalchemy.orm.util
+_is_aliased_class = None
 
 class QueryableAttribute(interfaces.PropComparator):
 
@@ -28,16 +29,32 @@ class QueryableAttribute(interfaces.PropComparator):
 
         self.impl = impl
         self.comparator = comparator
-        self._parententity = parententity
+        self.parententity = parententity
+        mapper, selectable, is_aliased_class = _entity_info(parententity, compile=False)
+        self.property = mapper._get_property(self.impl.key)
+
+        if self.comparator:
+            self.__clause_element = self.comparator.clause_element() # TODO: breaks for composite types
 
     def get_history(self, instance, **kwargs):
         return self.impl.get_history(instance._state, **kwargs)
-
+    
+    def __selectable__(self):
+        # TODO: conditionally attach this method based on clause_element ?
+        return self
+        
+    def __getattr__(self, key):
+        # proxy everything else to clause_element.
+        # TODO: do we use __getattr__ for this ?  or something more explicit ?
+        return getattr(self.__clause_element, key)
+    
     def clause_element(self):
-        return self.comparator.clause_element()
+        return self
+#        return self.comparator.clause_element()
 
     def expression_element(self):
-        return self.comparator.expression_element()
+        return self
+#        return self.comparator.expression_element()
 
     def operate(self, op, *other, **kwargs):
         return op(self.comparator, *other, **kwargs)
@@ -48,23 +65,8 @@ class QueryableAttribute(interfaces.PropComparator):
     def hasparent(self, instance, optimistic=False):
         return self.impl.hasparent(instance._state, optimistic=optimistic)
 
-    def _property(self):
-        from sqlalchemy.orm.mapper import class_mapper
-        return class_mapper(self.impl.class_).get_property(self.impl.key)
-    _property = property(_property, doc="the MapperProperty object associated with this attribute")
-
-    def parententity(self):
-        if self._parententity:
-            return self._parententity
-        else:
-            from sqlalchemy.orm.mapper import class_mapper
-            return class_mapper(self.impl.class_)
-    parententity = property(parententity)
-
     def __str__(self):
-        return repr(self.parententity) + "." + self._property.key
-
-    property = _property
+        return repr(self.parententity) + "." + self.property.key
 
 class InstrumentedAttribute(QueryableAttribute):
     """Public-facing descriptor, placed in the mapped class dictionary."""
@@ -1284,7 +1286,8 @@ def register_attribute(class_, key, uselist, useobject, callable_=None, proxy_pr
     if isinstance(typecallable, InstrumentedAttribute):
         typecallable = None
     comparator = kwargs.pop('comparator', None)
-
+    parententity = kwargs.pop('parententity', None)
+    
     if key in class_.__dict__ and isinstance(class_.__dict__[key], InstrumentedAttribute):
         # this currently only occurs if two primary mappers are made for the same class.
         # TODO:  possibly have InstrumentedAttribute check "entity_name" when searching for impl.
@@ -1296,7 +1299,7 @@ def register_attribute(class_, key, uselist, useobject, callable_=None, proxy_pr
         inst = proxy_type(key, proxy_property, comparator)
     else:
         inst = InstrumentedAttribute(_create_prop(class_, key, uselist, callable_, useobject=useobject,
-                                       typecallable=typecallable, mutable_scalars=mutable_scalars, impl_class=impl_class, **kwargs), comparator=comparator)
+                                       typecallable=typecallable, mutable_scalars=mutable_scalars, impl_class=impl_class, **kwargs), comparator=comparator, parententity=parententity)
 
     setattr(class_, key, inst)
     class_._class_state.attrs[key] = inst

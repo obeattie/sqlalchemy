@@ -182,3 +182,14 @@ def traverse(clause, **kwargs):
         setattr(vis, key, kwargs[key])
     return vis.traverse(clause, clone=clone)
 
+def iterate(clause, **traverse_options):
+    """traverse the given expression structure, returning an iterator of all elements."""
+    
+    stack = [clause]
+    traversal = util.deque()
+    while stack:
+        t = stack.pop()
+        traversal.appendleft(t)
+        for c in t.get_children(**traverse_options):
+            stack.append(c)
+    return iter(traversal)

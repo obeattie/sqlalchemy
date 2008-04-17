@@ -396,7 +396,7 @@ class ClauseAdapterTest(TestBase, AssertsCompiledSQL):
         self.assert_compile(s.select(), "SELECT foo.* FROM (SELECT * FROM table1) AS foo")
 
         ff = vis.traverse(func.count(t1.c.col1).label('foo'), clone=True)
-        self.assert_compile(ff, "count(t1alias.col1) AS foo")
+        self.assert_compile(select([ff]), "SELECT count(t1alias.col1) AS foo FROM table1 AS t1alias")
         assert ff._get_from_objects() == [t1alias]
 
 # TODO:

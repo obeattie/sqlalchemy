@@ -478,7 +478,7 @@ def make_test(select_type):
             
         def test_mixed_entities(self):
             sess = create_session()
-            
+
             self.assertEquals(
                 sess.query(Company.name, Person).join(Company.employees).filter(Company.name=='Elbonia, Inc.').all(),
                 [(u'Elbonia, Inc.', 
@@ -495,6 +495,26 @@ def make_test(select_type):
                 sess.query(Person.name, Company.name).join(Company.employees).filter(Company.name=='Elbonia, Inc.').all(),
                 [(u'vlad',u'Elbonia, Inc.')]
             )
+
+            self.assertEquals(
+                sess.query(Engineer.primary_language).filter(Person.type=='engineer').all(),
+                [(u'java',), (u'c++',), (u'cobol',)]
+            )
+
+            if select_type != '':
+                self.assertEquals(
+                    sess.query(Engineer, Company.name).join(Company.employees).filter(Person.type=='engineer').all(),
+                    [
+                    (Engineer(status=u'regular engineer',engineer_name=u'dilbert',name=u'dilbert',company_id=1,primary_language=u'java',person_id=1,type=u'engineer'), u'MegaCorp, Inc.'), 
+                    (Engineer(status=u'regular engineer',engineer_name=u'wally',name=u'wally',company_id=1,primary_language=u'c++',person_id=2,type=u'engineer'), u'MegaCorp, Inc.'), 
+                    (Engineer(status=u'elbonian engineer',engineer_name=u'vlad',name=u'vlad',company_id=2,primary_language=u'cobol',person_id=5,type=u'engineer'), u'Elbonia, Inc.')
+                    ]
+                )
+            
+                self.assertEquals(
+                    sess.query(Engineer.primary_language, Company.name).join(Company.employees).filter(Person.type=='engineer').all(),
+                    [(u'java', u'MegaCorp, Inc.'), (u'c++', u'MegaCorp, Inc.'), (u'cobol', u'Elbonia, Inc.')]
+                )
 
             palias = aliased(Person)
             self.assertEquals(
@@ -518,10 +538,14 @@ def make_test(select_type):
             )
             
             self.assertEquals(
-                sess.query(Person.name, Paperwork.description).filter(Person.person_id==Paperwork.person_id).all(), 
-                [(u'dilbert', u'tps report #1'), (u'dilbert', u'tps report #2'), (u'wally', u'tps report #3'), 
-                (u'wally', u'tps report #4'), (u'pointy haired boss', u'review #1'), (u'dogbert', u'review #2'), 
-                (u'dogbert', u'review #3'), (u'vlad', u'elbonian missive #3')]
+                sess.query(Person.name, Paperwork.description).filter(Person.person_id==Paperwork.person_id).order_by(Person.name, Paperwork.description).all(), 
+                [(u'dilbert', u'tps report #1'), (u'dilbert', u'tps report #2'), (u'dogbert', u'review #2'), 
+                (u'dogbert', u'review #3'), 
+                (u'pointy haired boss', u'review #1'), 
+                (u'vlad', u'elbonian missive #3'),
+                (u'wally', u'tps report #3'), 
+                (u'wally', u'tps report #4'),
+                ]
             )
     
     
