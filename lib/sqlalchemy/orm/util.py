@@ -144,11 +144,11 @@ class AliasedClauses(object):
     """Creates aliases of a mapped tables for usage in ORM queries, and provides expression adaptation."""
 
     def __init__(self, alias, equivalents=None, chain_to=None):
-        if _is_aliased_class(alias):
+        mapper, self.selectable, is_aliased_class = _entity_info(alias)
+        if is_aliased_class:
             self.aliased_class = alias
         else:
             self.aliased_class = None
-        self.selectable = _orm_selectable(alias)
         self.equivalents = equivalents
         self.chain_to = chain_to
         self.local_adapter = sql_util.ClauseAdapter(self.selectable, equivalents=equivalents)
@@ -304,35 +304,6 @@ class AliasedComparator(PropComparator):
     def reverse_operate(self, op, other, **kwargs):
         return self.adapter.traverse(self.comparator.reverse_operate(op, *other, **kwargs), clone=True)
 
-def _orm_columns(entity):
-    if _is_aliased_class(entity):
-        return [c for c in entity.alias.c]
-    elif _is_mapped_class(entity):
-        return [c for c in _class_to_mapper(entity)._with_polymorphic_selectable.c]
-    elif isinstance(entity, expression.Selectable):
-        return [c for c in entity.c]
-    else:
-        return [entity]
-        
-def _orm_selectable(selectable, entity_name=None):
-    if _is_aliased_class(selectable):
-        return selectable._AliasedClass__alias
-    elif _is_mapped_class(selectable):
-        return _class_to_mapper(selectable, entity_name)._with_polymorphic_selectable
-    else:
-        return expression._selectable(selectable)
-        
-_literal_as_column = expression._literal_as_column
-def _orm_literal_as_column(c):
-    if _is_aliased_class(c):
-        return c.alias
-    elif _is_mapped_class(c):
-        return _class_to_mapper(c)._with_polymorphic_selectable
-    else:
-        return _literal_as_column(c)
-# uncommenting this allows a mapped class or AliasedClass to be used i.e. select([MyClass])
-#expression._literal_as_column = _orm_literal_as_column  
-
 class _ORMJoin(expression.Join):
 
     __visit_name__ = expression.Join.__visit_name__
@@ -341,22 +312,20 @@ class _ORMJoin(expression.Join):
         if hasattr(left, '_orm_mappers'):
             left_mapper = left._orm_mappers[1]
             adapt_from = left.right
-            
-        elif _is_mapped_class(left):
-            left_mapper = _class_to_mapper(left)
-            if _is_aliased_class(left):
-                adapt_from = _orm_selectable(left)
+        
+        else:
+            left_mapper, left, left_is_aliased = _entity_info(left)
+            if left_is_aliased or not left_mapper:
+                adapt_from = left
             else:
                 adapt_from = None
+
+        right_mapper, right, right_is_aliased = _entity_info(right)
+        if right_is_aliased:
+            adapt_to = right
         else:
-            adapt_from = left
-            left_mapper = None
-        
-        if _is_mapped_class(right):
-            right_mapper = _class_to_mapper(right)
-        else:
-            right_mapper = None
-        
+            adapt_to = None
+            
         if left_mapper or right_mapper:
             self._orm_mappers = (left_mapper, right_mapper)
             
@@ -371,22 +340,17 @@ class _ORMJoin(expression.Join):
                 prop = None
 
             if prop:
-                if _is_aliased_class(right):
-                    adapt_to = right._AliasedClass__alias
-                else:
-                    adapt_to = None
-
                 pj, sj, source, dest, secondary, target_adapter = prop._create_joins(source_selectable=adapt_from, dest_selectable=adapt_to, source_polymorphic=True, dest_polymorphic=True)
 
                 if sj:
-                    left = sql.join(_orm_selectable(left), secondary, pj, isouter)
+                    left = sql.join(left, secondary, pj, isouter)
                     onclause = sj
                 else:
                     onclause = pj
                 
                 self._target_adapter = target_adapter
                 
-        expression.Join.__init__(self, _orm_selectable(left), _orm_selectable(right), onclause, isouter)
+        expression.Join.__init__(self, left, right, onclause, isouter)
 
     def join(self, right, onclause=None, isouter=False):
         return _ORMJoin(self, right, onclause, isouter)
@@ -429,11 +393,30 @@ def has_identity(object):
 def _state_has_identity(state):
     return '_instance_key' in state.dict
 
-def _is_mapped_class(cls):
-    return hasattr(cls, '_class_state')
+def _entity_info(entity, entity_name=None):
+    if isinstance(entity, AliasedClass):
+        return entity._AliasedClass__mapper, entity._AliasedClass__alias, True
+    elif hasattr(entity, '_class_state'):
+        if isinstance(entity, type):
+            mapper = class_mapper(entity, entity_name=entity_name)
+        else:
+            mapper = entity.compile()
+        return mapper, mapper._with_polymorphic_selectable, False
+    else:
+        return None, entity, False
 
-def _is_aliased_class(obj):
-    return isinstance(obj, AliasedClass)
+def _orm_columns(entity):
+    mapper, selectable, is_aliased_class = _entity_info(entity)
+    if isinstance(selectable, expression.Selectable):
+        return [c for c in selectable.c]
+    else:
+        return [selectable]
+
+def _is_mapped_class(entity):
+    return hasattr(entity, '_class_state')
+
+def _is_aliased_class(entity):
+    return isinstance(entity, AliasedClass)
     
 def has_mapper(object):
     """Return True if the given object has had a mapper association
@@ -492,8 +475,6 @@ def class_mapper(class_, entity_name=None, compile=True, raiseerror=True):
 def _class_to_mapper(class_or_mapper, entity_name=None, compile=True):
     if isinstance(class_or_mapper, type):
         return class_mapper(class_or_mapper, entity_name=entity_name, compile=compile)
-    elif isinstance(class_or_mapper, AliasedClass):
-        return class_or_mapper._AliasedClass__mapper
     else:
         if compile:
             return class_or_mapper.compile()

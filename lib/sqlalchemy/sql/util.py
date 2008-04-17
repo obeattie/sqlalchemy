@@ -318,7 +318,7 @@ class ClauseAdapter(visitors.ClauseVisitor):
         self.include = include
         self.exclude = exclude
         self.equivalents = equivalents
-    
+
     def traverse(self, obj, clone=True):
         if not clone:
             raise exceptions.ArgumentError("ClauseAdapter 'clone' argument must be True")

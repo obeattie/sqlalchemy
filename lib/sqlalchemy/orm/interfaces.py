@@ -571,9 +571,12 @@ class ExtensionOption(MapperOption):
         self.ext = ext
 
     def process_query(self, query):
-        query._extension = query._extension.copy()
-        query._extension.insert(self.ext)
-
+        entity = query._generate_mapper_zero()
+        if hasattr(entity, 'extension'):
+            entity.extension = entity.extension.copy()
+        else:
+            entity.extension = entity.mapper.extension.copy()
+        entity.extension.insert(self.ext)
 
 class PropertyOption(MapperOption):
     """A MapperOption that is applied to a property off the mapper or
