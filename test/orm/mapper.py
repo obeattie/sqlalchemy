@@ -600,8 +600,8 @@ class MapperTest(MapperSuperTest):
         self.assert_result(u.adlist, Address, *(user_address_result[0]['addresses'][1]))
 
         addr = sess.query(Address).filter_by(address_id=user_address_result[0]['addresses'][1][0]['address_id']).one()
-        u = sess.query(User).filter_by(adname=addr).one()
-        u2 = sess.query(User).filter_by(adlist=addr).one()
+        u = sess.query(User).filter(User.adname.contains(addr)).one()
+        u2 = sess.query(User).filter(User.adlist.contains(addr)).one()
 
         assert u is u2
 

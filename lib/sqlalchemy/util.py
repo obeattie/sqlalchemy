@@ -668,22 +668,24 @@ class OrderedSet(Set):
         if d is not None:
             self.update(d)
 
-    def add(self, key):
-        if key not in self:
-            self._list.append(key)
-        Set.add(self, key)
+    def add(self, element):
+        if element not in self:
+            self._list.append(element)
+        Set.add(self, element)
 
     def remove(self, element):
         Set.remove(self, element)
         self._list.remove(element)
-
+    
+    def insert(self, pos, element):
+        if element not in self:
+            self._list.insert(pos, element)
+        Set.add(self, element)
+        
     def discard(self, element):
-        try:
-            Set.remove(self, element)
-        except KeyError:
-            pass
-        else:
+        if element in self:
             self._list.remove(element)
+            Set.remove(self, element)
 
     def clear(self):
         Set.clear(self)

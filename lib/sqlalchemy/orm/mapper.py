@@ -232,9 +232,9 @@ class Mapper(object):
             mappers = [_class_to_mapper(m) for m in util.to_list(spec)]
         else:
             mappers = []
-        
+
         if selectable:
-            tables = util.Set(sqlutil.find_tables(selectable))
+            tables = util.Set(sqlutil.find_tables(selectable, include_aliases=True))
             mappers = [m for m in mappers if m.local_table in tables]
             
         return mappers

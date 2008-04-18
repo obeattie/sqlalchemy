@@ -12,7 +12,7 @@ invidual ORM-mapped attributes.
 
 from sqlalchemy import sql, schema, util, exceptions, logging
 from sqlalchemy.sql.util import ClauseAdapter, criterion_as_pairs, find_columns
-from sqlalchemy.sql import visitors, operators, ColumnElement
+from sqlalchemy.sql import visitors, operators, ColumnElement, expression
 from sqlalchemy.orm import mapper, sync, strategies, attributes, dependency, object_mapper
 from sqlalchemy.orm import session as sessionlib
 from sqlalchemy.orm.util import CascadeOptions, _class_to_mapper
@@ -132,6 +132,9 @@ class CompositeProperty(ColumnProperty):
                 return b
 
     class Comparator(PropComparator):
+        def __clause_element__(self):
+            return expression.ClauseList(*self.prop.columns)
+
         def __eq__(self, other):
             if other is None:
                 return sql.and_(*[a==None for a in self.prop.columns])
@@ -384,18 +387,16 @@ class PropertyLoader(StrategizedProperty):
             return self.__negated_contains_or_equals(other)
 
     def compare(self, op, value, value_is_parent=False):
-        return op(self.comparator, value)
-
-#        if op == operators.eq:
-#            if value is None:
- #               if self.uselist:
- #                   return ~sql.exists([1], self.primaryjoin)
- #               else:
- #                   return self._optimized_compare(None, value_is_parent=value_is_parent)
- #           else:
- #               return self._optimized_compare(value, value_is_parent=value_is_parent)
- #       else:
- #           return op(self.comparator, value)
+        if op == operators.eq:
+            if value is None:
+                if self.uselist:
+                    return ~sql.exists([1], self.primaryjoin)
+                else:
+                    return self._optimized_compare(None, value_is_parent=value_is_parent)
+            else:
+                return self._optimized_compare(value, value_is_parent=value_is_parent)
+        else:
+            return op(self.comparator, value)
 
     def _optimized_compare(self, value, value_is_parent=False):
         return self._get_strategy(strategies.LazyLoader).lazy_clause(value, reverse_direction=not value_is_parent)

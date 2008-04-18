@@ -73,7 +73,7 @@ class ClauseVisitor(object):
             return self._cloned_traversal(obj)
         else:
             return self._non_cloned_traversal(obj)
-
+            
     def copy_and_process(self, list_):
         """Apply cloned traversal to the given list of elements, and return the new list."""
 
@@ -161,26 +161,6 @@ class NoColumnVisitor(ClauseVisitor):
     
     __traverse_options__ = {'column_collections':False}
 
-class VisitorContainer(ClauseVisitor):
-    def __init__(self, iter, traverse_options):
-        self.__iter = iter
-        self.__traverse_options__ = traverse_options
-    
-    def _iterate_visitors(self):
-        return self.__iter()
-    _iterate_visitors = property(_iterate_visitors)
-
-class VisitorSet(VisitorContainer):
-    def __init__(self, traverse_options):
-        self.collection = util.Set()
-        VisitorContainer.__init__(self, self.collection.__iter__, traverse_options)
-    
-    def add(self, elem):
-        self.collection.add(elem)
-    
-    def discard(self, elem):
-        self.collection.discard(elem)
-        
 def traverse(clause, **kwargs):
     """traverse the given clause, applying visit functions passed in as keyword arguments."""
     

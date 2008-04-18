@@ -141,7 +141,7 @@ class ExtensionCarrier(object):
         return self.methods.get(key, self._pass)
 
 class AliasedClauses(object):
-    """Creates aliases of a mapped tables for usage in ORM queries, and provides expression adaptation."""
+    """Provide aliasing services for ORM join operations."""
 
     def __init__(self, alias, equivalents=None, chain_to=None):
         mapper, self.selectable, is_aliased_class = _entity_info(alias)
@@ -150,9 +150,9 @@ class AliasedClauses(object):
         else:
             self.aliased_class = None
         self.equivalents = equivalents
-        self.chain_to = chain_to
-        self.local_adapter = sql_util.ClauseAdapter(self.selectable, equivalents=equivalents)
-        self.adapter = visitors.VisitorContainer(self._iterate_adapters, self.local_adapter.__traverse_options__)
+        self.adapter = sql_util.ClauseAdapter(self.selectable, equivalents=equivalents)
+        if chain_to:
+            self.adapter.chain(chain_to.adapter)
         self.__wrap = None
         self.row_decorator = self._create_row_adapter()
         
@@ -165,47 +165,6 @@ class AliasedClauses(object):
         ac.row_decorator = ac._create_row_adapter()
         return ac
 
-    def _iterate(self):
-        a = self
-        while a:
-            yield a
-            a = a.chain_to
-    
-    def _iterate_adapters(self):
-        a = self
-        while a:
-            yield a.local_adapter
-            a = a.chain_to
-            
-    def remove_link(self, link):
-        head = self
-        
-        if link is head:
-            head = head.chain_to
-            link.chain_to = None
-        else:
-            a = head
-            while a and a.chain_to is not link:
-                a = a.chain_to
-            if a:
-                a.chain_to = link.chain_to
-                link.chain_to = None
-
-        return head
-    
-    def tail(self):
-        for a in self._iterate():
-            if not a.chain_to:
-                return a
-    tail = property(tail)
-    
-    def append(self, link):
-        self.tail.chain_to = link
-    
-    def prepend(self, link):
-        link.chain_to = self
-        return link
-        
     def aliased_column(self, column):
         if self.__wrap:
             column = self.__wrap.aliased_column(column)
@@ -239,7 +198,6 @@ class AliasedClauses(object):
             return self.__wrap.row_decorator.wrap(adapter)
         else:
             return adapter
-
 
 class AliasedClass(object):
     def __init__(self, cls, alias=None):

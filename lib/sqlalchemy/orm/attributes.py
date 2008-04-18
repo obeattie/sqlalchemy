@@ -17,7 +17,7 @@ NO_VALUE = util.symbol('NO_VALUE')
 NEVER_SET = util.symbol('NEVER_SET')
 
 identity_equal = None   # initialized by sqlalchemy.orm.util
-_is_aliased_class = None
+_entity_info = None # same
 
 class QueryableAttribute(interfaces.PropComparator):
 
@@ -31,7 +31,10 @@ class QueryableAttribute(interfaces.PropComparator):
         self.comparator = comparator
         self.parententity = parententity
         mapper, selectable, is_aliased_class = _entity_info(parententity, compile=False)
-        self.property = mapper._get_property(self.impl.key)
+        if mapper:
+            self.property = mapper._get_property(self.impl.key)
+        else:
+            self.property = None
 
         if self.comparator:
             self.__clause_element = self.comparator.__clause_element__() # TODO: breaks for composite types
@@ -41,6 +44,9 @@ class QueryableAttribute(interfaces.PropComparator):
     def get_history(self, instance, **kwargs):
         return self.impl.get_history(instance._state, **kwargs)
     
+    def _clone(self):
+        return self
+        
     def __selectable__(self):
         # TODO: conditionally attach this method based on clause_element ?
         return self
@@ -52,7 +58,7 @@ class QueryableAttribute(interfaces.PropComparator):
     
     def __clause_element__(self):
         return self.__clause_element
-
+    
     def operate(self, op, *other, **kwargs):
         return op(self.comparator, *other, **kwargs)
 

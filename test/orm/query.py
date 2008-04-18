@@ -1048,7 +1048,7 @@ class MixedEntitiesTest(QueryTest):
             [(1, User(name=u'jack',id=7)), (3, User(name=u'ed',id=8)), (1, User(name=u'fred',id=9)), (0, User(name=u'chuck',id=10))]
         )
 
-        # select from aliasing
+        # select from aliasing + explicit aliasing
         self.assertEquals(
             sess.query(User, adalias.email_address).outerjoin((User.addresses, adalias))._from_self().all(),
             [
@@ -1063,14 +1063,10 @@ class MixedEntitiesTest(QueryTest):
         
         # anon + select from aliasing
         self.assertEquals(
-            sess.query(User, Address.email_address).outerjoin(User.addresses, aliased=True)._from_self().all(),
+            sess.query(User).join(User.addresses, aliased=True).filter(Address.email_address.like('%ed%'))._from_self().all(),
             [
-                (User(name=u'jack',id=7), u'jack@bean.com'), 
-                (User(name=u'ed',id=8), u'ed@wood.com'), 
-                (User(name=u'ed',id=8), u'ed@bettyboop.com'),
-                (User(name=u'ed',id=8), u'ed@lala.com'), 
-                (User(name=u'fred',id=9), u'fred@fred.com'), 
-                (User(name=u'chuck',id=10), None)
+                User(name=u'ed',id=8), 
+                User(name=u'fred',id=9), 
             ]
         )
         
@@ -1751,17 +1747,14 @@ class ExternalColumnsTest(QueryTest):
                self.assertEquals(sess.query(Address).options(eagerload('user')).all(), address_result)
             self.assert_sql_count(testing.db, go, 1)
         
-#        q =sess.query(Address).join('user', aliased=True, id='ualias').join('user', aliased=True).add_column(User.concat)
-#        self.assertRaisesMessage(exceptions.InvalidRequestError, "Ambiguous", q.all)
-        
+        ualias = aliased(User)
         self.assertEquals(
-        sess.query(Address).join('user', aliased=True, id='ualias').add_entity(User, id='ualias').all(), 
+            sess.query(Address, ualias).join(('user', ualias)).all(), 
             [(address, address.user) for address in address_result]
         )
 
         self.assertEquals(
-                sess.query(Address).join('user', aliased=True, id='ualias').join('user', aliased=True).\
-                add_column(User.count, id='ualias').all(),
+                sess.query(Address, ualias.count).join(('user', ualias)).join('user', aliased=True).all(),
                 [
                     (Address(id=1), 1),
                     (Address(id=2), 3),
@@ -1771,8 +1764,7 @@ class ExternalColumnsTest(QueryTest):
                 ]
             )
 
-        self.assertEquals(sess.query(Address).join('user', aliased=True, id='ualias').join('user', aliased=True).\
-                add_column(User.concat, id='ualias').add_column(User.count, id='ualias').all(),
+        self.assertEquals(sess.query(Address, ualias.concat, ualias.count).join(('user', ualias)).join('user', aliased=True).all(),
             [
                 (Address(id=1), 14, 1),
                 (Address(id=2), 16, 3),
@@ -1794,10 +1786,6 @@ class ExternalColumnsTest(QueryTest):
         )
 
         self.assertEquals(list(sess.query(Address).join('user').values(Address.id, User.id, User.concat, User.count)), 
-            [(1, 7, 14, 1), (2, 8, 16, 3), (3, 8, 16, 3), (4, 8, 16, 3), (5, 9, 18, 1)]
-        )
-
-        self.assertEquals(list(sess.query(Address).join('user', aliased=True).values(Address.id, User.id, User.concat, User.count)), 
             [(1, 7, 14, 1), (2, 8, 16, 3), (3, 8, 16, 3), (4, 8, 16, 3), (5, 9, 18, 1)]
         )
 
