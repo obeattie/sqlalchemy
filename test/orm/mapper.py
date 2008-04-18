@@ -171,7 +171,7 @@ class MapperTest(MapperSuperTest):
         mapper(User, users, properties = {
             'addresses' : relation(mapper(Address, addresses))
         })
-        assert (User.user_id==3).compare(users.c.user_id==3)
+        self.assertEquals((User.user_id==3).__str__(), (users.c.user_id==3).__str__())
 
         clear_mappers()
 

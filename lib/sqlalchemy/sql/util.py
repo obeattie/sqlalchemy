@@ -360,7 +360,7 @@ class ClauseAdapter(visitors.ClauseVisitor):
         newcol = self.selectable.corresponding_column(col, require_embedded=True)
         
         if not newcol and self.equivalents:
-            if hasattr(col, '__clause_element__'):
+            while hasattr(col, '__clause_element__'):
                 col = col.__clause_element__()
             if col in self.equivalents:
                 for equiv in self.equivalents[col]:

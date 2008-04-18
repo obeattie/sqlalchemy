@@ -562,12 +562,22 @@ def make_test(select_type):
                 ]
             )
 
-        def test_foo(self):
-            sess = create_session()
+            if select_type != '':
+                self.assertEquals(
+                    sess.query(func.count(Person.person_id)).filter(Engineer.primary_language=='java').all(), 
+                    [(1, )]
+                )
+            
             self.assertEquals(
-                sess.query(Person.name, Company.name).join(Company.employees).filter(Company.name=='Elbonia, Inc.').all(),
-                [(u'vlad',u'Elbonia, Inc.')]
+                sess.query(Company.name, func.count(Person.person_id)).filter(Company.company_id==Person.company_id).group_by(Company.name).order_by(Company.name).all(),
+                [(u'Elbonia, Inc.', 1), (u'MegaCorp, Inc.', 4)]
             )
+
+            self.assertEquals(
+                sess.query(Company.name, func.count(Person.person_id)).join(Company.employees).group_by(Company.name).order_by(Company.name).all(),
+                [(u'Elbonia, Inc.', 1), (u'MegaCorp, Inc.', 4)]
+            )
+
     
     PolymorphicQueryTest.__name__ = "Polymorphic%sTest" % select_type
     return PolymorphicQueryTest

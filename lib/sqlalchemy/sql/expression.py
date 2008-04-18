@@ -951,7 +951,14 @@ class ClauseElement(object):
             yield f
             f = getattr(f, '_is_clone_of', None)
     _cloned_set = property(_cloned_set)
-
+    
+    def _annotate(self, key, value):
+        """return a copy of this ClauseElement with the given attribute 'annotated'."""
+        
+        c = self._clone()
+        setattr(c, key, value)
+        return c
+        
     def _get_from_objects(self, **modifiers):
         """Return objects represented in this ``ClauseElement`` that
         should be added to the ``FROM`` list of a query, when this
@@ -2627,13 +2634,18 @@ class _ColumnClause(ColumnElement):
     def _bind_param(self, obj):
         return _BindParamClause(self.name, obj, type_=self.type, unique=True)
 
-    def _make_proxy(self, selectable, name = None):
+    def _annotate(self, key, value):
+        c = self._make_proxy(self.table, attach=False)
+        setattr(c, key, value)
+        return c
+
+    def _make_proxy(self, selectable, name=None, attach=True):
         # propigate the "is_literal" flag only if we are keeping our name,
         # otherwise its considered to be a label
         is_literal = self.is_literal and (name is None or name == self.name)
         c = _ColumnClause(name or self.name, selectable=selectable, _is_oid=self._is_oid, type_=self.type, is_literal=is_literal)
         c.proxies = [self]
-        if not self._is_oid:
+        if attach and not self._is_oid:
             selectable.columns[c.name] = c
         return c
 
@@ -2670,7 +2682,10 @@ class TableClause(FromClause):
     def _clone(self):
         # TableClause is immutable
         return self
-
+    
+    def _annotate(self):
+        raise NotImplementedError()
+        
     def append_column(self, c):
         self._columns[c.name] = c
         c.table = self

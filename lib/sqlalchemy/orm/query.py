@@ -505,6 +505,7 @@ class Query(object):
         q._entities = []
         for column in columns:
             _ColumnEntity(q, column, None)
+        q.__setup_aliasizers(q._entities)
         if not q._yield_per:
             q._yield_per = 10
         return iter(q)
@@ -1205,7 +1206,11 @@ class Query(object):
             froms = [context.from_clause]  # "load from a single FROM" mode, i.e. when select_from() or join() is used
         else:
             froms = context.froms   # "load from discrete FROMs" mode, i.e. when each _MappedEntity has its own FROM
-
+         
+        # TODO: we might want to do this.
+        #if not context.froms:
+        #    raise exceptions.InvalidRequestError("Query could not calculate any FROM clause from given entities.")
+            
         if eager_joins and self._should_nest_selectable:
             # for eager joins present and LIMIT/OFFSET/DISTINCT, wrap the query inside a select,
             # then append eager joins onto that
@@ -1693,6 +1698,10 @@ class _ColumnEntity(_QueryEntity):
         self.froms = util.Set()
         self.entities = util.Set([elem.parententity for elem in visitors.iterate(column) if hasattr(elem, 'parententity')])
         
+        # might want to do this also.
+        #if not self.entities:
+        #    raise exceptions.InvalidRequestError("Could not find any mapped entities in expression '%s'" % column)
+            
     def setup_entity(self, entity, mapper, adapter, from_obj, is_aliased_class, with_polymorphic):
         self.froms.add(from_obj)
 

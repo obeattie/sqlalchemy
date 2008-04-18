@@ -37,7 +37,7 @@ class QueryableAttribute(interfaces.PropComparator):
             self.property = None
 
         if self.comparator:
-            self.__clause_element = self.comparator.__clause_element__() # TODO: breaks for composite types
+            self.__clause_element = self.comparator.__clause_element__()
         else:
             self.__clause_element = None
             
