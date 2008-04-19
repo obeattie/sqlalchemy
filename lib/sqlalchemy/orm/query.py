@@ -23,7 +23,7 @@ from sqlalchemy.sql import util as sql_util
 from sqlalchemy.sql import expression, visitors, operators
 from sqlalchemy.orm import mapper, object_mapper
 
-from sqlalchemy.orm.util import _state_mapper, _is_mapped_class, _is_aliased_class, _entity_descriptor, _entity_info, _class_to_mapper, _orm_columns, AliasedClass
+from sqlalchemy.orm.util import _state_mapper, _is_mapped_class, _is_aliased_class, _entity_descriptor, _entity_info, _class_to_mapper, _orm_columns, AliasedClass, _orm_selectable
 from sqlalchemy.orm import util as mapperutil
 from sqlalchemy.orm import interfaces
 from sqlalchemy.orm import attributes
@@ -69,6 +69,7 @@ class Query(object):
         self._params = {}
         self._yield_per = None
         self._criterion = None
+        self._correlate = util.Set()
         self._joinpoint = None
         self.__joinable_tables = None
         self._having = None
@@ -405,7 +406,11 @@ class Query(object):
         criterion = prop.compare(operators.eq, instance, value_is_parent=True)
         return Query(target, **kwargs).filter(criterion)
     query_from_parent = classmethod(util.deprecated(None, False)(query_from_parent))
-
+    
+    def correlate(self, *args):
+        self._correlate = self._correlate.union([_orm_selectable(s) for s in args])
+    correlate = _generative()(correlate)
+    
     def autoflush(self, setting):
         """Return a Query with a specific 'autoflush' setting.
 
@@ -1221,8 +1226,13 @@ class Query(object):
                 context.order_by = None
                 order_by_col_expr = []
             
-            inner = sql.select(context.primary_columns + order_by_col_expr, context.whereclause, from_obj=froms, use_labels=True, correlate=False, order_by=context.order_by, **self._select_args).alias()
-
+            inner = sql.select(context.primary_columns + order_by_col_expr, context.whereclause, from_obj=froms, use_labels=True, correlate=False, order_by=context.order_by, **self._select_args)
+            
+            if self._correlate:
+                inner = inner.correlate(*self._correlate)
+                
+            inner = inner.alias()
+            
             equivs = self.__all_equivs()
 
             context.row_adapter = mapperutil.create_row_adapter(inner, equivalent_columns=equivs)
@@ -1250,8 +1260,10 @@ class Query(object):
 
             froms += context.eager_joins.values()
                 
-            statement = sql.select(context.primary_columns + context.secondary_columns, context.whereclause, from_obj=froms, use_labels=True, for_update=for_update, order_by=context.order_by, **self._select_args)
-
+            statement = sql.select(context.primary_columns + context.secondary_columns, context.whereclause, from_obj=froms, use_labels=True, for_update=for_update, correlate=False, order_by=context.order_by, **self._select_args)
+            if self._correlate:
+                statement = statement.correlate(*self._correlate)
+                
             if context.eager_order_by:
                 statement.append_order_by(*context.eager_order_by)
             

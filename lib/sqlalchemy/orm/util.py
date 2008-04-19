@@ -384,6 +384,10 @@ def _orm_columns(entity):
     else:
         return [selectable]
 
+def _orm_selectable(entity):
+    mapper, selectable, is_aliased_class = _entity_info(entity)
+    return selectable
+    
 def _is_mapped_class(entity):
     return hasattr(entity, '_class_state')
 
