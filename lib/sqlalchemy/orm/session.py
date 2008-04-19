@@ -9,6 +9,7 @@
 
 import weakref
 from sqlalchemy import util, exceptions, sql, engine
+from sqlalchemy.sql import util as sql_util
 from sqlalchemy.orm import unitofwork, query, attributes, util as mapperutil
 from sqlalchemy.orm.mapper import object_mapper as _object_mapper
 from sqlalchemy.orm.mapper import class_mapper as _class_mapper
@@ -706,7 +707,7 @@ class Session(object):
                 elif mapper.compile().mapped_table in self.__binds:
                     return self.__binds[mapper.mapped_table]
             if clause is not None:
-                for t in clause._table_iterator():
+                for t in sql_util.find_tables(clause):
                     if t in self.__binds:
                         return self.__binds[t]
 

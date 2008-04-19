@@ -745,7 +745,7 @@ class PropertyLoader(StrategizedProperty):
                 if source_selectable:
                     primary_aliasizer = primary_aliasizer.copy_and_chain(ClauseAdapter(source_selectable, equivalents=self.parent._equivalent_columns))
 
-                secondaryjoin = secondary_aliasizer.traverse(secondaryjoin, clone=True)
+                secondaryjoin = secondary_aliasizer.traverse(secondaryjoin)
             else:
                 if dest_selectable:
                     primary_aliasizer = ClauseAdapter(dest_selectable, exclude=self.local_side, equivalents=self.mapper._equivalent_columns)
@@ -756,7 +756,7 @@ class PropertyLoader(StrategizedProperty):
 
                 secondary_aliasizer = None
         
-            primaryjoin = primary_aliasizer.traverse(primaryjoin, clone=True)
+            primaryjoin = primary_aliasizer.traverse(primaryjoin)
             target_adapter = secondary_aliasizer or primary_aliasizer
             target_adapter.include = target_adapter.exclude = None
         else:

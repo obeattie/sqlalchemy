@@ -72,10 +72,10 @@ def _recursive_splice_joins(left, right):
         right = right._clone()
         right._reset_exported()
         right.left = splice_joins(left, right.left)
-        right.onclause = ClauseAdapter(left).traverse(right.onclause, clone=True)
+        right.onclause = ClauseAdapter(left).traverse(right.onclause)
         return right
     else:
-        return ClauseAdapter(left).traverse(right, clone=True)
+        return ClauseAdapter(left).traverse(right)
 
 def splice_joins(left, right):
     if left is None:
@@ -90,10 +90,10 @@ def splice_joins(left, right):
         if isinstance(right, expression.Join):
             right = right._clone()
             right._reset_exported()
-            right.onclause = adapter.traverse(right.onclause, clone=True)
+            right.onclause = adapter.traverse(right.onclause)
             stack.append((right.left, right))
         else:
-            right = adapter.traverse(right, clone=True)
+            right = adapter.traverse(right)
         if prevright:
             prevright.left = right
         if not ret:
@@ -281,7 +281,7 @@ class ColumnsInClause(visitors.ClauseVisitor):
         if self.selectable.c.get(column.key) is column:
             self.result = True
 
-class ClauseAdapter(visitors.ClauseVisitor):
+class ClauseAdapter(visitors.CloningVisitor):
     """Given a clause (like as in a WHERE criterion), locate columns
     which are embedded within a given selectable, and changes those
     columns to be that of the selectable.
@@ -309,7 +309,7 @@ class ClauseAdapter(visitors.ClauseVisitor):
       s.c.col1 == table2.c.col1
     """
 
-    __traverse_options__ = {'column_collections':False}
+    __traverse_options__ = {'column_collections':False, 'clone':True}
 
     def __init__(self, selectable, include=None, exclude=None, equivalents=None):
         self.__traverse_options__ = self.__traverse_options__.copy()
@@ -319,11 +319,6 @@ class ClauseAdapter(visitors.ClauseVisitor):
         self.exclude = exclude
         self.equivalents = equivalents
 
-    def traverse(self, obj, clone=True):
-        if not clone:
-            raise exceptions.ArgumentError("ClauseAdapter 'clone' argument must be True")
-        return visitors.ClauseVisitor.traverse(self, obj, clone=True)
-    
     def copy_and_chain(self, adapter):
         """create a copy of this adapter and chain to the given adapter.
 

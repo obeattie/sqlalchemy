@@ -166,6 +166,8 @@ class AliasedClauses(object):
         return ac
 
     def aliased_column(self, column):
+        """adapt the given column to this AliasedClauses' selectable, and add it to the row adapter."""
+        
         if self.__wrap:
             column = self.__wrap.aliased_column(column)
             
@@ -174,7 +176,7 @@ class AliasedClauses(object):
             return conv
         
         # process column-level subqueries    
-        aliased_column = self.adapter.traverse(column, clone=True)
+        aliased_column = self.adapter.traverse(column)
 
         # add to row decorator explicitly
         self.row_decorator.map[column] = aliased_column
@@ -184,7 +186,7 @@ class AliasedClauses(object):
         if self.__wrap:
             clause = self.__wrap.adapt_clause(clause)
             
-        return self.adapter.traverse(clause, clone=True)
+        return self.adapter.traverse(clause)
     
     def adapt_list(self, clauses):
         if self.__wrap:
@@ -251,16 +253,16 @@ class AliasedComparator(PropComparator):
         self.aliasedclass = aliasedclass
         self.comparator = comparator
         self.adapter = adapter
-        self.__clause_element = self.adapter.traverse(self.comparator.__clause_element__(), clone=True)._annotate('parententity', aliasedclass)
+        self.__clause_element = self.adapter.traverse(self.comparator.__clause_element__())._annotate('parententity', aliasedclass)
 
     def __clause_element__(self):
         return self.__clause_element
     
     def operate(self, op, *other, **kwargs):
-        return self.adapter.traverse(self.comparator.operate(op, *other, **kwargs), clone=True)
+        return self.adapter.traverse(self.comparator.operate(op, *other, **kwargs))
 
     def reverse_operate(self, op, other, **kwargs):
-        return self.adapter.traverse(self.comparator.reverse_operate(op, *other, **kwargs), clone=True)
+        return self.adapter.traverse(self.comparator.reverse_operate(op, *other, **kwargs))
 
 class _ORMJoin(expression.Join):
 

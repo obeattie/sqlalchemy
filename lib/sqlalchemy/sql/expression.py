@@ -1666,7 +1666,7 @@ class FromClause(Selectable):
       global ClauseAdapter
       if ClauseAdapter is None:
           from sqlalchemy.sql.util import ClauseAdapter
-      return ClauseAdapter(alias).traverse(self, clone=True)
+      return ClauseAdapter(alias).traverse(self)
 
     def correspond_on_equivalents(self, column, equivalents):
         col = self.corresponding_column(column, require_embedded=True)
@@ -1919,9 +1919,6 @@ class _TextClause(ClauseElement):
 
     def supports_execution(self):
         return True
-
-    def _table_iterator(self):
-        return iter([])
 
 class _Null(ColumnElement):
     """Represent the NULL keyword in a SQL statement.
@@ -2393,9 +2390,6 @@ class Alias(FromClause):
 
     def supports_execution(self):
         return self.original.supports_execution()
-
-    def _table_iterator(self):
-        return self.original._table_iterator()
 
     def _populate_column_collection(self):
         for col in self.selectable.columns:
@@ -2927,11 +2921,6 @@ class CompoundSelect(_SelectBaseMixin, FromClause):
         return (column_collections and list(self.c) or []) + \
             [self._order_by_clause, self._group_by_clause] + list(self.selects)
 
-    def _table_iterator(self):
-        for s in self.selects:
-            for t in s._table_iterator():
-                yield t
-
     def bind(self):
         if self._bind:
             return self._bind
@@ -3303,11 +3292,6 @@ class Select(_SelectBaseMixin, FromClause):
 
         return intersect_all(self, other, **kwargs)
 
-    def _table_iterator(self):
-        for t in visitors.NoColumnVisitor().iterate(self):
-            if isinstance(t, TableClause):
-                yield t
-
     def bind(self):
         if self._bind:
             return self._bind
@@ -3337,9 +3321,6 @@ class _UpdateBase(ClauseElement):
 
     def supports_execution(self):
         return True
-
-    def _table_iterator(self):
-        return iter([self.table])
 
     def _generate(self):
         s = self.__class__.__new__(self.__class__)

@@ -1720,6 +1720,7 @@ class ExternalColumnsTest(QueryTest):
         })
 
         sess = create_session()
+        sess.query(Address).options(eagerload('user')).all()
 
         self.assertEquals(sess.query(User).all(), 
             [

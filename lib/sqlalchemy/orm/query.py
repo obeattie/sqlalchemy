@@ -140,7 +140,7 @@ class Query(object):
 
     def __adapt_polymorphic_element(self, element):
         search = None
-
+        
         if isinstance(element, expression.FromClause):
             search = element
         elif hasattr(element, 'table'):
