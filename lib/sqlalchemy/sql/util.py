@@ -336,11 +336,10 @@ class ClauseAdapter(visitors.ReplacingCloningVisitor):
         newcol = self.selectable.corresponding_column(col, require_embedded=True)
         
         if not newcol and self.equivalents:
-            while hasattr(col, '__clause_element__'):
-                col = col.__clause_element__()
-            if col in self.equivalents:
-                for equiv in self.equivalents[col]:
-                    newcol = self.selectable.corresponding_column(equiv, require_embedded=True)
-                    if newcol:
-                        return newcol
+            for c in col._cloned_set:
+                if c in self.equivalents:
+                    for equiv in self.equivalents[c]:
+                        newcol = self.selectable.corresponding_column(equiv, require_embedded=True)
+                        if newcol:
+                            return newcol
         return newcol

@@ -32,46 +32,12 @@ class ColumnLoader(LoaderStrategy):
         
     def init_class_attribute(self):
         self.is_class_level = True
-        if self.is_composite:
-            self._init_composite_attribute()
-        else:
-            self._init_scalar_attribute()
-
-    def _init_composite_attribute(self):
-        self.logger.info("register managed composite attribute %s on class %s" % (self.key, self.parent.class_.__name__))
-        def copy(obj):
-            return self.parent_property.composite_class(
-                *obj.__composite_values__())
-        def compare(a, b):
-            for col, aprop, bprop in zip(self.columns,
-                                         a.__composite_values__(),
-                                         b.__composite_values__()):
-                if not col.type.compare_values(aprop, bprop):
-                    return False
-            else:
-                return True
-        sessionlib.register_attribute(self.parent.class_, self.key, uselist=False, useobject=False, copy_function=copy, compare_function=compare, mutable_scalars=True, comparator=self.parent_property.comparator, parententity=self.parent)
-
-    def _init_scalar_attribute(self):
         self.logger.info("register managed attribute %s on class %s" % (self.key, self.parent.class_.__name__))
         coltype = self.columns[0].type
         sessionlib.register_attribute(self.parent.class_, self.key, uselist=False, useobject=False, copy_function=coltype.copy_value, compare_function=coltype.compare_values, mutable_scalars=self.columns[0].type.is_mutable(), comparator=self.parent_property.comparator, parententity=self.parent)
         
     def create_row_processor(self, selectcontext, mapper, row):
-        if self.is_composite:
-            for c in self.columns:
-                if c not in row:
-                    break
-            else:
-                def new_execute(instance, row, **flags):
-                    if self._should_log_debug:
-                        self.logger.debug("populating %s with %s/%s..." % (mapperutil.attribute_str(instance, self.key), row.__class__.__name__, self.columns[0].key))
-                    instance.__dict__[self.key] = self.parent_property.composite_class(*[row[c] for c in self.columns])
-                if self._should_log_debug:
-                    self.logger.debug("Returning active composite column fetcher for %s %s" % (mapper, self.key))
-                return (new_execute, None)
-                
-        elif self.columns[0] in row:
+        if self.columns[0] in row:
             def new_execute(instance, row, **flags):
                 if self._should_log_debug:
                     self.logger.debug("populating %s with %s/%s" % (mapperutil.attribute_str(instance, self.key), row.__class__.__name__, self.columns[0].key))
@@ -89,6 +55,42 @@ class ColumnLoader(LoaderStrategy):
 
 ColumnLoader.logger = logging.class_logger(ColumnLoader)
 
+class CompositeColumnLoader(ColumnLoader):
+    def init_class_attribute(self):
+        self.is_class_level = True
+        self.logger.info("register managed composite attribute %s on class %s" % (self.key, self.parent.class_.__name__))
+
+        def copy(obj):
+            return self.parent_property.composite_class(*obj.__composite_values__())
+            
+        def compare(a, b):
+            for col, aprop, bprop in zip(self.columns,
+                                         a.__composite_values__(),
+                                         b.__composite_values__()):
+                if not col.type.compare_values(aprop, bprop):
+                    return False
+            else:
+                return True
+        sessionlib.register_attribute(self.parent.class_, self.key, uselist=False, useobject=False, copy_function=copy, compare_function=compare, mutable_scalars=True, comparator=self.parent_property.comparator, parententity=self.parent)
+
+    def create_row_processor(self, selectcontext, mapper, row):
+        for c in self.columns:
+            if c not in row:
+                def new_execute(instance, row, isnew, **flags):
+                    if isnew:
+                        instance._state.expire_attributes([self.key])
+                if self._should_log_debug:
+                    self.logger.debug("Deferring load for %s %s" % (mapper, self.key))
+                return (new_execute, None)
+        else:
+            def new_execute(instance, row, **flags):
+                if self._should_log_debug:
+                    self.logger.debug("populating %s with %s/%s..." % (mapperutil.attribute_str(instance, self.key), row.__class__.__name__, self.columns[0].key))
+                instance.__dict__[self.key] = self.parent_property.composite_class(*[row[c] for c in self.columns])
+            if self._should_log_debug:
+                self.logger.debug("Returning active composite column fetcher for %s %s" % (mapper, self.key))
+            return (new_execute, None)
+    
 class DeferredColumnLoader(LoaderStrategy):
     """Deferred column loader, a per-column or per-column-group lazy loader."""
     

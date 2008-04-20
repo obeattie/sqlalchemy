@@ -44,7 +44,7 @@ class ColumnProperty(StrategizedProperty):
         # sanity check
         for col in columns:
             if not isinstance(col, ColumnElement):
-                raise ArgumentError('column_property() must be given a ColumnElement as its argument.  Try .label() or .as_scalar() for Selectables to fix this.')
+                raise ArgumentError('column_property() must be given a ColumnElement as its argument.  Try .label() or .as_scalar() for selectables.')
 
     def do_init(self):
         super(ColumnProperty, self).do_init()
@@ -73,7 +73,6 @@ class ColumnProperty(StrategizedProperty):
         if value:
             setattr(dest, self.key, value[0])
         else:
-            # TODO: lazy callable should merge to the new instance
             dest._state.expire_attributes([self.key])
 
     def get_col_value(self, column, value):
@@ -100,6 +99,7 @@ class CompositeProperty(ColumnProperty):
         super(CompositeProperty, self).__init__(*columns, **kwargs)
         self.composite_class = class_
         self.comparator = kwargs.pop('comparator', CompositeProperty.Comparator)(self)
+        self.strategy_class = strategies.CompositeColumnLoader
 
     def do_init(self):
         super(ColumnProperty, self).do_init()
@@ -183,7 +183,6 @@ class SynonymProperty(MapperProperty):
         pass
 SynonymProperty.logger = logging.class_logger(SynonymProperty)
 
-
 class ComparableProperty(MapperProperty):
     """Instruments a Python property for use in query expressions."""
 
@@ -213,7 +212,7 @@ class PropertyLoader(StrategizedProperty):
     of items that correspond to a related database table.
     """
 
-    def __init__(self, argument, secondary=None, primaryjoin=None, secondaryjoin=None, entity_name=None, foreign_keys=None, foreignkey=None, uselist=None, private=False, association=None, order_by=False, attributeext=None, backref=None, is_backref=False, post_update=False, cascade=None, viewonly=False, lazy=True, collection_class=None, passive_deletes=False, passive_updates=True, remote_side=None, enable_typechecks=True, join_depth=None, strategy_class=None):
+    def __init__(self, argument, secondary=None, primaryjoin=None, secondaryjoin=None, entity_name=None, foreign_keys=None, foreignkey=None, uselist=None, association=None, order_by=False, attributeext=None, backref=None, is_backref=False, post_update=False, cascade=None, viewonly=False, lazy=True, collection_class=None, passive_deletes=False, passive_updates=True, remote_side=None, enable_typechecks=True, join_depth=None, strategy_class=None):
         self.uselist = uselist
         self.argument = argument
         self.entity_name = entity_name
@@ -254,11 +253,7 @@ class PropertyLoader(StrategizedProperty):
         if cascade is not None:
             self.cascade = CascadeOptions(cascade)
         else:
-            if private:
-                util.warn_deprecated('private option is deprecated; see docs for details')
-                self.cascade = CascadeOptions("all, delete-orphan")
-            else:
-                self.cascade = CascadeOptions("save-update, merge")
+            self.cascade = CascadeOptions("save-update, merge")
 
         if self.passive_deletes == 'all' and ("delete" in self.cascade or "delete-orphan" in self.cascade):
             raise exceptions.ArgumentError("Can't set passive_deletes='all' in conjunction with 'delete' or 'delete-orphan' cascade")
@@ -401,10 +396,6 @@ class PropertyLoader(StrategizedProperty):
 
     def _optimized_compare(self, value, value_is_parent=False):
         return self._get_strategy(strategies.LazyLoader).lazy_clause(value, reverse_direction=not value_is_parent)
-
-    def private(self):
-        return self.cascade.delete_orphan
-    private = property(util.deprecated(private))
 
     def __str__(self):
         return str(self.parent.class_.__name__) + "." + self.key + " (" + str(self.mapper.class_.__name__)  + ")"

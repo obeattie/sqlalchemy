@@ -1699,15 +1699,14 @@ class _ColumnEntity(_QueryEntity):
 
         if isinstance(column, basestring):
             column = sql.literal_column(column)
-        elif not isinstance(column, (sql.ColumnElement, attributes.QueryableAttribute)):
-            if isinstance(column, mapper.Mapper._CompileOnAttr):  # urggg
-                column = column.parententity.c[column.key]
-            else:
-                raise exceptions.InvalidRequestError("Invalid column expression '%r'" % column)
+        elif isinstance(column, (attributes.QueryableAttribute, mapper.Mapper._CompileOnAttr)):
+            column = column.__clause_element__()
+        elif not isinstance(column, sql.ColumnElement):
+            raise exceptions.InvalidRequestError("Invalid column expression '%r'" % column)
 
         if not hasattr(column, '_label'):
             column = column.label(None)
-
+        
         self.column = column
         self.alias_id = id
         self.entity_name = None

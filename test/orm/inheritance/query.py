@@ -492,7 +492,7 @@ def make_test(select_type):
 
             self.assertEquals(
                 sess.query(Person, palias).filter(Person.company_id==palias.company_id).filter(Person.name=='dogbert').\
-                    filter(Person.person_id>palias.person_id).order_by(Person.person_id, palias.person_id).from_self().all(), 
+                    filter(Person.person_id>palias.person_id).from_self().order_by(Person.person_id, palias.person_id).all(), 
                 [
                     (m1, e1),
                     (m1, e2),
@@ -547,8 +547,8 @@ def make_test(select_type):
                 )
             
                 self.assertEquals(
-                    sess.query(Engineer.primary_language, Company.name).join(Company.employees).filter(Person.type=='engineer').all(),
-                    [(u'java', u'MegaCorp, Inc.'), (u'c++', u'MegaCorp, Inc.'), (u'cobol', u'Elbonia, Inc.')]
+                    sess.query(Engineer.primary_language, Company.name).join(Company.employees).filter(Person.type=='engineer').order_by(desc(Engineer.primary_language)).all(),
+                    [(u'java', u'MegaCorp, Inc.'), (u'cobol', u'Elbonia, Inc.'), (u'c++', u'MegaCorp, Inc.')]
                 )
 
             palias = aliased(Person)
@@ -607,7 +607,7 @@ def make_test(select_type):
                 sess.query(Company.name, func.count(Person.person_id)).join(Company.employees).group_by(Company.name).order_by(Company.name).all(),
                 [(u'Elbonia, Inc.', 1), (u'MegaCorp, Inc.', 4)]
             )
-
+    
     
     PolymorphicQueryTest.__name__ = "Polymorphic%sTest" % select_type
     return PolymorphicQueryTest

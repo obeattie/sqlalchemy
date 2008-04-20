@@ -397,7 +397,7 @@ class FlushTest(ORMTest):
         class Admin(User):pass
         role_mapper = mapper(Role, roles)
         user_mapper = mapper(User, users, properties = {
-                'roles' : relation(Role, secondary=user_roles, lazy=False, private=False)
+                'roles' : relation(Role, secondary=user_roles, lazy=False)
             }
         )
         admin_mapper = mapper(Admin, admins, inherits=user_mapper)
@@ -432,7 +432,7 @@ class FlushTest(ORMTest):
 
         role_mapper = mapper(Role, roles)
         user_mapper = mapper(User, users, properties = {
-                'roles' : relation(Role, secondary=user_roles, lazy=False, private=False)
+                'roles' : relation(Role, secondary=user_roles, lazy=False)
             }
         )
 

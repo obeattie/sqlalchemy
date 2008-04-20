@@ -867,19 +867,25 @@ def _is_literal(element):
     return not isinstance(element, (ClauseElement, Operators))
 
 def _literal_as_text(element):
-    if _is_literal(element):
+    if hasattr(element, '__clause_element__'):
+        return element.__clause_element__()
+    elif _is_literal(element):
         return _TextClause(unicode(element))
     else:
         return element
 
 def _literal_as_column(element):
-    if _is_literal(element):
+    if hasattr(element, '__clause_element__'):
+        return element.__clause_element__()
+    elif _is_literal(element):
         return literal_column(str(element))
     else:
         return element
 
 def _literal_as_binds(element, name=None, type_=None):
-    if _is_literal(element):
+    if hasattr(element, '__clause_element__'):
+        return element.__clause_element__()
+    elif _is_literal(element):
         if element is None:
             return null()
         else:
@@ -888,7 +894,9 @@ def _literal_as_binds(element, name=None, type_=None):
         return element
 
 def _no_literals(element):
-    if _is_literal(element):
+    if hasattr(element, '__clause_element__'):
+        return element.__clause_element__()
+    elif _is_literal(element):
         raise exceptions.ArgumentError("Ambiguous literal: %r.  Use the 'text()' function to indicate a SQL expression literal, or 'literal()' to indicate a bound value." % element)
     else:
         return element
@@ -907,7 +915,6 @@ def _selectable(element):
     else:
         raise exceptions.ArgumentError("Object '%s' is not a Selectable and does not implement `__selectable__()`" % repr(element))
 
-    
 def is_column(col):
     """True if ``col`` is an instance of ``ColumnElement``."""
     return isinstance(col, ColumnElement)
@@ -1411,6 +1418,8 @@ class _CompareMixin(ColumnOperators):
         if isinstance(other, _BindParamClause) and isinstance(other.type, sqltypes.NullType):
             other.type = self.type
             return other
+        elif hasattr(other, '__clause_element__'):
+            return other.__clause_element__()
         elif _is_literal(other):
             return self._bind_param(other)
         else:

@@ -601,7 +601,7 @@ class Mapper(object):
             cls = object.__getattribute__(self, 'class_')
             clskey = object.__getattribute__(self, 'key')
 
-            if key.startswith('__'):
+            if key.startswith('__') and key != '__clause_element__':
                 return object.__getattribute__(self, key)
 
             class_mapper(cls)
@@ -615,9 +615,9 @@ class Mapper(object):
                      "mapper compilation operation") % (clskey, cls.__name__))
                 # clean us up explicitly
                 delattr(cls, clskey)
-
+            
             return getattr(getattr(cls, clskey), key)
-
+                
     def __compile_properties(self):
 
         # object attribute names mapped to MapperProperty objects

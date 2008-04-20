@@ -970,7 +970,7 @@ class OneToManyTest(ORMTest):
 
     def test_o2m_delete_parent(self):
         m = mapper(User, users, properties = dict(
-            address = relation(mapper(Address, addresses), lazy = True, uselist = False, private = False)
+            address = relation(mapper(Address, addresses), lazy=True, uselist=False)
         ))
         u = User()
         a = Address()

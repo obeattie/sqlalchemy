@@ -36,28 +36,15 @@ class QueryableAttribute(interfaces.PropComparator):
         else:
             self.property = None
 
-        if self.comparator:
-            self.__clause_element = self.comparator.__clause_element__()
-        else:
-            self.__clause_element = None
-            
     def get_history(self, instance, **kwargs):
         return self.impl.get_history(instance._state, **kwargs)
     
-    def _clone(self):
-        return self
-        
     def __selectable__(self):
         # TODO: conditionally attach this method based on clause_element ?
         return self
-        
-    def __getattr__(self, key):
-        # proxy everything else to clause_element.
-        # TODO: do we use __getattr__ for this ?  or something more explicit ?
-        return getattr(self.__clause_element, key)
     
     def __clause_element__(self):
-        return self.__clause_element
+        return self.comparator.__clause_element__()
     
     def operate(self, op, *other, **kwargs):
         return op(self.comparator, *other, **kwargs)

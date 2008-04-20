@@ -643,7 +643,7 @@ class Column(SchemaItem, expression._ColumnClause):
         c.foreign_keys = self.foreign_keys # shares our pre-initialized ForeignKey objects
         c._proxy_set = self.proxy_set  # pre-populate proxy_set to look like ours
         c._make_proxy = self._make_proxy # _make_proxy will return our own _make_proxy; proxied copies aren't "annotated"
-        c.__clause_element__ = lambda: self # provide hook for util.ClauseAdapter to find the "real" column
+        c._is_clone_of = self # gives ClauseAdapter a way to match the annotated column back to this one
         setattr(c, key, value)
         return c
         

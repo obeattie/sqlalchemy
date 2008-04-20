@@ -724,7 +724,7 @@ class JoinTest(QueryTest):
         ]
         
         q = sess.query(Order)
-        q = q.add_entity(Item).select_from(join(Order, Item, 'items'))
+        q = q.add_entity(Item).select_from(join(Order, Item, 'items')).order_by(Order.id, Item.id)
         l = q.all()
         self.assertEquals(l, expected)
 
@@ -1050,7 +1050,7 @@ class MixedEntitiesTest(QueryTest):
 
         # select from aliasing + explicit aliasing
         self.assertEquals(
-            sess.query(User, adalias.email_address).outerjoin((User.addresses, adalias))._from_self().all(),
+            sess.query(User, adalias.email_address, adalias.id).outerjoin((User.addresses, adalias)).from_self(User, adalias.email_address).order_by(User.id, adalias.id).all(),
             [
                 (User(name=u'jack',id=7), u'jack@bean.com'), 
                 (User(name=u'ed',id=8), u'ed@wood.com'), 
@@ -1063,18 +1063,17 @@ class MixedEntitiesTest(QueryTest):
         
         # anon + select from aliasing
         self.assertEquals(
-            sess.query(User).join(User.addresses, aliased=True).filter(Address.email_address.like('%ed%'))._from_self().all(),
+            sess.query(User).join(User.addresses, aliased=True).filter(Address.email_address.like('%ed%')).from_self().all(),
             [
                 User(name=u'ed',id=8), 
                 User(name=u'fred',id=9), 
             ]
         )
-        
+
         # test eager aliasing, with/without select_from aliasing
         for q in [
-            sess.query(User, adalias.email_address).outerjoin((User.addresses, adalias)).options(eagerload(User.addresses)).limit(10),
-            sess.query(User, adalias.email_address).outerjoin((User.addresses, adalias))._from_self().options(eagerload(User.addresses)).limit(10),
-            
+            sess.query(User, adalias.email_address).outerjoin((User.addresses, adalias)).options(eagerload(User.addresses)).order_by(User.id, adalias.id).limit(10),
+            sess.query(User, adalias.email_address, adalias.id).outerjoin((User.addresses, adalias)).from_self(User, adalias.email_address).options(eagerload(User.addresses)).order_by(User.id, adalias.id).limit(10),
         ]:
             self.assertEquals(
                 q.all(),
@@ -1092,6 +1091,7 @@ class MixedEntitiesTest(QueryTest):
                             Address(user_id=8,email_address=u'ed@bettyboop.com',id=3), 
                             Address(user_id=8,email_address=u'ed@lala.com',id=4)],name=u'ed',id=8), u'ed@lala.com'), 
                 (User(addresses=[Address(user_id=9,email_address=u'fred@fred.com',id=5)],name=u'fred',id=9), u'fred@fred.com'), 
+
                 (User(addresses=[],name=u'chuck',id=10), None)]
         )
             
@@ -1104,10 +1104,10 @@ class MixedEntitiesTest(QueryTest):
             sess.query(Order, oalias).filter(Order.user_id==oalias.user_id).filter(Order.user_id==7).filter(Order.id>oalias.id),
             sess.query(Order, oalias)._from_self().filter(Order.user_id==oalias.user_id).filter(Order.user_id==7).filter(Order.id>oalias.id),
             # here we go....two layers of aliasing
-            sess.query(Order, oalias).filter(Order.user_id==oalias.user_id).filter(Order.user_id==7).filter(Order.id>oalias.id)._from_self().limit(10).options(eagerload(Order.items)),
+            sess.query(Order, oalias).filter(Order.user_id==oalias.user_id).filter(Order.user_id==7).filter(Order.id>oalias.id)._from_self().order_by(Order.id, oalias.id).limit(10).options(eagerload(Order.items)),
 
             # gratuitous four layers
-            sess.query(Order, oalias).filter(Order.user_id==oalias.user_id).filter(Order.user_id==7).filter(Order.id>oalias.id)._from_self()._from_self()._from_self().limit(10).options(eagerload(Order.items)),
+            sess.query(Order, oalias).filter(Order.user_id==oalias.user_id).filter(Order.user_id==7).filter(Order.id>oalias.id)._from_self()._from_self()._from_self().order_by(Order.id, oalias.id).limit(10).options(eagerload(Order.items)),
 
         ]:
         
