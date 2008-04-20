@@ -184,6 +184,7 @@ def make_test(select_type):
 
         def test_primary_eager_aliasing(self):
             sess = create_session()
+            
             def go():
                 self.assertEquals(sess.query(Person).options(eagerload(Engineer.machines))[1:3].all(), all_employees[1:3])
             self.assert_sql_count(testing.db, go, {'':6, 'Polymorphic':3}.get(select_type, 4))
@@ -199,9 +200,9 @@ def make_test(select_type):
             
             # for all mappers, ensure the primary key has been calculated as just the "person_id"
             # column
-            self.assertEquals(sess.query(Person).get(e1.person_id), Engineer(name="dilbert"))
-            self.assertEquals(sess.query(Engineer).get(e1.person_id), Engineer(name="dilbert"))
-            self.assertEquals(sess.query(Manager).get(b1.person_id), Boss(name="pointy haired boss"))
+            self.assertEquals(sess.query(Person).get(e1.person_id), Engineer(name="dilbert", primary_language="java"))
+            self.assertEquals(sess.query(Engineer).get(e1.person_id), Engineer(name="dilbert", primary_language="java"))
+            self.assertEquals(sess.query(Manager).get(b1.person_id), Boss(name="pointy haired boss", golf_swing="fore"))
             
         def test_filter_on_subclass(self):
             sess = create_session()
@@ -219,7 +220,10 @@ def make_test(select_type):
 
         def test_join_from_polymorphic(self):
             sess = create_session()
-        
+
+            # TODO: remove
+            self.assertEquals(sess.query(Person).join('paperwork', aliased=True).filter(Person.c.name.like('%dog%')).filter(Paperwork.description.like('%#2%')).all(), [m1])
+            
             for aliased in (True, False):
                 self.assertEquals(sess.query(Person).join('paperwork', aliased=aliased).filter(Paperwork.description.like('%review%')).all(), [b1, m1])
 
@@ -247,7 +251,7 @@ def make_test(select_type):
             self.assertEquals(sess.query(Company).join('employees').filter(Person.name=='vlad').one(), c2)
 
             self.assertEquals(sess.query(Company).join('employees', aliased=True).filter(Person.name=='vlad').one(), c2)
-        
+
         def test_polymorphic_any(self):
             sess = create_session()
 
@@ -313,6 +317,8 @@ def make_test(select_type):
                 Manager(name="dogbert", manager_name="dogbert", status="regular manager"),
                 Engineer(name="vlad", engineer_name="vlad", primary_language="cobol", status="elbonian engineer")
             ]
+            self.assertEquals(sess.query(Person).with_polymorphic('*').all(), emps_without_relations)
+            
             
             def go():
                 self.assertEquals(sess.query(Person).with_polymorphic(Engineer).filter(Engineer.primary_language=='java').all(), emps_without_relations[0:1])
@@ -353,6 +359,7 @@ def make_test(select_type):
             ]
             
             sess = create_session()
+            
             def go():
                 # test load Companies with lazy load to 'employees'
                 self.assertEquals(sess.query(Company).all(), assert_result)
@@ -367,7 +374,7 @@ def make_test(select_type):
             # in the case of select_type='', the eagerload doesn't take in this case; 
             # it eagerloads company->people, then a load for each of 5 rows, then lazyload of "machines"            
             self.assert_sql_count(testing.db, go, {'':7, 'Polymorphic':1}.get(select_type, 2))
-
+    
         def test_eagerload_on_subclass(self):
             sess = create_session()
             def go():
@@ -379,10 +386,15 @@ def make_test(select_type):
             
         def test_join_to_subclass(self):
             sess = create_session()
+            self.assertEquals(sess.query(Company).join(('employees', people.join(engineers))).filter(Engineer.primary_language=='java').all(), [c1])
 
             if select_type == '':
                 self.assertEquals(sess.query(Company).select_from(companies.join(people).join(engineers)).filter(Engineer.primary_language=='java').all(), [c1])
                 self.assertEquals(sess.query(Company).join(('employees', people.join(engineers))).filter(Engineer.primary_language=='java').all(), [c1])
+                
+                ealias = aliased(Engineer)
+                self.assertEquals(sess.query(Company).join(('employees', ealias)).filter(ealias.primary_language=='java').all(), [c1])
+
                 self.assertEquals(sess.query(Person).select_from(people.join(engineers)).join(Engineer.machines).all(), [e1, e2, e3])
                 self.assertEquals(sess.query(Person).select_from(people.join(engineers)).join(Engineer.machines).filter(Machine.name.ilike("%ibm%")).all(), [e1, e3])
                 self.assertEquals(sess.query(Company).join([('employees', people.join(engineers)), Engineer.machines]).all(), [c1, c2])
@@ -452,6 +464,150 @@ def make_test(select_type):
             self.assertEquals(sess.query(Person).first(), all_employees[0])
         
             self.assertEquals(sess.query(Person).filter(Person.person_id==e2.person_id).one(), e2)
+    
+        def test_from_alias(self):
+            sess = create_session()
+            
+            palias = aliased(Person)
+            self.assertEquals(
+                sess.query(palias).filter(palias.name.in_(['dilbert', 'wally'])).all(),
+                [e1, e2]
+            )
+            
+        def test_self_referential(self):
+            sess = create_session()
+            
+            c1_employees = [e1, e2, b1, m1]
+            
+            palias = aliased(Person)
+            self.assertEquals(
+                sess.query(Person, palias).filter(Person.company_id==palias.company_id).filter(Person.name=='dogbert').\
+                    filter(Person.person_id>palias.person_id).order_by(Person.person_id, palias.person_id).all(), 
+                [
+                    (m1, e1),
+                    (m1, e2),
+                    (m1, b1),
+                ]
+            )
+
+            self.assertEquals(
+                sess.query(Person, palias).filter(Person.company_id==palias.company_id).filter(Person.name=='dogbert').\
+                    filter(Person.person_id>palias.person_id).from_self().order_by(Person.person_id, palias.person_id).all(), 
+                [
+                    (m1, e1),
+                    (m1, e2),
+                    (m1, b1),
+                ]
+            )
+        
+        def test_nesting_queries(self):
+            sess = create_session()
+            
+            # query.statement places a flag "no_adapt" on the returned statement.  This prevents
+            # the polymorphic adaptation in the second "filter" from hitting it, which would pollute 
+            # the subquery and usually results in recursion overflow errors within the adaption.
+            subq = sess.query(engineers.c.person_id).filter(Engineer.primary_language=='java').statement.as_scalar()
+            
+            self.assertEquals(sess.query(Person).filter(Person.person_id==subq).one(), e1)
+            
+            
+        def test_mixed_entities(self):
+            sess = create_session()
+
+            self.assertEquals(
+                sess.query(Company.name, Person).join(Company.employees).filter(Company.name=='Elbonia, Inc.').all(),
+                [(u'Elbonia, Inc.', 
+                    Engineer(status=u'elbonian engineer',engineer_name=u'vlad',name=u'vlad',primary_language=u'cobol'))]
+            )
+
+            self.assertEquals(
+                sess.query(Person, Company.name).join(Company.employees).filter(Company.name=='Elbonia, Inc.').all(),
+                [(Engineer(status=u'elbonian engineer',engineer_name=u'vlad',name=u'vlad',primary_language=u'cobol'),
+                    u'Elbonia, Inc.')]
+            )
+
+            self.assertEquals(
+                sess.query(Person.name, Company.name).join(Company.employees).filter(Company.name=='Elbonia, Inc.').all(),
+                [(u'vlad',u'Elbonia, Inc.')]
+            )
+
+            self.assertEquals(
+                sess.query(Engineer.primary_language).filter(Person.type=='engineer').all(),
+                [(u'java',), (u'c++',), (u'cobol',)]
+            )
+
+            if select_type != '':
+                self.assertEquals(
+                    sess.query(Engineer, Company.name).join(Company.employees).filter(Person.type=='engineer').all(),
+                    [
+                    (Engineer(status=u'regular engineer',engineer_name=u'dilbert',name=u'dilbert',company_id=1,primary_language=u'java',person_id=1,type=u'engineer'), u'MegaCorp, Inc.'), 
+                    (Engineer(status=u'regular engineer',engineer_name=u'wally',name=u'wally',company_id=1,primary_language=u'c++',person_id=2,type=u'engineer'), u'MegaCorp, Inc.'), 
+                    (Engineer(status=u'elbonian engineer',engineer_name=u'vlad',name=u'vlad',company_id=2,primary_language=u'cobol',person_id=5,type=u'engineer'), u'Elbonia, Inc.')
+                    ]
+                )
+            
+                self.assertEquals(
+                    sess.query(Engineer.primary_language, Company.name).join(Company.employees).filter(Person.type=='engineer').order_by(desc(Engineer.primary_language)).all(),
+                    [(u'java', u'MegaCorp, Inc.'), (u'cobol', u'Elbonia, Inc.'), (u'c++', u'MegaCorp, Inc.')]
+                )
+
+            palias = aliased(Person)
+            self.assertEquals(
+                sess.query(Person, Company.name, palias).join(Company.employees).filter(Company.name=='Elbonia, Inc.').filter(palias.name=='dilbert').all(),
+                [(Engineer(status=u'elbonian engineer',engineer_name=u'vlad',name=u'vlad',primary_language=u'cobol'),
+                    u'Elbonia, Inc.', 
+                    Engineer(status=u'regular engineer',engineer_name=u'dilbert',name=u'dilbert',company_id=1,primary_language=u'java',person_id=1,type=u'engineer'))]
+            )
+
+            self.assertEquals(
+                sess.query(palias, Company.name, Person).join(Company.employees).filter(Company.name=='Elbonia, Inc.').filter(palias.name=='dilbert').all(),
+                [(Engineer(status=u'regular engineer',engineer_name=u'dilbert',name=u'dilbert',company_id=1,primary_language=u'java',person_id=1,type=u'engineer'),
+                    u'Elbonia, Inc.', 
+                    Engineer(status=u'elbonian engineer',engineer_name=u'vlad',name=u'vlad',primary_language=u'cobol'),)
+                ]
+            )
+
+            self.assertEquals(
+                sess.query(Person.name, Company.name, palias.name).join(Company.employees).filter(Company.name=='Elbonia, Inc.').filter(palias.name=='dilbert').all(),
+                [(u'vlad', u'Elbonia, Inc.', u'dilbert')]
+            )
+            
+            palias = aliased(Person)
+            self.assertEquals(
+                sess.query(Person.type, Person.name, palias.type, palias.name).filter(Person.company_id==palias.company_id).filter(Person.name=='dogbert').\
+                    filter(Person.person_id>palias.person_id).order_by(Person.person_id, palias.person_id).all(), 
+                [(u'manager', u'dogbert', u'engineer', u'dilbert'), 
+                (u'manager', u'dogbert', u'engineer', u'wally'), 
+                (u'manager', u'dogbert', u'boss', u'pointy haired boss')]
+            )
+        
+            self.assertEquals(
+                sess.query(Person.name, Paperwork.description).filter(Person.person_id==Paperwork.person_id).order_by(Person.name, Paperwork.description).all(), 
+                [(u'dilbert', u'tps report #1'), (u'dilbert', u'tps report #2'), (u'dogbert', u'review #2'), 
+                (u'dogbert', u'review #3'), 
+                (u'pointy haired boss', u'review #1'), 
+                (u'vlad', u'elbonian missive #3'),
+                (u'wally', u'tps report #3'), 
+                (u'wally', u'tps report #4'),
+                ]
+            )
+
+            if select_type != '':
+                self.assertEquals(
+                    sess.query(func.count(Person.person_id)).filter(Engineer.primary_language=='java').all(), 
+                    [(1, )]
+                )
+            
+            self.assertEquals(
+                sess.query(Company.name, func.count(Person.person_id)).filter(Company.company_id==Person.company_id).group_by(Company.name).order_by(Company.name).all(),
+                [(u'Elbonia, Inc.', 1), (u'MegaCorp, Inc.', 4)]
+            )
+
+            self.assertEquals(
+                sess.query(Company.name, func.count(Person.person_id)).join(Company.employees).group_by(Company.name).order_by(Company.name).all(),
+                [(u'Elbonia, Inc.', 1), (u'MegaCorp, Inc.', 4)]
+            )
+    
     
     PolymorphicQueryTest.__name__ = "Polymorphic%sTest" % select_type
     return PolymorphicQueryTest

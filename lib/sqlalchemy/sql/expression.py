@@ -872,27 +872,27 @@ def _compound_select(keyword, *selects, **kwargs):
     return CompoundSelect(keyword, *selects, **kwargs)
 
 def _is_literal(element):
-    return not isinstance(element, ClauseElement)
+    return not isinstance(element, (ClauseElement, Operators))
 
 def _literal_as_text(element):
-    if isinstance(element, Operators):
-        return element.expression_element()
+    if hasattr(element, '__clause_element__'):
+        return element.__clause_element__()
     elif _is_literal(element):
         return _TextClause(unicode(element))
     else:
         return element
 
 def _literal_as_column(element):
-    if isinstance(element, Operators):
-        return element.clause_element()
+    if hasattr(element, '__clause_element__'):
+        return element.__clause_element__()
     elif _is_literal(element):
         return literal_column(str(element))
     else:
         return element
 
 def _literal_as_binds(element, name=None, type_=None):
-    if isinstance(element, Operators):
-        return element.expression_element()
+    if hasattr(element, '__clause_element__'):
+        return element.__clause_element__()
     elif _is_literal(element):
         if element is None:
             return null()
@@ -902,8 +902,8 @@ def _literal_as_binds(element, name=None, type_=None):
         return element
 
 def _no_literals(element):
-    if isinstance(element, Operators):
-        return element.expression_element()
+    if hasattr(element, '__clause_element__'):
+        return element.__clause_element__()
     elif _is_literal(element):
         raise exceptions.ArgumentError("Ambiguous literal: %r.  Use the 'text()' function to indicate a SQL expression literal, or 'literal()' to indicate a bound value." % element)
     else:
@@ -923,7 +923,6 @@ def _selectable(element):
     else:
         raise exceptions.ArgumentError("Object '%s' is not a Selectable and does not implement `__selectable__()`" % repr(element))
 
-    
 def is_column(col):
     """True if ``col`` is an instance of ``ColumnElement``."""
     return isinstance(col, ColumnElement)
@@ -967,7 +966,14 @@ class ClauseElement(object):
             yield f
             f = getattr(f, '_is_clone_of', None)
     _cloned_set = property(_cloned_set)
-
+    
+    def _annotate(self, key, value):
+        """return a copy of this ClauseElement with the given attribute 'annotated'."""
+        
+        c = self._clone()
+        setattr(c, key, value)
+        return c
+        
     def _get_from_objects(self, **modifiers):
         """Return objects represented in this ``ClauseElement`` that
         should be added to the ``FROM`` list of a query, when this
@@ -1174,9 +1180,6 @@ class Operators(object):
             return self.operate(operators.op, opstring, b)
         return op
 
-    def clause_element(self):
-        raise NotImplementedError()
-
     def operate(self, op, *other, **kwargs):
         raise NotImplementedError()
 
@@ -1279,18 +1282,18 @@ class _CompareMixin(ColumnOperators):
     def __compare(self, op, obj, negate=None, reverse=False, **kwargs):
         if obj is None or isinstance(obj, _Null):
             if op == operators.eq:
-                return _BinaryExpression(self.expression_element(), null(), operators.is_, negate=operators.isnot)
+                return _BinaryExpression(self, null(), operators.is_, negate=operators.isnot)
             elif op == operators.ne:
-                return _BinaryExpression(self.expression_element(), null(), operators.isnot, negate=operators.is_)
+                return _BinaryExpression(self, null(), operators.isnot, negate=operators.is_)
             else:
                 raise exceptions.ArgumentError("Only '='/'!=' operators can be used with NULL")
         else:
             obj = self._check_literal(obj)
 
         if reverse:
-            return _BinaryExpression(obj, self.expression_element(), op, type_=sqltypes.Boolean, negate=negate, modifiers=kwargs)
+            return _BinaryExpression(obj, self, op, type_=sqltypes.Boolean, negate=negate, modifiers=kwargs)
         else:
-            return _BinaryExpression(self.expression_element(), obj, op, type_=sqltypes.Boolean, negate=negate, modifiers=kwargs)
+            return _BinaryExpression(self, obj, op, type_=sqltypes.Boolean, negate=negate, modifiers=kwargs)
 
     def __operate(self, op, obj, reverse=False):
         obj = self._check_literal(obj)
@@ -1298,9 +1301,9 @@ class _CompareMixin(ColumnOperators):
         type_ = self._compare_type(obj)
 
         if reverse:
-            return _BinaryExpression(obj, self.expression_element(), type_.adapt_operator(op), type_=type_)
+            return _BinaryExpression(obj, self, type_.adapt_operator(op), type_=type_)
         else:
-            return _BinaryExpression(self.expression_element(), obj, type_.adapt_operator(op), type_=type_)
+            return _BinaryExpression(self, obj, type_.adapt_operator(op), type_=type_)
 
     # a mapping of operators with the method they use, along with their negated
     # operator for comparison operators
@@ -1433,21 +1436,12 @@ class _CompareMixin(ColumnOperators):
         if isinstance(other, _BindParamClause) and isinstance(other.type, sqltypes.NullType):
             other.type = self.type
             return other
-        elif isinstance(other, Operators):
-            return other.expression_element()
+        elif hasattr(other, '__clause_element__'):
+            return other.__clause_element__()
         elif _is_literal(other):
             return self._bind_param(other)
         else:
             return other
-
-    def clause_element(self):
-        """Allow ``_CompareMixins`` to return the underlying ``ClauseElement``, for non-``ClauseElement`` ``_CompareMixins``."""
-        return self
-
-    def expression_element(self):
-        """Allow ``_CompareMixins`` to return the appropriate object to be used in expressions."""
-
-        return self
 
     def _compare_type(self, obj):
         """Allow subclasses to override the type used in constructing
@@ -1699,7 +1693,7 @@ class FromClause(Selectable):
       global ClauseAdapter
       if ClauseAdapter is None:
           from sqlalchemy.sql.util import ClauseAdapter
-      return ClauseAdapter(alias).traverse(self, clone=True)
+      return ClauseAdapter(alias).traverse(self)
 
     def correspond_on_equivalents(self, column, equivalents):
         col = self.corresponding_column(column, require_embedded=True)
@@ -1952,9 +1946,6 @@ class _TextClause(ClauseElement):
 
     def supports_execution(self):
         return True
-
-    def _table_iterator(self):
-        return iter([])
 
 class _Null(ColumnElement):
     """Represent the NULL keyword in a SQL statement.
@@ -2427,9 +2418,6 @@ class Alias(FromClause):
     def supports_execution(self):
         return self.original.supports_execution()
 
-    def _table_iterator(self):
-        return self.original._table_iterator()
-
     def _populate_column_collection(self):
         for col in self.selectable.columns:
             col._make_proxy(self)
@@ -2563,9 +2551,6 @@ class _Label(ColumnElement):
     primary_key = _proxy_attr('primary_key')
     foreign_keys = _proxy_attr('foreign_keys')
 
-    def expression_element(self):
-        return self.obj
-
     def get_children(self, **kwargs):
         return self.obj,
 
@@ -2670,13 +2655,18 @@ class _ColumnClause(ColumnElement):
     def _bind_param(self, obj):
         return _BindParamClause(self.name, obj, type_=self.type, unique=True)
 
-    def _make_proxy(self, selectable, name = None):
+    def _annotate(self, key, value):
+        c = self._make_proxy(self.table, attach=False)
+        setattr(c, key, value)
+        return c
+
+    def _make_proxy(self, selectable, name=None, attach=True):
         # propigate the "is_literal" flag only if we are keeping our name,
         # otherwise its considered to be a label
         is_literal = self.is_literal and (name is None or name == self.name)
         c = _ColumnClause(name or self.name, selectable=selectable, _is_oid=self._is_oid, type_=self.type, is_literal=is_literal)
         c.proxies = [self]
-        if not self._is_oid:
+        if attach and not self._is_oid:
             selectable.columns[c.name] = c
         return c
 
@@ -2713,7 +2703,10 @@ class TableClause(FromClause):
     def _clone(self):
         # TableClause is immutable
         return self
-
+    
+    def _annotate(self):
+        raise NotImplementedError()
+        
     def append_column(self, c):
         self._columns[c.name] = c
         c.table = self
@@ -2955,11 +2948,6 @@ class CompoundSelect(_SelectBaseMixin, FromClause):
         return (column_collections and list(self.c) or []) + \
             [self._order_by_clause, self._group_by_clause] + list(self.selects)
 
-    def _table_iterator(self):
-        for s in self.selects:
-            for t in s._table_iterator():
-                yield t
-
     def bind(self):
         if self._bind:
             return self._bind
@@ -3039,6 +3027,7 @@ class Select(_SelectBaseMixin, FromClause):
         correlating.
         
         """
+        
         froms = util.OrderedSet()
 
         for col in self._raw_columns:
@@ -3330,11 +3319,6 @@ class Select(_SelectBaseMixin, FromClause):
 
         return intersect_all(self, other, **kwargs)
 
-    def _table_iterator(self):
-        for t in visitors.NoColumnVisitor().iterate(self):
-            if isinstance(t, TableClause):
-                yield t
-
     def bind(self):
         if self._bind:
             return self._bind
@@ -3364,9 +3348,6 @@ class _UpdateBase(ClauseElement):
 
     def supports_execution(self):
         return True
-
-    def _table_iterator(self):
-        return iter([self.table])
 
     def _generate(self):
         s = self.__class__.__new__(self.__class__)

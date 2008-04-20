@@ -1036,6 +1036,7 @@ class ViewOnlyTest6(ORMTest):
         
         a = sess.query(T1).first()
         self.assertEquals(a.t3s, [T3(data='t3')])
+
         
     def test_remote_side_escalation(self):
         class T1(fixtures.Base):

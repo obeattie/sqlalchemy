@@ -194,17 +194,19 @@ def to_list(x, default=None):
     else:
         return x
 
-def array_as_starargs_decorator(func):
+def array_as_starargs_decorator(fn):
     """Interpret a single positional array argument as
     *args for the decorated method.
     
     """
+
     def starargs_as_list(self, *args, **kwargs):
-        if len(args) == 1:
-            return func(self, *to_list(args[0], []), **kwargs)
+        if isinstance(args, basestring) or (len(args) == 1 and not isinstance(args[0], tuple)):
+            return fn(self, *to_list(args[0], []), **kwargs)
         else:
-            return func(self, *args, **kwargs)
-    return starargs_as_list
+            return fn(self, *args, **kwargs)
+    starargs_as_list.__doc__ = fn.__doc__
+    return function_named(starargs_as_list, fn.__name__)
     
 def to_set(x):
     if x is None:
@@ -734,22 +736,24 @@ class OrderedSet(Set):
         if d is not None:
             self.update(d)
 
-    def add(self, key):
-        if key not in self:
-            self._list.append(key)
-        Set.add(self, key)
+    def add(self, element):
+        if element not in self:
+            self._list.append(element)
+        Set.add(self, element)
 
     def remove(self, element):
         Set.remove(self, element)
         self._list.remove(element)
-
+    
+    def insert(self, pos, element):
+        if element not in self:
+            self._list.insert(pos, element)
+        Set.add(self, element)
+        
     def discard(self, element):
-        try:
-            Set.remove(self, element)
-        except KeyError:
-            pass
-        else:
+        if element in self:
             self._list.remove(element)
+            Set.remove(self, element)
 
     def clear(self):
         Set.clear(self)
@@ -1133,6 +1137,35 @@ class ScopedRegistry(object):
     def _get_key(self):
         return self.scopefunc()
 
+class WeakCompositeKey(object):
+    """an weak-referencable, hashable collection which is strongly referenced
+    until any one of its members is garbage collected.
+    
+    """
+    keys = Set()
+    
+    def __init__(self, *args):
+        self.args = [self.__ref(arg) for arg in args]
+        WeakCompositeKey.keys.add(self)
+    
+    def __ref(self, arg):
+        if isinstance(arg, type):
+            return weakref.ref(arg, self.__remover)
+        else:
+            return lambda: arg
+            
+    def __remover(self, wr):
+        WeakCompositeKey.keys.discard(self)
+        
+    def __hash__(self):
+        return hash(tuple(self))
+        
+    def __cmp__(self, other):
+        return cmp(tuple(self), tuple(other))
+    
+    def __iter__(self):
+        return iter([arg() for arg in self.args])
+        
 class _symbol(object):
     def __init__(self, name):
         """Construct a new named symbol."""
@@ -1266,21 +1299,12 @@ def function_named(fn, name):
                           fn.func_defaults, fn.func_closure)
     return fn
 
-def conditional_cache_decorator(func):
-    """apply conditional caching to the return value of a function."""
-
-    return cache_decorator(func, conditional=True)
-
-def cache_decorator(func, conditional=False):
+def cache_decorator(func):
     """apply caching to the return value of a function."""
 
     name = '_cached_' + func.__name__
 
     def do_with_cache(self, *args, **kwargs):
-        if conditional:
-            cache = kwargs.pop('cache', False)
-            if not cache:
-                return func(self, *args, **kwargs)
         try:
             return getattr(self, name)
         except AttributeError:

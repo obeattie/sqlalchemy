@@ -130,12 +130,18 @@ class EagerTest(FixtureTest):
         })
         mapper(User, users)
 
-        assert [Address(id=1, user=User(id=7)), Address(id=4, user=User(id=8)), Address(id=5, user=User(id=9))] == create_session().query(Address).filter(Address.id.in_([1, 4, 5])).all()
-
-        assert [Address(id=1, user=User(id=7)), Address(id=4, user=User(id=8)), Address(id=5, user=User(id=9))] == create_session().query(Address).filter(Address.id.in_([1, 4, 5])).limit(3).all()
-
         sess = create_session()
-        a = sess.query(Address).get(1)
+        
+        for q in [
+            sess.query(Address).filter(Address.id.in_([1, 4, 5])),
+            sess.query(Address).filter(Address.id.in_([1, 4, 5])).limit(3)
+        ]:
+            sess.clear()
+            self.assertEquals(q.all(), 
+                [Address(id=1, user=User(id=7)), Address(id=4, user=User(id=8)), Address(id=5, user=User(id=9))]
+            )
+
+        a = sess.query(Address).filter(Address.id==1).first()
         def go():
             assert a.user_id==7
         # assert that the eager loader added 'user_id' to the row
@@ -151,12 +157,17 @@ class EagerTest(FixtureTest):
             'user_id':deferred(addresses.c.user_id),
         })
         mapper(User, users, properties={'addresses':relation(Address, lazy=False)})
+        
+        for q in [
+            sess.query(User).filter(User.id==7),
+            sess.query(User).filter(User.id==7).limit(1)
+        ]:
+            sess.clear()
+            self.assertEquals(q.all(), 
+                [User(id=7, addresses=[Address(id=1)])]
+            )
 
-        assert [User(id=7, addresses=[Address(id=1)])] == create_session().query(User).filter(User.id==7).all()
-
-        assert [User(id=7, addresses=[Address(id=1)])] == create_session().query(User).limit(1).filter(User.id==7).all()
-
-        sess = create_session()
+        sess.clear()
         u = sess.query(User).get(7)
         def go():
             assert u.addresses[0].user_id==7
@@ -174,9 +185,9 @@ class EagerTest(FixtureTest):
         mapper(Dingaling, dingalings, properties={
             'address_id':deferred(dingalings.c.address_id)
         })
-        sess = create_session()
+        sess.clear()
         def go():
-            u = sess.query(User).limit(1).get(8)
+            u = sess.query(User).get(8)
             assert User(id=8, addresses=[Address(id=2, dingalings=[Dingaling(id=1)]), Address(id=3), Address(id=4)]) == u
         self.assert_sql_count(testing.db, go, 1)
 
@@ -608,7 +619,7 @@ class AddEntityTest(FixtureTest):
               )
         ]
 
-    def test_basic(self):
+    def test_mapper_configured(self):
         mapper(User, users, properties={
             'addresses':relation(Address, lazy=False),
             'orders':relation(Order)
@@ -621,8 +632,9 @@ class AddEntityTest(FixtureTest):
 
 
         sess = create_session()
+        oalias = aliased(Order)
         def go():
-            ret = sess.query(User).add_entity(Order).join('orders', aliased=True).order_by(User.id).order_by(Order.id).all()
+            ret = sess.query(User, oalias).join(('orders', oalias)).order_by(User.id, oalias.id).all()
             self.assertEquals(ret, self._assert_result())
         self.assert_sql_count(testing.db, go, 1)
 
@@ -639,14 +651,15 @@ class AddEntityTest(FixtureTest):
 
         sess = create_session()
 
+        oalias = aliased(Order)
         def go():
-            ret = sess.query(User).options(eagerload('addresses')).add_entity(Order).join('orders', aliased=True).order_by(User.id).order_by(Order.id).all()
+            ret = sess.query(User, oalias).options(eagerload('addresses')).join(('orders', oalias)).order_by(User.id, oalias.id).all()
             self.assertEquals(ret, self._assert_result())
         self.assert_sql_count(testing.db, go, 6)
 
         sess.clear()
         def go():
-            ret = sess.query(User).options(eagerload('addresses')).add_entity(Order).options(eagerload('items', Order)).join('orders', aliased=True).order_by(User.id).order_by(Order.id).all()
+            ret = sess.query(User, oalias).options(eagerload('addresses'), eagerload(oalias.items)).join(('orders', oalias)).order_by(User.id, oalias.id).all()
             self.assertEquals(ret, self._assert_result())
         self.assert_sql_count(testing.db, go, 1)
 
@@ -934,10 +947,92 @@ class SelfReferentialM2MEagerTest(ORMTest):
         sess.flush()
         sess.clear()
 
-#        l = sess.query(Widget).filter(Widget.name=='w1').all()
-#        print l
         assert [Widget(name='w1', children=[Widget(name='w2')])] == sess.query(Widget).filter(Widget.name==u'w1').all()
 
+class MixedEntitiesTest(FixtureTest, AssertsCompiledSQL):
+    keep_mappers = True
+    keep_data = True
+    
+    def setup_mappers(self):
+        mapper(User, users, properties={
+            'addresses':relation(Address, backref='user'),
+            'orders':relation(Order, backref='user'), # o2m, m2o
+        })
+        mapper(Address, addresses)
+        mapper(Order, orders, properties={
+            'items':relation(Item, secondary=order_items, order_by=items.c.id),  #m2m
+        })
+        mapper(Item, items, properties={
+            'keywords':relation(Keyword, secondary=item_keywords) #m2m
+        })
+        mapper(Keyword, keywords)
+    
+    def test_two_entities(self):
+        sess = create_session()
+
+        # two FROM clauses
+        def go():
+            self.assertEquals(
+                [
+                    (User(id=9, addresses=[Address(id=5)]), Order(id=2, items=[Item(id=1), Item(id=2), Item(id=3)])),
+                    (User(id=9, addresses=[Address(id=5)]), Order(id=4, items=[Item(id=1), Item(id=5)])),
+                ],
+                sess.query(User, Order).filter(User.id==Order.user_id).options(eagerload(User.addresses), eagerload(Order.items)).filter(User.id==9).all(),
+            )
+        self.assert_sql_count(testing.db, go, 1)
+
+        # one FROM clause
+        def go():
+            self.assertEquals(
+                [
+                    (User(id=9, addresses=[Address(id=5)]), Order(id=2, items=[Item(id=1), Item(id=2), Item(id=3)])),
+                    (User(id=9, addresses=[Address(id=5)]), Order(id=4, items=[Item(id=1), Item(id=5)])),
+                ],
+                sess.query(User, Order).join(User.orders).options(eagerload(User.addresses), eagerload(Order.items)).filter(User.id==9).all(),
+            )
+        self.assert_sql_count(testing.db, go, 1)
+    
+    def test_aliased_entity(self):
+        sess = create_session()
+        
+        oalias = aliased(Order)
+        
+        # two FROM clauses
+        def go():
+            self.assertEquals(
+                [
+                    (User(id=9, addresses=[Address(id=5)]), Order(id=2, items=[Item(id=1), Item(id=2), Item(id=3)])),
+                    (User(id=9, addresses=[Address(id=5)]), Order(id=4, items=[Item(id=1), Item(id=5)])),
+                ],
+                sess.query(User, oalias).filter(User.id==oalias.user_id).options(eagerload(User.addresses), eagerload(oalias.items)).filter(User.id==9).all(),
+            )
+        self.assert_sql_count(testing.db, go, 1)
+
+        # one FROM clause
+        def go():
+            self.assertEquals(
+                [
+                    (User(id=9, addresses=[Address(id=5)]), Order(id=2, items=[Item(id=1), Item(id=2), Item(id=3)])),
+                    (User(id=9, addresses=[Address(id=5)]), Order(id=4, items=[Item(id=1), Item(id=5)])),
+                ],
+                sess.query(User, oalias).join((User.orders, oalias)).options(eagerload(User.addresses), eagerload(oalias.items)).filter(User.id==9).all(),
+            )
+        self.assert_sql_count(testing.db, go, 1)
+        
+        from sqlalchemy.engine.default import DefaultDialect
+        
+        # improper setup: oalias in the columns clause but join to usual orders alias.  
+        # this should create two FROM clauses even though the query has a from_clause set up via the join
+        self.assert_compile(sess.query(User, oalias).join(User.orders).options(eagerload(oalias.items)).statement, 
+        "SELECT users.id AS users_id, users.name AS users_name, orders_1.id AS orders_1_id, "\
+        "orders_1.user_id AS orders_1_user_id, orders_1.address_id AS orders_1_address_id, "\
+        "orders_1.description AS orders_1_description, orders_1.isopen AS orders_1_isopen, items_1.id AS items_1_id, "\
+        "items_1.description AS items_1_description FROM users JOIN orders ON users.id = orders.user_id, "\
+        "orders AS orders_1 LEFT OUTER JOIN order_items AS order_items_1 ON orders_1.id = order_items_1.order_id "\
+        "LEFT OUTER JOIN items AS items_1 ON items_1.id = order_items_1.item_id ORDER BY users.id, items_1.id",
+        dialect=DefaultDialect()
+        )
+        
 class CyclicalInheritingEagerTest(ORMTest):
 
     def define_tables(self, metadata):

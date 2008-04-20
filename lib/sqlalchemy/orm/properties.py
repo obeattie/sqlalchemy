@@ -12,11 +12,10 @@ invidual ORM-mapped attributes.
 
 from sqlalchemy import sql, schema, util, exceptions, logging
 from sqlalchemy.sql.util import ClauseAdapter, criterion_as_pairs, find_columns
-from sqlalchemy.sql import visitors, operators, ColumnElement
+from sqlalchemy.sql import visitors, operators, ColumnElement, expression
 from sqlalchemy.orm import mapper, sync, strategies, attributes, dependency, object_mapper
 from sqlalchemy.orm import session as sessionlib
-from sqlalchemy.orm.mapper import _class_to_mapper
-from sqlalchemy.orm.util import CascadeOptions, PropertyAliasedClauses
+from sqlalchemy.orm.util import CascadeOptions, _class_to_mapper
 from sqlalchemy.orm.interfaces import StrategizedProperty, PropComparator, MapperProperty, ONETOMANY, MANYTOONE, MANYTOMANY
 from sqlalchemy.exceptions import ArgumentError
 
@@ -45,7 +44,7 @@ class ColumnProperty(StrategizedProperty):
         # sanity check
         for col in columns:
             if not isinstance(col, ColumnElement):
-                raise ArgumentError('column_property() must be given a ColumnElement as its argument.  Try .label() or .as_scalar() for Selectables to fix this.')
+                raise ArgumentError('column_property() must be given a ColumnElement as its argument.  Try .label() or .as_scalar() for selectables.')
 
     def do_init(self):
         super(ColumnProperty, self).do_init()
@@ -75,21 +74,21 @@ class ColumnProperty(StrategizedProperty):
         if value:
             setattr(dest, self.key, value[0])
         else:
-            # TODO: lazy callable should merge to the new instance
             attributes.instance_state(dest).expire_attributes([self.key])
 
     def get_col_value(self, column, value):
         return value
 
     class ColumnComparator(PropComparator):
-        def clause_element(self):
-            return self.prop.columns[0]
-
+        def __clause_element__(self):
+            return self.prop.columns[0]._annotate("parententity", self.prop.parent)
+        __clause_element__ = util.cache_decorator(__clause_element__)
+        
         def operate(self, op, *other, **kwargs):
-            return op(self.prop.columns[0], *other, **kwargs)
+            return op(self.__clause_element__(), *other, **kwargs)
 
         def reverse_operate(self, op, other, **kwargs):
-            col = self.prop.columns[0]
+            col = self.__clause_element__()
             return op(col._bind_param(other), col, **kwargs)
 
 ColumnProperty.logger = logging.class_logger(ColumnProperty)
@@ -101,6 +100,7 @@ class CompositeProperty(ColumnProperty):
         super(CompositeProperty, self).__init__(*columns, **kwargs)
         self.composite_class = class_
         self.comparator = kwargs.pop('comparator', CompositeProperty.Comparator)(self)
+        self.strategy_class = strategies.CompositeColumnLoader
 
     def do_init(self):
         super(ColumnProperty, self).do_init()
@@ -134,6 +134,9 @@ class CompositeProperty(ColumnProperty):
                 return b
 
     class Comparator(PropComparator):
+        def __clause_element__(self):
+            return expression.ClauseList(*self.prop.columns)
+
         def __eq__(self, other):
             if other is None:
                 return sql.and_(*[a==None for a in self.prop.columns])
@@ -157,7 +160,7 @@ class SynonymProperty(MapperProperty):
         pass
 
     def create_row_processor(self, selectcontext, mapper, row):
-        return (None, None, None)
+        return (None, None)
 
     def do_init(self):
         class_ = self.parent.class_
@@ -175,12 +178,11 @@ class SynonymProperty(MapperProperty):
                         return s
                     return getattr(obj, self.name)
             self.descriptor = SynonymProp()
-        sessionlib.register_attribute(class_, self.key, uselist=False, proxy_property=self.descriptor, useobject=False, comparator=comparator)
+        sessionlib.register_attribute(class_, self.key, uselist=False, proxy_property=self.descriptor, useobject=False, comparator=comparator, parententity=self.parent)
 
     def merge(self, session, source, dest, _recursive):
         pass
 SynonymProperty.logger = logging.class_logger(SynonymProperty)
-
 
 class ComparableProperty(MapperProperty):
     """Instruments a Python property for use in query expressions."""
@@ -203,7 +205,7 @@ class ComparableProperty(MapperProperty):
         pass
 
     def create_row_processor(self, selectcontext, mapper, row):
-        return (None, None, None)
+        return (None, None)
 
 
 class PropertyLoader(StrategizedProperty):
@@ -211,7 +213,7 @@ class PropertyLoader(StrategizedProperty):
     of items that correspond to a related database table.
     """
 
-    def __init__(self, argument, secondary=None, primaryjoin=None, secondaryjoin=None, entity_name=None, foreign_keys=None, foreignkey=None, uselist=None, private=False, association=None, order_by=False, attributeext=None, backref=None, is_backref=False, post_update=False, cascade=None, viewonly=False, lazy=True, collection_class=None, passive_deletes=False, passive_updates=True, remote_side=None, enable_typechecks=True, join_depth=None, strategy_class=None, _local_remote_pairs=None):
+    def __init__(self, argument, secondary=None, primaryjoin=None, secondaryjoin=None, entity_name=None, foreign_keys=None, foreignkey=None, uselist=None, association=None, order_by=False, attributeext=None, backref=None, is_backref=False, post_update=False, cascade=None, viewonly=False, lazy=True, collection_class=None, passive_deletes=False, passive_updates=True, remote_side=None, enable_typechecks=True, join_depth=None, strategy_class=None, _local_remote_pairs=None):
         self.uselist = uselist
         self.argument = argument
         self.entity_name = entity_name
@@ -234,6 +236,7 @@ class PropertyLoader(StrategizedProperty):
         self.comparator = PropertyLoader.Comparator(self)
         self.join_depth = join_depth
         self._arg_local_remote_pairs = _local_remote_pairs
+        self.__join_cache = {}
         
         if strategy_class:
             self.strategy_class = strategy_class
@@ -252,11 +255,7 @@ class PropertyLoader(StrategizedProperty):
         if cascade is not None:
             self.cascade = CascadeOptions(cascade)
         else:
-            if private:
-                util.warn_deprecated('private option is deprecated; see docs for details')
-                self.cascade = CascadeOptions("all, delete-orphan")
-            else:
-                self.cascade = CascadeOptions("save-update, merge")
+            self.cascade = CascadeOptions("save-update, merge")
 
         if self.passive_deletes == 'all' and ("delete" in self.cascade or "delete-orphan" in self.cascade):
             raise exceptions.ArgumentError("Can't set passive_deletes='all' in conjunction with 'delete' or 'delete-orphan' cascade")
@@ -284,6 +283,13 @@ class PropertyLoader(StrategizedProperty):
             if of_type:
                 self._of_type = _class_to_mapper(of_type)
         
+        def parententity(self):
+            return self.prop.parent
+        parententity = property(parententity)
+        
+        def __clause_element__(self):
+            return self.prop.parent._with_polymorphic_selectable
+            
         def of_type(self, cls):
             return PropertyLoader.Comparator(self.prop, cls)
             
@@ -309,14 +315,14 @@ class PropertyLoader(StrategizedProperty):
             else:
                 return self.prop._optimized_compare(other)
 
-        def _join_and_criterion(self, criterion=None, **kwargs):
+        def __join_and_criterion(self, criterion=None, **kwargs):
             if getattr(self, '_of_type', None):
                 target_mapper = self._of_type
-                to_selectable = target_mapper._with_polymorphic_selectable() #mapped_table
+                to_selectable = target_mapper._with_polymorphic_selectable
             else:
                 to_selectable = None
 
-            pj, sj, source, dest, target_adapter = self.prop._create_joins(dest_polymorphic=True, dest_selectable=to_selectable)
+            pj, sj, source, dest, secondary, target_adapter = self.prop._create_joins(dest_polymorphic=True, dest_selectable=to_selectable)
 
             for k in kwargs:
                 crit = self.prop.mapper.class_manager.get_inst(k) == kwargs[k]
@@ -338,14 +344,14 @@ class PropertyLoader(StrategizedProperty):
         def any(self, criterion=None, **kwargs):
             if not self.prop.uselist:
                 raise exceptions.InvalidRequestError("'any()' not implemented for scalar attributes. Use has().")
-            j, criterion, from_obj = self._join_and_criterion(criterion, **kwargs)
+            j, criterion, from_obj = self.__join_and_criterion(criterion, **kwargs)
 
             return sql.exists([1], j & criterion, from_obj=from_obj)
 
         def has(self, criterion=None, **kwargs):
             if self.prop.uselist:
                 raise exceptions.InvalidRequestError("'has()' not implemented for collections.  Use any().")
-            j, criterion, from_obj = self._join_and_criterion(criterion, **kwargs)
+            j, criterion, from_obj = self.__join_and_criterion(criterion, **kwargs)
 
             return sql.exists([1], j & criterion, from_obj=from_obj)
 
@@ -355,13 +361,13 @@ class PropertyLoader(StrategizedProperty):
             clause = self.prop._optimized_compare(other)
 
             if self.prop.secondaryjoin:
-                clause.negation_clause = self._negated_contains_or_equals(other)
+                clause.negation_clause = self.__negated_contains_or_equals(other)
 
             return clause
 
-        def _negated_contains_or_equals(self, other):
+        def __negated_contains_or_equals(self, other):
             criterion = sql.and_(*[x==y for (x, y) in zip(self.prop.mapper.primary_key, self.prop.mapper.primary_key_from_instance(other))])
-            j, criterion, from_obj = self._join_and_criterion(criterion)
+            j, criterion, from_obj = self.__join_and_criterion(criterion)
             return ~sql.exists([1], j & criterion, from_obj=from_obj)
             
         def __ne__(self, other):
@@ -376,7 +382,7 @@ class PropertyLoader(StrategizedProperty):
             if self.prop.uselist and not hasattr(other, '__iter__'):
                 raise exceptions.InvalidRequestError("Can only compare a collection to an iterable object")
 
-            return self._negated_contains_or_equals(other)
+            return self.__negated_contains_or_equals(other)
 
     def compare(self, op, value, value_is_parent=False):
         if op == operators.eq:
@@ -394,10 +400,6 @@ class PropertyLoader(StrategizedProperty):
         if value is not None:
             value = attributes.instance_state(value)
         return self._get_strategy(strategies.LazyLoader).lazy_clause(value, reverse_direction=not value_is_parent)
-
-    def private(self):
-        return self.cascade.delete_orphan
-    private = property(private)
 
     def __str__(self):
         return str(self.parent.class_.__name__) + "." + self.key + " (" + str(self.mapper.class_.__name__)  + ")"
@@ -737,50 +739,64 @@ class PropertyLoader(StrategizedProperty):
         return self.mapper.common_parent(self.parent)
     
     def _create_joins(self, source_polymorphic=False, source_selectable=None, dest_polymorphic=False, dest_selectable=None):
+        key = util.WeakCompositeKey(source_polymorphic, source_selectable, dest_polymorphic, dest_selectable)
+        try:
+            return self.__join_cache[key]
+        except KeyError:
+            pass
+
         if source_selectable is None:
             if source_polymorphic and self.parent.with_polymorphic:
-                source_selectable = self.parent._with_polymorphic_selectable()
-            else:
-                source_selectable = None
+                source_selectable = self.parent._with_polymorphic_selectable
+                
         if dest_selectable is None:
             if dest_polymorphic and self.mapper.with_polymorphic:
-                dest_selectable = self.mapper._with_polymorphic_selectable()
-            else:
-                dest_selectable = None
+                dest_selectable = self.mapper._with_polymorphic_selectable
+
             if self._is_self_referential():
+                if source_selectable is dest_selectable:
+                    if dest_selectable:
+                        dest_selectable = dest_selectable.alias()
+                    else:
+                        dest_selectable = self.mapper.local_table.alias()
+
+        primaryjoin, secondaryjoin, secondary = self.primaryjoin, self.secondaryjoin, self.secondary
+        if source_selectable or dest_selectable:
+            if secondary:
+                secondary = secondary.alias()
+                primary_aliasizer = ClauseAdapter(secondary)
                 if dest_selectable:
-                    dest_selectable = dest_selectable.alias()
+                    secondary_aliasizer = ClauseAdapter(dest_selectable, equivalents=self.mapper._equivalent_columns).chain(primary_aliasizer)
                 else:
-                    dest_selectable = self.mapper.local_table.alias()
-                
-        primaryjoin = self.primaryjoin
-        if source_selectable:
-            if self.direction in (ONETOMANY, MANYTOMANY):
-                primaryjoin = ClauseAdapter(source_selectable, exclude=self.foreign_keys, equivalents=self.parent._equivalent_columns).traverse(primaryjoin)
+                    secondary_aliasizer = primary_aliasizer
+
+                if source_selectable:
+                    primary_aliasizer = ClauseAdapter(secondary).chain(ClauseAdapter(source_selectable, equivalents=self.parent._equivalent_columns))
+
+                secondaryjoin = secondary_aliasizer.traverse(secondaryjoin)
             else:
-                primaryjoin = ClauseAdapter(source_selectable, include=self.foreign_keys, equivalents=self.parent._equivalent_columns).traverse(primaryjoin)
+                if dest_selectable:
+                    primary_aliasizer = ClauseAdapter(dest_selectable, exclude=self.local_side, equivalents=self.mapper._equivalent_columns)
+                    if source_selectable: 
+                        primary_aliasizer.chain(ClauseAdapter(source_selectable, exclude=self.remote_side, equivalents=self.parent._equivalent_columns))
+                elif source_selectable:
+                    primary_aliasizer = ClauseAdapter(source_selectable, exclude=self.remote_side, equivalents=self.parent._equivalent_columns)
+
+                secondary_aliasizer = None
         
-        secondaryjoin = self.secondaryjoin
-        target_adapter = None
-        if dest_selectable:
-            if self.direction == ONETOMANY:
-                target_adapter = ClauseAdapter(dest_selectable, include=self.foreign_keys, equivalents=self.mapper._equivalent_columns)
-            elif self.direction == MANYTOMANY:
-                target_adapter = ClauseAdapter(dest_selectable, equivalents=self.mapper._equivalent_columns)
-            else:
-                target_adapter = ClauseAdapter(dest_selectable, exclude=self.foreign_keys, equivalents=self.mapper._equivalent_columns)
-            if secondaryjoin:
-                secondaryjoin = target_adapter.traverse(secondaryjoin)
-            else:
-                primaryjoin = target_adapter.traverse(primaryjoin)
+            primaryjoin = primary_aliasizer.traverse(primaryjoin)
+            target_adapter = secondary_aliasizer or primary_aliasizer
             target_adapter.include = target_adapter.exclude = None
-            
-        return primaryjoin, secondaryjoin, source_selectable or self.parent.local_table, dest_selectable or self.mapper.local_table, target_adapter
+        else:
+            target_adapter = None
+        
+        self.__join_cache[key] = ret = (primaryjoin, secondaryjoin, source_selectable or self.parent.local_table, dest_selectable or self.mapper.local_table, secondary, target_adapter)
+        return ret
         
     def _get_join(self, parent, primary=True, secondary=True, polymorphic_parent=True):
         """deprecated.  use primary_join_against(), secondary_join_against(), full_join_against()"""
         
-        pj, sj, source, dest, adapter = self._create_joins(source_polymorphic=polymorphic_parent)
+        pj, sj, source, dest, secondarytable, adapter = self._create_joins(source_polymorphic=polymorphic_parent)
         
         if primary and secondary:
             return pj & sj

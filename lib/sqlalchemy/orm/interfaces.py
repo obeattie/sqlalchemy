@@ -339,7 +339,7 @@ class MapperProperty(object):
         pass
 
     def create_row_processor(self, selectcontext, mapper, row):
-        """Return a 3-tuple consiting of two row processing functions and an instance post-processing function.
+        """Return a 2-tuple consiting of two row processing functions and an instance post-processing function.
 
         Input arguments are the query.SelectionContext and the *first*
         applicable row of a result set obtained within
@@ -350,7 +350,7 @@ class MapperProperty(object):
         columns present in the row (which will be the same columns present in
         all rows) are used to determine the presence and behavior of the
         returned callables.  The callables will then be used to process all
-        rows and to post-process all instances, respectively.
+        rows and instances.
 
         Callables are of the following form::
 
@@ -362,20 +362,12 @@ class MapperProperty(object):
                 #   isnew - indicates if the instance was newly created as a
                 #           result of reading this row
                 #   instancekey - identity key of the instance
-                # optional attribute:
-                #   ispostselect - indicates if this row resulted from a
-                #                  'post' select of additional tables/columns
 
             def existing_execute(state, row, **flags):
                 # process incoming instance state and given row.  the instance is
                 # "existing" and was created based on a previous row.
 
-            def post_execute(state, **flags):
-                # process instance state after all result rows have been processed.
-                # this function should be used to issue additional selections
-                # in order to eagerly load additional properties.
-
-            return (new_execute, existing_execute, post_execute)
+            return (new_execute, existing_execute)
 
         Either of the three tuples can be ``None`` in which case no function
         is called.
@@ -391,20 +383,6 @@ class MapperProperty(object):
         """
 
         return iter([])
-
-    def get_criterion(self, query, key, value):
-        """Return a ``WHERE`` clause suitable for this
-        ``MapperProperty`` corresponding to the given key/value pair,
-        where the key is a column or object property name, and value
-        is a value to be matched.  This is only picked up by
-        ``PropertyLoaders``.
-
-        This is called by a ``Query``'s ``join_by`` method to formulate a set
-        of key/value pairs into a ``WHERE`` criterion that spans multiple
-        tables if needed.
-        """
-
-        return None
 
     def set_parent(self, parent):
         self.parent = parent
@@ -472,10 +450,10 @@ class PropComparator(expression.ColumnOperators):
     which returns the MapperProperty associated with this
     PropComparator.
     """
-
-    def expression_element(self):
-        return self.clause_element()
-
+    
+    def __clause_element__(self):
+        raise NotImplementedError("%r" % self)
+        
     def contains_op(a, b):
         return a.contains(b)
     contains_op = staticmethod(contains_op)
@@ -582,11 +560,11 @@ class StrategizedProperty(MapperProperty):
         if self.is_primary():
             self.strategy.init_class_attribute()
 
-def build_path(mapper, key, prev=None):
+def build_path(entity, key, prev=None):
     if prev:
-        return prev + (mapper.base_mapper, key)
+        return prev + (entity, key)
     else:
-        return (mapper.base_mapper, key)
+        return (entity, key)
 
 def serialize_path(path):
     if path is None:
@@ -630,9 +608,12 @@ class ExtensionOption(MapperOption):
         self.ext = ext
 
     def process_query(self, query):
-        query._extension = query._extension.copy()
-        query._extension.push(self.ext)
-
+        entity = query._generate_mapper_zero()
+        if hasattr(entity, 'extension'):
+            entity.extension = entity.extension.copy()
+        else:
+            entity.extension = entity.mapper.extension.copy()
+        entity.extension.push(self.ext)
 
 class PropertyOption(MapperOption):
     """A MapperOption that is applied to a property off the mapper or
@@ -652,29 +633,42 @@ class PropertyOption(MapperOption):
     def _process(self, query, raiseerr):
         if self._should_log_debug:
             self.logger.debug("applying option to Query, property key '%s'" % self.key)
-        paths = self._get_paths(query, raiseerr)
+        paths = self.__get_paths(query, raiseerr)
         if paths:
             self.process_query_property(query, paths)
 
     def process_query_property(self, query, paths):
         pass
-
-    def _get_paths(self, query, raiseerr):
-        path = None
-        l = []
-        current_path = list(query._current_path)
-
-        if self.mapper:
-            global class_mapper
-            if class_mapper is None:
-                from sqlalchemy.orm import class_mapper
-            mapper = self.mapper
-            if isinstance(self.mapper, type):
-                mapper = class_mapper(mapper)
-            if mapper is not query.mapper and mapper not in [q.mapper for q in query._entities]:
-                raise exceptions.ArgumentError("Can't find entity %s in Query.  Current list: %r" % (str(mapper), [str(m) for m in query._entities]))
+    
+    def __find_entity(self, query, mapper, raiseerr):
+        from sqlalchemy.orm.util import _class_to_mapper, _is_aliased_class
+        
+        if _is_aliased_class(mapper):
+            searchfor = mapper
         else:
-            mapper = query.mapper
+            searchfor = _class_to_mapper(mapper).base_mapper
+
+        for ent in query._mapper_entities:
+            if ent.path_entity is searchfor:
+                return ent
+        else:
+            if raiseerr:
+                raise exceptions.ArgumentError("Can't find entity %s in Query.  Current list: %r" % (searchfor, [str(m.path_entity) for m in query._entities]))
+            else:
+                return None
+            
+    def __get_paths(self, query, raiseerr):
+        path = None
+        entity = None
+        l = []
+        
+        current_path = list(query._current_path)
+        
+        if self.mapper:
+            entity = self.__find_entity(query, self.mapper, raiseerr)
+            mapper = entity.mapper
+            path_element = entity.path_entity
+            
         if isinstance(self.key, basestring):
             tokens = self.key.split('.')
         else:
@@ -682,26 +676,39 @@ class PropertyOption(MapperOption):
             
         for token in tokens:
             if isinstance(token, basestring):
+                if not entity:
+                    entity = query._entity_zero()
+                    path_element = entity.path_entity
+                    mapper = entity.mapper
                 prop = mapper.get_property(token, resolve_synonyms=True, raiseerr=raiseerr)
+                key = token
             elif isinstance(token, PropComparator):
                 prop = token.property
-                token = prop.key
-                    
+                if not entity:
+                    entity = self.__find_entity(query, token.parententity, raiseerr)
+                    if not entity:
+                        return []
+                    path_element = entity.path_entity
+                key = prop.key
             else:
                 raise exceptions.ArgumentError("mapper option expects string key or list of attributes")
-                
-            if current_path and token == current_path[1]:
+            
+            if current_path and key == current_path[1]:
                 current_path = current_path[2:]
                 continue
                 
             if prop is None:
                 return []
-            path = build_path(mapper, prop.key, path)
+
+            path = build_path(path_element, prop.key, path)
             l.append(path)
             if getattr(token, '_of_type', None):
-                mapper = token._of_type
+                path_element = mapper = token._of_type
             else:
-                mapper = getattr(prop, 'mapper', None)
+                path_element = mapper = getattr(prop, 'mapper', None)
+            if path_element:
+                path_element = path_element.base_mapper
+            
         return l
 
 PropertyOption.logger = logging.class_logger(PropertyOption)

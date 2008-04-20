@@ -232,7 +232,10 @@ class DefaultCompiler(engine.Compiled):
     def visit_grouping(self, grouping, **kwargs):
         return "(" + self.process(grouping.elem) + ")"
 
-    def visit_label(self, label, result_map=None):
+    def visit_label(self, label, result_map=None, render_labels=False):
+        if not render_labels:
+            return self.process(label.obj)
+            
         labelname = self._truncated_identifier("colident", label.name)
 
         if result_map is not None:
@@ -504,6 +507,7 @@ class DefaultCompiler(engine.Compiled):
             [c for c in [
                 self.process(
                     self.label_select_column(select, co, asfrom=asfrom), 
+                    render_labels=True,
                     **column_clause_args) 
                 for co in select.inner_columns
             ]

@@ -576,44 +576,8 @@ class PolymorphicExpireTest(ORMTest):
             {'person_id':3, 'status':'old engineer'},
         )
 
-    def test_poly_select(self):
-        mapper(Person, people, polymorphic_on=people.c.type, polymorphic_identity='person')
-        mapper(Engineer, engineers, inherits=Person, polymorphic_identity='engineer')
-        
-        sess = create_session()
-        [p1, e1, e2] = sess.query(Person).order_by(people.c.person_id).all()
-        
-        sess.expire(p1)
-        sess.expire(e1, ['status'])
-        sess.expire(e2)
-        
-        for p in [p1, e2]:
-            assert 'name' not in p.__dict__
-        
-        assert 'name' in e1.__dict__
-        assert 'status' not in e2.__dict__
-        assert 'status' not in e1.__dict__
-        
-        e1.name = 'new engineer name'
-        
-        def go():
-            sess.query(Person).all()
-        self.assert_sql_count(testing.db, go, 3)
-        
-        for p in [p1, e1, e2]:
-            assert 'name' in p.__dict__
-        
-        assert 'status' in e2.__dict__
-        assert 'status' in e1.__dict__
-        def go():
-            assert e1.name == 'new engineer name'
-            assert e2.name == 'engineer2'
-            assert e1.status == 'new engineer'
-        self.assert_sql_count(testing.db, go, 0)
-        self.assertEquals(Engineer.name.get_history(e1), (['new engineer name'], [], ['engineer1']))
-        
     def test_poly_deferred(self):
-        mapper(Person, people, polymorphic_on=people.c.type, polymorphic_identity='person', polymorphic_fetch='deferred')
+        mapper(Person, people, polymorphic_on=people.c.type, polymorphic_identity='person')
         mapper(Engineer, engineers, inherits=Person, polymorphic_identity='engineer')
 
         sess = create_session()

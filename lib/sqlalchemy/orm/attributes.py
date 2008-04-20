@@ -9,7 +9,6 @@ from itertools import chain
 from sqlalchemy import util
 from sqlalchemy.util import attrgetter, itemgetter
 from sqlalchemy.orm import interfaces, collections
-from sqlalchemy.orm.util import identity_equal
 from sqlalchemy import exceptions
 
 
@@ -61,14 +60,9 @@ ClassManager instrumentation is used.
 
 """
 
+class QueryableAttribute(interfaces.PropComparator):
 
-class InstrumentedAttribute(interfaces.PropComparator):
-    """public-facing instrumented attribute, placed in the
-    class dictionary.
-
-    """
-
-    def __init__(self, impl, comparator=None):
+    def __init__(self, impl, comparator=None, parententity=None):
         """Construct an InstrumentedAttribute.
         comparator
           a sql.Comparator to which class-level compare/math events will be sent
@@ -76,6 +70,37 @@ class InstrumentedAttribute(interfaces.PropComparator):
 
         self.impl = impl
         self.comparator = comparator
+        self.parententity = parententity
+        mapper, selectable, is_aliased_class = _entity_info(parententity, compile=False)
+        if mapper:
+            self.property = mapper._get_property(self.impl.key)
+        else:
+            self.property = None
+
+    def get_history(self, instance, **kwargs):
+        return self.impl.get_history(instance_state(instance), **kwargs)
+    
+    def __selectable__(self):
+        # TODO: conditionally attach this method based on clause_element ?
+        return self
+    
+    def __clause_element__(self):
+        return self.comparator.__clause_element__()
+    
+    def operate(self, op, *other, **kwargs):
+        return op(self.comparator, *other, **kwargs)
+
+    def reverse_operate(self, op, other, **kwargs):
+        return op(other, self.comparator, **kwargs)
+
+    def hasparent(self, state, optimistic=False):
+        return self.impl.hasparent(state, optimistic=optimistic)
+
+    def __str__(self):
+        return repr(self.parententity) + "." + self.property.key
+
+class InstrumentedAttribute(QueryableAttribute):
+    """Public-facing descriptor, placed in the mapped class dictionary."""
 
     def __set__(self, instance, value):
         self.impl.set(instance_state(instance), value, None)
@@ -87,29 +112,6 @@ class InstrumentedAttribute(interfaces.PropComparator):
         if instance is None:
             return self
         return self.impl.get(instance_state(instance))
-
-    def get_history(self, instance, **kwargs):
-        return self.impl.get_history(instance_state(instance), **kwargs)
-
-    def clause_element(self):
-        return self.comparator.clause_element()
-
-    def expression_element(self):
-        return self.comparator.expression_element()
-
-    def operate(self, op, *other, **kwargs):
-        return op(self.comparator, *other, **kwargs)
-
-    def reverse_operate(self, op, other, **kwargs):
-        return op(other, self.comparator, **kwargs)
-
-    def hasparent(self, state, optimistic=False):
-        return self.impl.hasparent(state, optimistic=optimistic)
-
-    def _property(self):
-        from sqlalchemy.orm.mapper import class_mapper
-        return class_mapper(self.impl.class_).get_property(self.impl.key)
-    property = property(_property, doc="the MapperProperty object associated with this attribute")
 
 class ProxiedAttribute(InstrumentedAttribute):
     """Adds InstrumentedAttribute class-level behavior to a regular descriptor.
@@ -162,11 +164,12 @@ def proxied_attribute_factory(descriptor):
     class Proxy(InstrumentedAttribute):
         """A combination of InsturmentedAttribute and a regular descriptor."""
 
-        def __init__(self, key, descriptor, comparator):
+        def __init__(self, key, descriptor, comparator, parententity):
             self.key = key
             # maintain ProxiedAttribute.user_prop compatability.
             self.descriptor = self.user_prop = descriptor
             self._comparator = comparator
+            self._parententity = parententity
             self.impl = ProxyImpl(key)
 
         def comparator(self):
@@ -193,6 +196,11 @@ def proxied_attribute_factory(descriptor):
         def __getattr__(self, attribute):
             """Delegate __getattr__ to the original descriptor."""
             return getattr(descriptor, attribute)
+            
+        def _property(self):
+            return self._parententity.get_property(self.key, resolve_synonyms=True)
+        property = property(_property)
+        
     Proxy.__name__ = type(descriptor).__name__ + 'Proxy'
 
     util.monkeypatch_proxied_specials(Proxy, type(descriptor),
@@ -1501,20 +1509,21 @@ def register_attribute(class_, key, uselist, useobject, callable_=None, proxy_pr
         typecallable = kwargs.pop('typecallable', None)
 
     comparator = kwargs.pop('comparator', None)
+    parententity = kwargs.pop('parententity', None)
 
     if proxy_property:
         proxy_type = proxied_attribute_factory(proxy_property)
-        descriptor = proxy_type(key, proxy_property, comparator)
+        descriptor = proxy_type(key, proxy_property, comparator, parententity)
     else:
         descriptor = InstrumentedAttribute(
-            _create_prop(class_, key, uselist, callable_,
-                         class_manager=manager,
-                         useobject=useobject,
-                         typecallable=typecallable,
-                         mutable_scalars=mutable_scalars,
-                         impl_class=impl_class,
-                         **kwargs),
-            comparator=comparator)
+            _create_prop(class_, key, uselist, callable_, 
+                    class_manager=manager,
+                    useobject=useobject,
+                    typecallable=typecallable, 
+                    mutable_scalars=mutable_scalars, 
+                    impl_class=impl_class, 
+                    **kwargs), 
+                comparator=comparator, parententity=parententity)
 
     manager.instrument_attribute(key, descriptor)
 
@@ -1619,7 +1628,7 @@ create_manager_for_cls = None
 manager_of_class = None
 instance_state = None
 _lookup_strategy = None
-
+    
 def _install_lookup_strategy(implementation):
     """Switch between native and extended instrumentation modes.
 

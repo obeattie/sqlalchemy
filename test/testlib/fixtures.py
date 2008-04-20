@@ -63,6 +63,7 @@ class Base(object):
                         battr = getattr(b, attr)
                     except AttributeError:
                         #print "b class does not have attribute named '%s'" % attr
+                        #raise
                         return False
                     
                     if list(value) == list(battr):

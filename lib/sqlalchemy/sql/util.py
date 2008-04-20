@@ -25,6 +25,17 @@ def sort_tables(tables, reverse=False):
     else:
         return sequence
 
+def search(clause, target):
+    if not clause:
+        return False
+    meth = "visit_%s" % target.__visit_name__
+    ret = [False]
+    def search(elem):
+        if elem is target:
+            ret[0] = True
+    visitors.traverse(clause, traverse_options={'column_collections':False}, **{meth:search})
+    return ret[0]
+
 def find_tables(clause, check_columns=False, include_aliases=False):
     """locate Table objects within the given expression."""
     
@@ -56,7 +67,40 @@ def find_columns(clause):
     visitors.traverse(clause, visit_column=visit_column)
     return cols
 
+def _recursive_splice_joins(left, right):
+    if isinstance(right, expression.Join):
+        right = right._clone()
+        right._reset_exported()
+        right.left = splice_joins(left, right.left)
+        right.onclause = ClauseAdapter(left).traverse(right.onclause)
+        return right
+    else:
+        return ClauseAdapter(left).traverse(right)
 
+def splice_joins(left, right):
+    if left is None:
+        return right
+        
+    stack = [(right, None)]
+
+    adapter = ClauseAdapter(left)
+    ret = None
+    while stack:
+        (right, prevright) = stack.pop()
+        if isinstance(right, expression.Join):
+            right = right._clone()
+            right._reset_exported()
+            right.onclause = adapter.traverse(right.onclause)
+            stack.append((right.left, right))
+        else:
+            right = adapter.traverse(right)
+        if prevright:
+            prevright.left = right
+        if not ret:
+            ret = right
+
+    return ret
+    
 def reduce_columns(columns, *clauses):
     """given a list of columns, return a 'reduced' set based on natural equivalents.
 
@@ -190,28 +234,39 @@ class AliasedRow(object):
     def keys(self):
         return self.row.keys()
 
-def row_adapter(from_, equivalent_columns=None):
-    """create a row adapter callable against a selectable."""
-    
-    if equivalent_columns is None:
-        equivalent_columns = {}
+class row_adapter(object):
+    def __init__(self, from_, equivalent_columns=None, _wrap=None):
+        self.from_ = from_
+        self.equivalent_columns = equivalent_columns or {}
+        if _wrap:
+            self.__locate_col = self.__decorate_locate(self.__locate_col, _wrap.__locate_col)
+        self.map = util.PopulateDict(self.__locate_col)
 
-    def locate_col(col):
-        c = from_.corresponding_column(col)
+    def wrap(self, adapter):
+        return row_adapter(self.from_, self.equivalent_columns, _wrap=adapter)
+    
+    def translate_col(self, col):
+        return self.__locate_col(col)
+        
+    def __decorate_locate(self, local, wrapped):
+        def locate(col):
+            col = local(col)
+            return wrapped(col)
+        return locate
+        
+    def __locate_col(self, col):
+        c = self.from_.corresponding_column(col)
         if c:
             return c
-        elif col in equivalent_columns:
-            for c2 in equivalent_columns[col]:
-                corr = from_.corresponding_column(c2)
+        elif col in self.equivalent_columns:
+            for c2 in self.equivalent_columns[col]:
+                corr = self.from_.corresponding_column(c2)
                 if corr:
                     return corr
         return col
-        
-    map = util.PopulateDict(locate_col)
-    
-    def adapt(row):
-        return AliasedRow(row, map)
-    return adapt
+
+    def __call__(self, row):
+        return AliasedRow(row, self.map)
 
 class ColumnsInClause(visitors.ClauseVisitor):
     """Given a selectable, visit clauses and determine if any columns
@@ -226,7 +281,7 @@ class ColumnsInClause(visitors.ClauseVisitor):
         if self.selectable.c.get(column.key) is column:
             self.result = True
 
-class ClauseAdapter(visitors.ClauseVisitor):
+class ClauseAdapter(visitors.ReplacingCloningVisitor):
     """Given a clause (like as in a WHERE criterion), locate columns
     which are embedded within a given selectable, and changes those
     columns to be that of the selectable.
@@ -254,7 +309,7 @@ class ClauseAdapter(visitors.ClauseVisitor):
       s.c.col1 == table2.c.col1
     """
 
-    __traverse_options__ = {'column_collections':False}
+    __traverse_options__ = {'column_collections':False, 'clone':True}
 
     def __init__(self, selectable, include=None, exclude=None, equivalents=None):
         self.__traverse_options__ = self.__traverse_options__.copy()
@@ -263,47 +318,28 @@ class ClauseAdapter(visitors.ClauseVisitor):
         self.include = include
         self.exclude = exclude
         self.equivalents = equivalents
-    
-    def traverse(self, obj, clone=True):
-        if not clone:
-            raise exceptions.ArgumentError("ClauseAdapter 'clone' argument must be True")
-        return visitors.ClauseVisitor.traverse(self, obj, clone=True)
-    
-    def copy_and_chain(self, adapter):
-        """create a copy of this adapter and chain to the given adapter.
-
-        currently this adapter must be unchained to start, raises
-        an exception if it's already chained.
-
-        Does not modify the given adapter.
-        """
-
-        if adapter is None:
-            return self
-
-        if hasattr(self, '_next'):
-            raise NotImplementedError("Can't chain_to on an already chained ClauseAdapter (yet)")
-
-        ca = ClauseAdapter(self.selectable, self.include, self.exclude, self.equivalents)
-        ca._next = adapter
-        return ca
 
     def before_clone(self, col):
         if isinstance(col, expression.FromClause):
             if self.selectable.is_derived_from(col):
                 return self.selectable
-        if not isinstance(col, expression.ColumnElement):
+                
+        if not hasattr(col, 'proxy_set'):
             return None
-        if self.include is not None:
+        if self.include:
             if col not in self.include:
                 return None
-        if self.exclude is not None:
+        if self.exclude:
             if col in self.exclude:
                 return None
+                
         newcol = self.selectable.corresponding_column(col, require_embedded=True)
-        if newcol is None and self.equivalents is not None and col in self.equivalents:
-            for equiv in self.equivalents[col]:
-                newcol = self.selectable.corresponding_column(equiv, require_embedded=True)
-                if newcol:
-                    return newcol
+        
+        if not newcol and self.equivalents:
+            for c in col._cloned_set:
+                if c in self.equivalents:
+                    for equiv in self.equivalents[c]:
+                        newcol = self.selectable.corresponding_column(equiv, require_embedded=True)
+                        if newcol:
+                            return newcol
         return newcol

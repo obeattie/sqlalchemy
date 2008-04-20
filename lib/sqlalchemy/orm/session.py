@@ -10,10 +10,11 @@
 import weakref
 import sqlalchemy.orm.attributes
 from sqlalchemy import util, exceptions, sql, engine
+from sqlalchemy.sql import util as sql_util
 from sqlalchemy.orm import unitofwork, query, attributes, util as mapperutil, SessionExtension
-from sqlalchemy.orm.mapper import object_mapper as _object_mapper
-from sqlalchemy.orm.mapper import class_mapper as _class_mapper
-from sqlalchemy.orm.mapper import _state_mapper, _state_has_identity, _class_to_mapper
+from sqlalchemy.orm.util import object_mapper as _object_mapper
+from sqlalchemy.orm.util import class_mapper as _class_mapper
+from sqlalchemy.orm.util import _state_mapper, _state_has_identity, _class_to_mapper
 from sqlalchemy.orm.mapper import Mapper
 from sqlalchemy.orm.unitofwork import UOWTransaction
 from sqlalchemy.orm import identity
@@ -675,7 +676,7 @@ class Session(object):
                 elif mapper.mapped_table in self.__binds:
                     return self.__binds[mapper.mapped_table]
             if clause is not None:
-                for t in clause._table_iterator():
+                for t in sql_util.find_tables(clause):
                     if t in self.__binds:
                         return self.__binds[t]
 
@@ -692,19 +693,10 @@ class Session(object):
                 raise exceptions.UnboundExecutionError("Could not locate any Engine or Connection bound to mapper '%s'" % str(mapper))
             return e
 
-    def query(self, mapper_or_class, *addtl_entities, **kwargs):
-        """Return a new ``Query`` object corresponding to this ``Session`` and
-        the mapper, or the classes' primary mapper.
-        """
-
-        entity_name = kwargs.pop('entity_name', None)
-
-        mapper_or_class = _class_to_mapper(mapper_or_class, entity_name=entity_name)
-        q = self._query_cls(mapper_or_class, self, **kwargs)
-
-        for ent in addtl_entities:
-            q = q.add_entity(ent)
-        return q
+    def query(self, *entities, **kwargs):
+        """Return a new ``Query`` object corresponding to this ``Session``."""
+        
+        return self._query_cls(entities, self, **kwargs)
 
     def _autoflush(self):
         if self.autoflush and (self.transaction is None or self.transaction.autoflush):

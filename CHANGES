@@ -69,6 +69,15 @@ user_defined_state
     - restored usage of append_result() extension method for primary 
       query rows, when the extension is present and only a single-
       entity result is being returned.
+    
+    - Also re-established viewonly relation() configurations that
+      join across multiple tables.
+      
+    - removed ancient assertion that mapped selectables require
+      "alias names" - the mapper creates its own alias now if
+      none is present.  Though in this case you need to use 
+      the class, not the mapped selectable, as the source of
+      column attributes - so a warning is still issued.
       
 - sql
     - Added COLLATE support via the .collate(<collation>)
@@ -103,7 +112,6 @@ user_defined_state
 - firebird
     - Handle the "SUBSTRING(:string FROM :start FOR :length)"
       builtin.
-
 
 0.4.5
 =====
