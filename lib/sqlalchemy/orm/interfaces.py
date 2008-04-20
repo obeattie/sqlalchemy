@@ -294,7 +294,7 @@ class MapperProperty(object):
         pass
 
     def create_row_processor(self, selectcontext, mapper, row):
-        """Return a 3-tuple consiting of two row processing functions and an instance post-processing function.
+        """Return a 2-tuple consiting of two row processing functions and an instance post-processing function.
 
         Input arguments are the query.SelectionContext and the *first*
         applicable row of a result set obtained within
@@ -305,7 +305,7 @@ class MapperProperty(object):
         columns present in the row (which will be the same columns present in
         all rows) are used to determine the presence and behavior of the
         returned callables.  The callables will then be used to process all
-        rows and to post-process all instances, respectively.
+        rows and instances.
 
         Callables are of the following form::
 
@@ -317,20 +317,12 @@ class MapperProperty(object):
                 #   isnew - indicates if the instance was newly created as a
                 #           result of reading this row
                 #   instancekey - identity key of the instance
-                # optional attribute:
-                #   ispostselect - indicates if this row resulted from a
-                #                  'post' select of additional tables/columns
 
             def existing_execute(instance, row, **flags):
                 # process incoming instance and given row.  the instance is
                 # "existing" and was created based on a previous row.
 
-            def post_execute(instance, **flags):
-                # process instance after all result rows have been processed.
-                # this function should be used to issue additional selections
-                # in order to eagerly load additional properties.
-
-            return (new_execute, existing_execute, post_execute)
+            return (new_execute, existing_execute)
 
         Either of the three tuples can be ``None`` in which case no function
         is called.

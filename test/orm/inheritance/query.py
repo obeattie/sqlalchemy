@@ -200,9 +200,9 @@ def make_test(select_type):
             
             # for all mappers, ensure the primary key has been calculated as just the "person_id"
             # column
-            self.assertEquals(sess.query(Person).get(e1.person_id), Engineer(name="dilbert"))
-            self.assertEquals(sess.query(Engineer).get(e1.person_id), Engineer(name="dilbert"))
-            self.assertEquals(sess.query(Manager).get(b1.person_id), Boss(name="pointy haired boss"))
+            self.assertEquals(sess.query(Person).get(e1.person_id), Engineer(name="dilbert", primary_language="java"))
+            self.assertEquals(sess.query(Engineer).get(e1.person_id), Engineer(name="dilbert", primary_language="java"))
+            self.assertEquals(sess.query(Manager).get(b1.person_id), Boss(name="pointy haired boss", golf_swing="fore"))
             
         def test_filter_on_subclass(self):
             sess = create_session()

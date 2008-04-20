@@ -146,13 +146,9 @@ class Mapper(object):
         # indicates this Mapper should be used to construct the object instance for that row.
         self.polymorphic_identity = polymorphic_identity
 
-        if polymorphic_fetch not in (None, 'union', 'select', 'deferred'):
-            raise exceptions.ArgumentError("Invalid option for 'polymorphic_fetch': '%s'" % polymorphic_fetch)
-        if polymorphic_fetch is None:
-            self.polymorphic_fetch = (self.with_polymorphic is None) and 'select' or 'union'
-        else:
-            self.polymorphic_fetch = polymorphic_fetch
-
+        if polymorphic_fetch:
+            util.warn_deprecated('polymorphic_fetch option is deprecated.  Unloaded columns load as deferred in all cases; loading can be controlled using the "with_polymorphic" option.')
+            
         # a dictionary of 'polymorphic identity' names, associating those names with
         # Mappers that will be used to construct object instances upon a select operation.
         if _polymorphic_map is None:
@@ -1330,14 +1326,7 @@ class Mapper(object):
             if ret is not EXT_CONTINUE:
                 row = ret
 
-        if polymorphic_from:
-            # if we are called from a base mapper doing a polymorphic load, figure out what tables,
-            # if any, will need to be "post-fetched" based on the tables present in the row,
-            # or from the options set up on the query
-            if ('polymorphic_fetch', self) not in context.attributes:
-                context.attributes[('polymorphic_fetch', self)] = (polymorphic_from, [t for t in self.tables if t not in polymorphic_from.tables])
-                
-        elif not refresh_instance and self.polymorphic_on:
+        if not polymorphic_from and not refresh_instance and self.polymorphic_on:
             discriminator = row[self.polymorphic_on]
             if discriminator is not None:
                 try:
@@ -1421,7 +1410,7 @@ class Mapper(object):
                 context.progress.add(state)
 
             if 'populate_instance' not in extension.methods or extension.populate_instance(self, context, row, instance, only_load_props=only_load_props, instancekey=identitykey, isnew=isnew) is EXT_CONTINUE:
-                self._populate_instance(context, path_entity, instance, row, None, isnew, only_load_props)
+                self._populate_instance(context, path_entity, instance, row, isnew, only_load_props)
         
         else:
             # populate attributes on non-loading instances which have been expired
@@ -1434,21 +1423,21 @@ class Mapper(object):
                     isnew = True
                     attrs = state.expired_attributes.intersection(state.unmodified)
                     context.partials[state] = attrs  #<-- allow query.instances to commit the subset of attrs
-
+                
                 if 'populate_instance' not in extension.methods or extension.populate_instance(self, context, row, instance, only_load_props=attrs, instancekey=identitykey, isnew=isnew) is EXT_CONTINUE:
-                    self._populate_instance(context, path_entity, instance, row, None, isnew, attrs, instancekey=identitykey)
+                    self._populate_instance(context, path_entity, instance, row, isnew, attrs, instancekey=identitykey)
 
         if result is not None and ('append_result' not in extension.methods or extension.append_result(self, context, row, instance, result, instancekey=identitykey, isnew=isnew) is EXT_CONTINUE):
             result.append(instance)
 
         return instance
 
-    def populate_instance(self, selectcontext, instance, row, ispostselect=None, isnew=False, only_load_props=None, **flags):
+    def populate_instance(self, selectcontext, instance, row, isnew=False, only_load_props=None, **flags):
         """compatibility layer for _populate_instance."""
         
-        return self._populate_instance(selectcontext, self.base_mapper, instance, row, ispostselect, isnew, only_load_props, **flags)
+        return self._populate_instance(selectcontext, self.base_mapper, instance, row, isnew, only_load_props, **flags)
         
-    def _populate_instance(self, selectcontext, path_start, instance, row, ispostselect, isnew, only_load_props, **flags):
+    def _populate_instance(self, selectcontext, path_start, instance, row, isnew, only_load_props, **flags):
         """populate an instance from a result row."""
         
         snapshot = selectcontext.path + (path_start,)
@@ -1457,133 +1446,59 @@ class Mapper(object):
         # "snapshot" of the stack, which represents a path from the lead mapper in the query to this one,
         # including relation() names.  the key also includes "self", and allows us to distinguish between
         # other mappers within our inheritance hierarchy
-        (new_populators, existing_populators) = selectcontext.attributes.get(('populators', self, snapshot, ispostselect), (None, None))
-        if new_populators is None:
-            # no populators; therefore this is the first time we are receiving a row for
-            # this result set.  issue create_row_processor() on all MapperProperty objects
-            # and cache in the select context.
-            new_populators = []
-            existing_populators = []
-            post_processors = []
+        populators = selectcontext.attributes.get(('populators', self, snapshot), None)
+        if not populators:
+            populators = []
             for prop in self.__props.values():
-                (newpop, existingpop, post_proc) = selectcontext.exec_with_path(path_start, prop.key, prop.create_row_processor, selectcontext, self, row)
-                if newpop:
-                    new_populators.append((prop.key, newpop))
-                if existingpop:
-                    existing_populators.append((prop.key, existingpop))
-                if post_proc:
-                    post_processors.append(post_proc)
+                newpop, existingpop = selectcontext.exec_with_path(path_start, prop.key, prop.create_row_processor, selectcontext, self, row)
+                populators.append((prop.key, newpop, existingpop))
+            
+            selectcontext.attributes[('populators', self, snapshot)] = populators = (
+                [(key, newpop) for key, newpop, existingpop in populators if newpop],
+                [(key, existingpop) for key, newpop, existingpop in populators if existingpop]
+            )
 
-            # install a post processor for immediate post-load of joined-table inheriting mappers
-            poly_select_loader = self._get_poly_select_loader(selectcontext, path_start, row)
-            if poly_select_loader:
-                post_processors.append(poly_select_loader)
-
-            selectcontext.attributes[('populators', self, snapshot, ispostselect)] = (new_populators, existing_populators)
-            selectcontext.attributes[('post_processors', self, ispostselect)] = post_processors
-
-        if isnew or ispostselect:
-            populators = new_populators
+        if isnew:
+            populators = populators[0]
         else:
-            populators = existing_populators
+            populators = populators[1]
 
         if only_load_props:
             populators = [p for p in populators if p[0] in only_load_props]
 
         for (key, populator) in populators:
-            selectcontext.exec_with_path(path_start, key, populator, instance, row, ispostselect=ispostselect, isnew=isnew, **flags)
+            selectcontext.exec_with_path(path_start, key, populator, instance, row, isnew=isnew, **flags)
 
-        if self.non_primary:
-            selectcontext.attributes[('populating_mapper', instance._state)] = self
-
-    def _post_instance(self, selectcontext, state, **kwargs):
-        post_processors = selectcontext.attributes[('post_processors', self, None)]
-        for p in post_processors:
-            p(state.obj(), **kwargs)
-
-    def _get_poly_select_loader(self, selectcontext, path_start, row):
-        """set up attribute loaders for 'select' and 'deferred' polymorphic loading.
-
-        this loading uses a second SELECT statement to load additional tables,
-        either immediately after loading the main table or via a deferred attribute trigger.
-        """
-
-        (hosted_mapper, needs_tables) = selectcontext.attributes.get(('polymorphic_fetch', self), (None, None))
-
-        if hosted_mapper is None or not needs_tables:
-            return
-
-        cond, param_names = self._deferred_inheritance_condition(hosted_mapper, needs_tables)
-        statement = sql.select(needs_tables, cond, use_labels=True)
-
-        if hosted_mapper.polymorphic_fetch == 'select':
-            def post_execute(instance, **flags):
-                if self.__should_log_debug:
-                    self.__log_debug("Post query loading instance " + instance_str(instance))
-
-                identitykey = self.identity_key_from_instance(instance)
-                
-                only_load_props = flags.get('only_load_props', None)
-
-                params = {}
-                for c, bind in param_names:
-                    params[bind] = self._get_attr_by_column(instance, c)
-                row = selectcontext.session.connection(self).execute(statement, params).fetchone()
-                self._populate_instance(selectcontext, path_start, instance, row, isnew=False, instancekey=identitykey, ispostselect=True, only_load_props=only_load_props)
-            return post_execute
-        elif hosted_mapper.polymorphic_fetch == 'deferred':
-            from sqlalchemy.orm.strategies import DeferredColumnLoader
-
-            def post_execute(instance, **flags):
-                def create_statement(instance):
-                    params = {}
-                    for (c, bind) in param_names:
-                        # use the "committed" (database) version to get query column values
-                        params[bind] = self._get_committed_attr_by_column(instance, c)
-                    return (statement, params)
-
-                props = [prop for prop in [self._get_col_to_prop(col) for col in statement.inner_columns] if prop.key not in instance.__dict__]
-                keys = [p.key for p in props]
-                
-                only_load_props = flags.get('only_load_props', None)
-                if only_load_props:
-                    keys = util.Set(keys).difference(only_load_props)
-                    props = [p for p in props if p.key in only_load_props]
-                    
-                for prop in props:
-                    strategy = prop._get_strategy(DeferredColumnLoader)
-                    instance._state.set_callable(prop.key, strategy.setup_loader(instance, props=keys, create_statement=create_statement))
-            return post_execute
-        else:
+    def _optimized_get_statement(self, instance, attribute_names):
+        props = self.__props
+        tables = util.Set([props[key].parent.local_table for key in attribute_names])
+        if self.base_mapper.local_table in tables:
             return None
-
-    def _deferred_inheritance_condition(self, base_mapper, needs_tables):
-        base_mapper = base_mapper.primary_mapper()
-
+            
         def visit_binary(binary):
             leftcol = binary.left
             rightcol = binary.right
             if leftcol is None or rightcol is None:
                 return
-            if leftcol.table not in needs_tables:
-                binary.left = sql.bindparam(None, None, type_=binary.right.type)
-                param_names.append((leftcol, binary.left))
-            elif rightcol not in needs_tables:
-                binary.right = sql.bindparam(None, None, type_=binary.right.type)
-                param_names.append((rightcol, binary.right))
+                
+            if leftcol.table not in tables:
+                binary.left = sql.bindparam(None, self._get_committed_attr_by_column(instance, leftcol), type_=binary.right.type)
+            elif rightcol.table not in tables:
+                binary.right = sql.bindparam(None, self._get_committed_attr_by_column(instance, rightcol), type_=binary.right.type)
 
         allconds = []
-        param_names = []
 
-        for mapper in self.iterate_to_root():
-            if mapper is base_mapper:
-                break
-            allconds.append(visitors.traverse(mapper.inherit_condition, clone=True, visit_binary=visit_binary))
-
-        return sql.and_(*allconds), param_names
+        start = False
+        for mapper in reversed(list(self.iterate_to_root())):
+            if mapper.local_table in tables:
+                start = True
+            if start:
+                allconds.append(visitors.traverse(mapper.inherit_condition, clone=True, visit_binary=visit_binary))
+        
+        cond = sql.and_(*allconds)
+        return sql.select(tables, cond, use_labels=True)
 
 Mapper.logger = logging.class_logger(Mapper)
-
 
 object_session = None
 
@@ -1600,14 +1515,22 @@ def _load_scalar_attributes(instance, attribute_names):
             raise exceptions.UnboundExecutionError("Instance %s is not bound to a Session, and no contextual session is established; attribute refresh operation cannot proceed" % (instance.__class__))
 
     state = instance._state
-    if '_instance_key' in state.dict:
-        identity_key = state.dict['_instance_key']
-        shouldraise = True
-    else:
-        # if instance is pending, a refresh operation may not complete (even if PK attributes are assigned)
-        shouldraise = False
-        identity_key = mapper._identity_key_from_state(state)
+    has_key = '_instance_key' in state.dict
 
-    if session.query(mapper)._get(identity_key, refresh_instance=state, only_load_props=attribute_names) is None and shouldraise:
+    result = False
+    if mapper.inherits and not mapper.concrete:
+        statement = mapper._optimized_get_statement(instance, attribute_names)
+        if statement:
+            result = session.query(mapper).from_statement(statement)._get(None, only_load_props=attribute_names, refresh_instance=state)
+            
+    if result is False:
+        if has_key:
+            identity_key = state.dict['_instance_key']
+        else:
+            identity_key = mapper._identity_key_from_state(state)
+        result = session.query(mapper)._get(identity_key, refresh_instance=state, only_load_props=attribute_names)
+    
+    # if instance is pending, a refresh operation may not complete (even if PK attributes are assigned)
+    if has_key and result is None:
         raise exceptions.InvalidRequestError("Could not refresh instance '%s'" % instance_str(instance))
 

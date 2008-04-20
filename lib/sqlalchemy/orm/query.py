@@ -1074,11 +1074,9 @@ class Query(object):
                 context.progress.remove(context.refresh_instance)
 
             for ii in context.progress:
-                context.attributes.get(('populating_mapper', ii), _state_mapper(ii))._post_instance(context, ii)
                 ii.commit_all()
                 
             for ii, attrs in context.partials.items():
-                context.attributes.get(('populating_mapper', ii), _state_mapper(ii))._post_instance(context, ii, only_load_props=attrs)
                 ii.commit(attrs)
                 
             for row in rows:
@@ -1667,10 +1665,6 @@ class _MapperEntity(_QueryEntity):
             context.whereclause = sql.and_(context.whereclause, self.mapper.polymorphic_on.in_([m.polymorphic_identity for m in self.mapper.polymorphic_iterator()]))
         
         context.froms.append(self.selectable)
-
-        if self._with_polymorphic:
-            for m in self._with_polymorphic:
-                context.attributes[('polymorphic_fetch', m)] = (self.mapper, [])
 
         adapter = self._get_entity_clauses(query, context)
 

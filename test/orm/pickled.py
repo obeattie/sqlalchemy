@@ -113,7 +113,7 @@ class PolymorphicDeferredTest(ORMTest):
             )
 
     def test_polymorphic_deferred(self):
-        mapper(User, users, polymorphic_identity='user', polymorphic_on=users.c.type, polymorphic_fetch='deferred')
+        mapper(User, users, polymorphic_identity='user', polymorphic_on=users.c.type)
         mapper(EmailUser, email_users, inherits=User, polymorphic_identity='emailuser')
 
         eu = EmailUser(name="user1", email_address='foo@bar.com')

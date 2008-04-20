@@ -159,7 +159,7 @@ class SynonymProperty(MapperProperty):
         pass
 
     def create_row_processor(self, selectcontext, mapper, row):
-        return (None, None, None)
+        return (None, None)
 
     def do_init(self):
         class_ = self.parent.class_
@@ -205,7 +205,7 @@ class ComparableProperty(MapperProperty):
         pass
 
     def create_row_processor(self, selectcontext, mapper, row):
-        return (None, None, None)
+        return (None, None)
 
 
 class PropertyLoader(StrategizedProperty):
