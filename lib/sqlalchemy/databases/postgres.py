@@ -26,7 +26,6 @@ from sqlalchemy.engine import base, default
 from sqlalchemy.sql import compiler, expression
 from sqlalchemy.sql import operators as sql_operators
 from sqlalchemy import types as sqltypes
-from sqlalchemy.pool import connection_cache_decorator
 
 
 class PGInet(sqltypes.TypeEngine):
@@ -225,6 +224,10 @@ def descriptor():
         ('host',"Hostname", None),
     ]}
 
+SERVER_SIDE_CURSOR_RE = re.compile(
+    r'\s*SELECT',
+    re.I | re.UNICODE)
+
 SELECT_RE = re.compile(
     r'\s*(?:SELECT|FETCH|(UPDATE|INSERT))',
     re.I | re.UNICODE)
@@ -253,7 +256,6 @@ RETURNING_QUOTED_RE = re.compile(
         \sRETURNING\s""", re.I | re.UNICODE | re.VERBOSE)
 
 class PGExecutionContext(default.DefaultExecutionContext):
-
     def returns_rows_text(self, statement):
         m = SELECT_RE.match(statement)
         return m and (not m.group(1) or (RETURNING_RE.search(statement)
@@ -266,23 +268,20 @@ class PGExecutionContext(default.DefaultExecutionContext):
             )
 
     def create_cursor(self):
-        # executing a default or Sequence standalone creates an execution context without a statement.
-        # so slightly hacky "if no statement assume we're server side" logic
-        # TODO: dont use regexp if Compiled is used ?
         self.__is_server_side = \
             self.dialect.server_side_cursors and \
-            (self.statement is None or \
-            (SELECT_RE.match(self.statement) and not re.search(r'FOR UPDATE(?: NOWAIT)?\s*$', self.statement, re.I))
-        )
+            ((self.compiled and isinstance(self.compiled.statement, expression.Selectable)) \
+            or \
+            (not self.compiled and self.statement and SERVER_SIDE_CURSOR_RE.match(self.statement)))
 
         if self.__is_server_side:
             # use server-side cursors:
             # http://lists.initd.org/pipermail/psycopg/2007-January/005251.html
-            ident = "c" + hex(random.randint(0, 65535))[2:]
+            ident = "c_%s_%s" % (hex(id(self))[2:], hex(random.randint(0, 65535))[2:])
             return self._connection.connection.cursor(ident)
         else:
             return self._connection.connection.cursor()
-
+    
     def get_result_proxy(self):
         if self.__is_server_side:
             return base.BufferedRowResultProxy(self)
@@ -310,12 +309,12 @@ class PGDialect(default.DefaultDialect):
     supports_sane_multi_rowcount = False
     preexecute_pk_sequences = True
     supports_pk_autoincrement = False
+    default_paramstyle = 'pyformat'
 
     def __init__(self, use_oids=False, server_side_cursors=False, **kwargs):
-        default.DefaultDialect.__init__(self, default_paramstyle='pyformat', **kwargs)
+        default.DefaultDialect.__init__(self, **kwargs)
         self.use_oids = use_oids
         self.server_side_cursors = server_side_cursors
-        self.paramstyle = 'pyformat'
 
     def dbapi(cls):
         import psycopg2 as psycopg
@@ -369,7 +368,8 @@ class PGDialect(default.DefaultDialect):
 
     def get_default_schema_name(self, connection):
         return connection.scalar("select current_schema()", None)
-    get_default_schema_name = connection_cache_decorator(get_default_schema_name)
+    get_default_schema_name = base.connection_memoize(
+        ('dialect', 'default_schema_name'))(get_default_schema_name)
 
     def last_inserted_ids(self):
         if self.context.last_inserted_ids is None:
@@ -763,6 +763,11 @@ class PGSchemaDropper(compiler.SchemaDropper):
             self.execute()
 
 class PGDefaultRunner(base.DefaultRunner):
+    def __init__(self, context):
+        base.DefaultRunner.__init__(self, context)
+        # craete cursor which won't conflict with a server-side cursor
+        self.cursor = context._connection.connection.cursor()
+    
     def get_column_default(self, column, isinsert=True):
         if column.primary_key:
             # pre-execute passive defaults on primary keys

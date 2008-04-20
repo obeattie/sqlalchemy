@@ -11,18 +11,17 @@ See the SQLAlchemy object relational tutorial and mapper configuration
 documentation for an overview of how this module is used.
 """
 
-from sqlalchemy import util as sautil
 from sqlalchemy.orm.mapper import Mapper, object_mapper, class_mapper, _mapper_registry
 from sqlalchemy.orm.interfaces import MapperExtension, SessionExtension, EXT_CONTINUE, EXT_STOP, EXT_PASS, ExtensionOption, PropComparator, InstrumentationManager
 from sqlalchemy.orm.properties import SynonymProperty, ComparableProperty, PropertyLoader, ColumnProperty, CompositeProperty, BackRef
 from sqlalchemy.orm import mapper as mapperlib
 from sqlalchemy.orm import strategies
-from sqlalchemy.orm.query import Query
+from sqlalchemy.orm.query import Query, aliased
 from sqlalchemy.orm.util import polymorphic_union, create_row_adapter
 from sqlalchemy.orm.session import Session as _Session
 from sqlalchemy.orm.session import object_session, sessionmaker
 from sqlalchemy.orm.scoping import ScopedSession
-from itertools import chain
+
 
 __all__ = [ 'relation', 'column_property', 'composite', 'backref', 'eagerload',
             'eagerload_all', 'lazyload', 'noload', 'deferred', 'defer',
@@ -30,7 +29,7 @@ __all__ = [ 'relation', 'column_property', 'composite', 'backref', 'eagerload',
             'compile_mappers', 'class_mapper', 'object_mapper', 'sessionmaker',
             'scoped_session', 'dynamic_loader', 'MapperExtension',
             'polymorphic_union', 'comparable_property',
-            'create_session', 'synonym', 'contains_alias', 'Query',
+            'create_session', 'synonym', 'contains_alias', 'Query', 'aliased',
             'contains_eager', 'EXT_CONTINUE', 'EXT_STOP', 'EXT_PASS',
             'object_session', 'PropComparator', 'InstrumentationManager' ]
 
@@ -552,7 +551,8 @@ def mapper(class_, local_table=None, *args, **params):
         UNION queries.
         
       select_table
-        Deprecated.  Synonymous with ``with_polymorphic=('*', <selectable>)`.
+        Deprecated.  Synonymous with 
+        ``with_polymorphic=('*', <selectable>)``.
 
       version_id_col
         A ``Column`` which must have an integer type that will be

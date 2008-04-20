@@ -276,11 +276,6 @@ class Table(SchemaItem, expression.TableClause):
         return _get_table_key(self.name, self.schema)
     key = property(key)
 
-    def _export_columns(self, columns=None):
-        # override FromClause's collection initialization logic; Table
-        # implements it differently
-        pass
-
     def _set_primary_key(self, pk):
         if getattr(self, '_primary_key', None) in self.constraints:
             self.constraints.remove(self._primary_key)
@@ -553,7 +548,7 @@ class Column(SchemaItem, expression._ColumnClause):
     def references(self, column):
         """Return True if this references the given column via a foreign key."""
         for fk in self.foreign_keys:
-            if fk.column is column:
+            if fk.references(column.table):
                 return True
         else:
             return False

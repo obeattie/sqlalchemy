@@ -130,7 +130,7 @@ class DeferredColumnLoader(LoaderStrategy):
             self.parent_property._get_strategy(ColumnLoader).setup_query(context, **kwargs)
     
     def class_level_loader(self, state, props=None):
-        if not mapper._state_has_mapper(state):
+        if not mapperutil._state_has_mapper(state):
             return None
             
         localparent = mapper._state_mapper(state)
@@ -259,14 +259,14 @@ NoLoader.logger = logging.class_logger(NoLoader)
 class LazyLoader(AbstractRelationLoader):
     def init(self):
         super(LazyLoader, self).init()
-        (self.lazywhere, self.lazybinds, self.equated_columns) = self._create_lazy_clause(self.parent_property)
+        (self.__lazywhere, self.__bind_to_col, self._equated_columns) = self.__create_lazy_clause(self.parent_property)
         
-        self.logger.info(str(self.parent_property) + " lazy loading clause " + str(self.lazywhere))
+        self.logger.info(str(self.parent_property) + " lazy loading clause " + str(self.__lazywhere))
 
         # determine if our "lazywhere" clause is the same as the mapper's
         # get() clause.  then we can just use mapper.get()
         #from sqlalchemy.orm import query
-        self.use_get = not self.uselist and self.mapper._get_clause[0].compare(self.lazywhere)
+        self.use_get = not self.uselist and self.mapper._get_clause[0].compare(self.__lazywhere)
         if self.use_get:
             self.logger.info(str(self.parent_property) + " will use query.get() to optimize instance loads")
 
@@ -279,10 +279,9 @@ class LazyLoader(AbstractRelationLoader):
             return self._lazy_none_clause(reverse_direction)
             
         if not reverse_direction:
-            (criterion, lazybinds, rev) = (self.lazywhere, self.lazybinds, self.equated_columns)
+            (criterion, bind_to_col, rev) = (self.__lazywhere, self.__bind_to_col, self._equated_columns)
         else:
-            (criterion, lazybinds, rev) = LazyLoader._create_lazy_clause(self.parent_property, reverse_direction=reverse_direction)
-        bind_to_col = dict([(lazybinds[col].key, col) for col in lazybinds])
+            (criterion, bind_to_col, rev) = LazyLoader.__create_lazy_clause(self.parent_property, reverse_direction=reverse_direction)
 
         def visit_bindparam(bindparam):
             mapper = reverse_direction and self.parent_property.mapper or self.parent_property.parent
@@ -295,10 +294,9 @@ class LazyLoader(AbstractRelationLoader):
     
     def _lazy_none_clause(self, reverse_direction=False):
         if not reverse_direction:
-            (criterion, lazybinds, rev) = (self.lazywhere, self.lazybinds, self.equated_columns)
+            (criterion, bind_to_col, rev) = (self.__lazywhere, self.__bind_to_col, self._equated_columns)
         else:
-            (criterion, lazybinds, rev) = LazyLoader._create_lazy_clause(self.parent_property, reverse_direction=reverse_direction)
-        bind_to_col = dict([(lazybinds[col].key, col) for col in lazybinds])
+            (criterion, bind_to_col, rev) = LazyLoader.__create_lazy_clause(self.parent_property, reverse_direction=reverse_direction)
 
         def visit_binary(binary):
             mapper = reverse_direction and self.parent_property.mapper or self.parent_property.parent
@@ -314,7 +312,7 @@ class LazyLoader(AbstractRelationLoader):
         return visitors.traverse(criterion, clone=True, visit_binary=visit_binary)
         
     def class_level_loader(self, state, options=None, path=None):
-        if not mapper._state_has_mapper(state):
+        if not mapperutil._state_has_mapper(state):
             return None
 
         localparent = mapper._state_mapper(state)
@@ -355,56 +353,47 @@ class LazyLoader(AbstractRelationLoader):
                     state.reset(self.key)
             return (new_execute, None, None)
 
-    def _create_lazy_clause(cls, prop, reverse_direction=False):
-        (primaryjoin, secondaryjoin, remote_side) = (prop.primaryjoin, prop.secondaryjoin, prop.remote_side)
-        
+    def __create_lazy_clause(cls, prop, reverse_direction=False):
         binds = {}
+        lookup = {}
         equated_columns = {}
 
-        def should_bind(targetcol, othercol):
-            if not prop._col_is_part_of_mappings(targetcol):
-                return False
+        if reverse_direction and not prop.secondaryjoin:
+            for l, r in prop.local_remote_pairs:
+                _list = lookup.setdefault(r, [])
+                _list.append((r, l))
+                equated_columns[l] = r
+        else:
+            for l, r in prop.local_remote_pairs:
+                _list = lookup.setdefault(l, [])
+                _list.append((l, r))
+                equated_columns[r] = l
                 
-            if reverse_direction and not secondaryjoin:
-                return targetcol in remote_side
-            else:
-                return othercol in remote_side
-
-        def visit_binary(binary):
-            if not isinstance(binary.left, sql.ColumnElement) or not isinstance(binary.right, sql.ColumnElement):
-                return
-            leftcol = binary.left
-            rightcol = binary.right
-
-            equated_columns[rightcol] = leftcol
-            equated_columns[leftcol] = rightcol
-
-            if should_bind(leftcol, rightcol):
-                if leftcol in binds:
-                    binary.left = binds[leftcol]
-                else:
-                    binary.left = binds[leftcol] = sql.bindparam(None, None, type_=binary.right.type)
-
-            # the "left is not right" compare is to handle part of a join clause that is "table.c.col1==table.c.col1",
-            # which can happen in rare cases (test/orm/relationships.py RelationTest2)
-            if leftcol is not rightcol and should_bind(rightcol, leftcol):
-                if rightcol in binds:
-                    binary.right = binds[rightcol]
-                else:
-                    binary.right = binds[rightcol] = sql.bindparam(None, None, type_=binary.left.type)
-
-                
-        lazywhere = primaryjoin
+        def col_to_bind(col):
+            if col in lookup:
+                for tobind, equated in lookup[col]:
+                    if equated in binds:
+                        return None
+                if col not in binds:
+                    binds[col] = sql.bindparam(None, None, type_=col.type)
+                return binds[col]
+            return None
+                    
+        lazywhere = prop.primaryjoin
         
-        if not secondaryjoin or not reverse_direction:
-            lazywhere = visitors.traverse(lazywhere, clone=True, visit_binary=visit_binary)
+        if not prop.secondaryjoin or not reverse_direction:
+            lazywhere = visitors.traverse(lazywhere, before_clone=col_to_bind, clone=True) 
         
-        if secondaryjoin is not None:
+        if prop.secondaryjoin is not None:
+            secondaryjoin = prop.secondaryjoin
             if reverse_direction:
-                secondaryjoin = visitors.traverse(secondaryjoin, clone=True, visit_binary=visit_binary)
+                secondaryjoin = visitors.traverse(secondaryjoin, before_clone=col_to_bind, clone=True)
             lazywhere = sql.and_(lazywhere, secondaryjoin)
-        return (lazywhere, binds, equated_columns)
-    _create_lazy_clause = classmethod(_create_lazy_clause)
+    
+        bind_to_col = dict([(binds[col].key, col) for col in binds])
+        
+        return (lazywhere, bind_to_col, equated_columns)
+    __create_lazy_clause = classmethod(__create_lazy_clause)
     
 LazyLoader.logger = logging.class_logger(LazyLoader)
 
@@ -455,7 +444,7 @@ class LoadLazyAttribute(object):
             ident = []
             allnulls = True
             for primary_key in prop.mapper.primary_key: 
-                val = instance_mapper._get_committed_state_attr_by_column(state, strategy.equated_columns[primary_key])
+                val = instance_mapper._get_committed_state_attr_by_column(state, strategy._equated_columns[primary_key])
                 allnulls = allnulls and val is None
                 ident.append(val)
             if allnulls:

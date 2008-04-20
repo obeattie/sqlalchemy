@@ -345,7 +345,6 @@ class MSSQLExecutionContext(default.DefaultExecutionContext):
                     self.cursor.execute("SELECT @@identity AS lastrowid")
                 row = self.cursor.fetchone()
                 self._last_inserted_ids = [int(row[0])] + self._last_inserted_ids[1:]
-                # print "LAST ROW ID", self._last_inserted_ids
         super(MSSQLExecutionContext, self).post_exec()
 
     _ms_is_select = re.compile(r'\s*(?:SELECT|sp_columns|EXEC)',
@@ -741,6 +740,7 @@ class MSSQLDialect_pymssql(MSSQLDialect):
     def is_disconnect(self, e):
         return isinstance(e, self.dbapi.DatabaseError) and "Error 10054" in str(e)
 
+
 class MSSQLDialect_pyodbc(MSSQLDialect):
     supports_sane_rowcount = False
     supports_sane_multi_rowcount = False
@@ -775,10 +775,12 @@ class MSSQLDialect_pyodbc(MSSQLDialect):
     ischema_names['datetime'] = MSDateTime_pyodbc
 
     def make_connect_string(self, keys):
+        if 'max_identifier_length' in keys:
+            self.max_identifier_length = int(keys.pop('max_identifier_length'))
         if 'dsn' in keys:
             connectors = ['dsn=%s' % keys['dsn']]
         else:
-            connectors = ["DRIVER={%s}" % keys.get('driver', 'SQL Server'),
+            connectors = ["DRIVER={%s}" % keys.pop('driver', 'SQL Server'),
                           'Server=%s' % keys['host'],
                           'Database=%s' % keys['database'] ]
             if 'port' in keys:
@@ -789,7 +791,19 @@ class MSSQLDialect_pyodbc(MSSQLDialect):
             connectors.append("UID=%s" % user)
             connectors.append("PWD=%s" % keys.get("password", ""))
         else:
-            connectors.append ("TrustedConnection=Yes")
+            connectors.append("TrustedConnection=Yes")
+
+        # if set to 'Yes', the ODBC layer will try to automagically convert 
+        # textual data from your database encoding to your client encoding 
+        # This should obviously be set to 'No' if you query a cp1253 encoded 
+        # database from a latin1 client... 
+        if 'odbc_autotranslate' in keys: 
+            connectors.append("AutoTranslate=%s" % keys.pop("odbc_autotranslate"))
+
+        # Allow specification of partial ODBC connect string
+        if 'odbc_options' in keys: 
+            connectors.append(keys.pop('odbc_options'))
+        
         return [[";".join (connectors)], {}]
 
     def is_disconnect(self, e):
@@ -938,13 +952,19 @@ class MSSQLCompiler(compiler.DefaultCompiler):
         kwargs['mssql_aliased'] = True
         return super(MSSQLCompiler, self).visit_alias(alias, **kwargs)
 
-    def visit_column(self, column, **kwargs):
+    def visit_column(self, column, result_map=None, **kwargs):
         if column.table is not None and not self.isupdate and not self.isdelete:
             # translate for schema-qualified table aliases
             t = self._schema_aliased_table(column.table)
             if t is not None:
-                return self.process(expression._corresponding_column_or_error(t, column))
-        return super(MSSQLCompiler, self).visit_column(column, **kwargs)
+                converted = expression._corresponding_column_or_error(t, column)
+
+                if result_map is not None:
+                    result_map[column.name.lower()] = (column.name, (column, ), column.type)
+                    
+                return super(MSSQLCompiler, self).visit_column(converted, result_map=None, **kwargs)
+                
+        return super(MSSQLCompiler, self).visit_column(column, result_map=result_map, **kwargs)
 
     def visit_binary(self, binary, **kwargs):
         """Move bind parameters to the right-hand side of an operator, where possible."""

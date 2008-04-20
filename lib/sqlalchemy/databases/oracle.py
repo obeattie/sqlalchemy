@@ -12,7 +12,6 @@ from sqlalchemy.engine import default, base
 from sqlalchemy.sql import compiler, visitors
 from sqlalchemy.sql import operators as sql_operators, functions as sql_functions
 from sqlalchemy import types as sqltypes
-from sqlalchemy.pool import connection_cache_decorator
 
 
 class OracleNumeric(sqltypes.Numeric):
@@ -108,9 +107,6 @@ class OracleText(sqltypes.Text):
                     return value
         return process
 
-class OracleRaw(sqltypes.Binary):
-    def get_col_spec(self):
-        return "RAW(%(length)s)" % {'length' : self.length}
 
 class OracleChar(sqltypes.CHAR):
     def get_col_spec(self):
@@ -134,6 +130,10 @@ class OracleBinary(sqltypes.Binary):
             else:
                 return value
         return process
+
+class OracleRaw(OracleBinary):
+    def get_col_spec(self):
+        return "RAW(%(length)s)" % {'length' : self.length}
 
 class OracleBoolean(sqltypes.Boolean):
     def get_col_spec(self):
@@ -240,9 +240,10 @@ class OracleDialect(default.DefaultDialect):
     supports_sane_multi_rowcount = False
     preexecute_pk_sequences = True
     supports_pk_autoincrement = False
+    default_paramstyle = 'named'
 
     def __init__(self, use_ansi=True, auto_setinputsizes=True, auto_convert_lobs=True, threaded=True, allow_twophase=True, **kwargs):
-        default.DefaultDialect.__init__(self, default_paramstyle='named', **kwargs)
+        default.DefaultDialect.__init__(self, **kwargs)
         self.use_ansi = use_ansi
         self.threaded = threaded
         self.allow_twophase = allow_twophase
@@ -379,9 +380,10 @@ class OracleDialect(default.DefaultDialect):
         else:
             return name.encode(self.encoding)
 
-    def get_default_schema_name(self,connection):
+    def get_default_schema_name(self, connection):
         return connection.execute('SELECT USER FROM DUAL').scalar()
-    get_default_schema_name = connection_cache_decorator(get_default_schema_name)
+    get_default_schema_name = base.connection_memoize(
+        ('dialect', 'default_schema_name'))(get_default_schema_name)
 
     def table_names(self, connection, schema):
         # note that table_names() isnt loading DBLINKed or synonym'ed tables
@@ -428,7 +430,7 @@ class OracleDialect(default.DefaultDialect):
         else:
             rows = result.fetchall()
             if len(rows) > 1:
-                raise exceptions.AssertionError("There are multiple tables with name '%s' visible to the schema, you must specify owner" % name)
+                raise exceptions.AssertionError("There are multiple tables visible to the schema, you must specify owner")
             elif len(rows) == 1:
                 row = rows[0]
                 return row['TABLE_NAME'], row['TABLE_OWNER'], row['DB_LINK'], row['SYNONYM_NAME']
@@ -552,7 +554,7 @@ class OracleDialect(default.DefaultDialect):
                     refspec =  ".".join([remote_table, remote_column])               
                     t = schema.Table(remote_table, table.metadata, autoload=True, autoload_with=connection, oracle_resolve_synonyms=resolve_synonyms, useexisting=True)
                 else:
-                    refspec =  ".".join(x for x in [remote_owner, remote_table, remote_column] if x)
+                    refspec =  ".".join([x for x in [remote_owner, remote_table, remote_column] if x])
                     t = schema.Table(remote_table, table.metadata, autoload=True, autoload_with=connection, schema=remote_owner, oracle_resolve_synonyms=resolve_synonyms, useexisting=True)
 
                 if local_column not in fk[0]:
@@ -570,7 +572,9 @@ class _OuterJoinColumn(sql.ClauseElement):
     __visit_name__ = 'outer_join_column'
     def __init__(self, column):
         self.column = column
-
+    def _get_from_objects(self, **kwargs):
+        return []
+    
 class OracleCompiler(compiler.DefaultCompiler):
     """Oracle compiler modifies the lexical structure of Select
     statements to work under non-ANSI configured Oracle databases, if
@@ -609,36 +613,28 @@ class OracleCompiler(compiler.DefaultCompiler):
     def visit_join(self, join, **kwargs):
         if self.dialect.use_ansi:
             return compiler.DefaultCompiler.visit_join(self, join, **kwargs)
-
-        (where, parentjoin) = self.__wheres.get(join, (None, None))
-
-        class VisitOn(visitors.ClauseVisitor):
-            def visit_binary(s, binary):
-                if binary.operator == sql_operators.eq:
-                    if binary.left.table is join.right:
-                        binary.left = _OuterJoinColumn(binary.left)
-                    elif binary.right.table is join.right:
-                        binary.right = _OuterJoinColumn(binary.right)
-
-        if join.isouter:
-            if where is not None:
-                self.__wheres[join.left] = self.__wheres[parentjoin] = (sql.and_(VisitOn().traverse(join.onclause, clone=True), where), parentjoin)
-            else:
-                self.__wheres[join.left] = self.__wheres[join] = (VisitOn().traverse(join.onclause, clone=True), join)
         else:
-            if where is not None:
-                self.__wheres[join.left] = self.__wheres[parentjoin] = (sql.and_(join.onclause, where), parentjoin)
+            return self.process(join.left, asfrom=True) + ", " + self.process(join.right, asfrom=True)
+    
+    def _get_nonansi_join_whereclause(self, froms):
+        clauses = []
+        
+        def visit_join(join):
+            if join.isouter:
+                def visit_binary(binary):
+                    if binary.operator == sql_operators.eq:
+                        if binary.left.table is join.right:
+                            binary.left = _OuterJoinColumn(binary.left)
+                        elif binary.right.table is join.right:
+                            binary.right = _OuterJoinColumn(binary.right)
+                clauses.append(visitors.traverse(join.onclause, visit_binary=visit_binary, clone=True))
             else:
-                self.__wheres[join.left] = self.__wheres[join] = (join.onclause, join)
-
-        return self.process(join.left, asfrom=True) + ", " + self.process(join.right, asfrom=True)
-
-    def get_whereclause(self, f):
-        if f in self.__wheres:
-            return self.__wheres[f][0]
-        else:
-            return None
-
+                clauses.append(join.onclause)
+        
+        for f in froms:
+            visitors.traverse(f, visit_join=visit_join)
+        return sql.and_(*clauses)
+        
     def visit_outer_join_column(self, vc):
         return self.process(vc.column) + "(+)"
 
@@ -662,27 +658,43 @@ class OracleCompiler(compiler.DefaultCompiler):
         so tries to wrap it in a subquery with ``row_number()`` criterion.
         """
 
-        if not getattr(select, '_oracle_visit', None) and (select._limit is not None or select._offset is not None):
-            # to use ROW_NUMBER(), an ORDER BY is required.
-            orderby = self.process(select._order_by_clause)
-            if not orderby:
-                orderby = list(select.oid_column.proxies)[0]
-                orderby = self.process(orderby)
+        if not getattr(select, '_oracle_visit', None):
+            if not self.dialect.use_ansi:
+                if self.stack and 'from' in self.stack[-1]:
+                    existingfroms = self.stack[-1]['from']
+                else:
+                    existingfroms = None
 
-            oldselect = select
-            select = select.column(sql.literal_column("ROW_NUMBER() OVER (ORDER BY %s)" % orderby).label("ora_rn")).order_by(None)
-            select._oracle_visit = True
+                froms = select._get_display_froms(existingfroms)
+                whereclause = self._get_nonansi_join_whereclause(froms)
+                if whereclause:
+                    select = select.where(whereclause)
+                    select._oracle_visit = True
+                
+            if select._limit is not None or select._offset is not None:
+                # to use ROW_NUMBER(), an ORDER BY is required.
+                orderby = self.process(select._order_by_clause)
+                if not orderby:
+                    orderby = list(select.oid_column.proxies)[0]
+                    orderby = self.process(orderby)
 
-            limitselect = sql.select([c for c in select.c if c.key!='ora_rn'])
-            if select._offset is not None:
-                limitselect.append_whereclause("ora_rn>%d" % select._offset)
-                if select._limit is not None:
-                    limitselect.append_whereclause("ora_rn<=%d" % (select._limit + select._offset))
-            else:
-                limitselect.append_whereclause("ora_rn<=%d" % select._limit)
-            return self.process(limitselect, iswrapper=True, **kwargs)
-        else:
-            return compiler.DefaultCompiler.visit_select(self, select, **kwargs)
+                select = select.column(sql.literal_column("ROW_NUMBER() OVER (ORDER BY %s)" % orderby).label("ora_rn")).order_by(None)
+                select._oracle_visit = True
+                
+                limitselect = sql.select([c for c in select.c if c.key!='ora_rn'])
+                limitselect._oracle_visit = True
+                limitselect._is_wrapper = True
+                
+                if select._offset is not None:
+                    limitselect.append_whereclause("ora_rn>%d" % select._offset)
+                    if select._limit is not None:
+                        limitselect.append_whereclause("ora_rn<=%d" % (select._limit + select._offset))
+                else:
+                    limitselect.append_whereclause("ora_rn<=%d" % select._limit)
+                select = limitselect
+        
+        kwargs['iswrapper'] = getattr(select, '_is_wrapper', False)
+        return compiler.DefaultCompiler.visit_select(self, select, **kwargs)
 
     def limit_clause(self, select):
         return ""

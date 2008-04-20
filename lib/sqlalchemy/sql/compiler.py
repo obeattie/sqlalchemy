@@ -18,7 +18,7 @@ creating database-specific compilers and schema generators, the module
 is otherwise internal to SQLAlchemy.
 """
 
-import string, re
+import string, re, itertools
 from sqlalchemy import schema, engine, util, exceptions
 from sqlalchemy.sql import operators, functions
 from sqlalchemy.sql import expression as sql
@@ -47,7 +47,7 @@ ILLEGAL_INITIAL_CHARACTERS = re.compile(r'[0-9$]')
 
 BIND_PARAMS = re.compile(r'(?<![:\w\$\x5c]):([\w\$]+)(?![:\w\$])', re.UNICODE)
 BIND_PARAMS_ESC = re.compile(r'\x5c(:[\w\$]+)(?![:\w\$])', re.UNICODE)
-ANONYMOUS_LABEL = re.compile(r'{ANON (-?\d+) (.*?)}')
+ANONYMOUS_LABEL = re.compile(r'{ANON (-?\d+) ([^{}]+)}')
 
 BIND_TEMPLATES = {
     'pyformat':"%%(%(name)s)s",
@@ -90,7 +90,8 @@ OPERATORS =  {
     operators.as_ : 'AS',
     operators.exists : 'EXISTS',
     operators.is_ : 'IS',
-    operators.isnot : 'IS NOT'
+    operators.isnot : 'IS NOT',
+    operators.collate : 'COLLATE',
 }
 
 FUNCTIONS = {
@@ -193,16 +194,6 @@ class DefaultCompiler(engine.Compiled):
     def is_subquery(self, select):
         return self.stack and self.stack[-1].get('is_subquery')
 
-    def get_whereclause(self, obj):
-        """given a FROM clause, return an additional WHERE condition that should be
-        applied to a SELECT.
-
-        Currently used by Oracle to provide WHERE criterion for JOIN and OUTER JOIN
-        constructs in non-ansi mode.
-        """
-
-        return None
-
     def construct_params(self, params=None):
         """return a dictionary of bind parameter keys and values"""
 
@@ -251,12 +242,15 @@ class DefaultCompiler(engine.Compiled):
 
     def visit_column(self, column, result_map=None, **kwargs):
 
-        if getattr(column, 'table', None) and getattr(column.table, 'schema', None):
-            schema_prefix = self.preparer.quote(column.table, column.table.schema) + '.'
-        else:
-            schema_prefix = ''
-
-        if not column.is_literal:
+        if column._is_oid:
+            name = self.dialect.oid_column_name(column)
+            if name is None:
+                if len(column.table.primary_key) != 0:
+                    pk = list(column.table.primary_key)[0]
+                    return self.visit_column(pk, result_map=result_map, **kwargs)
+                else:
+                    return None
+        elif not column.is_literal:
             name = self._truncated_identifier("colident", column.name)
         else:
             name = column.name
@@ -264,28 +258,19 @@ class DefaultCompiler(engine.Compiled):
         if result_map is not None:
             result_map[name.lower()] = (name, (column, ), column.type)
 
-        if column._is_oid:
-            n = self.dialect.oid_column_name(column)
-            if n is not None:
-                if column.table is None or not column.table.named_with_column:
-                    return n
-                else:
-                    return schema_prefix + self.preparer.quote(column.table, ANONYMOUS_LABEL.sub(self._process_anon, column.table.name)) + "." + n
-            elif len(column.table.primary_key) != 0:
-                pk = list(column.table.primary_key)[0]
-                return self.visit_column(pk, result_map=result_map, **kwargs)
-            else:
-                return None
-        elif column.table is None or not column.table.named_with_column:
-            if getattr(column, "is_literal", False):
-                return self.escape_literal_column(name)
-            else:
-                return self.preparer.quote(column, name)
+        if getattr(column, "is_literal", False):
+            name = self.escape_literal_column(name)
         else:
-            if getattr(column, "is_literal", False):
-                return schema_prefix + self.preparer.quote(column.table, ANONYMOUS_LABEL.sub(self._process_anon, column.table.name)) + "." + self.escape_literal_column(name)
+            name = self.preparer.quote(column, name)
+
+        if column.table is None or not column.table.named_with_column:
+            return name
+        else:
+            if getattr(column.table, 'schema', None):
+                schema_prefix = self.preparer.quote(column.table, column.table.schema) + '.'
             else:
-                return schema_prefix + self.preparer.quote(column.table, ANONYMOUS_LABEL.sub(self._process_anon, column.table.name)) + "." + self.preparer.quote(column, name)
+                schema_prefix = ''
+            return schema_prefix + self.preparer.quote(column.table, ANONYMOUS_LABEL.sub(self._process_anon, column.table.name)) + "." + name
 
     def escape_literal_column(self, text):
         """provide escaping for the literal_column() construct."""
@@ -420,7 +405,7 @@ class DefaultCompiler(engine.Compiled):
     def _truncated_identifier(self, ident_class, name):
         if (ident_class, name) in self.generated_ids:
             return self.generated_ids[(ident_class, name)]
-
+        
         anonname = ANONYMOUS_LABEL.sub(self._process_anon, name)
 
         if len(anonname) > self.dialect.max_identifier_length:
@@ -431,9 +416,10 @@ class DefaultCompiler(engine.Compiled):
             truncname = anonname
         self.generated_ids[(ident_class, name)] = truncname
         return truncname
-
+    
     def _process_anon(self, match):
         (ident, derived) = match.group(1,2)
+
         key = ('anonymous', ident)
         if key in self.generated_ids:
             return self.generated_ids[key]
@@ -476,7 +462,7 @@ class DefaultCompiler(engine.Compiled):
             not isinstance(column.table, sql.Select):
             return column.label(column.name)
         elif not isinstance(column, (sql._UnaryExpression, sql._TextClause)) and (not hasattr(column, 'name') or isinstance(column, sql._Function)):
-            return column.anon_label
+            return column.label(column.anon_label)
         else:
             return column
 
@@ -504,10 +490,7 @@ class DefaultCompiler(engine.Compiled):
 
         froms = select._get_display_froms(existingfroms)
 
-        correlate_froms = util.Set()
-        for f in froms:
-            correlate_froms.add(f)
-            correlate_froms.update(f._get_from_objects())
+        correlate_froms = util.Set(itertools.chain(*([froms] + [f._get_from_objects() for f in froms])))
 
         # TODO: might want to propigate existing froms for select(select(select))
         # where innermost select should correlate to outermost
@@ -517,30 +500,23 @@ class DefaultCompiler(engine.Compiled):
         self.stack.append(stack_entry)
 
         # the actual list of columns to print in the SELECT column list.
-        inner_columns = util.OrderedSet()
-
-        for co in select.inner_columns:
-            l = self.label_select_column(select, co, asfrom=asfrom)
-            inner_columns.add(self.process(l, **column_clause_args))
-
-        collist = string.join(inner_columns.difference(util.Set([None])), ', ')
+        inner_columns = util.OrderedSet(
+            [c for c in [
+                self.process(
+                    self.label_select_column(select, co, asfrom=asfrom), 
+                    **column_clause_args) 
+                for co in select.inner_columns
+            ]
+            if c is not None]
+        )
 
         text = " ".join(["SELECT"] + [self.process(x) for x in select._prefixes]) + " "
         text += self.get_select_precolumns(select)
-        text += collist
-
-        whereclause = select._whereclause
+        text += ', '.join(inner_columns)
 
         from_strings = []
         for f in froms:
             from_strings.append(self.process(f, asfrom=True))
-
-            w = self.get_whereclause(f)
-            if w is not None:
-                if whereclause is not None:
-                    whereclause = sql.and_(w, whereclause)
-                else:
-                    whereclause = w
 
         if froms:
             text += " \nFROM "
@@ -548,8 +524,8 @@ class DefaultCompiler(engine.Compiled):
         else:
             text += self.default_from()
 
-        if whereclause is not None:
-            t = self.process(whereclause)
+        if select._whereclause is not None:
+            t = self.process(select._whereclause)
             if t:
                 text += " \nWHERE " + t
 

@@ -20,7 +20,7 @@ import weakref, time
 
 from sqlalchemy import exceptions, logging
 from sqlalchemy import queue as Queue
-from sqlalchemy.util import thread, threading, pickle
+from sqlalchemy.util import thread, threading, pickle, as_interface
 
 proxies = {}
 
@@ -58,21 +58,6 @@ def clear_managers():
         manager.close()
     proxies.clear()
 
-def connection_cache_decorator(func):
-    """apply caching to the return value of a function, using
-    the 'info' collection on its given connection."""
-
-    name = func.__name__
-
-    def do_with_cache(self, connection):
-        try:
-            return connection.info[name]
-        except KeyError:
-            value = func(self, connection)
-            connection.info[name] = value
-            return value
-    return do_with_cache
-    
 class Pool(object):
     """Base class for connection pools.
 
@@ -121,9 +106,10 @@ class Pool(object):
       newly opened connection. Defaults to -1.
 
     listeners
-      A list of ``PoolListener``-like objects that receive events when
-      DB-API connections are created, checked out and checked in to
-      the pool.
+      A list of ``PoolListener``-like objects or dictionaries of callables
+      that receive events when DB-API connections are created, checked out and
+      checked in to the pool.
+
     """
 
     def __init__(self, creator, recycle=-1, echo=None, use_threadlocal=True,
@@ -197,7 +183,16 @@ class Pool(object):
         raise NotImplementedError()
 
     def add_listener(self, listener):
-        """Add a ``PoolListener``-like object to this pool."""
+        """Add a ``PoolListener``-like object to this pool.
+
+        ``listener`` may be an object that implements some or all of
+        PoolListener, or a dictionary of callables containing implementations
+        of some or all of the named methods in PoolListener.
+
+        """
+
+        listener = as_interface(
+            listener, methods=('connect', 'checkout', 'checkin'))
 
         self.listeners.append(listener)
         if hasattr(listener, 'connect'):

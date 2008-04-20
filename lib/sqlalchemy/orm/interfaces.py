@@ -30,6 +30,10 @@ __all__ = ['EXT_CONTINUE', 'EXT_STOP', 'EXT_PASS', 'MapperExtension',
 EXT_CONTINUE = EXT_PASS = util.symbol('EXT_CONTINUE')
 EXT_STOP = util.symbol('EXT_STOP')
 
+ONETOMANY = util.symbol('ONETOMANY')
+MANYTOONE = util.symbol('MANYTOONE')
+MANYTOMANY = util.symbol('MANYTOMANY')
+
 class MapperExtension(object):
     """Base implementation for customizing Mapper behavior.
 
@@ -379,9 +383,9 @@ class MapperProperty(object):
 
         raise NotImplementedError()
 
-    def cascade_iterator(self, type, object, recursive=None, halt_on=None):
-        """Iterate through instances related to the given instance along
-        a particular 'cascade' path, starting with this MapperProperty.
+    def cascade_iterator(self, type_, state, visited_instances=None, halt_on=None):
+        """Iterate through instances related to the given instance for
+        a particular 'cascade', starting with this MapperProperty.
 
         See PropertyLoader for the related instance implementation.
         """

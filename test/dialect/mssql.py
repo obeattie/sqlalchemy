@@ -17,7 +17,7 @@ class CompileTest(TestBase, AssertsCompiledSQL):
 
     def test_update(self):
         t = table('sometable', column('somecolumn'))
-        self.assert_compile(t.update(t.c.somecolumn==7), "UPDATE sometable SET somecolumn=:somecolumn WHERE sometable.somecolumn = :sometable_somecolumn_1", dict(somecolumn=10))
+        self.assert_compile(t.update(t.c.somecolumn==7), "UPDATE sometable SET somecolumn=:somecolumn WHERE sometable.somecolumn = :somecolumn_1", dict(somecolumn=10))
 
     def test_count(self):
         t = table('sometable', column('somecolumn'))
@@ -52,14 +52,25 @@ class CompileTest(TestBase, AssertsCompiledSQL):
             schema = 'remote_owner'
         )
 
+        s = table4.select()
+        c = s.compile(dialect=self.__dialect__)
+        assert table4.c.rem_id in set(c.result_map['rem_id'][1])
+
+        s = table4.select(use_labels=True)
+        c = s.compile(dialect=self.__dialect__)
+        print c.result_map
+        assert table4.c.rem_id in set(c.result_map['remote_owner_remotetable_rem_id'][1])
+
         self.assert_compile(table4.select(), "SELECT remotetable_1.rem_id, remotetable_1.datatype_id, remotetable_1.value FROM remote_owner.remotetable AS remotetable_1")
+        
+        self.assert_compile(table4.select(use_labels=True), "SELECT remotetable_1.rem_id AS remote_owner_remotetable_rem_id, remotetable_1.datatype_id AS remote_owner_remotetable_datatype_id, remotetable_1.value AS remote_owner_remotetable_value FROM remote_owner.remotetable AS remotetable_1")
 
         self.assert_compile(table1.join(table4, table1.c.myid==table4.c.rem_id).select(), "SELECT mytable.myid, mytable.name, mytable.description, remotetable_1.rem_id, remotetable_1.datatype_id, remotetable_1.value FROM mytable JOIN remote_owner.remotetable AS remotetable_1 ON remotetable_1.rem_id = mytable.myid")
 
     def test_delete_schema(self):
         metadata = MetaData()
         tbl = Table('test', metadata, Column('id', Integer, primary_key=True), schema='paj')
-        self.assert_compile(tbl.delete(tbl.c.id == 1), "DELETE FROM paj.test WHERE paj.test.id = :test_id_1")
+        self.assert_compile(tbl.delete(tbl.c.id == 1), "DELETE FROM paj.test WHERE paj.test.id = :id_1")
 
     def test_union(self):
         t1 = table('t1',
@@ -79,11 +90,11 @@ class CompileTest(TestBase, AssertsCompiledSQL):
             select([t2.c.col3.label('col3'), t2.c.col4.label('col4')], t2.c.col2.in_(["t2col2r2", "t2col2r3"]))
         )
         u = union(s1, s2, order_by=['col3', 'col4'])
-        self.assert_compile(u, "SELECT t1.col3 AS col3, t1.col4 AS col4 FROM t1 WHERE t1.col2 IN (:t1_col2_1, :t1_col2_2) "\
-        "UNION SELECT t2.col3 AS col3, t2.col4 AS col4 FROM t2 WHERE t2.col2 IN (:t2_col2_1, :t2_col2_2) ORDER BY col3, col4")
+        self.assert_compile(u, "SELECT t1.col3 AS col3, t1.col4 AS col4 FROM t1 WHERE t1.col2 IN (:col2_1, :col2_2) "\
+        "UNION SELECT t2.col3 AS col3, t2.col4 AS col4 FROM t2 WHERE t2.col2 IN (:col2_3, :col2_4) ORDER BY col3, col4")
 
         self.assert_compile(u.alias('bar').select(), "SELECT bar.col3, bar.col4 FROM (SELECT t1.col3 AS col3, t1.col4 AS col4 FROM t1 WHERE "\
-        "t1.col2 IN (:t1_col2_1, :t1_col2_2) UNION SELECT t2.col3 AS col3, t2.col4 AS col4 FROM t2 WHERE t2.col2 IN (:t2_col2_1, :t2_col2_2)) AS bar")
+        "t1.col2 IN (:col2_1, :col2_2) UNION SELECT t2.col3 AS col3, t2.col4 AS col4 FROM t2 WHERE t2.col2 IN (:col2_3, :col2_4)) AS bar")
 
     def test_function(self):
         self.assert_compile(func.foo(1, 2), "foo(:foo_1, :foo_2)")

@@ -161,7 +161,14 @@ class NoColumnVisitor(ClauseVisitor):
     
     __traverse_options__ = {'column_collections':False}
 
-
+class NullVisitor(ClauseVisitor):
+    def traverse(self, obj, clone=False):
+        next = getattr(self, '_next', None)
+        if next:
+            return next.traverse(obj, clone=clone)
+        else:
+            return obj
+        
 def traverse(clause, **kwargs):
     """traverse the given clause, applying visit functions passed in as keyword arguments."""
     
@@ -170,7 +177,6 @@ def traverse(clause, **kwargs):
         __traverse_options__ = kwargs.pop('traverse_options', {})
     vis = Vis()
     for key in kwargs:
-        if key.startswith('visit_'):
-            setattr(vis, key, kwargs[key])
+        setattr(vis, key, kwargs[key])
     return vis.traverse(clause, clone=clone)
 

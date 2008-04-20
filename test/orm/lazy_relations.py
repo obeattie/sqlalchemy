@@ -8,6 +8,7 @@ from testlib import *
 from testlib.fixtures import *
 from query import QueryTest
 import datetime
+from sqlalchemy.orm import attributes
 
 class LazyTest(FixtureTest):
     keep_mappers = False
