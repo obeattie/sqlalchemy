@@ -465,6 +465,15 @@ def make_test(select_type):
         
             self.assertEquals(sess.query(Person).filter(Person.person_id==e2.person_id).one(), e2)
     
+        def test_from_alias(self):
+            sess = create_session()
+            
+            palias = aliased(Person)
+            self.assertEquals(
+                sess.query(palias).filter(palias.name.in_(['dilbert', 'wally'])).all(),
+                [e1, e2]
+            )
+            
         def test_self_referential(self):
             sess = create_session()
             
@@ -480,6 +489,27 @@ def make_test(select_type):
                     (m1, b1),
                 ]
             )
+
+            self.assertEquals(
+                sess.query(Person, palias).filter(Person.company_id==palias.company_id).filter(Person.name=='dogbert').\
+                    filter(Person.person_id>palias.person_id).order_by(Person.person_id, palias.person_id).from_self().all(), 
+                [
+                    (m1, e1),
+                    (m1, e2),
+                    (m1, b1),
+                ]
+            )
+        
+        def test_nesting_queries(self):
+            sess = create_session()
+            
+            # query.statement places a flag "no_adapt" on the returned statement.  This prevents
+            # the polymorphic adaptation in the second "filter" from hitting it, which would pollute 
+            # the subquery and usually results in recursion overflow errors within the adaption.
+            subq = sess.query(engineers.c.person_id).filter(Engineer.primary_language=='java').statement.as_scalar()
+            
+            self.assertEquals(sess.query(Person).filter(Person.person_id==subq).one(), e1)
+            
             
         def test_mixed_entities(self):
             sess = create_session()

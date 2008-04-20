@@ -133,18 +133,28 @@ class Query(object):
 
     def _get_polymorphic_adapter(self, entity, selectable):
         self.__mapper_loads_polymorphically_with(entity.mapper, mapperutil.AliasedClauses(selectable, equivalents=entity.mapper._equivalent_columns))
-
+    
+    def _reset_polymorphic_adapter(self, mapper):
+        for m2 in mapper._with_polymorphic_mappers:
+            for m in m2.iterate_to_root():
+                self._polymorphic_adapters.pop(m.mapped_table, None)
+                self._polymorphic_adapters.pop(m.local_table, None)
+        
     def __reset_joinpoint(self):
         self._joinpoint = None
         self._filter_aliases = None
-
-    def __adapt_polymorphic_element(self, element):
-        search = None
         
+    def __adapt_polymorphic_element(self, element):
+        if getattr(element, '_Query__no_adapt', False):
+            # statements returned by a previous Query are immutable
+            return element
+            
         if isinstance(element, expression.FromClause):
             search = element
         elif hasattr(element, 'table'):
             search = element.table
+        else:
+            search = None
             
         if search:
             alias = self._polymorphic_adapters.get(search, None)
@@ -1212,10 +1222,6 @@ class Query(object):
         else:
             froms = context.froms   # "load from discrete FROMs" mode, i.e. when each _MappedEntity has its own FROM
          
-        # TODO: we might want to do this.
-        #if not context.froms:
-        #    raise exceptions.InvalidRequestError("Query could not calculate any FROM clause from given entities.")
-            
         if eager_joins and self._should_nest_selectable:
             # for eager joins present and LIMIT/OFFSET/DISTINCT, wrap the query inside a select,
             # then append eager joins onto that
@@ -1267,7 +1273,7 @@ class Query(object):
             if context.eager_order_by:
                 statement.append_order_by(*context.eager_order_by)
             
-        context.statement = statement
+        context.statement = statement._annotate('_Query__no_adapt', True)
 
         return context
 
@@ -1582,6 +1588,10 @@ class _MapperEntity(_QueryEntity):
             self.entity = mapper
 
     def set_with_polymorphic(self, query, cls_or_mappers, selectable):
+        if cls_or_mappers is None:
+            query._reset_polymorphic_adapter(self.mapper)
+            return
+            
         mappers, from_obj = self.mapper._with_polymorphic_args(cls_or_mappers, selectable)
         self._with_polymorphic = mappers
         
@@ -1674,8 +1684,8 @@ class _MapperEntity(_QueryEntity):
                     context.order_by = context.from_clause.default_order_by()
                 else:
                     context.order_by = self.selectable.default_order_by()
-            if context.order_by:
-                context.order_by = [query._adapt_clause(expression._literal_as_text(o), False) for o in util.to_list(context.order_by)]
+            if context.order_by and adapter:
+                context.order_by = adapter.adapt_list(util.to_list(context.order_by))
         
         for value in self.mapper._iterate_polymorphic_properties(self._with_polymorphic):
             if query._only_load_props and value.key not in query._only_load_props:
@@ -1709,17 +1719,13 @@ class _ColumnEntity(_QueryEntity):
         self.entity_name = None
         self.froms = util.Set()
         self.entities = util.Set([elem.parententity for elem in visitors.iterate(column) if hasattr(elem, 'parententity')])
-        
-        # might want to do this also.
-        #if not self.entities:
-        #    raise exceptions.InvalidRequestError("Could not find any mapped entities in expression '%s'" % column)
             
     def setup_entity(self, entity, mapper, adapter, from_obj, is_aliased_class, with_polymorphic):
         self.froms.add(from_obj)
 
     def __resolve_expr_against_query_aliases(self, query, expr, context):
         expr = query._adapt_clause(expr, False)
-        if hasattr(expr, '__clause_element__'):
+        while hasattr(expr, '__clause_element__'):
             expr = expr.__clause_element__()
         return expr
         

@@ -158,7 +158,6 @@ class AliasedClauses(object):
         
     def wrap(self, aliasedclauses):
         """Wrap the operations performed by this AliasedClauses by another AliasedClauses."""
-        
         ac = AliasedClauses.__new__(AliasedClauses)
         ac.__dict__ = self.__dict__.copy()
         ac.__wrap = aliasedclauses
@@ -190,7 +189,7 @@ class AliasedClauses(object):
     
     def adapt_list(self, clauses):
         if self.__wrap:
-            clauses = self.clauses.adapt_list(clauses)
+            clauses = self.__wrap.adapt_list(clauses)
             
         return self.adapter.copy_and_process(clauses)
         

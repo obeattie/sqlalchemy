@@ -743,7 +743,7 @@ class PropertyLoader(StrategizedProperty):
                     secondary_aliasizer = primary_aliasizer
 
                 if source_selectable:
-                    primary_aliasizer = primary_aliasizer.copy_and_chain(ClauseAdapter(source_selectable, equivalents=self.parent._equivalent_columns))
+                    primary_aliasizer = ClauseAdapter(secondary).chain(ClauseAdapter(source_selectable, equivalents=self.parent._equivalent_columns))
 
                 secondaryjoin = secondary_aliasizer.traverse(secondaryjoin)
             else:

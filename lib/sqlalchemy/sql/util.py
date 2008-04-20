@@ -319,25 +319,6 @@ class ClauseAdapter(visitors.CloningVisitor):
         self.exclude = exclude
         self.equivalents = equivalents
 
-    def copy_and_chain(self, adapter):
-        """create a copy of this adapter and chain to the given adapter.
-
-        currently this adapter must be unchained to start, raises
-        an exception if it's already chained.
-
-        Does not modify the given adapter.
-        """
-
-        if adapter is None:
-            return self
-
-        if hasattr(self, '_next'):
-            raise NotImplementedError("Can't chain_to on an already chained ClauseAdapter (yet)")
-
-        ca = ClauseAdapter(self.selectable, self.include, self.exclude, self.equivalents)
-        ca._next = adapter
-        return ca
-
     def before_clone(self, col):
         if isinstance(col, expression.FromClause):
             if self.selectable.is_derived_from(col):

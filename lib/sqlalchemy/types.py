@@ -173,7 +173,6 @@ class TypeEngine(AbstractType):
     def get_col_spec(self):
         raise NotImplementedError()
 
-
     def bind_processor(self, dialect):
         return None
 
