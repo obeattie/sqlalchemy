@@ -281,7 +281,7 @@ class ColumnsInClause(visitors.ClauseVisitor):
         if self.selectable.c.get(column.key) is column:
             self.result = True
 
-class ClauseAdapter(visitors.CloningVisitor):
+class ClauseAdapter(visitors.ReplacingCloningVisitor):
     """Given a clause (like as in a WHERE criterion), locate columns
     which are embedded within a given selectable, and changes those
     columns to be that of the selectable.

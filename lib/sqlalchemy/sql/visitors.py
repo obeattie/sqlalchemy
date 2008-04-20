@@ -16,20 +16,22 @@ class ClauseVisitor(object):
     def iterate(self, obj):
         """traverse the given expression structure, returning an iterator of all elements."""
         
+        opts = self.__traverse_options__
         stack = [obj]
         traversal = util.deque()
         while stack:
             t = stack.pop()
             traversal.appendleft(t)
-            for c in t.get_children(**self.__traverse_options__):
+            for c in t.get_children(**opts):
                 stack.append(c)
         return iter(traversal)
         
     def traverse(self, obj):
         """traverse and visit the given expression structure."""
 
+        ts = self.traverse_single
         for target in self.iterate(obj):
-            self.traverse_single(target)
+            ts(target)
         return obj
 
     def _iterate_visitors(self):
@@ -56,6 +58,33 @@ class CloningVisitor(ClauseVisitor):
 
         return [self.traverse(x) for x in list_]
 
+    def traverse(self, obj):
+        opts = self.__traverse_options__
+        cloned = dict([[k, k] for k in opts.get('stop_on', [])])
+        ts = self.traverse_single
+
+        clone_impl = self._clone_impl
+        def clone(element):
+            return clone_impl(element, cloned)
+        
+        obj = clone(obj)
+        stack = [obj]
+        while stack:
+            t = stack.pop()
+            if t in cloned:
+                continue
+            t._copy_internals(clone=clone)
+            ts(t)
+            for c in t.get_children(**opts):
+                stack.append(c)
+        return obj
+    
+    def _clone_impl(self, element, cloned):
+        if element not in cloned:
+            cloned[element] = element._clone()
+        return cloned[element]
+        
+class ReplacingCloningVisitor(CloningVisitor):
     def before_clone(self, elem):
         """receive pre-copied elements during a cloning traversal.
         
@@ -64,58 +93,40 @@ class CloningVisitor(ClauseVisitor):
         will halt on the newly returned element if it is re-encountered.
         """
         return None
-    
-    def _clone_element(self, elem, stop_on, cloned):
+
+    def _clone_impl(self, element, cloned):
         for v in self._iterate_visitors:
-            newelem = v.before_clone(elem)
+            newelem = v.before_clone(element)
             if newelem:
-                stop_on.add(newelem)
+                cloned[element] = cloned[newelem] = newelem
                 return newelem
 
-        if elem not in cloned:
-            # the full traversal will only make a clone of a particular element
-            # once.
-            cloned[elem] = elem._clone()
-        return cloned[elem]
-            
-    def traverse(self, obj):
-        stop_on = self.__traverse_options__.get('stop_on', [])
-        return self._cloned_traversal_impl(obj, util.Set(stop_on), {}, _clone_toplevel=True)
-        
-    def _cloned_traversal_impl(self, elem, stop_on, cloned, _clone_toplevel=False):
-        if elem in stop_on:
-            return elem
-
-        if _clone_toplevel:
-            elem = self._clone_element(elem, stop_on, cloned)
-            if elem in stop_on:
-                return elem
-
-        def clone(element):
-            return self._clone_element(element, stop_on, cloned)
-        elem._copy_internals(clone=clone)
-        
-        self.traverse_single(elem)
-
-        for e in elem.get_children(**self.__traverse_options__):
-            if e not in stop_on:
-                self._cloned_traversal_impl(e, stop_on, cloned)
-        return elem
-
+        if element not in cloned:
+            cloned[element] = element._clone()
+        return cloned[element]
 
 def traverse(clause, **kwargs):
     """traverse the given clause, applying visit functions passed in as keyword arguments."""
     
     clone = kwargs.pop('clone', False)
     if clone:
-        base = CloningVisitor
+        if 'before_clone' in kwargs:
+            base = ReplacingCloningVisitor
+        else:
+            base = CloningVisitor
     else:
         base = ClauseVisitor
+
     class Vis(base):
         __traverse_options__ = kwargs.pop('traverse_options', {})
+
+        def traverse_single(self, obj):
+            k = "visit_%s" % obj.__visit_name__ 
+            if k in kwargs:
+                return kwargs[k](obj)
+    if 'before_clone' in kwargs:
+        setattr(Vis, 'before_clone', kwargs['before_clone'])
     vis = Vis()
-    for key in kwargs:
-        setattr(vis, key, kwargs[key])
     return vis.traverse(clause)
 
 def iterate(clause, **traverse_options):
