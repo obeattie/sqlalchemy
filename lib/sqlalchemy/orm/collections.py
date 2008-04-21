@@ -100,10 +100,11 @@ import copy, inspect, sys, weakref
 from sqlalchemy import exceptions, schema, util as sautil
 from sqlalchemy.util import attrgetter, Set
 
-
 __all__ = ['collection', 'collection_adapter',
            'mapped_collection', 'column_mapped_collection',
            'attribute_mapped_collection']
+
+instance_state = None
 
 def column_mapped_collection(mapping_spec):
     """A dictionary-based collection type with column-based keying.
@@ -117,12 +118,14 @@ def column_mapped_collection(mapping_spec):
     after a session flush.
     """
 
-    from sqlalchemy.orm import object_mapper
-
+    from sqlalchemy.orm.util import _state_mapper
+    from sqlalchemy.orm.attributes import instance_state
+    
     if isinstance(mapping_spec, schema.Column):
         def keyfunc(value):
-            m = object_mapper(value)
-            return m._get_attr_by_column(value, mapping_spec)
+            state = instance_state(value)
+            m = _state_mapper(state)
+            return m._get_state_attr_by_column(state, mapping_spec)
     else:
         cols = []
         for c in mapping_spec:
@@ -132,8 +135,9 @@ def column_mapped_collection(mapping_spec):
             cols.append(c)
         mapping_spec = tuple(cols)
         def keyfunc(value):
-            m = object_mapper(value)
-            return tuple([m._get_attr_by_column(value, c) for c in mapping_spec])
+            state = instance_state(value)
+            m = _state_mapper(state)
+            return tuple([m._get_state_attr_by_column(state, c) for c in mapping_spec])
     return lambda: MappedCollection(keyfunc)
 
 def attribute_mapped_collection(attr_name):

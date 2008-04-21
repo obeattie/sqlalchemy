@@ -978,13 +978,13 @@ class Mapper(object):
     def _set_state_attr_by_column(self, state, column, value):
         return self._get_col_to_prop(column).setattr(state, value, column)
 
-    def _get_attr_by_column(self, obj, column):
-        state = attributes.instance_state(obj)
-        return self._get_state_attr_by_column(state, column)
+#    def _get_attr_by_column(self, obj, column):
+#        state = attributes.instance_state(obj)
+#        return self._get_state_attr_by_column(state, column)
 
-    def _set_attr_by_column(self, obj, column, value):
-        state = attributes.instance_state(obj)
-        self._set_state_attr_by_column(state, column, value)
+#    def _set_attr_by_column(self, obj, column, value):
+#        state = attributes.instance_state(obj)
+#        self._set_state_attr_by_column(state, column, value)
 
     def _get_committed_attr_by_column(self, obj, column):
         state = attributes.instance_state(obj)
@@ -1396,8 +1396,8 @@ class Mapper(object):
             isnew = state.runid != context.runid
             currentload = not isnew
 
-            if not currentload and context.version_check and self.version_id_col and self._get_attr_by_column(instance, self.version_id_col) != row[self.version_id_col]:
-                raise exceptions.ConcurrentModificationError("Instance '%s' version of %s does not match %s" % (instance, self._get_attr_by_column(instance, self.version_id_col), row[self.version_id_col]))
+            if not currentload and context.version_check and self.version_id_col and self._get_state_attr_by_column(state, self.version_id_col) != row[self.version_id_col]:
+                raise exceptions.ConcurrentModificationError("Instance '%s' version of %s does not match %s" % (state_str(state), self._get_state_attr_by_column(state, self.version_id_col), row[self.version_id_col]))
         elif refresh_instance:
             # out of band refresh_instance detected (i.e. its not in the session.identity_map)
             # honor it anyway.  this can happen if a _get() occurs within save_obj(), such as
@@ -1603,8 +1603,7 @@ def _initializable_mappers_for_state(state):
 
 def _event_on_init(state, instance, args, kwargs):
     """Trigger mapper compilation and run init_instance hooks."""
-    for mapper in state.manager.mappers.values():
-        mapper.compile()
+    list(state.manager.mappers.values())[0].compile()   # compile() always compiles all mappers
     for mapper in _initializable_mappers_for_state(state):
         if 'init_instance' in mapper.extension.methods:
             mapper.extension.init_instance(
@@ -1666,9 +1665,6 @@ _state_session = None
 
 def _load_scalar_attributes(state, attribute_names):
     mapper = _state_mapper(state)
-    global _state_session
-    if not _state_session:
-        from sqlalchemy.orm.session import _state_session
     session = _state_session(state)
     if not session:
         try:

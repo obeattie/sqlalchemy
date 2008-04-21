@@ -22,19 +22,17 @@ class LazyTest(FixtureTest):
         q = sess.query(User)
         assert [User(id=7, addresses=[Address(id=1, email_address='jack@bean.com')])] == q.filter(users.c.id == 7).all()
 
-    @testing.uses_deprecated('SessionContext')
     def test_bindstosession(self):
         """test that lazy loaders use the mapper's contextual session if the parent instance
         is not in a session, and that an error is raised if no contextual session"""
 
-        from sqlalchemy.ext.sessioncontext import SessionContext
-        ctx = SessionContext(create_session)
+        ctx = scoped_session(create_session)
         m = mapper(User, users, properties = dict(
-            addresses = relation(mapper(Address, addresses, extension=ctx.mapper_extension), lazy=True)
-        ), extension=ctx.mapper_extension)
-        q = ctx.current.query(m)
+            addresses = relation(mapper(Address, addresses, extension=ctx.extension), lazy=True)
+        ), extension=ctx.extension)
+        q = ctx.query(m)
         u = q.filter(users.c.id == 7).first()
-        ctx.current.expunge(u)
+        ctx.expunge(u)
         assert User(id=7, addresses=[Address(id=1, email_address='jack@bean.com')]) == u
 
         clear_mappers()
@@ -42,15 +40,11 @@ class LazyTest(FixtureTest):
         mapper(User, users, properties={
             'addresses':relation(mapper(Address, addresses), lazy=True)
         })
-        try:
-            sess = create_session()
-            q = sess.query(User)
-            u = q.filter(users.c.id == 7).first()
-            sess.expunge(u)
-            assert User(id=7, addresses=[Address(id=1, email_address='jack@bean.com')]) == u
-            assert False
-        except exceptions.InvalidRequestError, err:
-            assert "not bound to a Session, and no contextual session" in str(err)
+        sess = create_session()
+        q = sess.query(User)
+        u = q.filter(users.c.id == 7).first()
+        sess.expunge(u)
+        self.assertRaises(exceptions.InvalidRequestError, getattr, u, 'addresses')
 
     def test_orderby(self):
         mapper(User, users, properties = {

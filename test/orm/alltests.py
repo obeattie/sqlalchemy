@@ -21,7 +21,6 @@ def suite():
         'orm.assorted_eager',
 
         'orm.naturalpks',
-        'orm.sessioncontext',
         'orm.unitofwork',
         'orm.session',
         'orm.cascade',

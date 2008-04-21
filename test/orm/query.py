@@ -473,10 +473,9 @@ class AggregateTest(QueryTest):
         orders = sess.query(Order).filter(Order.id.in_([2, 3, 4]))
         assert orders.sum(Order.user_id * Order.address_id) == 79
 
-    @testing.uses_deprecated('Call to deprecated function apply_sum')
     def test_apply(self):
         sess = create_session()
-        assert sess.query(Order).apply_sum(Order.user_id * Order.address_id).filter(Order.id.in_([2, 3, 4])).one() == 79
+        assert sess.query(func.sum(Order.user_id * Order.address_id)).filter(Order.id.in_([2, 3, 4])).one() == (79,)
 
     def test_having(self):
         sess = create_session()
@@ -1140,7 +1139,7 @@ class MixedEntitiesTest(QueryTest):
         sess = create_session()
 
         selectquery = users.outerjoin(addresses).select(use_labels=True, order_by=[users.c.id, addresses.c.id])
-        self.assertEquals(sess.query(User).instances(selectquery.execute(), Address), expected)
+        self.assertEquals(sess.query(User, Address).instances(selectquery.execute()), expected)
         sess.clear()
 
         for address_entity in (Address, aliased(Address)):

@@ -1018,38 +1018,36 @@ class Query(object):
 
     def _execute_and_instances(self, querycontext):
         result = self.session.execute(querycontext.statement, params=self._params, mapper=self._mapper_zero_or_none(), instance=self._refresh_instance)
-        return self.iterate_instances(result, querycontext=querycontext)
+        return self.iterate_instances(result, querycontext)
 
-    def instances(self, cursor, *mappers_or_columns, **kwargs):
-        return list(self.iterate_instances(cursor, *mappers_or_columns, **kwargs))
+    def instances(self, cursor, __context=None):
+        return list(self.iterate_instances(cursor, __context))
 
-    def iterate_instances(self, cursor, *mappers_or_columns, **kwargs):
+    def iterate_instances(self, cursor, __context=None):
         session = self.session
 
-        context = kwargs.pop('querycontext', None)
+        context = __context
         if context is None:
             context = QueryContext(self)
 
         context.runid = _new_runid()
 
-        entities = self._entities + [_QueryEntity.legacy_guess_type(self, mc) for mc in mappers_or_columns]
-        
         filtered = single_entity = False
         
-        # TODO: refactor
-        filtered = bool([e for e in entities if isinstance(e, _MapperEntity)])
-        
+        single_entity = len(self._entities) == 1 and getattr(self._entities[0], 'primary_entity', False)
+        filtered = single_entity or bool(self._mapper_entities)
+
         if filtered:
-            if getattr(entities[0], 'primary_entity', False) and len(entities) == 1:
-                single_entity = True
+            if single_entity:
                 filter = util.OrderedIdentitySet
             else:
                 filter = util.OrderedSet
         else:
             filter = None
         
-        custom_rows = single_entity and 'append_result' in getattr(entities[0], 'extension', entities[0].mapper.extension).methods
-        process = [query_entity.row_processor(self, context, custom_rows) for query_entity in entities]
+        custom_rows = single_entity and 'append_result' in self._entities[0].extension.methods
+        
+        process = [query_entity.row_processor(self, context, custom_rows) for query_entity in self._entities]
 
         while True:
             context.progress = util.Set()
@@ -1144,22 +1142,7 @@ class Query(object):
         return (kwargs.get('limit') is not None or kwargs.get('offset') is not None or kwargs.get('distinct', False))
     _should_nest_selectable = property(_should_nest_selectable)
 
-    def count(self, whereclause=None, params=None, **kwargs):
-        """Apply this query's criterion to a SELECT COUNT statement.
-
-        the whereclause, params and \**kwargs arguments are deprecated.  use filter()
-        and other generative methods to establish modifiers.
-
-        """
-        q = self
-        if whereclause is not None:
-            q = q.filter(whereclause)
-        if params is not None:
-            q = q.params(params)
-        q = q._legacy_select_kwargs(**kwargs)
-        return q._count()
-
-    def _count(self):
+    def count(self):
         """Apply this query's criterion to a SELECT COUNT statement.
 
         this is the purely generative version which will become
@@ -1286,279 +1269,10 @@ class Query(object):
     def __str__(self):
         return str(self.compile())
 
-    # DEPRECATED LAND !
-
-    def _generative_col_aggregate(self, col, func):
-        """apply the given aggregate function to the query and return the newly
-        resulting ``Query``. (deprecated)
-        """
-        
-        if getattr(self, '_column_aggregate', None):
-            raise exceptions.InvalidRequestError("Query already contains an aggregate column or function")
-        self._column_aggregate = (col, func)
-    _generative_col_aggregate = _generative(__no_statement_condition)(_generative_col_aggregate)
-    
-    def apply_min(self, col):
-        """apply the SQL ``min()`` function against the given column to the
-        query and return the newly resulting ``Query``.
-        
-        DEPRECATED.
-        """
-        return self._generative_col_aggregate(col, sql.func.min)
-
-    def apply_max(self, col):
-        """apply the SQL ``max()`` function against the given column to the
-        query and return the newly resulting ``Query``.
-
-        DEPRECATED.
-        """
-        return self._generative_col_aggregate(col, sql.func.max)
-
-    def apply_sum(self, col):
-        """apply the SQL ``sum()`` function against the given column to the
-        query and return the newly resulting ``Query``.
-
-        DEPRECATED.
-        """
-        return self._generative_col_aggregate(col, sql.func.sum)
-
-    def apply_avg(self, col):
-        """apply the SQL ``avg()`` function against the given column to the
-        query and return the newly resulting ``Query``.
-
-        DEPRECATED.
-        """
-        return self._generative_col_aggregate(col, sql.func.avg)
-
-    def list(self): #pragma: no cover
-        """DEPRECATED.  use all()"""
-
-        return list(self)
-
-    def scalar(self): #pragma: no cover
-        """DEPRECATED.  use first()"""
-
-        return self.first()
-
-    def _legacy_filter_by(self, *args, **kwargs): #pragma: no cover
-        return self.filter(self._legacy_join_by(args, kwargs, start=self._joinpoint_zero()))
-
-    def count_by(self, *args, **params): #pragma: no cover
-        """DEPRECATED.  use query.filter_by(\**params).count()"""
-
-        return self.count(self.join_by(*args, **params))
-
-
-    def select_whereclause(self, whereclause=None, params=None, **kwargs): #pragma: no cover
-        """DEPRECATED.  use query.filter(whereclause).all()"""
-
-        q = self.filter(whereclause)._legacy_select_kwargs(**kwargs)
-        if params is not None:
-            q = q.params(params)
-        return list(q)
-
-    def _legacy_select_from(self, from_obj):
-        q = self._clone()
-        if len(from_obj) > 1:
-            raise exceptions.ArgumentError("Multiple-entry from_obj parameter no longer supported")
-        q._from_obj = from_obj[0]
-        return q
-
-    def _legacy_select_kwargs(self, **kwargs): #pragma: no cover
-        q = self
-        if "order_by" in kwargs and kwargs['order_by']:
-            q = q.order_by(kwargs['order_by'])
-        if "group_by" in kwargs:
-            q = q.group_by(kwargs['group_by'])
-        if "from_obj" in kwargs:
-            q = q._legacy_select_from(kwargs['from_obj'])
-        if "lockmode" in kwargs:
-            q = q.with_lockmode(kwargs['lockmode'])
-        if "distinct" in kwargs:
-            q = q.distinct()
-        if "limit" in kwargs:
-            q = q.limit(kwargs['limit'])
-        if "offset" in kwargs:
-            q = q.offset(kwargs['offset'])
-        return q
-
-    def get_by(self, *args, **params): #pragma: no cover
-        """DEPRECATED.  use query.filter_by(\**params).first()"""
-
-        ret = self._entity.zero().extension.get_by(self, *args, **params)
-        if ret is not mapper.EXT_CONTINUE:
-            return ret
-
-        return self._legacy_filter_by(*args, **params).first()
-
-    def select_by(self, *args, **params): #pragma: no cover
-        """DEPRECATED. use use query.filter_by(\**params).all()."""
-
-        ret = self._extension_zero().select_by(self, *args, **params)
-        if ret is not mapper.EXT_CONTINUE:
-            return ret
-
-        return self._legacy_filter_by(*args, **params).list()
-
-    def join_by(self, *args, **params): #pragma: no cover
-        """DEPRECATED. use join() to construct joins based on attribute names."""
-
-        return self._legacy_join_by(args, params, start=self._joinpoint_zero())
-
-    def _build_select(self, arg=None, params=None, **kwargs): #pragma: no cover
-        if isinstance(arg, sql.FromClause) and arg.supports_execution():
-            return self.from_statement(arg)
-        else:
-            return self.filter(arg)._legacy_select_kwargs(**kwargs)
-
-    def selectfirst(self, arg=None, **kwargs): #pragma: no cover
-        """DEPRECATED.  use query.filter(whereclause).first()"""
-
-        return self._build_select(arg, **kwargs).first()
-
-    def selectone(self, arg=None, **kwargs): #pragma: no cover
-        """DEPRECATED.  use query.filter(whereclause).one()"""
-
-        return self._build_select(arg, **kwargs).one()
-
-    def select(self, arg=None, **kwargs): #pragma: no cover
-        """DEPRECATED.  use query.filter(whereclause).all(), or query.from_statement(statement).all()"""
-
-        ret = self._extension_zero().select(self, arg=arg, **kwargs)
-        if ret is not mapper.EXT_CONTINUE:
-            return ret
-        return self._build_select(arg, **kwargs).all()
-
-    def execute(self, clauseelement, params=None, *args, **kwargs): #pragma: no cover
-        """DEPRECATED.  use query.from_statement().all()"""
-
-        return self._select_statement(clauseelement, params, **kwargs)
-
-    def select_statement(self, statement, **params): #pragma: no cover
-        """DEPRECATED.  Use query.from_statement(statement)"""
-
-        return self._select_statement(statement, params)
-
-    def select_text(self, text, **params): #pragma: no cover
-        """DEPRECATED.  Use query.from_statement(statement)"""
-
-        return self._select_statement(text, params)
-
-    def _select_statement(self, statement, params=None, **kwargs): #pragma: no cover
-        q = self.from_statement(statement)
-        if params is not None:
-            q = q.params(params)
-        q.__get_options(**kwargs)
-        return list(q)
-
-    def join_to(self, key): #pragma: no cover
-        """DEPRECATED. use join() to create joins based on property names."""
-
-        [keys, p] = self._locate_prop(key)
-        return self.join_via(keys)
-
-    def join_via(self, keys): #pragma: no cover
-        """DEPRECATED. use join() to create joins based on property names."""
-
-        mapper = self._joinpoint_zero()
-        clause = None
-        for key in keys:
-            prop = mapper.get_property(key, resolve_synonyms=True)
-            if clause is None:
-                clause = prop._get_join(mapper)
-            else:
-                clause &= prop._get_join(mapper)
-            mapper = prop.mapper
-
-        return clause
-
-    def _legacy_join_by(self, args, params, start=None): #pragma: no cover
-        import properties
-
-        clause = None
-        for arg in args:
-            if clause is None:
-                clause = arg
-            else:
-                clause &= arg
-
-        for key, value in params.iteritems():
-            (keys, prop) = self._locate_prop(key, start=start)
-            if isinstance(prop, properties.PropertyLoader):
-                c = prop.compare(operators.eq, value) & self.join_via(keys[:-1])
-            else:
-                c = prop.compare(operators.eq, value) & self.join_via(keys)
-            if clause is None:
-                clause =  c
-            else:
-                clause &= c
-        return clause
-
-    def _locate_prop(self, key, start=None): #pragma: no cover
-        import properties
-        keys = []
-        seen = util.Set()
-        def search_for_prop(mapper_):
-            if mapper_ in seen:
-                return None
-            seen.add(mapper_)
-
-            prop = mapper_.get_property(key, resolve_synonyms=True, raiseerr=False)
-            if prop is not None:
-                if isinstance(prop, properties.PropertyLoader):
-                    keys.insert(0, prop.key)
-                return prop
-            else:
-                for prop in mapper_.iterate_properties:
-                    if not isinstance(prop, properties.PropertyLoader):
-                        continue
-                    x = search_for_prop(prop.mapper)
-                    if x:
-                        keys.insert(0, prop.key)
-                        return x
-                else:
-                    return None
-        p = search_for_prop(start or self._only_mapper_zero())
-        if p is None:
-            raise exceptions.InvalidRequestError("Can't locate property named '%s'" % key)
-        return [keys, p]
-
-    def selectfirst_by(self, *args, **params): #pragma: no cover
-        """DEPRECATED. Use query.filter_by(\**kwargs).first()"""
-
-        return self._legacy_filter_by(*args, **params).first()
-
-    def selectone_by(self, *args, **params): #pragma: no cover
-        """DEPRECATED. Use query.filter_by(\**kwargs).one()"""
-
-        return self._legacy_filter_by(*args, **params).one()
-
-    for deprecated_method in ('list', 'scalar', 'count_by',
-                              'select_whereclause', 'get_by', 'select_by',
-                              'join_by', 'selectfirst', 'selectone', 'select',
-                              'execute', 'select_statement', 'select_text',
-                              'join_to', 'join_via', 'selectfirst_by',
-                              'selectone_by', 'apply_max', 'apply_min',
-                              'apply_avg', 'apply_sum'):
-        locals()[deprecated_method] = \
-            util.deprecated(None, False)(locals()[deprecated_method])
 
 class _QueryEntity(object):
     """represent an entity column returned within a Query result."""
     
-    def legacy_guess_type(self, query, e):
-        if isinstance(e, type):
-            ent = _MapperEntity(None, mapper.class_mapper(e), False)
-        elif isinstance(e, mapper.Mapper):
-            ent = _MapperEntity(None, e, False)
-        else:
-            ent = _ColumnEntity(None, column=e)
-            
-        query._Query__setup_aliasizers([ent])
-        return ent
-            
-    legacy_guess_type = classmethod(legacy_guess_type)
-
     def _clone(self):
         q = self.__class__.__new__(self.__class__)
         q.__dict__ = self.__dict__.copy()
@@ -1580,6 +1294,7 @@ class _MapperEntity(_QueryEntity):
 
     def setup_entity(self, entity, mapper, adapter, from_obj, is_aliased_class, with_polymorphic):
         self.mapper = mapper
+        self.extension = self.mapper.extension
         self.adapter = adapter
         self.selectable  = from_obj
         self._with_polymorphic = with_polymorphic
@@ -1651,7 +1366,7 @@ class _MapperEntity(_QueryEntity):
             row_adapter = mapperutil.create_row_adapter(self.selectable, equivalent_columns=self.mapper._equivalent_columns)
         
         if self.primary_entity:
-            kwargs = dict(extension=getattr(self, 'extension', None), only_load_props=query._only_load_props, refresh_instance=context.refresh_instance)
+            kwargs = dict(extension=self.extension, only_load_props=query._only_load_props, refresh_instance=context.refresh_instance)
         else:
             kwargs = {}
         
@@ -1753,7 +1468,6 @@ class _ColumnEntity(_QueryEntity):
     def __str__(self):
         return str(self.column)
 
-        
 Query.logger = logging.class_logger(Query)
 
 class QueryContext(object):

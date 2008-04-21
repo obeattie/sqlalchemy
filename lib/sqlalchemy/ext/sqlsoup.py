@@ -210,7 +210,7 @@ Advanced Use
 Accessing the Session
 ---------------------
 
-SqlSoup uses a SessionContext to provide thread-local sessions.  You
+SqlSoup uses a ScopedSession to provide thread-local sessions.  You
 can get a reference to the current one like this::
 
     >>> from sqlalchemy.ext.sqlsoup import objectstore
@@ -325,7 +325,7 @@ Boring tests here.  Nothing of real expository value.
 from sqlalchemy import *
 from sqlalchemy import schema, sql
 from sqlalchemy.orm import *
-from sqlalchemy.ext.sessioncontext import SessionContext
+from sqlalchemy.orm.scoping import ScopedSession
 from sqlalchemy.exceptions import *
 from sqlalchemy.sql import expression
 
@@ -379,11 +379,14 @@ __all__ = ['PKNotFoundError', 'SqlSoup']
 #
 # thread local SessionContext
 #
-class Objectstore(SessionContext):
+class Objectstore(ScopedSession):
     def __getattr__(self, key):
-        return getattr(self.current, key)
+        return getattr(self.registry(), key)
+    def current(self):
+        return self.registry()
+    current = property(current)
     def get_session(self):
-        return self.current
+        return self.registry()
 
 objectstore = Objectstore(create_session)
 
@@ -484,7 +487,7 @@ def class_for_table(selectable, **mapper_kwargs):
     klass._table = selectable
     mappr = mapper(klass,
                    selectable,
-                   extension=objectstore.mapper_extension,
+                   extension=objectstore.extension,
                    allow_null_pks=_is_outer_join(selectable),
                    **mapper_kwargs)
     klass._query = Query(mappr)

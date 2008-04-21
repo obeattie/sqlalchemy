@@ -60,8 +60,8 @@ class GenerativeQueryTest(TestBase):
         assert query.count() == 100
         assert query.filter(foo.c.bar<30).min(foo.c.bar) == 0
         assert query.filter(foo.c.bar<30).max(foo.c.bar) == 29
-        assert query.filter(foo.c.bar<30).apply_max(foo.c.bar).first() == 29
-        assert query.filter(foo.c.bar<30).apply_max(foo.c.bar).one() == 29
+        assert query.filter(foo.c.bar<30).values(func.max(foo.c.bar)).next()[0] == 29
+        assert query.filter(foo.c.bar<30).values(func.max(foo.c.bar)).next()[0] == 29
 
     def test_aggregate_1(self):
         if (testing.against('mysql') and
@@ -77,15 +77,13 @@ class GenerativeQueryTest(TestBase):
         avg = query.filter(foo.c.bar < 30).avg(foo.c.bar)
         assert round(avg, 1) == 14.5
 
-    @testing.fails_on('firebird', 'mssql')
-    @testing.uses_deprecated('Call to deprecated function apply_avg')
     def test_aggregate_3(self):
         query = create_session(bind=testing.db).query(Foo)
 
-        avg_f = query.filter(foo.c.bar<30).apply_avg(foo.c.bar).first()
+        avg_f = query.filter(foo.c.bar<30).values(func.avg(foo.c.bar)).next()[0]
         assert round(avg_f, 1) == 14.5
 
-        avg_o = query.filter(foo.c.bar<30).apply_avg(foo.c.bar).one()
+        avg_o = query.filter(foo.c.bar<30).values(func.avg(foo.c.bar)).next()[0]
         assert round(avg_o, 1) == 14.5
 
     def test_filter(self):

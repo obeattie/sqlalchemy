@@ -89,7 +89,7 @@ class ShardedQuery(Query):
         if self._shard_id is not None:
             result = self.session.connection(mapper=self._mapper_zero(), shard_id=self._shard_id).execute(context.statement, **self._params)
             try:
-                return iter(self.instances(result, querycontext=context))
+                return iter(self.instances(result, context))
             finally:
                 result.close()
         else:
@@ -97,7 +97,7 @@ class ShardedQuery(Query):
             for shard_id in self.query_chooser(self):
                 result = self.session.connection(mapper=self._mapper_zero(), shard_id=shard_id).execute(context.statement, **self._params)
                 try:
-                    partial = partial + list(self.instances(result, querycontext=context))
+                    partial = partial + list(self.instances(result, context))
                 finally:
                     result.close()
             # if some kind of in memory 'sorting' were done, this is where it would happen

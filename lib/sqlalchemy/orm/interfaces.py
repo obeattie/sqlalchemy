@@ -609,10 +609,7 @@ class ExtensionOption(MapperOption):
 
     def process_query(self, query):
         entity = query._generate_mapper_zero()
-        if hasattr(entity, 'extension'):
-            entity.extension = entity.extension.copy()
-        else:
-            entity.extension = entity.mapper.extension.copy()
+        entity.extension = entity.extension.copy()
         entity.extension.push(self.ext)
 
 class PropertyOption(MapperOption):

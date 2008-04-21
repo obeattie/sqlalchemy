@@ -1306,3 +1306,4 @@ unitofwork.object_session = object_session
 unitofwork._state_session = _state_session
 from sqlalchemy.orm import mapper
 mapper._expire_state = _expire_state
+mapper._state_session = _state_session

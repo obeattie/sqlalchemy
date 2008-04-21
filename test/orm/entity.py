@@ -1,7 +1,6 @@
 import testenv; testenv.configure_for_tests()
 from sqlalchemy import *
 from sqlalchemy.orm import *
-from sqlalchemy.ext.sessioncontext import SessionContext
 from testlib import *
 from testlib.tables import *
 
@@ -9,11 +8,10 @@ class EntityTest(TestBase, AssertsExecutionResults):
     """tests mappers that are constructed based on "entity names", which allows the same class
     to have multiple primary mappers """
 
-    @testing.uses_deprecated('SessionContext')
     def setUpAll(self):
         global user1, user2, address1, address2, metadata, ctx
         metadata = MetaData(testing.db)
-        ctx = SessionContext(create_session)
+        ctx = scoped_session(create_session)
 
         user1 = Table('user1', metadata,
             Column('user_id', Integer, Sequence('user1_id_seq', optional=True),
@@ -45,12 +43,11 @@ class EntityTest(TestBase, AssertsExecutionResults):
     def tearDownAll(self):
         metadata.drop_all()
     def tearDown(self):
-        ctx.current.clear()
+        ctx.clear()
         clear_mappers()
         for t in metadata.table_iterator(reverse=True):
             t.delete().execute()
 
-    @testing.uses_deprecated('SessionContextExt')
     def testbasic(self):
         """tests a pair of one-to-many mapper structures, establishing that both
         parent and child objects honor the "entity_name" attribute attached to the object
@@ -62,14 +59,14 @@ class EntityTest(TestBase, AssertsExecutionResults):
             def __init__(self, **kw):
                 pass
 
-        a1mapper = mapper(Address, address1, entity_name='address1', extension=ctx.mapper_extension)
-        a2mapper = mapper(Address, address2, entity_name='address2', extension=ctx.mapper_extension)
+        a1mapper = mapper(Address, address1, entity_name='address1', extension=ctx.extension)
+        a2mapper = mapper(Address, address2, entity_name='address2', extension=ctx.extension)
         u1mapper = mapper(User, user1, entity_name='user1', properties ={
             'addresses':relation(a1mapper)
-        }, extension=ctx.mapper_extension)
+        }, extension=ctx.extension)
         u2mapper =mapper(User, user2, entity_name='user2', properties={
             'addresses':relation(a2mapper)
-        }, extension=ctx.mapper_extension)
+        }, extension=ctx.extension)
         
         u1 = User(_sa_entity_name='user1')
         u1.name = 'this is user 1'
@@ -83,22 +80,22 @@ class EntityTest(TestBase, AssertsExecutionResults):
         a2.email='a2@foo.com'
         u2.addresses.append(a2)
 
-        ctx.current.flush()
+        ctx.flush()
         assert user1.select().execute().fetchall() == [(u1.user_id, u1.name)]
         assert user2.select().execute().fetchall() == [(u2.user_id, u2.name)]
         assert address1.select().execute().fetchall() == [(a1.address_id, u1.user_id, 'a1@foo.com')]
         assert address2.select().execute().fetchall() == [(a1.address_id, u2.user_id, 'a2@foo.com')]
 
-        ctx.current.clear()
-        u1list = ctx.current.query(User, entity_name='user1').all()
-        u2list = ctx.current.query(User, entity_name='user2').all()
+        ctx.clear()
+        u1list = ctx.query(User, entity_name='user1').all()
+        u2list = ctx.query(User, entity_name='user2').all()
         assert len(u1list) == len(u2list) == 1
         assert u1list[0] is not u2list[0]
         assert len(u1list[0].addresses) == len(u2list[0].addresses) == 1
 
-        u1 = ctx.current.query(User, entity_name='user1').first()
-        ctx.current.refresh(u1)
-        ctx.current.expire(u1)
+        u1 = ctx.query(User, entity_name='user1').first()
+        ctx.refresh(u1)
+        ctx.expire(u1)
 
 
     def testcascade(self):
@@ -156,14 +153,14 @@ class EntityTest(TestBase, AssertsExecutionResults):
             def __init__(self, **kw):
                 pass
 
-        a1mapper = mapper(Address1, address1, extension=ctx.mapper_extension)
-        a2mapper = mapper(Address2, address2, extension=ctx.mapper_extension)
+        a1mapper = mapper(Address1, address1, extension=ctx.extension)
+        a2mapper = mapper(Address2, address2, extension=ctx.extension)
         u1mapper = mapper(User, user1, entity_name='user1', properties ={
             'addresses':relation(a1mapper)
-        }, extension=ctx.mapper_extension)
+        }, extension=ctx.extension)
         u2mapper =mapper(User, user2, entity_name='user2', properties={
             'addresses':relation(a2mapper)
-        }, extension=ctx.mapper_extension)
+        }, extension=ctx.extension)
 
         u1 = User(_sa_entity_name='user1')
         u1.name = 'this is user 1'
@@ -177,15 +174,15 @@ class EntityTest(TestBase, AssertsExecutionResults):
         a2.email='a2@foo.com'
         u2.addresses.append(a2)
 
-        ctx.current.flush()
+        ctx.flush()
         assert user1.select().execute().fetchall() == [(u1.user_id, u1.name)]
         assert user2.select().execute().fetchall() == [(u2.user_id, u2.name)]
         assert address1.select().execute().fetchall() == [(a1.address_id, u1.user_id, 'a1@foo.com')]
         assert address2.select().execute().fetchall() == [(a1.address_id, u2.user_id, 'a2@foo.com')]
 
-        ctx.current.clear()
-        u1list = ctx.current.query(User, entity_name='user1').all()
-        u2list = ctx.current.query(User, entity_name='user2').all()
+        ctx.clear()
+        u1list = ctx.query(User, entity_name='user1').all()
+        u2list = ctx.query(User, entity_name='user2').all()
         assert len(u1list) == len(u2list) == 1
         assert u1list[0] is not u2list[0]
         assert len(u1list[0].addresses) == len(u2list[0].addresses) == 1
@@ -201,10 +198,10 @@ class EntityTest(TestBase, AssertsExecutionResults):
                 pass
         u1mapper = mapper(User, user1, entity_name='user1', properties ={
             'name':deferred(user1.c.name)
-        }, extension=ctx.mapper_extension)
+        }, extension=ctx.extension)
         u2mapper =mapper(User, user2, entity_name='user2', properties={
             'name':deferred(user2.c.name)
-        }, extension=ctx.mapper_extension)
+        }, extension=ctx.extension)
 
         u1 = User(_sa_entity_name='user1')
         u1.name = 'this is user 1'
@@ -212,13 +209,13 @@ class EntityTest(TestBase, AssertsExecutionResults):
         u2 = User(_sa_entity_name='user2')
         u2.name='this is user 2'
 
-        ctx.current.flush()
+        ctx.flush()
         assert user1.select().execute().fetchall() == [(u1.user_id, u1.name)]
         assert user2.select().execute().fetchall() == [(u2.user_id, u2.name)]
 
-        ctx.current.clear()
-        u1list = ctx.current.query(User, entity_name='user1').all()
-        u2list = ctx.current.query(User, entity_name='user2').all()
+        ctx.clear()
+        u1list = ctx.query(User, entity_name='user1').all()
+        u2list = ctx.query(User, entity_name='user2').all()
         assert len(u1list) == len(u2list) == 1
         assert u1list[0] is not u2list[0]
         # the deferred column load requires that setup_loader() check that the correct DeferredColumnLoader

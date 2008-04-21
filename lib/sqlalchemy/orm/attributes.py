@@ -1731,3 +1731,4 @@ def __init__(%(args)s):
     __init__ = env['__init__']
     __init__.__doc__ = original__init__.__doc__
     return __init__
+

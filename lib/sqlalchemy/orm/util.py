@@ -446,7 +446,7 @@ def _entity_descriptor(entity, key):
         desc = attributes.manager_of_class(entity)[key]
         return desc, desc.property
     else:
-        desc = getattr(entity.class_, key)
+        desc = entity.class_manager[key]
         return desc, desc.property
     
 def _orm_columns(entity):

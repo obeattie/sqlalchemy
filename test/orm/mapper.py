@@ -4,7 +4,6 @@ import testenv; testenv.configure_for_tests()
 from sqlalchemy import *
 from sqlalchemy import exceptions, sql
 from sqlalchemy.orm import *
-from sqlalchemy.ext.sessioncontext import SessionContext, SessionContextExt
 from testlib import *
 from testlib.tables import *
 import testlib.tables as tables
@@ -132,7 +131,6 @@ class MapperTest(MapperSuperTest):
         assert len(list(sess)) == 0
         self.assertRaises(TypeError, Foo, 'one')
 
-    @testing.uses_deprecated('SessionContext', 'SessionContextExt')
     def test_constructorexceptions(self):
         """test that exceptions raised in the mapped class are not masked by sa decorations"""
         ex = AssertionError('oops')
@@ -150,7 +148,7 @@ class MapperTest(MapperSuperTest):
             assert e is ex
 
         clear_mappers()
-        mapper(Foo, users, extension=SessionContextExt(SessionContext()))
+        mapper(Foo, users, extension=scoped_session(create_session).extension)
         def bad_expunge(foo):
             raise Exception("this exception should be stated as a warning")
 
@@ -427,16 +425,6 @@ class MapperTest(MapperSuperTest):
         assert_props(Hoho, ['id', 'name', 'type'])
         assert_props(Lala, ['p_employee_number', 'p_id', 'p_name', 'p_type'])
 
-    @testing.uses_deprecated('//select_by', '//join_via', '//list')
-    def test_recursive_select_by_deprecated(self):
-        """test that no endless loop occurs when traversing for select_by"""
-        m = mapper(User, users, properties={
-            'orders':relation(mapper(Order, orders), backref='user'),
-            'addresses':relation(mapper(Address, addresses), backref='user'),
-        })
-        q = create_session().query(m)
-        q.select_by(email_address='foo')
-
     def test_mappingtojoin(self):
         """test mapping to a join"""
         usersaddresses = sql.join(users, addresses, users.c.user_id == addresses.c.user_id)
@@ -501,21 +489,6 @@ class MapperTest(MapperSuperTest):
 
         self.assert_result(l, User, user_result[0])
 
-    @testing.uses_deprecated('//select')
-    def test_customjoin_deprecated(self):
-        """test that the from_obj parameter to query.select() can be used
-        to totally replace the FROM parameters of the generated query."""
-
-        m = mapper(User, users, properties={
-            'orders':relation(mapper(Order, orders, properties={
-                'items':relation(mapper(Item, orderitems))
-            }))
-        })
-
-        q = create_session().query(m)
-        l = q.select((orderitems.c.item_name=='item 4'), from_obj=[users.join(orders).join(orderitems)])
-        self.assert_result(l, User, user_result[0])
-
     def test_orderby(self):
         """test ordering at the mapper and query level"""
 
@@ -556,21 +529,14 @@ class MapperTest(MapperSuperTest):
         mapper(User, users)
         q = create_session().query(User)
         self.assert_(q.count()==3)
-        self.assert_(q.count(users.c.user_id.in_([8,9]))==2)
-
-    @testing.unsupported('firebird')
-    @testing.uses_deprecated('//count_by', '//join_by', '//join_via')
-    def test_count_by_deprecated(self):
-        mapper(User, users)
-        q = create_session().query(User)
-        self.assert_(q.count_by(user_name='fred')==1)
+        self.assert_(q.filter(users.c.user_id.in_([8,9])).count()==2)
 
     def test_manytomany_count(self):
         mapper(Item, orderitems, properties = dict(
                 keywords = relation(mapper(Keyword, keywords), itemkeywords, lazy = True),
             ))
         q = create_session().query(Item)
-        assert q.join('keywords').distinct().count(Keyword.c.name=="red") == 2
+        assert q.join('keywords').distinct().filter(Keyword.name=="red").count() == 2
 
     def test_override(self):
         # assert that overriding a column raises an error
@@ -771,33 +737,6 @@ class OptionsTest(MapperSuperTest):
             self.assert_result(u.adlist, Address, *(user_address_result[0]['addresses'][1]))
         self.assert_sql_count(testing.db, go, 1)
 
-    @testing.uses_deprecated('//select_by')
-    def test_extension_options(self):
-        sess  = create_session()
-        class ext1(MapperExtension):
-            def populate_instance(self, mapper, selectcontext, row, instance, **flags):
-                """test options at the Mapper._instance level"""
-                instance.TEST = "hello world"
-                return EXT_CONTINUE
-        mapper(User, users, extension=ext1(), properties={
-            'addresses':relation(mapper(Address, addresses), lazy=False)
-        })
-        class testext(MapperExtension):
-            def select_by(self, *args, **kwargs):
-                """test options at the Query level"""
-                return "HI"
-            def populate_instance(self, mapper, selectcontext, row, instance, **flags):
-                """test options at the Mapper._instance level"""
-                instance.TEST_2 = "also hello world"
-                return EXT_CONTINUE
-        l = sess.query(User).options(extension(testext())).select_by(x=5)
-        assert l == "HI"
-        l = sess.query(User).options(extension(testext())).get(7)
-        assert l.user_id == 7
-        assert l.TEST == "hello world"
-        assert l.TEST_2 == "also hello world"
-        assert not hasattr(l.addresses[0], 'TEST')
-        assert not hasattr(l.addresses[0], 'TEST2')
 
     def test_eageroptions(self):
         """tests that a lazy relation can be upgraded to an eager relation via the options method"""
