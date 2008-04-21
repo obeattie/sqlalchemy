@@ -67,6 +67,54 @@ def find_columns(clause):
     visitors.traverse(clause, visit_column=visit_column)
     return cols
 
+class Annotated(object):
+    """applies a dictionary of 'annotations' to any ClauseElement, returning a proxy.
+    
+    The proxy overrides __hash__() so that it acts like the original element within hashed
+    collections.
+    
+    """
+    def __new__(cls, element, values):
+        return object.__new__(
+            type.__new__(type, "Annotated%s" % element.__class__.__name__, (cls, element.__class__), {}), 
+            element, values
+        )
+    
+    def __init__(self, element, values):
+        object.__setattr__(self, '_Annotated__element', element)
+        object.__setattr__(self, '_annotations', values)
+    
+    def _annotate_mutable(self, values):
+        self._annotations.update(values)
+        
+    def _annotate_immutable(self, values):
+        _values = self._annotations.copy()
+        _values.update(values)
+        return Annotated(self.__element, _values)
+        
+    def _clone(self):
+        c = self.__element._clone()
+        if c is self.__element:
+            return self
+        else:
+            return Annotated(c, self._annotations)
+    
+    def _generate(self):
+        c = self.__element._generate()
+        if c is self.__element:
+            return self
+        else:
+            return Annotated(c, self._annotations)
+        
+    def __hash__(self):
+        return hash(self.__element)
+        
+    def __getattr__(self, key):
+        return getattr(self.__element, key)
+    
+    def __setattr__(self, key, value):
+        setattr(self.__element, key, value)
+        
 def _recursive_splice_joins(left, right):
     if isinstance(right, expression.Join):
         right = right._clone()
@@ -324,8 +372,9 @@ class ClauseAdapter(visitors.ReplacingCloningVisitor):
             if self.selectable.is_derived_from(col):
                 return self.selectable
                 
-        if not hasattr(col, 'proxy_set'):
+        if not isinstance(col, expression.ColumnElement):
             return None
+            
         if self.include:
             if col not in self.include:
                 return None
@@ -335,11 +384,10 @@ class ClauseAdapter(visitors.ReplacingCloningVisitor):
                 
         newcol = self.selectable.corresponding_column(col, require_embedded=True)
         
-        if not newcol and self.equivalents:
-            for c in col._cloned_set:
-                if c in self.equivalents:
-                    for equiv in self.equivalents[c]:
-                        newcol = self.selectable.corresponding_column(equiv, require_embedded=True)
-                        if newcol:
-                            return newcol
+        if not newcol and self.equivalents and col in self.equivalents:
+            for equiv in self.equivalents[col]:
+                newcol = self.selectable.corresponding_column(equiv, require_embedded=True)
+                if newcol:
+                    return newcol
         return newcol
+

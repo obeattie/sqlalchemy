@@ -145,7 +145,7 @@ class Query(object):
         self._filter_aliases = None
         
     def __adapt_polymorphic_element(self, element):
-        if getattr(element, '_Query__no_adapt', False):
+        if element._annotations.get('_Query__no_adapt', False):
             # statements returned by a previous Query are immutable
             return element
             
@@ -1259,7 +1259,7 @@ class Query(object):
             if context.eager_order_by:
                 statement.append_order_by(*context.eager_order_by)
             
-        context.statement = statement._annotate('_Query__no_adapt', True)
+        context.statement = statement._annotate_mutable({'_Query__no_adapt': True})
 
         return context
 
@@ -1439,7 +1439,7 @@ class _ColumnEntity(_QueryEntity):
         self.alias_id = id
         self.entity_name = None
         self.froms = util.Set()
-        self.entities = util.Set([elem.parententity for elem in visitors.iterate(column) if hasattr(elem, 'parententity')])
+        self.entities = util.Set([elem._annotations['parententity'] for elem in visitors.iterate(column) if 'parententity' in elem._annotations])
             
     def setup_entity(self, entity, mapper, adapter, from_obj, is_aliased_class, with_polymorphic):
         self.froms.add(from_obj)

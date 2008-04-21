@@ -31,7 +31,7 @@ from sqlalchemy.sql import operators, visitors
 from sqlalchemy import types as sqltypes
 
 functions, schema, sql_util = None, None, None
-DefaultDialect, ClauseAdapter = None, None
+DefaultDialect, ClauseAdapter, Annotated = None, None, None
 
 __all__ = [
     'Alias', 'ClauseElement',
@@ -940,7 +940,8 @@ class _FigureVisitName(type):
 class ClauseElement(object):
     """Base class for elements of a programmatically constructed SQL expression."""
     __metaclass__ = _FigureVisitName
-
+    _annotations = {}
+    
     def _clone(self):
         """Create a shallow copy of this ClauseElement.
 
@@ -967,12 +968,29 @@ class ClauseElement(object):
             f = getattr(f, '_is_clone_of', None)
     _cloned_set = property(_cloned_set)
     
-    def _annotate(self, key, value):
-        """return a copy of this ClauseElement with the given attribute 'annotated'."""
+    def _annotate_mutable(self, values):
+        """apply the given values to this ClauseElement's annotation dictionary.
         
-        c = self._clone()
-        setattr(c, key, value)
-        return c
+        This has the same end effect as _annotate_immutable, except it does not create
+        an Annotation proxy, eliminating __getattr__() overhead when the original
+        object is safe to mutate.
+        
+        """
+        if '_annotations' not in self.__dict__:
+            self._annotations = {}
+        self._annotations.update(values)
+        return self
+        
+    def _annotate_immutable(self, values):
+        """return a proxy of this ClauseElement with the given annotations dictionary.
+        
+        Use this to annotate a ClauseElement when the original must be left unchanged.
+        
+        """
+        global Annotated
+        if Annotated is None:
+            from sqlalchemy.sql.util import Annotated
+        return Annotated(self, values)
         
     def _get_from_objects(self, **modifiers):
         """Return objects represented in this ``ClauseElement`` that
@@ -2655,11 +2673,6 @@ class _ColumnClause(ColumnElement):
     def _bind_param(self, obj):
         return _BindParamClause(self.name, obj, type_=self.type, unique=True)
 
-    def _annotate(self, key, value):
-        c = self._make_proxy(self.table, attach=False)
-        setattr(c, key, value)
-        return c
-
     def _make_proxy(self, selectable, name=None, attach=True):
         # propigate the "is_literal" flag only if we are keeping our name,
         # otherwise its considered to be a label
@@ -2704,9 +2717,6 @@ class TableClause(FromClause):
         # TableClause is immutable
         return self
     
-    def _annotate(self):
-        raise NotImplementedError()
-        
     def append_column(self, c):
         self._columns[c.name] = c
         c.table = self

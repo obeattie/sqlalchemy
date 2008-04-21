@@ -636,17 +636,6 @@ class Column(SchemaItem, expression._ColumnClause):
 
         return Column(self.name, self.type, self.default, key = self.key, primary_key = self.primary_key, nullable = self.nullable, _is_oid = self._is_oid, quote=self.quote, index=self.index, *[c.copy() for c in self.constraints])
     
-    def _annotate(self, key, value):
-        # Column._annotate creates a Column that tries to masquerade as much as possible as the original
-        c = Column(self.name, self.type, self.default, key=self.key, primary_key=self.primary_key, nullable=self.nullable, _is_oid=self._is_oid, quote=self.quote, index=self.index)
-        c.table = self.table # shares our table
-        c.foreign_keys = self.foreign_keys # shares our pre-initialized ForeignKey objects
-        c._proxy_set = self.proxy_set  # pre-populate proxy_set to look like ours
-        c._make_proxy = self._make_proxy # _make_proxy will return our own _make_proxy; proxied copies aren't "annotated"
-        c._is_clone_of = self # gives ClauseAdapter a way to match the annotated column back to this one
-        setattr(c, key, value)
-        return c
-        
     def _make_proxy(self, selectable, name=None):
         """Create a *proxy* for this column.
 
@@ -998,7 +987,7 @@ class Constraint(SchemaItem):
         self.initially = initially
 
     def __contains__(self, x):
-        return self.columns.contains_column(x)
+        return x in self.columns
 
     def keys(self):
         return self.columns.keys()

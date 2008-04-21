@@ -81,7 +81,7 @@ class ColumnProperty(StrategizedProperty):
 
     class ColumnComparator(PropComparator):
         def __clause_element__(self):
-            return self.prop.columns[0]._annotate("parententity", self.prop.parent)
+            return self.prop.columns[0]._annotate_immutable({"parententity": self.prop.parent})
         __clause_element__ = util.cache_decorator(__clause_element__)
         
         def operate(self, op, *other, **kwargs):

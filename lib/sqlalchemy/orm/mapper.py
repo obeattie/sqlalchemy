@@ -1603,6 +1603,8 @@ def _initializable_mappers_for_state(state):
 
 def _event_on_init(state, instance, args, kwargs):
     """Trigger mapper compilation and run init_instance hooks."""
+#    for m in state.manager.mappers.values():
+#        m.compile()
     list(state.manager.mappers.values())[0].compile()   # compile() always compiles all mappers
     for mapper in _initializable_mappers_for_state(state):
         if 'init_instance' in mapper.extension.methods:

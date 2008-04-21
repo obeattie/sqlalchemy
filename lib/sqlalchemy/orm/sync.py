@@ -24,7 +24,7 @@ def populate(source, source_mapper, dest, dest_mapper, synchronize_pairs):
         try:
             dest_mapper._set_state_attr_by_column(dest, r, value)
         except exceptions.UnmappedColumnError:
-            self._raise_col_to_prop(True, source_mapper, l, dest_mapper, r)
+            _raise_col_to_prop(True, source_mapper, l, dest_mapper, r)
 
 def clear(dest, dest_mapper, synchronize_pairs):
     for l, r in synchronize_pairs:
