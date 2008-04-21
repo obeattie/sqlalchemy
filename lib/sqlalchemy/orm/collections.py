@@ -104,8 +104,6 @@ __all__ = ['collection', 'collection_adapter',
            'mapped_collection', 'column_mapped_collection',
            'attribute_mapped_collection']
 
-instance_state = None
-
 def column_mapped_collection(mapping_spec):
     """A dictionary-based collection type with column-based keying.
 
@@ -120,7 +118,7 @@ def column_mapped_collection(mapping_spec):
 
     from sqlalchemy.orm.util import _state_mapper
     from sqlalchemy.orm.attributes import instance_state
-    
+
     if isinstance(mapping_spec, schema.Column):
         def keyfunc(value):
             state = instance_state(value)
@@ -137,7 +135,8 @@ def column_mapped_collection(mapping_spec):
         def keyfunc(value):
             state = instance_state(value)
             m = _state_mapper(state)
-            return tuple([m._get_state_attr_by_column(state, c) for c in mapping_spec])
+            return tuple([m._get_state_attr_by_column(state, c)
+                          for c in mapping_spec])
     return lambda: MappedCollection(keyfunc)
 
 def attribute_mapped_collection(attr_name):
@@ -1302,9 +1301,7 @@ def _set_decorators():
 
 class InstrumentedList(list):
     """An instrumented version of the built-in list."""
-    
-#    def __init__(self):
-#        raise "HI"
+
     __instrumentation__ = {
        'appender': 'append',
        'remover': 'remove',
