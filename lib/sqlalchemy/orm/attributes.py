@@ -1560,6 +1560,7 @@ class InstrumentationRegistry(object):
     extended = False
 
     def create_manager_for_cls(self, class_):
+        assert class_ is not None
         assert manager_of_class(class_) is None
 
         for finder in instrumentation_finders:
@@ -1593,7 +1594,6 @@ class InstrumentationRegistry(object):
     def manager_of_class(self, cls):
         if cls is None:
             return None
-            
         try:
             finder = self.manager_finders[cls]
         except KeyError:
@@ -1602,9 +1602,13 @@ class InstrumentationRegistry(object):
             return finder(cls)
 
     def state_of(self, instance):
+        if instance is None:
+            raise AttributeError("None has no persistent state.")
         return self.state_finders[instance.__class__](instance)
 
     def state_or_default(self, instance, default=None):
+        if instance is None:
+            return default
         try:
             finder = self.state_finders[instance.__class__]
         except KeyError:

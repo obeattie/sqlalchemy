@@ -1,8 +1,10 @@
 import testenv; testenv.configure_for_tests()
 import pickle
+from sqlalchemy import util
 import sqlalchemy.orm.attributes as attributes
 from sqlalchemy.orm.collections import collection
 from sqlalchemy.orm.attributes import set_attribute, get_attribute, del_attribute, is_instrumented
+from sqlalchemy.orm import clear_mappers
 from sqlalchemy.orm import InstrumentationManager
 
 from sqlalchemy import exceptions
@@ -96,6 +98,10 @@ class MyClass(object):
             del self._goofy_dict[key]
 
 class UserDefinedExtensionTest(TestBase):
+    def tearDownAll(self):
+        clear_mappers()
+        attributes._install_lookup_strategy(util.symbol('native'))
+
     def test_basic(self):
         for base in (object, MyBaseClass, MyClass):
             class User(base):
@@ -273,6 +279,25 @@ class UserDefinedExtensionTest(TestBase):
 
         assert Foo.name == attributes.manager_of_class(Foo).get_inst('name')
         assert Foo.bars == attributes.manager_of_class(Foo).get_inst('bars')
+
+    def test_alternate_finders(self):
+        """Ensure the generic finder front-end deals with edge cases."""
+
+        class Unknown(object): pass
+        class Known(MyBaseClass): pass
+
+        attributes.register_class(Known)
+        k, u = Known(), Unknown()
+
+        assert attributes.manager_of_class(Unknown) is None
+        assert attributes.manager_of_class(Known) is not None
+        assert attributes.manager_of_class(None) is None
+
+        assert attributes.instance_state(k) is not None
+        self.assertRaises((AttributeError, KeyError),
+                          attributes.instance_state, u)
+        self.assertRaises((AttributeError, KeyError),
+                          attributes.instance_state, None)
 
 
 if __name__ == '__main__':
