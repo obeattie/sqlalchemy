@@ -329,7 +329,7 @@ class AliasedComparator(PropComparator):
         self.aliasedclass = aliasedclass
         self.comparator = comparator
         self.adapter = adapter
-        self.__clause_element = self.adapter.traverse(self.comparator.__clause_element__())._annotate_immutable({'parententity': aliasedclass})
+        self.__clause_element = self.adapter.traverse(self.comparator.__clause_element__())._annotate({'parententity': aliasedclass})
 
     def __clause_element__(self):
         return self.__clause_element

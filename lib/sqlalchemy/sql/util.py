@@ -76,7 +76,7 @@ class Annotated(object):
     """
     def __new__(cls, element, values):
         return object.__new__(
-            type.__new__(type, "Annotated%s" % element.__class__.__name__, (cls, element.__class__), {}), 
+            type.__new__(type, "Annotated%s" % element.__class__.__name__, (Annotated, element.__class__), {}), 
             element, values
         )
     
@@ -84,10 +84,7 @@ class Annotated(object):
         object.__setattr__(self, '_Annotated__element', element)
         object.__setattr__(self, '_annotations', values)
     
-    def _annotate_mutable(self, values):
-        self._annotations.update(values)
-        
-    def _annotate_immutable(self, values):
+    def _annotate(self, values):
         _values = self._annotations.copy()
         _values.update(values)
         return Annotated(self.__element, _values)

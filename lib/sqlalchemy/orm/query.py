@@ -1259,7 +1259,7 @@ class Query(object):
             if context.eager_order_by:
                 statement.append_order_by(*context.eager_order_by)
             
-        context.statement = statement._annotate_mutable({'_Query__no_adapt': True})
+        context.statement = statement._annotate({'_Query__no_adapt': True})
 
         return context
 

@@ -968,29 +968,13 @@ class ClauseElement(object):
             f = getattr(f, '_is_clone_of', None)
     _cloned_set = property(_cloned_set)
     
-    def _annotate_mutable(self, values):
-        """apply the given values to this ClauseElement's annotation dictionary.
+    def _annotate(self, values):
+        """return a copy of this ClauseElement with the given annotations dictionary."""
         
-        This has the same end effect as _annotate_immutable, except it does not create
-        an Annotation proxy, eliminating __getattr__() overhead when the original
-        object is safe to mutate.
-        
-        """
-        if '_annotations' not in self.__dict__:
-            self._annotations = {}
-        self._annotations.update(values)
-        return self
-        
-    def _annotate_immutable(self, values):
-        """return a proxy of this ClauseElement with the given annotations dictionary.
-        
-        Use this to annotate a ClauseElement when the original must be left unchanged.
-        
-        """
-        global Annotated
-        if Annotated is None:
-            from sqlalchemy.sql.util import Annotated
-        return Annotated(self, values)
+        c = self._clone()
+        c._annotations = self._annotations.copy()
+        c._annotations.update(values)
+        return c
         
     def _get_from_objects(self, **modifiers):
         """Return objects represented in this ``ClauseElement`` that
@@ -1183,6 +1167,20 @@ class ClauseElement(object):
                 self.__module__, self.__class__.__name__, id(self), friendly)
 
 
+class _Immutable(object):
+    """mark a ClauseElement as 'immutable' when expressions are cloned."""
+    
+    def _annotate(self, values):
+        """return a proxy of this ClauseElement with the given annotations dictionary."""
+
+        global Annotated
+        if Annotated is None:
+            from sqlalchemy.sql.util import Annotated
+        return Annotated(self, values)
+
+    def _clone(self):
+        return self
+        
 class Operators(object):
     def __and__(self, other):
         return self.operate(operators.and_, other)
@@ -1490,9 +1488,10 @@ class ColumnElement(ClauseElement, _CompareMixin):
     docstring for more details.
     """
 
-    primary_key = False
-    foreign_keys = []
-
+    def __init__(self):
+        self.primary_key = False
+        self.foreign_keys = []
+        
     def base_columns(self):
         if hasattr(self, '_base_columns'):
             return self._base_columns
@@ -2051,6 +2050,7 @@ class _CalculatedClause(ColumnElement):
     __visit_name__ = 'calculatedclause'
 
     def __init__(self, name, *clauses, **kwargs):
+        ColumnElement.__init__(self)
         self.name = name
         self.type = sqltypes.to_instance(kwargs.get('type_', None))
         self._bind = kwargs.get('bind', None)
@@ -2471,6 +2471,7 @@ class _ColumnElementAdapter(ColumnElement):
     """
 
     def __init__(self, elem):
+        ColumnElement.__init__(self)
         self.elem = elem
         self.type = getattr(elem, 'type', None)
 
@@ -2584,7 +2585,7 @@ class _Label(ColumnElement):
         else:
             return column(self.name)._make_proxy(selectable=selectable)
 
-class _ColumnClause(ColumnElement):
+class _ColumnClause(_Immutable, ColumnElement):
     """Represents a generic column expression from any textual string.
 
     This includes columns associated with tables, aliases and select
@@ -2623,10 +2624,6 @@ class _ColumnClause(ColumnElement):
     def description(self):
         return self.name.encode('ascii', 'backslashreplace')
     description = property(description)
-
-    def _clone(self):
-        # ColumnClause is immutable
-        return self
 
     def _label(self):
         """Generate a 'label' string for this column.
@@ -2686,7 +2683,7 @@ class _ColumnClause(ColumnElement):
     def _compare_type(self, obj):
         return self.type
 
-class TableClause(FromClause):
+class TableClause(_Immutable, FromClause):
     """Represents a "table" construct.
 
     Note that this represents tables only as another syntactical
@@ -2713,10 +2710,6 @@ class TableClause(FromClause):
         return self.name.encode('ascii', 'backslashreplace')
     description = property(description)
 
-    def _clone(self):
-        # TableClause is immutable
-        return self
-    
     def append_column(self, c):
         self._columns[c.name] = c
         c.table = self
