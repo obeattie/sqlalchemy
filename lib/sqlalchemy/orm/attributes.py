@@ -1591,6 +1591,9 @@ class InstrumentationRegistry(object):
         return manager
 
     def manager_of_class(self, cls):
+        if cls is None:
+            return None
+            
         try:
             finder = self.manager_finders[cls]
         except KeyError:

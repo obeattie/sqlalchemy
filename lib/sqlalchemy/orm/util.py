@@ -541,8 +541,12 @@ def _state_has_mapper(state):
     return state.entity_name is not attributes.NO_ENTITY_NAME
 
 def _is_mapped_class(cls):
-    from sqlalchemy.orm.mapper import Mapper
-    return _is_aliased_class(cls) or isinstance(cls, Mapper) or hasattr(cls, '_fooclass_manager')  # TODO: no idea how this is supposed to be done
+    from sqlalchemy.orm import mapperlib as mapper
+    if isinstance(cls, (AliasedClass, mapper.Mapper)):
+        return True
+        
+    manager = attributes.manager_of_class(cls)
+    return manager and mapper._INITIALIZED in manager.info
 
 def instance_str(instance):
     """Return a string describing an instance."""
