@@ -1,7 +1,7 @@
 import testenv; testenv.configure_for_tests()
 from sqlalchemy import *
 from sqlalchemy.sql import table, column, ClauseElement
-from sqlalchemy.sql.expression import  _clone
+from sqlalchemy.sql.expression import  _clone, _from_objects
 from testlib import *
 from sqlalchemy.sql.visitors import *
 from sqlalchemy import util
@@ -308,7 +308,32 @@ class ClauseTest(TestBase, AssertsCompiledSQL):
                 select.append_whereclause(t1.c.col2==7)
 
         self.assert_compile(Vis().traverse(s), "SELECT * FROM table1 WHERE table1.col1 = table2.col1 AND table1.col2 = :col2_1")
-
+    
+    def test_this_thing(self):
+        s = select([t1]).where(t1.c.col1=='foo').alias()
+        s2 = select([s.c.col1])
+        
+        self.assert_compile(s2, "SELECT anon_1.col1 FROM (SELECT table1.col1 AS col1, table1.col2 AS col2, table1.col3 AS col3 FROM table1 WHERE table1.col1 = :col1_1) AS anon_1")
+        t1a = t1.alias()
+        s2 = sql_util.ClauseAdapter(t1a).traverse(s2)
+        self.assert_compile(s2, "SELECT anon_1.col1 FROM (SELECT table1_1.col1 AS col1, table1_1.col2 AS col2, table1_1.col3 AS col3 FROM table1 AS table1_1 WHERE table1_1.col1 = :col1_1) AS anon_1")
+        
+    def test_select_fromtwice(self):
+        t1a = t1.alias()
+        
+        s = select([1], t1.c.col1==t1a.c.col1, from_obj=t1a).correlate(t1)
+        self.assert_compile(s, "SELECT 1 FROM table1 AS table1_1 WHERE table1.col1 = table1_1.col1")
+        
+        s = CloningVisitor().traverse(s)
+        self.assert_compile(s, "SELECT 1 FROM table1 AS table1_1 WHERE table1.col1 = table1_1.col1")
+        
+        s = select([t1]).where(t1.c.col1=='foo').alias()
+        
+        s2 = select([1], t1.c.col1==s.c.col1, from_obj=s).correlate(t1)
+        self.assert_compile(s2, "SELECT 1 FROM (SELECT table1.col1 AS col1, table1.col2 AS col2, table1.col3 AS col3 FROM table1 WHERE table1.col1 = :col1_1) AS anon_1 WHERE table1.col1 = anon_1.col1")
+        s2 = ReplacingCloningVisitor().traverse(s2)
+        self.assert_compile(s2, "SELECT 1 FROM (SELECT table1.col1 AS col1, table1.col2 AS col2, table1.col3 AS col3 FROM table1 WHERE table1.col1 = :col1_1) AS anon_1 WHERE table1.col1 = anon_1.col1")
+        
 class ClauseAdapterTest(TestBase, AssertsCompiledSQL):
     def setUpAll(self):
         global t1, t2
@@ -334,8 +359,11 @@ class ClauseAdapterTest(TestBase, AssertsCompiledSQL):
 
         self.assert_compile(select(['*'], t2alias.c.col1==s), "SELECT * FROM table2 AS t2alias WHERE t2alias.col1 = (SELECT * FROM table1 AS t1alias)")
         s = vis.traverse(s)
+
         assert t2alias not in s._froms  # not present because it's been cloned
+
         assert t1alias in s._froms # present because the adapter placed it there
+
         # correlate list on "s" needs to take into account the full _cloned_set for each element in _froms when correlating
         self.assert_compile(select(['*'], t2alias.c.col1==s), "SELECT * FROM table2 AS t2alias WHERE t2alias.col1 = (SELECT * FROM table1 AS t1alias)")
 
@@ -384,9 +412,10 @@ class ClauseAdapterTest(TestBase, AssertsCompiledSQL):
 
         vis = sql_util.ClauseAdapter(t1alias)
         ff = vis.traverse(func.count(t1.c.col1).label('foo'))
-        assert ff._get_from_objects() == [t1alias]
+        assert list(_from_objects(ff)) == [t1alias]
 
         self.assert_compile(vis.traverse(select(['*'], from_obj=[t1])), "SELECT * FROM table1 AS t1alias")
+        self.assert_compile(select(['*'], t1.c.col1==t2.c.col2), "SELECT * FROM table1, table2 WHERE table1.col1 = table2.col2")
         self.assert_compile(vis.traverse(select(['*'], t1.c.col1==t2.c.col2)), "SELECT * FROM table1 AS t1alias, table2 WHERE t1alias.col1 = table2.col2")
         self.assert_compile(vis.traverse(select(['*'], t1.c.col1==t2.c.col2, from_obj=[t1, t2])), "SELECT * FROM table1 AS t1alias, table2 WHERE t1alias.col1 = table2.col2")
         self.assert_compile(vis.traverse(select(['*'], t1.c.col1==t2.c.col2, from_obj=[t1, t2]).correlate(t1)), "SELECT * FROM table2 WHERE t1alias.col1 = table2.col2")
@@ -400,7 +429,7 @@ class ClauseAdapterTest(TestBase, AssertsCompiledSQL):
 
         ff = vis.traverse(func.count(t1.c.col1).label('foo'))
         self.assert_compile(select([ff]), "SELECT count(t1alias.col1) AS foo FROM table1 AS t1alias")
-        assert ff._get_from_objects() == [t1alias]
+        assert list(_from_objects(ff)) == [t1alias]
 
 # TODO:
     #    self.assert_compile(vis.traverse(select([func.count(t1.c.col1).label('foo')]), clone=True), "SELECT count(t1alias.col1) AS foo FROM table1 AS t1alias")

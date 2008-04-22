@@ -424,7 +424,8 @@ class LoadLazyAttribute(object):
             except exceptions.InvalidRequestError:
                 raise exceptions.UnboundExecutionError("Parent instance %s is not bound to a Session, and no contextual session is established; lazy load operation of attribute '%s' cannot proceed" % (mapperutil.state_str, self.key))
 
-        q = session.query(prop.mapper).autoflush(False)
+        q = session.query(prop.mapper).autoflush(False)._adapt_all_clauses()
+        
         if self.path:
             q = q._with_current_path(self.path)
             

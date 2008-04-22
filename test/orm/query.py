@@ -1006,12 +1006,20 @@ class MixedEntitiesTest(QueryTest):
         q2 = q.values(func.count(User.name))
         assert q2.next() == (4,)
 
-        u2 = users.alias()
-        q2 = q.select_from(sel).filter(u2.c.id>1).order_by([users.c.id, sel.c.id, u2.c.id]).values(users.c.name, sel.c.name, u2.c.name)
+        u2 = aliased(User)
+        q2 = q.select_from(sel).filter(u2.id>1).order_by([User.id, sel.c.id, u2.id]).values(User.name, sel.c.name, u2.name)
         self.assertEquals(list(q2), [(u'jack', u'jack', u'jack'), (u'jack', u'jack', u'ed'), (u'jack', u'jack', u'fred'), (u'jack', u'jack', u'chuck'), (u'ed', u'ed', u'jack'), (u'ed', u'ed', u'ed'), (u'ed', u'ed', u'fred'), (u'ed', u'ed', u'chuck')])
         
-        q2 = q.select_from(sel).filter(users.c.id>1).values(users.c.name, sel.c.name, User.name)
-        self.assertEquals(list(q2), [(u'jack', u'jack', u'jack'), (u'ed', u'ed', u'ed')])
+        q2 = q.select_from(sel).filter(User.id==8).values(User.name, sel.c.name, User.name)
+        self.assertEquals(list(q2), [(u'ed', u'ed', u'ed')])
+
+        # using User.xxx is alised against "sel", so this query returns nothing
+        q2 = q.select_from(sel).filter(User.id==8).filter(User.id>sel.c.id).values(User.name, sel.c.name, User.name)
+        self.assertEquals(list(q2), [])
+
+        # whereas this uses users.c.xxx, is not aliased and creates a new join
+        q2 = q.select_from(sel).filter(users.c.id==8).filter(users.c.id>sel.c.id).values(users.c.name, sel.c.name, User.name)
+        self.assertEquals(list(q2), [(u'ed', u'jack', u'jack')])
 
     def test_column_queries(self):
         sess = create_session()
@@ -1288,7 +1296,7 @@ class SelectFromTest(QueryTest):
 
         self.assertEquals(sess.query(User).select_from(sel).all(), [User(id=7), User(id=8)])
 
-        self.assertEquals(sess.query(User).select_from(sel).filter(User.c.id==8).all(), [User(id=8)])
+        self.assertEquals(sess.query(User).select_from(sel).filter(User.id==8).all(), [User(id=8)])
 
         self.assertEquals(sess.query(User).select_from(sel).order_by(desc(User.name)).all(), [
             User(name='jack',id=7), User(name='ed',id=8)
@@ -1430,7 +1438,7 @@ class SelectFromTest(QueryTest):
         sess.clear()
 
         def go():
-            self.assertEquals(sess.query(User).options(eagerload('addresses')).select_from(sel).filter(User.c.id==8).all(),
+            self.assertEquals(sess.query(User).options(eagerload('addresses')).select_from(sel).filter(User.id==8).all(),
                 [User(id=8, addresses=[Address(id=2), Address(id=3), Address(id=4)])]
             )
         self.assert_sql_count(testing.db, go, 1)
@@ -1594,7 +1602,6 @@ class SelfReferentialTest(ORMTest):
         
     def test_any(self):
         sess = create_session()
-        
         self.assertEquals(sess.query(Node).filter(Node.children.any(Node.data=='n1')).all(), [])
         self.assertEquals(sess.query(Node).filter(Node.children.any(Node.data=='n12')).all(), [Node(data='n1')])
         self.assertEquals(sess.query(Node).filter(~Node.children.any()).all(), [Node(data='n11'), Node(data='n13'),Node(data='n121'),Node(data='n122'),Node(data='n123'),])

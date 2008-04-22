@@ -874,6 +874,9 @@ def _compound_select(keyword, *selects, **kwargs):
 def _is_literal(element):
     return not isinstance(element, (ClauseElement, Operators))
 
+def _from_objects(*elements, **kwargs):
+    return itertools.chain(*[element._get_from_objects(**kwargs) for element in elements])
+    
 def _literal_as_text(element):
     if hasattr(element, '__clause_element__'):
         return element.__clause_element__()
@@ -967,15 +970,7 @@ class ClauseElement(object):
             yield f
             f = getattr(f, '_is_clone_of', None)
     _cloned_set = property(_cloned_set)
-    
-    def _annotate(self, values):
-        """return a copy of this ClauseElement with the given annotations dictionary."""
-        
-        c = self._clone()
-        c._annotations = self._annotations.copy()
-        c._annotations.update(values)
-        return c
-        
+
     def _get_from_objects(self, **modifiers):
         """Return objects represented in this ``ClauseElement`` that
         should be added to the ``FROM`` list of a query, when this
@@ -984,6 +979,14 @@ class ClauseElement(object):
         """
 
         raise NotImplementedError(repr(self))
+    
+    def _annotate(self, values):
+        """return a copy of this ClauseElement with the given annotations dictionary."""
+
+        global Annotated
+        if Annotated is None:
+            from sqlalchemy.sql.util import Annotated
+        return Annotated(self, values)
 
     def unique_params(self, *optionaldict, **kwargs):
         """Return a copy with ``bindparam()`` elments replaced.
@@ -1070,7 +1073,7 @@ class ClauseElement(object):
                 return self._bind
         except AttributeError:
             pass
-        for f in self._get_from_objects():
+        for f in _from_objects(self):
             if f is self:
                 continue
             engine = f.bind
@@ -1170,14 +1173,6 @@ class ClauseElement(object):
 class _Immutable(object):
     """mark a ClauseElement as 'immutable' when expressions are cloned."""
     
-    def _annotate(self, values):
-        """return a proxy of this ClauseElement with the given annotations dictionary."""
-
-        global Annotated
-        if Annotated is None:
-            from sqlalchemy.sql.util import Annotated
-        return Annotated(self, values)
-
     def _clone(self):
         return self
         
@@ -2392,7 +2387,7 @@ class Join(FromClause):
         return self.select(use_labels=True, correlate=False).alias(name)
 
     def _hide_froms(self):
-        return itertools.chain(*[x.left._get_from_objects() + x.right._get_from_objects() for x in self._cloned_set])
+        return itertools.chain(*[_from_objects(x.left, x.right) for x in self._cloned_set])
     _hide_froms = property(_hide_froms)
 
     def _get_from_objects(self, **modifiers):
@@ -2739,7 +2734,6 @@ class TableClause(_Immutable, FromClause):
     def _get_from_objects(self, **modifiers):
         return [self]
 
-
 class _SelectBaseMixin(object):
     """Base class for ``Select`` and ``CompoundSelects``."""
 
@@ -2986,6 +2980,7 @@ class Select(_SelectBaseMixin, FromClause):
         self._distinct = distinct
 
         self._correlate = util.Set()
+        self._froms = util.OrderedSet()
 
         if columns:
             self._raw_columns = [
@@ -2993,21 +2988,22 @@ class Select(_SelectBaseMixin, FromClause):
                 for c in
                 [_literal_as_column(c) for c in columns]
             ]
+
+            self._froms.update(_from_objects(*self._raw_columns))
         else:
             self._raw_columns = []
-        
+
+        if whereclause:
+            self._whereclause = _literal_as_text(whereclause)
+            self._froms.update(_from_objects(self._whereclause, is_where=True))
+        else:
+            self._whereclause = None
+
         if from_obj:
-            self._froms = util.Set([
+            self._froms.update([
                 _is_literal(f) and _TextFromClause(f) or f
                 for f in util.to_list(from_obj)
             ])
-        else:
-            self._froms = util.Set()
-            
-        if whereclause:
-            self._whereclause = _literal_as_text(whereclause)
-        else:
-            self._whereclause = None
 
         if having:
             self._having = _literal_as_text(having)
@@ -3031,16 +3027,7 @@ class Select(_SelectBaseMixin, FromClause):
         
         """
         
-        froms = util.OrderedSet()
-
-        for col in self._raw_columns:
-            froms.update(col._get_from_objects())
-
-        if self._whereclause is not None:
-            froms.update(self._whereclause._get_from_objects(is_where=True))
-
-        if self._froms:
-            froms.update(self._froms)
+        froms = util.OrderedSet(self._froms)
         
         toremove = itertools.chain(*[f._hide_froms for f in froms])
         froms.difference_update(toremove)
@@ -3070,22 +3057,10 @@ class Select(_SelectBaseMixin, FromClause):
         is specifically for those FromClause elements that would actually be rendered.
         
         """
-        if hasattr(self, '_all_froms'):
-            return self._all_froms
+        if not hasattr(self, '_all_froms'):
+            self._all_froms = self._froms.union(_from_objects(*list(self._froms)))
 
-        froms = util.Set(
-            itertools.chain(*
-                [self._froms] +
-                [f._get_from_objects() for f in self._froms] +
-                [col._get_from_objects() for col in self._raw_columns]
-            )
-        )
-
-        if self._whereclause:
-            froms.update(self._whereclause._get_from_objects(is_where=True))
-
-        self._all_froms = froms
-        return froms
+        return self._all_froms
 
     def inner_columns(self):
         """an iteratorof all ColumnElement expressions which would
@@ -3103,7 +3078,7 @@ class Select(_SelectBaseMixin, FromClause):
     def is_derived_from(self, fromclause):
         if self in util.Set(fromclause._cloned_set):
             return True
-
+        
         for f in self.locate_all_froms():
             if f.is_derived_from(fromclause):
                 return True
@@ -3123,7 +3098,7 @@ class Select(_SelectBaseMixin, FromClause):
         """return child elements as per the ClauseElement specification."""
 
         return (column_collections and list(self.columns) or []) + \
-            list(self.locate_all_froms()) + \
+            list(self._froms) + \
             [x for x in (self._whereclause, self._having, self._order_by_clause, self._group_by_clause) if x is not None]
 
     def column(self, column):
@@ -3136,6 +3111,7 @@ class Select(_SelectBaseMixin, FromClause):
             column = column.self_group(against=operators.comma_op)
 
         s._raw_columns = s._raw_columns + [column]
+        s._froms = s._froms.union(_from_objects(*self._raw_columns))
         return s
 
     def where(self, whereclause):
@@ -3218,6 +3194,7 @@ class Select(_SelectBaseMixin, FromClause):
             column = column.self_group(against=operators.comma_op)
 
         self._raw_columns = self._raw_columns + [column]
+        self._froms = self._froms.union(_from_objects(*self._raw_columns))
         self._reset_exported()
 
     def append_prefix(self, clause):
@@ -3232,10 +3209,13 @@ class Select(_SelectBaseMixin, FromClause):
         The expression will be joined to existing WHERE criterion via AND.
 
         """
+        whereclause = _literal_as_text(whereclause)
+        self._froms = self._froms.union(_from_objects(whereclause, is_where=True))
+        
         if self._whereclause is not None:
-            self._whereclause = and_(self._whereclause, _literal_as_text(whereclause))
+            self._whereclause = and_(self._whereclause, whereclause)
         else:
-            self._whereclause = _literal_as_text(whereclause)
+            self._whereclause = whereclause
 
     def append_having(self, having):
         """append the given expression to this select() construct's HAVING criterion.

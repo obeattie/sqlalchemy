@@ -15,7 +15,7 @@ from sqlalchemy.sql.util import ClauseAdapter, criterion_as_pairs, find_columns
 from sqlalchemy.sql import visitors, operators, ColumnElement, expression
 from sqlalchemy.orm import mapper, sync, strategies, attributes, dependency, object_mapper
 from sqlalchemy.orm import session as sessionlib
-from sqlalchemy.orm.util import CascadeOptions, _class_to_mapper
+from sqlalchemy.orm.util import CascadeOptions, _class_to_mapper, _orm_annotate
 from sqlalchemy.orm.interfaces import StrategizedProperty, PropComparator, MapperProperty, ONETOMANY, MANYTOONE, MANYTOMANY
 from sqlalchemy.exceptions import ArgumentError
 
@@ -337,13 +337,15 @@ class PropertyLoader(StrategizedProperty):
                 j = pj
                 
             if criterion and target_adapter:
+                # limit this adapter to annotated only?
                 criterion = target_adapter.traverse(criterion)
             
-            return j, criterion, dest
+            return _orm_annotate(j), criterion, _orm_annotate(dest)
             
         def any(self, criterion=None, **kwargs):
             if not self.prop.uselist:
                 raise exceptions.InvalidRequestError("'any()' not implemented for scalar attributes. Use has().")
+
             j, criterion, from_obj = self.__join_and_criterion(criterion, **kwargs)
 
             return sql.exists([1], j & criterion, from_obj=from_obj)
@@ -789,8 +791,8 @@ class PropertyLoader(StrategizedProperty):
             target_adapter.include = target_adapter.exclude = None
         else:
             target_adapter = None
-        
-        self.__join_cache[key] = ret = (primaryjoin, secondaryjoin, source_selectable or self.parent.local_table, dest_selectable or self.mapper.local_table, secondary, target_adapter)
+
+        self.__join_cache[key] = ret = (primaryjoin, secondaryjoin, (source_selectable or self.parent.local_table), (dest_selectable or self.mapper.local_table), secondary, target_adapter)
         return ret
         
     def _get_join(self, parent, primary=True, secondary=True, polymorphic_parent=True):

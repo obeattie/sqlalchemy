@@ -725,16 +725,17 @@ class GenerativeTest(TestBase, AssertsExecutionResults):
         session.save(car2)
         session.flush()
 
-        # TODO: this causes a recursion overflow.  need to understand why.
-        #e = exists([Car.c.owner], Car.c.owner==employee_join.c.person_id)
-        #Query(Person)._adapt_clause(employee_join, False)
+        # this particular adapt used to cause a recursion overflow;
+        # added here for testing
+        e = exists([Car.c.owner], Car.c.owner==employee_join.c.person_id)
+        Query(Person)._adapt_clause(employee_join, False, False)
         
-        r = session.query(Person).filter(people.c.name.like('%2')).join('status').filter_by(name="active")
+        r = session.query(Person).filter(Person.name.like('%2')).join('status').filter_by(name="active")
         assert str(list(r)) == "[Manager M2, category YYYYYYYYY, status Status active, Engineer E2, field X, status Status active]"
-        r = session.query(Engineer).join('status').filter(people.c.name.in_(['E2', 'E3', 'E4', 'M4', 'M2', 'M1']) & (status.c.name=="active"))
+        r = session.query(Engineer).join('status').filter(Person.name.in_(['E2', 'E3', 'E4', 'M4', 'M2', 'M1']) & (status.c.name=="active"))
         assert str(list(r)) == "[Engineer E2, field X, status Status active, Engineer E3, field X, status Status active]"
 
-        r = session.query(Person).filter(exists([Car.c.owner], Car.c.owner==Person.person_id))
+        r = session.query(Person).filter(exists([1], Car.owner==Person.person_id))
         assert str(list(r)) == "[Engineer E4, field X, status Status dead]"
 
 class MultiLevelTest(ORMTest):

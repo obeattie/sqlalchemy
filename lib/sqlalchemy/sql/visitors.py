@@ -52,6 +52,7 @@ class ClauseVisitor(object):
         tail._next = visitor
         return self
 
+
 class CloningVisitor(ClauseVisitor):
     def copy_and_process(self, list_):
         """Apply cloned traversal to the given list of elements, and return the new list."""
@@ -123,9 +124,7 @@ class ReplacingCloningVisitor(CloningVisitor):
                 stack.append(c)
         return obj
 
-def traverse(clause, **kwargs):
-    """traverse the given clause, applying visit functions passed in as keyword arguments."""
-    
+def visitor(**kwargs):
     clone = kwargs.pop('clone', False)
     if clone:
         if 'before_clone' in kwargs:
@@ -145,7 +144,10 @@ def traverse(clause, **kwargs):
     vis = Vis()
     if 'before_clone' in kwargs:
         setattr(vis, 'before_clone', kwargs['before_clone'])
-    return vis.traverse(clause)
+    return vis
+    
+def traverse(clause, **kwargs):
+    return visitor(**kwargs).traverse(clause)
 
 def iterate(clause, **traverse_options):
     """traverse the given expression structure, returning an iterator of all elements."""

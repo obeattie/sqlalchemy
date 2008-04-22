@@ -36,24 +36,30 @@ def search(clause, target):
     visitors.traverse(clause, traverse_options={'column_collections':False}, **{meth:search})
     return ret[0]
 
-def find_tables(clause, check_columns=False, include_aliases=False):
+def find_tables(clause, check_columns=False, include_aliases=False, include_joins=False, include_selects=False):
     """locate Table objects within the given expression."""
     
     tables = []
     kwargs = {}
+    
+    def visit_something(elem):
+        tables.append(elem)
+        
+    if include_selects:
+        kwargs['visit_select'] = kwargs['visit_compound_select'] = visit_something
+    
+    if include_joins:
+        kwargs['visit_join'] = visit_something
+        
     if include_aliases:
-        def visit_alias(alias):
-            tables.append(alias)
-        kwargs['visit_alias']  = visit_alias
+        kwargs['visit_alias']  = visit_something
 
     if check_columns:
         def visit_column(column):
             tables.append(column.table)
         kwargs['visit_column'] = visit_column
 
-    def visit_table(table):
-        tables.append(table)
-    kwargs['visit_table'] = visit_table
+    kwargs['visit_table'] = visit_something
 
     visitors.traverse(clause, traverse_options= {'column_collections':False}, **kwargs)
     return tables
@@ -67,50 +73,49 @@ def find_columns(clause):
     visitors.traverse(clause, visit_column=visit_column)
     return cols
 
+
 class Annotated(object):
-    """applies a dictionary of 'annotations' to any ClauseElement, returning a proxy.
+    """clones a ClauseElement and applies an 'annotations' dictionary.
     
-    The proxy overrides __hash__() so that it acts like the original element within hashed
-    collections.
+    Unlike regular clones, this clone also mimics __hash__() and 
+    __cmp__() of the original element so that it takes its place
+    in hashed collections.
     
+    A reference to the original element is maintained, for the important
+    reason of keeping its hash value current.  When GC'ed, the 
+    hash value may be reused, causing conflicts.
+
     """
-    def __new__(cls, element, values):
-        return object.__new__(
-            type.__new__(type, "Annotated%s" % element.__class__.__name__, (Annotated, element.__class__), {}), 
-            element, values
-        )
-    
+    def __new__(cls, *args):
+        if not args:
+            return object.__new__(cls)
+        else:
+            element, values = args
+            return object.__new__(
+                type.__new__(type, "Annotated%s" % element.__class__.__name__, (Annotated, element.__class__), {}), 
+                element, values
+            )
+
     def __init__(self, element, values):
-        object.__setattr__(self, '_Annotated__element', element)
-        object.__setattr__(self, '_annotations', values)
-    
+        self.__dict__ = element.__dict__.copy()
+        self.__element = element
+        self._annotations = values
+
     def _annotate(self, values):
         _values = self._annotations.copy()
         _values.update(values)
-        return Annotated(self.__element, _values)
-        
-    def _clone(self):
-        c = self.__element._clone()
-        if c is self.__element:
-            return self
-        else:
-            return Annotated(c, self._annotations)
-    
-    def _generate(self):
-        c = self.__element._generate()
-        if c is self.__element:
-            return self
-        else:
-            return Annotated(c, self._annotations)
+        clone = self.__class__.__new__(self.__class__)
+        clone.__dict__ = self.__dict__.copy()
+        clone._annotations = _values
+        return clone
         
     def __hash__(self):
         return hash(self.__element)
-        
-    def __getattr__(self, key):
-        return getattr(self.__element, key)
+
+    def __cmp__(self, other):
+        return cmp(hash(self.__element), hash(other))
     
-    def __setattr__(self, key, value):
-        setattr(self.__element, key, value)
+    
         
 def _recursive_splice_joins(left, right):
     if isinstance(right, expression.Join):
@@ -365,6 +370,7 @@ class ClauseAdapter(visitors.ReplacingCloningVisitor):
         self.equivalents = equivalents
 
     def before_clone(self, col):
+            
         if isinstance(col, expression.FromClause):
             if self.selectable.is_derived_from(col):
                 return self.selectable

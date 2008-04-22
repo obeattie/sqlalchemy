@@ -493,7 +493,7 @@ class DefaultCompiler(engine.Compiled):
 
         froms = select._get_display_froms(existingfroms)
 
-        correlate_froms = util.Set(itertools.chain(*([froms] + [f._get_from_objects() for f in froms])))
+        correlate_froms = util.Set(sql._from_objects(*froms))
 
         # TODO: might want to propigate existing froms for select(select(select))
         # where innermost select should correlate to outermost

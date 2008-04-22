@@ -204,11 +204,11 @@ class EagerTest(FixtureTest):
         self.assert_sql_count(testing.db, go, 1)
 
         def go():
-            assert fixtures.item_keyword_result[0:2] == q.join('keywords').filter(keywords.c.name == 'red').all()
+            assert fixtures.item_keyword_result[0:2] == q.join('keywords').filter(Keyword.name == 'red').all()
         self.assert_sql_count(testing.db, go, 1)
 
         def go():
-            assert fixtures.item_keyword_result[0:2] == q.join('keywords', aliased=True).filter(keywords.c.name == 'red').all()
+            assert fixtures.item_keyword_result[0:2] == q.join('keywords', aliased=True).filter(Keyword.name == 'red').all()
         self.assert_sql_count(testing.db, go, 1)
 
 

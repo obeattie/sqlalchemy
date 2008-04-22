@@ -145,10 +145,6 @@ class Query(object):
         self._filter_aliases = None
         
     def __adapt_polymorphic_element(self, element):
-        if element._annotations.get('_Query__no_adapt', False):
-            # statements returned by a previous Query are immutable
-            return element
-            
         if isinstance(element, expression.FromClause):
             search = element
         elif hasattr(element, 'table'):
@@ -160,17 +156,54 @@ class Query(object):
             alias = self._polymorphic_adapters.get(search, None)
             if alias:
                 return alias.adapt_clause(element)
+    
+    class _DefaultAdapter(visitors.ReplacingCloningVisitor):
+        """default adapter used for all internal adaptation"""
+        
+        __traverse_options__ = {'column_collections':False}
+        def __init__(self, adapters):
+            self.adapters = adapters
+        def before_clone(self, elem):
+            if '_Query__no_adapt' in elem._annotations:
+                return elem
 
-    def _adapt_clause(self, clause, as_filter):
+            for adapter in self.adapters:
+                e = adapter(elem)
+                if e:
+                    return e
+
+    class _ORMOnlyAdapter(_DefaultAdapter):
+        """adapter used by end-user methods, filter(), having(), order_by(), group_by()."""
+        
+        def before_clone(self, elem):
+            if '_Query__no_adapt' in elem._annotations:
+                return elem
+
+            if "_orm_adapt" in elem._annotations or "parententity" in elem._annotations:
+                for adapter in self.adapters:
+                    e = adapter(elem)
+                    if e:
+                        return e
+
+    def _adapt_all_clauses(self):
+        self._disable_orm_filtering = True
+    _adapt_all_clauses = _generative()(_adapt_all_clauses)
+    
+    def _adapt_clause(self, clause, as_filter, orm_only):
+        adapters = []    
         if as_filter and self._filter_aliases:
-            clause = self._filter_aliases.adapt_clause(clause)
+            adapters.append(self._filter_aliases.adapter.before_clone)
         
         if self._polymorphic_adapters:
-            clause = visitors.traverse(clause, before_clone=self.__adapt_polymorphic_element, clone=True)
-            
+            adapters.append(self.__adapt_polymorphic_element)
+
         if self._from_obj_alias:
-            clause = self._from_obj_alias.adapt_clause(clause)
-        return clause
+            adapters.append(self._from_obj_alias.adapter.before_clone)
+
+        if getattr(self, '_disable_orm_filtering', not orm_only):
+            return Query._DefaultAdapter(adapters).traverse(clause)
+        else:
+            return Query._ORMOnlyAdapter(adapters).traverse(clause)
         
     def _entity_zero(self):
         if not getattr(self._entities[0], 'primary_entity', False):
@@ -594,7 +627,7 @@ class Query(object):
         if criterion is not None and not isinstance(criterion, sql.ClauseElement):
             raise exceptions.ArgumentError("filter() argument must be of type sqlalchemy.sql.ClauseElement or string")
             
-        criterion = self._adapt_clause(criterion, True)
+        criterion = self._adapt_clause(criterion, True, True)
         
         if self._criterion is not None:
             self._criterion = self._criterion & criterion
@@ -634,7 +667,7 @@ class Query(object):
     def order_by(self, *criterion):
         """apply one or more ORDER BY criterion to the query and return the newly resulting ``Query``"""
         
-        criterion = [self._adapt_clause(expression._literal_as_text(o), True) for o in criterion]
+        criterion = [self._adapt_clause(expression._literal_as_text(o), True, True) for o in criterion]
 
         if self._order_by is False:
             self._order_by = criterion
@@ -664,7 +697,7 @@ class Query(object):
         if criterion is not None and not isinstance(criterion, sql.ClauseElement):
             raise exceptions.ArgumentError("having() argument must be of type sqlalchemy.sql.ClauseElement or string")
 
-        criterion = self._adapt_clause(criterion, True)
+        criterion = self._adapt_clause(criterion, True, True)
 
         if self._having is not None:
             self._having = self._having & criterion
@@ -1113,7 +1146,7 @@ class Query(object):
             params = {}
             (_get_clause, _get_params) = mapper._get_clause
 
-            _get_clause = q._adapt_clause(_get_clause, True)
+            _get_clause = q._adapt_clause(_get_clause, True, False)
             q._criterion = _get_clause
 
             for i, primary_key in enumerate(mapper.primary_key):
@@ -1194,7 +1227,7 @@ class Query(object):
         context.from_clause = self._from_obj
         context.whereclause = self._criterion
         context.order_by = self._order_by
-        
+
         for entity in self._entities:
             entity.setup_context(self, context)
 
@@ -1251,7 +1284,7 @@ class Query(object):
                 context.primary_columns += order_by_col_expr
 
             froms += context.eager_joins.values()
-                
+            
             statement = sql.select(context.primary_columns + context.secondary_columns, context.whereclause, from_obj=froms, use_labels=True, for_update=for_update, correlate=False, order_by=context.order_by, **self._select_args)
             if self._correlate:
                 statement = statement.correlate(*self._correlate)
@@ -1445,9 +1478,9 @@ class _ColumnEntity(_QueryEntity):
         self.froms.add(from_obj)
 
     def __resolve_expr_against_query_aliases(self, query, expr, context):
-        expr = query._adapt_clause(expr, False)
-        while hasattr(expr, '__clause_element__'):
-            expr = expr.__clause_element__()
+        expr = query._adapt_clause(expr, False, True)
+#        while hasattr(expr, '__clause_element__'):
+#            expr = expr.__clause_element__()
         return expr
         
     def row_processor(self, query, context, custom_rows):
