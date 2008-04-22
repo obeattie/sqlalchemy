@@ -1,6 +1,7 @@
 import testenv; testenv.configure_for_tests()
 import inspect
 from sqlalchemy import MetaData, Table, Column, Integer, String, ForeignKey
+from sqlalchemy import util
 from sqlalchemy.orm import attributes
 from sqlalchemy.orm import backref
 from sqlalchemy.orm import create_session
@@ -27,6 +28,18 @@ def modifies_instrumentation_finders(fn):
             del attributes.instrumentation_finders[:]
             attributes.instrumentation_finders.extend(pristine)
     return _function_named(decorated, fn.func_name)
+
+def with_lookup_strategy(strategy):
+    def decorate(fn):
+        def wrapped(*args, **kw):
+            current = attributes._lookup_strategy
+            try:
+                attributes._install_lookup_strategy(strategy)
+                return fn(*args, **kw)
+            finally:
+                attributes._install_lookup_strategy(current)
+        return _function_named(wrapped, fn.func_name)
+    return decorate
 
 class InitTest(TestBase):
     def fixture(self):
@@ -470,6 +483,45 @@ class InstrumentationCollisionTest(TestBase):
         attributes.register_class(C)
         self.assertRaises(TypeError, attributes.register_class, B1)
 
+class NativeInstrumentationTest(TestBase):
+    @with_lookup_strategy(util.symbol('native'))
+    def test_register_reserved_attribute(self):
+        class T(object): pass
+
+        attributes.register_class(T)
+        manager = attributes.manager_of_class(T)
+
+        sa = attributes.ClassManager.STATE_ATTR
+        ma = attributes.ClassManager.MANAGER_ATTR
+
+        fails = lambda method, attr: self.assertRaises(
+            KeyError, getattr(manager, method), attr, property())
+
+        fails('install_member', sa)
+        fails('install_member', ma)
+        fails('install_descriptor', sa)
+        fails('install_descriptor', ma)
+
+    @with_lookup_strategy(util.symbol('native'))
+    def test_mapped_stateattr(self):
+        t = Table('t', MetaData(),
+                  Column('id', Integer, primary_key=True),
+                  Column(attributes.ClassManager.STATE_ATTR, Integer))
+
+        class T(object): pass
+
+        self.assertRaises(KeyError, mapper, T, t)
+
+    @with_lookup_strategy(util.symbol('native'))
+    def test_mapped_managerattr(self):
+        t = Table('t', MetaData(),
+                  Column('id', Integer, primary_key=True),
+                  Column(attributes.ClassManager.MANAGER_ATTR, Integer))
+
+        class T(object): pass
+        self.assertRaises(KeyError, mapper, T, t)
+
+
 class MiscTest(TestBase):
     """Seems basic, but not directly covered elsewhere!"""
 
@@ -618,4 +670,3 @@ class FinderTest(TestBase):
 
 if __name__ == "__main__":
     testenv.main()
-    

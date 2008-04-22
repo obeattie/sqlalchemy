@@ -1192,12 +1192,18 @@ class ClassManager(dict):
         self.registered = False
 
     def install_descriptor(self, key, inst):
+        if key in (self.STATE_ATTR, self.MANAGER_ATTR):
+            raise KeyError("%r: requested attribute name conflicts with "
+                           "instrumentation attribute of the same name." % key)
         setattr(self.class_, key, inst)
 
     def uninstall_descriptor(self, key):
         delattr(self.class_, key)
 
     def install_member(self, key, implementation):
+        if key in (self.STATE_ATTR, self.MANAGER_ATTR):
+            raise KeyError("%r: requested attribute name conflicts with "
+                           "instrumentation attribute of the same name." % key)
         self.originals.setdefault(key, getattr(self.class_, key, None))
         setattr(self.class_, key, implementation)
 
