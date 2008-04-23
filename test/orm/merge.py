@@ -112,8 +112,13 @@ class MergeTest(TestBase, AssertsExecutionResults):
             pass
         class Address(fixtures.Base):
             pass
-        mapper(User, users, properties={'addresses':relation(Address, backref='user', collection_class=OrderedSet)})
+        mapper(User, users, properties={
+            'addresses':relation(Address, 
+                        backref='user', 
+                        collection_class=OrderedSet, cascade="all, delete-orphan")
+        })
         mapper(Address, addresses)
+        
         on_load = self.on_load_tracker(User)
         self.on_load_tracker(Address, on_load)
 
@@ -134,7 +139,11 @@ class MergeTest(TestBase, AssertsExecutionResults):
         ]))
 
         u = sess.merge(u)
-        assert on_load.called == 3, on_load.called
+        
+        assert on_load.called == 5, on_load.called    # 1. merges User object.  updates into session.
+                                                      # 2.,3. merges Address ids 3 & 4, saves into session.
+                                                      # 4.,5. loads pre-existing elements in "addresses" collection, 
+                                                      # marks as deleted, Address ids 1 and 2.
         self.assertEquals(u,
             User(user_id=7, user_name='fred', addresses=OrderedSet([
                 Address(address_id=3, email_address='fred3'),
