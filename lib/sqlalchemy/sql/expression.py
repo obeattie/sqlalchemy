@@ -1488,21 +1488,19 @@ class ColumnElement(ClauseElement, _CompareMixin):
         self.foreign_keys = []
         
     def base_columns(self):
-        if hasattr(self, '_base_columns'):
-            return self._base_columns
-        self._base_columns = util.Set([c for c in self.proxy_set if not hasattr(c, 'proxies')])
+        if not hasattr(self, '_base_columns'):
+            self._base_columns = util.Set([c for c in self.proxy_set if not hasattr(c, 'proxies')])
         return self._base_columns
     base_columns = property(base_columns)
 
     def proxy_set(self):
-        if hasattr(self, '_proxy_set'):
-            return self._proxy_set
-        s = util.Set([self])
-        if hasattr(self, 'proxies'):
-            for c in self.proxies:
-                s = s.union(c.proxy_set)
-        self._proxy_set = s
-        return s
+        if not hasattr(self, '_proxy_set'):
+            s = util.Set([self])
+            if hasattr(self, 'proxies'):
+                for c in self.proxies:
+                    s.update(c.proxy_set)
+            self._proxy_set = s
+        return self._proxy_set
     proxy_set = property(proxy_set)
 
     def shares_lineage(self, othercolumn):
@@ -2065,7 +2063,7 @@ class _CalculatedClause(ColumnElement):
 
     def clauses(self):
         if isinstance(self.clause_expr, _Grouping):
-            return self.clause_expr.elem
+            return self.clause_expr.element
         else:
             return self.clause_expr
     clauses = property(clauses)
@@ -2410,9 +2408,9 @@ class Alias(FromClause):
     def __init__(self, selectable, alias=None):
         baseselectable = selectable
         while isinstance(baseselectable, Alias):
-            baseselectable = baseselectable.selectable
+            baseselectable = baseselectable.element
         self.original = baseselectable
-        self.selectable = selectable
+        self.element = selectable
         if alias is None:
             if self.original.named_with_column:
                 alias = getattr(self.original, 'name', None)
@@ -2426,21 +2424,21 @@ class Alias(FromClause):
     def is_derived_from(self, fromclause):
         if fromclause in util.Set(self._cloned_set):
             return True
-        return self.selectable.is_derived_from(fromclause)
+        return self.element.is_derived_from(fromclause)
 
     def supports_execution(self):
         return self.original.supports_execution()
 
     def _populate_column_collection(self):
-        for col in self.selectable.columns:
+        for col in self.element.columns:
             col._make_proxy(self)
-        if self.selectable.oid_column is not None:
-            self._oid_column = self.selectable.oid_column._make_proxy(self)
+        if self.element.oid_column is not None:
+            self._oid_column = self.element.oid_column._make_proxy(self)
 
     def _copy_internals(self, clone=_clone):
        self._reset_exported()
-       self.selectable = _clone(self.selectable)
-       baseselectable = self.selectable
+       self.element = _clone(self.element)
+       baseselectable = self.element
        while isinstance(baseselectable, Alias):
            baseselectable = baseselectable.selectable
        self.original = baseselectable
@@ -2450,83 +2448,76 @@ class Alias(FromClause):
             for c in self.c:
                 yield c
         if aliased_selectables:
-            yield self.selectable
+            yield self.element
 
     def _get_from_objects(self, **modifiers):
         return [self]
 
     def bind(self):
-        return self.selectable.bind
+        return self.element.bind
     bind = property(bind)
 
-class _ColumnElementAdapter(ColumnElement):
-    """Adapts a ClauseElement which may or may not be a
-    ColumnElement subclass itself into an object which
-    acts like a ColumnElement.
-    """
+class _Grouping(ColumnElement):
+    """Represent a grouping within a column expression"""
 
-    def __init__(self, elem):
+    def __init__(self, element):
         ColumnElement.__init__(self)
-        self.elem = elem
-        self.type = getattr(elem, 'type', None)
+        self.element = element
+        self.type = getattr(element, 'type', None)
 
     def key(self):
-        return self.elem.key
+        return self.element.key
     key = property(key)
 
     def _label(self):
-        return self.elem._label
+        return self.element._label
     _label = property(_label)
 
     def _copy_internals(self, clone=_clone):
-        self.elem = clone(self.elem)
+        self.element = clone(self.element)
 
     def get_children(self, **kwargs):
-        return self.elem,
+        return self.element,
 
     def _get_from_objects(self, **modifiers):
-        return self.elem._get_from_objects(**modifiers)
+        return self.element._get_from_objects(**modifiers)
 
     def __getattr__(self, attr):
-        return getattr(self.elem, attr)
+        return getattr(self.element, attr)
 
     def __getstate__(self):
-        return {'elem':self.elem, 'type':self.type}
+        return {'element':self.element, 'type':self.type}
 
     def __setstate__(self, state):
-        self.elem = state['elem']
+        self.element = state['element']
         self.type = state['type']
-
-class _Grouping(_ColumnElementAdapter):
-    """Represent a grouping within a column expression"""
-    pass
 
 class _FromGrouping(FromClause):
     """Represent a grouping of a FROM clause"""
     __visit_name__ = 'grouping'
 
-    def __init__(self, elem):
-        self.elem = elem
+    def __init__(self, element):
+        self.element = element
 
     def columns(self):
-        return self.elem.columns
+        return self.element.columns
     columns = c = property(columns)
 
     def _hide_froms(self):
-        return self.elem._hide_froms
+        return self.element._hide_froms
     _hide_froms = property(_hide_froms)
 
     def get_children(self, **kwargs):
-        return self.elem,
+        return self.element,
 
     def _copy_internals(self, clone=_clone):
-        self.elem = clone(self.elem)
+        self.element = clone(self.element)
 
     def _get_from_objects(self, **modifiers):
-        return self.elem._get_from_objects(**modifiers)
+        return self.element._get_from_objects(**modifiers)
 
     def __getattr__(self, attr):
-        return getattr(self.elem, attr)
+        return getattr(self.element, attr)
 
 class _Label(ColumnElement):
     """Represents a column label (AS).
@@ -2539,12 +2530,12 @@ class _Label(ColumnElement):
     ``ColumnElement`` subclasses.
     """
 
-    def __init__(self, name, obj, type_=None):
-        while isinstance(obj, _Label):
-            obj = obj.obj
-        self.name = name or "{ANON %d %s}" % (id(self), getattr(obj, 'name', 'anon'))
-        self.obj = obj.self_group(against=operators.as_)
-        self.type = sqltypes.to_instance(type_ or getattr(obj, 'type', None))
+    def __init__(self, name, element, type_=None):
+        while isinstance(element, _Label):
+            element = element.element
+        self.name = name or "{ANON %d %s}" % (id(self), getattr(element, 'name', 'anon'))
+        self.element = element.self_group(against=operators.as_)
+        self.type = sqltypes.to_instance(type_ or getattr(element, 'type', None))
 
     def key(self):
         return self.name
@@ -2555,8 +2546,9 @@ class _Label(ColumnElement):
     _label = property(_label)
 
     def _proxy_attr(name):
+        get = util.attrgetter(name)
         def attr(self):
-            return getattr(self.obj, name)
+            return get(self.element)
         return property(attr)
 
     proxies = _proxy_attr('proxies')
@@ -2566,17 +2558,17 @@ class _Label(ColumnElement):
     foreign_keys = _proxy_attr('foreign_keys')
 
     def get_children(self, **kwargs):
-        return self.obj,
+        return self.element,
 
     def _copy_internals(self, clone=_clone):
-        self.obj = clone(self.obj)
+        self.element = clone(self.element)
 
     def _get_from_objects(self, **modifiers):
-        return self.obj._get_from_objects(**modifiers)
+        return self.element._get_from_objects(**modifiers)
 
     def _make_proxy(self, selectable, name = None):
-        if isinstance(self.obj, (Selectable, ColumnElement)):
-            return self.obj._make_proxy(selectable, name=self.name)
+        if isinstance(self.element, (Selectable, ColumnElement)):
+            return self.element._make_proxy(selectable, name=self.name)
         else:
             return column(self.name)._make_proxy(selectable=selectable)
 
@@ -2621,11 +2613,6 @@ class _ColumnClause(_Immutable, ColumnElement):
     description = property(description)
 
     def _label(self):
-        """Generate a 'label' string for this column.
-        """
-
-        # for a "literal" column, we've no idea what the text is
-        # therefore no 'label' can be automatically generated
         if self.is_literal:
             return None
         if not self.__label:
@@ -2645,19 +2632,16 @@ class _ColumnClause(_Immutable, ColumnElement):
             else:
                 self.__label = self.name
         return self.__label
-
     _label = property(_label)
 
     def label(self, name):
-        # if going off the "__label" property and its None, we have
-        # no label; return self
         if name is None:
             return self
         else:
             return super(_ColumnClause, self).label(name)
 
     def _get_from_objects(self, **modifiers):
-        if self.table is not None:
+        if self.table:
             return [self.table]
         else:
             return []
@@ -2869,9 +2853,9 @@ class _SelectBaseMixin(object):
 class _ScalarSelect(_Grouping):
     __visit_name__ = 'grouping'
 
-    def __init__(self, elem):
-        self.elem = elem
-        cols = list(elem.inner_columns)
+    def __init__(self, element):
+        self.element = element
+        cols = list(element.inner_columns)
         if len(cols) != 1:
             raise exceptions.InvalidRequestError("Scalar select can only be created from a Select object that has exactly one column expression.")
         self.type = cols[0].type
@@ -3026,18 +3010,18 @@ class Select(_SelectBaseMixin, FromClause):
         correlating.
         
         """
-        
-        froms = util.OrderedSet(self._froms)
+        froms = self._froms
         
         toremove = itertools.chain(*[f._hide_froms for f in froms])
-        froms.difference_update(toremove)
+        if toremove:
+            froms = froms.difference(toremove)
 
         if len(froms) > 1 or self._correlate:
             if self._correlate:
-                froms.difference_update(_cloned_intersection(froms, self._correlate))
+                froms = froms.difference(_cloned_intersection(froms, self._correlate))
                 
             if self._should_correlate and existing_froms:
-                froms.difference_update(_cloned_intersection(froms, existing_froms))
+                froms = froms.difference(_cloned_intersection(froms, existing_froms))
                 
                 if not len(froms):
                     raise exceptions.InvalidRequestError("Select statement '%s' returned no FROM clauses due to auto-correlation; specify correlate(<tables>) to control correlation manually." % self)
@@ -3111,7 +3095,7 @@ class Select(_SelectBaseMixin, FromClause):
             column = column.self_group(against=operators.comma_op)
 
         s._raw_columns = s._raw_columns + [column]
-        s._froms = s._froms.union(_from_objects(*self._raw_columns))
+        s._froms = s._froms.union(_from_objects(column))
         return s
 
     def where(self, whereclause):
@@ -3194,7 +3178,7 @@ class Select(_SelectBaseMixin, FromClause):
             column = column.self_group(against=operators.comma_op)
 
         self._raw_columns = self._raw_columns + [column]
-        self._froms = self._froms.union(_from_objects(*self._raw_columns))
+        self._froms = self._froms.union(_from_objects(column))
         self._reset_exported()
 
     def append_prefix(self, clause):

@@ -230,18 +230,18 @@ class DefaultCompiler(engine.Compiled):
         return ""
 
     def visit_grouping(self, grouping, **kwargs):
-        return "(" + self.process(grouping.elem) + ")"
+        return "(" + self.process(grouping.element) + ")"
 
     def visit_label(self, label, result_map=None, render_labels=False):
         if not render_labels:
-            return self.process(label.obj)
+            return self.process(label.element)
             
         labelname = self._truncated_identifier("colident", label.name)
 
         if result_map is not None:
-            result_map[labelname.lower()] = (label.name, (label, label.obj, labelname), label.obj.type)
+            result_map[labelname.lower()] = (label.name, (label, label.element, labelname), label.element.type)
 
-        return " ".join([self.process(label.obj), self.operator_string(operators.as_), self.preparer.format_label(label, labelname)])
+        return " ".join([self.process(label.element), self.operator_string(operators.as_), self.preparer.format_label(label, labelname)])
 
     def visit_column(self, column, result_map=None, **kwargs):
 
