@@ -82,23 +82,23 @@ def polymorphic_union(table_map, typecolname, aliasname='p_union'):
 
 class ExtensionCarrier(object):
     """stores a collection of MapperExtension objects.
-    
+
     allows an extension methods to be called on contained MapperExtensions
     in the order they were added to this object.  Also includes a 'methods' dictionary
     accessor which allows for a quick check if a particular method
     is overridden on any contained MapperExtensions.
     """
-    
+
     def __init__(self, _elements=None):
         self.methods = {}
         if _elements is not None:
             self.__elements = [self.__inspect(e) for e in _elements]
         else:
             self.__elements = []
-        
+
     def copy(self):
         return ExtensionCarrier(list(self.__elements))
-        
+
     def __iter__(self):
         return iter(self.__elements)
 
@@ -117,7 +117,7 @@ class ExtensionCarrier(object):
             if meth not in self.methods and hasattr(extension, meth) and getattr(extension, meth) is not getattr(MapperExtension, meth):
                 self.methods[meth] = self.__create_do(meth)
         return extension
-           
+
     def __create_do(self, funcname):
         def _do(*args, **kwargs):
             for elem in self.__elements:
@@ -130,13 +130,13 @@ class ExtensionCarrier(object):
         try:
             _do.__name__ = funcname
         except:
-            # cant set __name__ in py 2.3 
+            # cant set __name__ in py 2.3
             pass
         return _do
-    
+
     def _pass(self, *args, **kwargs):
         return EXT_CONTINUE
-        
+
     def __getattr__(self, key):
         return self.methods.get(key, self._pass)
 
@@ -155,7 +155,7 @@ class AliasedClauses(object):
             self.adapter.chain(chain_to.adapter)
         self.__wrap = None
         self.row_decorator = self._create_row_adapter()
-        
+
     def wrap(self, aliasedclauses):
         """Wrap the operations performed by this AliasedClauses by another AliasedClauses."""
         ac = AliasedClauses.__new__(AliasedClauses)
@@ -166,15 +166,15 @@ class AliasedClauses(object):
 
     def aliased_column(self, column):
         """adapt the given column to this AliasedClauses' selectable, and add it to the row adapter."""
-        
+
         if self.__wrap:
             column = self.__wrap.aliased_column(column)
-            
+
         conv = self.selectable.corresponding_column(column)
         if conv:
             return conv
-        
-        # process column-level subqueries    
+
+        # process column-level subqueries
         aliased_column = self.adapter.traverse(column)
 
         # add to row decorator explicitly
@@ -184,15 +184,15 @@ class AliasedClauses(object):
     def adapt_clause(self, clause):
         if self.__wrap:
             clause = self.__wrap.adapt_clause(clause)
-            
+
         return self.adapter.traverse(clause)
-    
+
     def adapt_list(self, clauses):
         if self.__wrap:
             clauses = self.__wrap.adapt_list(clauses)
-            
+
         return self.adapter.copy_and_process(clauses)
-        
+
     def _create_row_adapter(self):
         adapter = create_row_adapter(self.selectable, equivalent_columns=self.equivalents)
         if self.__wrap:
@@ -208,7 +208,7 @@ class AliasedClass(object):
         self.__adapter = sql_util.ClauseAdapter(alias, equivalents=self.__mapper._equivalent_columns)
         self.__alias = alias
         self.__name__ = 'AliasedClass_' + str(self.__target)
-    
+
     def __adapt_prop(self, prop):
         existing = getattr(self.__target, prop.key)
         comparator = AliasedComparator(self, self.__adapter, existing.comparator)
@@ -216,12 +216,12 @@ class AliasedClass(object):
             existing.impl, parententity=self, comparator=comparator)
         setattr(self, prop.key, queryattr)
         return queryattr
-        
+
     def __getattr__(self, key):
         prop = self.__mapper._get_property(key, raiseerr=False)
         if prop:
             return self.__adapt_prop(prop)
-            
+
         for base in self.__target.__mro__:
             try:
                 attr = object.__getattribute__(base, key)
@@ -256,7 +256,7 @@ class AliasedComparator(PropComparator):
 
     def __clause_element__(self):
         return self.__clause_element
-    
+
     def operate(self, op, *other, **kwargs):
         return self.adapter.traverse(self.comparator.operate(op, *other, **kwargs))
 
@@ -266,12 +266,12 @@ class AliasedComparator(PropComparator):
 class _ORMJoin(expression.Join):
 
     __visit_name__ = expression.Join.__visit_name__
-    
+
     def __init__(self, left, right, onclause=None, isouter=False):
         if hasattr(left, '_orm_mappers'):
             left_mapper = left._orm_mappers[1]
             adapt_from = left.right
-        
+
         else:
             left_mapper, left, left_is_aliased = _entity_info(left)
             if left_is_aliased or not left_mapper:
@@ -284,10 +284,10 @@ class _ORMJoin(expression.Join):
             adapt_to = right
         else:
             adapt_to = None
-            
+
         if left_mapper or right_mapper:
             self._orm_mappers = (left_mapper, right_mapper)
-            
+
             if isinstance(onclause, basestring):
                 prop = left_mapper.get_property(onclause)
             elif isinstance(onclause, attributes.QueryableAttribute):
@@ -306,9 +306,9 @@ class _ORMJoin(expression.Join):
                     onclause = sj
                 else:
                     onclause = pj
-                
+
                 self._target_adapter = target_adapter
-                
+
         expression.Join.__init__(self, left, right, onclause, isouter)
 
     def join(self, right, onclause=None, isouter=False):
@@ -325,13 +325,13 @@ def outerjoin(left, right, onclause=None):
 
 def with_parent(instance, prop):
     """Return criterion which selects instances with a given parent.
-    
+
     instance
       a parent instance, which should be persistent or detached.
 
      property
        a class-attached descriptor, MapperProperty or string property name
-       attached to the parent instance.  
+       attached to the parent instance.
 
      \**kwargs
        all extra keyword arguments are propagated to the constructor of
@@ -377,7 +377,7 @@ def _entity_descriptor(entity, key):
     else:
         desc = getattr(entity.class_, key)
         return desc, desc.property
-    
+
 def _orm_columns(entity):
     mapper, selectable, is_aliased_class = _entity_info(entity)
     if isinstance(selectable, expression.Selectable):
@@ -388,13 +388,13 @@ def _orm_columns(entity):
 def _orm_selectable(entity):
     mapper, selectable, is_aliased_class = _entity_info(entity)
     return selectable
-    
+
 def _is_mapped_class(entity):
     return hasattr(entity, '_class_state')
 
 def _is_aliased_class(entity):
     return isinstance(entity, AliasedClass)
-    
+
 def has_mapper(object):
     """Return True if the given object has had a mapper association
     set up, either through loading, or via insertion in a session.
