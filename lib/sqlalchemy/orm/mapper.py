@@ -1388,13 +1388,13 @@ class Mapper(object):
         if identitykey in session_identity_map:
             instance = session_identity_map[identitykey]
             state = attributes.instance_state(instance)
-            loaded = False
 
             if self.__should_log_debug:
                 self.__log_debug("_instance(): using existing instance %s identity %s" % (instance_str(instance), str(identitykey)))
 
             isnew = state.runid != context.runid
             currentload = not isnew
+            loaded_instance = False
 
             if not currentload and context.version_check and self.version_id_col and self._get_state_attr_by_column(state, self.version_id_col) != row[self.version_id_col]:
                 raise exceptions.ConcurrentModificationError("Instance '%s' version of %s does not match %s" % (state_str(state), self._get_state_attr_by_column(state, self.version_id_col), row[self.version_id_col]))
@@ -1406,7 +1406,7 @@ class Mapper(object):
             instance = state.obj()
             isnew = state.runid != context.runid
             currentload = True
-            loaded = False
+            loaded_instance = False
         else:
             if self.__should_log_debug:
                 self.__log_debug("_instance(): identity key %s not in session" % str(identitykey))
@@ -1422,7 +1422,7 @@ class Mapper(object):
                     return None
             isnew = True
             currentload = True
-            loaded = True
+            loaded_instance = True
 
             if 'create_instance' in extension.methods:
                 instance = extension.create_instance(self, context, row, self.class_)
@@ -1471,8 +1471,8 @@ class Mapper(object):
         if result is not None and ('append_result' not in extension.methods or extension.append_result(self, context, row, instance, result, instancekey=identitykey, isnew=isnew) is EXT_CONTINUE):
             result.append(instance)
 
-        if loaded:
-            state.XXX_reconstitution_notification(instance)
+        if loaded_instance:
+            state._run_on_load(instance)
 
         return instance
 

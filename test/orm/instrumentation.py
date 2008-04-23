@@ -483,6 +483,50 @@ class InstrumentationCollisionTest(TestBase):
         attributes.register_class(C)
         self.assertRaises(TypeError, attributes.register_class, B1)
 
+
+class OnLoadTest(TestBase):
+    """Check that Events.on_load is not hit in regular attributes operations."""
+
+    def test_basic(self):
+        import pickle
+
+        global A
+        class A(object):
+            pass
+
+        def canary(instance): assert False
+
+        try:
+            attributes.register_class(A)
+            manager = attributes.manager_of_class(A)
+            manager.events.add_listener('on_load', canary)
+
+            a = A()
+            p_a = pickle.dumps(a)
+            re_a = pickle.loads(p_a)
+        finally:
+            del A
+
+
+class ExtendedEventsTest(TestBase):
+    """Allow custom Events implementations."""
+
+    @modifies_instrumentation_finders
+    def test_subclassed(self):
+        class MyEvents(attributes.Events):
+            pass
+        class MyClassManager(attributes.ClassManager):
+            event_registry_factory = MyEvents
+
+        attributes.instrumentation_finders.insert(0, lambda cls: MyClassManager)
+
+        class A(object): pass
+
+        attributes.register_class(A)
+        manager = attributes.manager_of_class(A)
+        assert isinstance(manager.events, MyEvents)
+
+
 class NativeInstrumentationTest(TestBase):
     @with_lookup_strategy(util.symbol('native'))
     def test_register_reserved_attribute(self):

@@ -18,14 +18,16 @@ except ImportError:
 
 try:
     Set = set
+    FrozenSet = frozenset
     set_types = set, sets.Set
 except NameError:
     set_types = sets.Set,
-    # layer some of __builtin__.set's binop behavior onto sets.Set
-    class Set(sets.Set):
+
+    def py24_style_ops():
+        """Layer some of __builtin__.set's binop behavior onto sets.Set."""
+
         def _binary_sanity_check(self, other):
             pass
-
         def issubset(self, iterable):
             other = type(self)(iterable)
             return sets.Set.issubset(self, other)
@@ -38,7 +40,6 @@ except NameError:
         def __ge__(self, other):
             sets.Set._binary_sanity_check(self, other)
             return sets.Set.__ge__(self, other)
-
         # lt and gt still require a BaseSet
         def __lt__(self, other):
             sets.Set._binary_sanity_check(self, other)
@@ -63,6 +64,14 @@ except NameError:
             if not isinstance(other, sets.BaseSet):
                 return NotImplemented
             return sets.Set.__isub__(self, other)
+        return locals()
+
+    py24_style_ops = py24_style_ops()
+    Set = type('Set', sets.Set, py24_style_ops)
+    FrozenSet = type('frozenset', sets.ImmutableSet, py24_style_ops)
+    del py24_style_ops
+
+EMPTY_SET = FrozenSet()
 
 try:
     import cPickle as pickle

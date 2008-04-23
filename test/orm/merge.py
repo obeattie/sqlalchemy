@@ -21,20 +21,34 @@ class MergeTest(TestBase, AssertsExecutionResults):
         clear_mappers()
         tables.delete()
 
+    def on_load_tracker(self, cls, canary=None):
+        if canary is None:
+            def canary(instance):
+                canary.called += 1
+            canary.called = 0
+
+        manager = attributes.manager_of_class(cls)
+        manager.events.add_listener('on_load', canary)
+
+        return canary
+
     def test_transient_to_pending(self):
         class User(fixtures.Base):
             pass
         mapper(User, users)
         sess = create_session()
+        on_load = self.on_load_tracker(User)
 
         u = User(user_id=7, user_name='fred')
+        assert on_load.called == 0
         u2 = sess.merge(u)
+        assert on_load.called == 1
         assert u2 in sess
         self.assertEquals(u2, User(user_id=7, user_name='fred'))
         sess.flush()
         sess.clear()
         self.assertEquals(sess.query(User).first(), User(user_id=7, user_name='fred'))
-    
+
     def test_transient_to_pending_collection(self):
         class User(fixtures.Base):
             pass
@@ -42,39 +56,57 @@ class MergeTest(TestBase, AssertsExecutionResults):
             pass
         mapper(User, users, properties={'addresses':relation(Address, backref='user', collection_class=OrderedSet)})
         mapper(Address, addresses)
+        on_load = self.on_load_tracker(User)
+        self.on_load_tracker(Address, on_load)
 
         u = User(user_id=7, user_name='fred', addresses=OrderedSet([
             Address(address_id=1, email_address='fred1'),
             Address(address_id=2, email_address='fred2'),
-        ]))
+            ]))
+        assert on_load.called == 0
+
         sess = create_session()
         sess.merge(u)
+        assert on_load.called == 3
+
+        merged_users = [e for e in sess if isinstance(e, User)]
+        assert len(merged_users) == 1
+        assert merged_users[0] is not u
+
         sess.flush()
         sess.clear()
 
-        self.assertEquals(sess.query(User).one(), 
+        self.assertEquals(sess.query(User).one(),
             User(user_id=7, user_name='fred', addresses=OrderedSet([
                 Address(address_id=1, email_address='fred1'),
                 Address(address_id=2, email_address='fred2'),
             ]))
         )
-        
+
     def test_transient_to_persistent(self):
         class User(fixtures.Base):
             pass
         mapper(User, users)
+        on_load = self.on_load_tracker(User)
+
         sess = create_session()
         u = User(user_id=7, user_name='fred')
         sess.save(u)
         sess.flush()
         sess.clear()
-        
-        u2 = User(user_id=7, user_name='fred jones')
+
+        assert on_load.called == 0
+
+        _u2 = u2 = User(user_id=7, user_name='fred jones')
+        assert on_load.called == 0
         u2 = sess.merge(u2)
+        assert u2 is not _u2
+        assert on_load.called == 1
         sess.flush()
         sess.clear()
         self.assertEquals(sess.query(User).first(), User(user_id=7, user_name='fred jones'))
-        
+        assert on_load.called == 2
+
     def test_transient_to_persistent_collection(self):
         class User(fixtures.Base):
             pass
@@ -82,7 +114,9 @@ class MergeTest(TestBase, AssertsExecutionResults):
             pass
         mapper(User, users, properties={'addresses':relation(Address, backref='user', collection_class=OrderedSet)})
         mapper(Address, addresses)
-        
+        on_load = self.on_load_tracker(User)
+        self.on_load_tracker(Address, on_load)
+
         u = User(user_id=7, user_name='fred', addresses=OrderedSet([
             Address(address_id=1, email_address='fred1'),
             Address(address_id=2, email_address='fred2'),
@@ -91,14 +125,17 @@ class MergeTest(TestBase, AssertsExecutionResults):
         sess.save(u)
         sess.flush()
         sess.clear()
-        
+
+        assert on_load.called == 0
+
         u = User(user_id=7, user_name='fred', addresses=OrderedSet([
             Address(address_id=3, email_address='fred3'),
             Address(address_id=4, email_address='fred4'),
         ]))
-        
+
         u = sess.merge(u)
-        self.assertEquals(u, 
+        assert on_load.called == 3, on_load.called
+        self.assertEquals(u,
             User(user_id=7, user_name='fred', addresses=OrderedSet([
                 Address(address_id=3, email_address='fred3'),
                 Address(address_id=4, email_address='fred4'),
@@ -106,13 +143,13 @@ class MergeTest(TestBase, AssertsExecutionResults):
         )
         sess.flush()
         sess.clear()
-        self.assertEquals(sess.query(User).one(), 
+        self.assertEquals(sess.query(User).one(),
             User(user_id=7, user_name='fred', addresses=OrderedSet([
                 Address(address_id=3, email_address='fred3'),
                 Address(address_id=4, email_address='fred4'),
             ]))
         )
-        
+
     def test_detached_to_persistent_collection(self):
         class User(fixtures.Base):
             pass
@@ -120,7 +157,9 @@ class MergeTest(TestBase, AssertsExecutionResults):
             pass
         mapper(User, users, properties={'addresses':relation(Address, backref='user', collection_class=OrderedSet)})
         mapper(Address, addresses)
-        
+        on_load = self.on_load_tracker(User)
+        self.on_load_tracker(Address, on_load)
+
         a = Address(address_id=1, email_address='fred1')
         u = User(user_id=7, user_name='fred', addresses=OrderedSet([
             a,
@@ -130,34 +169,39 @@ class MergeTest(TestBase, AssertsExecutionResults):
         sess.save(u)
         sess.flush()
         sess.clear()
-        
+
         u.user_name='fred jones'
         u.addresses.add(Address(address_id=3, email_address='fred3'))
         u.addresses.remove(a)
-        
+
+        assert on_load.called == 0
         u = sess.merge(u)
+        assert on_load.called == 4
         sess.flush()
         sess.clear()
-        
-        self.assertEquals(sess.query(User).first(), 
+
+        self.assertEquals(sess.query(User).first(),
             User(user_id=7, user_name='fred jones', addresses=OrderedSet([
                 Address(address_id=2, email_address='fred2'),
                 Address(address_id=3, email_address='fred3'),
             ]))
         )
-        
+
     def test_unsaved_cascade(self):
         """test merge of a transient entity with two child transient entities, with a bidirectional relation."""
-        
+
         class User(fixtures.Base):
             pass
         class Address(fixtures.Base):
             pass
-            
+
         mapper(User, users, properties={
             'addresses':relation(mapper(Address, addresses), cascade="all", backref="user")
         })
+        on_load = self.on_load_tracker(User)
+        self.on_load_tracker(Address, on_load)
         sess = create_session()
+
         u = User(user_id=7, user_name='fred')
         a1 = Address(email_address='foo@bar.com')
         a2 = Address(email_address='hoho@bar.com')
@@ -165,12 +209,16 @@ class MergeTest(TestBase, AssertsExecutionResults):
         u.addresses.append(a2)
 
         u2 = sess.merge(u)
+        assert on_load.called == 3
+
         self.assertEquals(u, User(user_id=7, user_name='fred', addresses=[Address(email_address='foo@bar.com'), Address(email_address='hoho@bar.com')]))
         self.assertEquals(u2, User(user_id=7, user_name='fred', addresses=[Address(email_address='foo@bar.com'), Address(email_address='hoho@bar.com')]))
         sess.flush()
         sess.clear()
         u2 = sess.query(User).get(7)
         self.assertEquals(u2, User(user_id=7, user_name='fred', addresses=[Address(email_address='foo@bar.com'), Address(email_address='hoho@bar.com')]))
+        assert on_load.called == 6
+
 
     def test_attribute_cascade(self):
         """test merge of a persistent entity with two child persistent entities."""
@@ -183,6 +231,9 @@ class MergeTest(TestBase, AssertsExecutionResults):
         mapper(User, users, properties={
             'addresses':relation(mapper(Address, addresses), backref='user')
         })
+        on_load = self.on_load_tracker(User)
+        self.on_load_tracker(Address, on_load)
+
         sess = create_session()
 
         # set up data and save
@@ -202,9 +253,12 @@ class MergeTest(TestBase, AssertsExecutionResults):
         u.user_name = 'fred2'
         u.addresses[1].email_address = 'hoho@lalala.com'
 
+        assert on_load.called == 3
+
         # new session, merge modified data into session
         sess3 = create_session()
         u3 = sess3.merge(u)
+        assert on_load.called == 6
 
         # ensure local changes are pending
         self.assertEquals(u3, User(user_id=7, user_name='fred2', addresses=[Address(email_address='foo@bar.com'), Address(email_address='hoho@lalala.com')]))
@@ -216,6 +270,7 @@ class MergeTest(TestBase, AssertsExecutionResults):
         sess.clear()
         u = sess.query(User).get(7)
         self.assertEquals(u, User(user_id=7, user_name='fred2', addresses=[Address(email_address='foo@bar.com'), Address(email_address='hoho@lalala.com')]))
+        assert on_load.called == 9
 
         # merge persistent object into another session
         sess4 = create_session()
@@ -227,6 +282,7 @@ class MergeTest(TestBase, AssertsExecutionResults):
             sess4.flush()
         # no changes; therefore flush should do nothing
         self.assert_sql_count(testing.db, go, 0)
+        assert on_load.called == 12
 
         # test with "dontload" merge
         sess5 = create_session()
@@ -240,6 +296,7 @@ class MergeTest(TestBase, AssertsExecutionResults):
         # but also, dont_load wipes out any difference in committed state,
         # so no flush at all
         self.assert_sql_count(testing.db, go, 0)
+        assert on_load.called == 15
 
         sess4 = create_session()
         u = sess4.merge(u, dont_load=True)
@@ -249,11 +306,13 @@ class MergeTest(TestBase, AssertsExecutionResults):
             sess4.flush()
         # afafds change flushes
         self.assert_sql_count(testing.db, go, 1)
+        assert on_load.called == 18
 
         sess5 = create_session()
         u2 = sess5.query(User).get(u.user_id)
         assert u2.user_name == 'fred2'
         assert u2.addresses[1].email_address == 'afafds'
+        assert on_load.called == 21
 
     def test_one_to_many_cascade(self):
 
@@ -265,6 +324,9 @@ class MergeTest(TestBase, AssertsExecutionResults):
             'addresses':relation(mapper(Address, addresses)),
             'orders':relation(Order, backref='customer')
         })
+        on_load = self.on_load_tracker(User)
+        self.on_load_tracker(Address, on_load)
+        self.on_load_tracker(Order, on_load)
 
         sess = create_session()
         u = User()
@@ -282,16 +344,24 @@ class MergeTest(TestBase, AssertsExecutionResults):
         sess.save(u)
         sess.flush()
 
+        assert on_load.called == 0
+
         sess2 = create_session()
         u2 = sess2.query(User).get(u.user_id)
+        assert on_load.called == 1
+
         u.orders[0].items[1].item_name = 'item 2 modified'
         sess2.merge(u)
         assert u2.orders[0].items[1].item_name == 'item 2 modified'
+        assert on_load.called == 2
 
-        sess2 = create_session()
-        o2 = sess2.query(Order).get(o.order_id)
+        sess3 = create_session()
+        o2 = sess3.query(Order).get(o.order_id)
+        assert on_load.called == 3
+
         o.customer.user_name = 'also fred'
-        sess2.merge(o)
+        sess3.merge(o)
+        assert on_load.called == 4
         assert o2.customer.user_name == 'also fred'
 
     def test_one_to_one_cascade(self):
@@ -299,7 +369,10 @@ class MergeTest(TestBase, AssertsExecutionResults):
         mapper(User, users, properties={
             'address':relation(mapper(Address, addresses),uselist = False)
         })
+        on_load = self.on_load_tracker(User)
+        self.on_load_tracker(Address, on_load)
         sess = create_session()
+
         u = User()
         u.user_id = 7
         u.user_name = "fred"
@@ -310,13 +383,19 @@ class MergeTest(TestBase, AssertsExecutionResults):
         sess.save(u)
         sess.flush()
 
+        assert on_load.called == 0
+
         sess2 = create_session()
         u2 = sess2.query(User).get(7)
+        assert on_load.called == 1
         u2.user_name = 'fred2'
         u2.address.email_address = 'hoho@lalala.com'
+        assert on_load.called == 2
 
         u3 = sess.merge(u2)
-    
+        assert on_load.called == 2
+        assert u3 is u
+
     def test_transient_dontload(self):
         mapper(User, users)
 

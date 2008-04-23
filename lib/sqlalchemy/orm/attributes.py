@@ -7,7 +7,7 @@
 import inspect, operator, new, weakref
 from itertools import chain
 from sqlalchemy import util
-from sqlalchemy.util import attrgetter, itemgetter
+from sqlalchemy.util import attrgetter, itemgetter, EMPTY_SET
 from sqlalchemy.orm import interfaces, collections
 from sqlalchemy import exceptions
 
@@ -785,8 +785,6 @@ class GenericBackrefExtension(interfaces.AttributeExtension):
             child_state = instance_state(child)
             child_state.get_impl(self.key).remove(child_state, state.obj(), initiator, passive=True)
 
-import sets
-_empty_set = sets.ImmutableSet()
 
 class InstanceState(object):
     """tracks state information at the instance level."""
@@ -807,7 +805,7 @@ class InstanceState(object):
         self.runid = None
         self.key = self.session_id = None
         self.entity_name = NO_ENTITY_NAME
-        self.expired_attributes = _empty_set
+        self.expired_attributes = EMPTY_SET
     
     def check_modified(self):
         if self.modified:
@@ -897,9 +895,6 @@ class InstanceState(object):
         else:
             return [x]
 
-    def XXX_reconstitution_notification(self, instance=None):
-        pass
-
     def __resurrect(self, instance_dict):
         if self.check_modified():
             # store strong ref'ed version of the object; will revert
@@ -910,11 +905,16 @@ class InstanceState(object):
             # todo: revisit this wrt user-defined-state
             obj.__dict__.update(self.dict)
             self.dict = obj.__dict__
-            self.XXX_reconstitution_notification(obj)
+            self._run_on_load(obj)
             return obj
         else:
             instance_dict.remove(self)
             return None
+
+    def _run_on_load(self, instance=None):
+        if instance is None:
+            instance = self.obj()
+        self.manager.events.run('on_load', instance)
 
     def __getstate__(self):
         return {'key': self.key,
@@ -1108,15 +1108,41 @@ class InstanceState(object):
         self._strong_obj = None
         self.appenders = {}
 
+
+class Events(object):
+    def __init__(self):
+        self.original_init = object.__init__
+        self.on_init = ()
+        self.on_init_failure = ()
+        self.on_load = ()
+
+    def run(self, event, *args, **kwargs):
+        for fn in getattr(self, event):
+            fn(*args, **kwargs)
+
+    def add_listener(self, event, listener):
+        # not thread safe... problem?
+        bucket = getattr(self, event)
+        if bucket == ():
+            setattr(self, event, [listener])
+        else:
+            bucket.append(listener)
+
+    def remove_listener(self, event, listener):
+        bucket = getattr(self, event)
+        bucket.remove(listener)
+
+
 class ClassManager(dict):
     """tracks state information at the class level."""
 
     MANAGER_ATTR = '_fooclass_manager'
     STATE_ATTR = '_foostate'
+    event_registry_factory = Events
 
     def __init__(self, class_):
         self.class_ = class_
-        self.factory = None # where we came from, for bookkeeping
+        self.factory = None  # where we came from, for inheritance bookkeeping
         self.info = {}
         self.mappers = {}
         self.mutable_attributes = util.Set()
@@ -1128,7 +1154,7 @@ class ClassManager(dict):
                 self.update(cls_state)
         self.registered = False
         self._instantiable = False
-        self.events = Events()
+        self.events = self.event_registry_factory()
 
     def instantiable(self, boolean):
         # experiment, probably won't stay in this form
@@ -1378,28 +1404,6 @@ class _ClassInstrumentationAdapter(ClassManager):
     def state_getter(self):
         return self._adapted.state_getter(self.class_)
 
-class Events(object):
-    def __init__(self):
-        self.original_init = object.__init__
-        self.on_init = ()
-        self.on_init_failure = ()
-        self.on_load = ()
-
-    def run(self, event, *args, **kwargs):
-        for fn in getattr(self, event):
-            fn(*args, **kwargs)
-
-    def add_listener(self, event, listener):
-        # not thread safe... problem?
-        bucket = getattr(self, event)
-        if bucket == ():
-            setattr(self, event, [listener])
-        else:
-            bucket.append(listener)
-
-    def remove_listener(self, event, listener):
-        bucket = getattr(self, event)
-        bucket.remove(listener)
 
 class History(tuple):
     # TODO: migrate [] marker for empty slots to ()

@@ -952,16 +952,15 @@ class Session(object):
             self.save(merged, entity_name=mapper.entity_name)
 
         _recursive[instance] = merged
-        
+
         for prop in mapper.iterate_properties:
             prop.merge(self, instance, merged, dont_load, _recursive)
-            
+
         if dont_load:
             attributes.instance_state(merged).commit_all()  # remove any history
 
         if new_instance:
-            merged_state.XXX_reconstitution_notification(merged)
-
+            merged_state._run_on_load(merged)
         return merged
 
     def identity_key(cls, *args, **kwargs):
