@@ -697,7 +697,7 @@ class PGCompiler(compiler.DefaultCompiler):
                         yield co
                 else:
                     yield c
-        columns = [self.process(c) for c in flatten_columnlist(returning_cols)]
+        columns = [self.process(c, render_labels=True) for c in flatten_columnlist(returning_cols)]
         text += ' RETURNING ' + string.join(columns, ', ')
         return text
 
