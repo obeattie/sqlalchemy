@@ -3457,6 +3457,7 @@ class Delete(_UpdateBase):
 
 class _IdentifiedClause(ClauseElement):
     supports_execution = True
+    quote=False
     
     def __init__(self, ident):
         self.ident = ident

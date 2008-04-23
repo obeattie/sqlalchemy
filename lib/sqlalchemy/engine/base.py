@@ -806,11 +806,11 @@ class Connection(Connectable):
 
         # TODO: have the dialect determine if autocommit can be set on
         # the connection directly without this extra step
-        if not self.__transaction and context.should_autocommit:
+        if not self.in_transaction() and context.should_autocommit:
             self._commit_impl()
 
     def _autorollback(self):
-        if not self.__transaction:
+        if not self.in_transaction():
             self._rollback_impl()
 
     def close(self):
