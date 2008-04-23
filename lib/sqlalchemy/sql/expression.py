@@ -944,6 +944,7 @@ class ClauseElement(object):
     """Base class for elements of a programmatically constructed SQL expression."""
     __metaclass__ = _FigureVisitName
     _annotations = {}
+    supports_execution = False
     
     def _clone(self):
         """Create a shallow copy of this ClauseElement.
@@ -1059,11 +1060,6 @@ class ClauseElement(object):
 
     def self_group(self, against=None):
         return self
-
-    def supports_execution(self):
-        """Return True if this clause element represents a complete executable statement."""
-
-        return False
 
     def bind(self):
         """Returns the Engine or Connection to which this ClauseElement is bound, or None if none found."""
@@ -1483,10 +1479,10 @@ class ColumnElement(ClauseElement, _CompareMixin):
     docstring for more details.
     """
 
-    def __init__(self):
-        self.primary_key = False
-        self.foreign_keys = []
-        
+    primary_key = False
+    foreign_keys = []
+    quote = False
+    
     def base_columns(self):
         if not hasattr(self, '_base_columns'):
             self._base_columns = util.Set([c for c in self.proxy_set if not hasattr(c, 'proxies')])
@@ -1654,6 +1650,7 @@ class FromClause(Selectable):
     __visit_name__ = 'fromclause'
     named_with_column=False
     _hide_froms = []
+    quote = False
 
     def _get_from_objects(self, **modifiers):
         return []
@@ -1917,6 +1914,7 @@ class _TextClause(ClauseElement):
     __visit_name__ = 'textclause'
 
     _bind_params_regex = re.compile(r'(?<![:\w\x5c]):(\w+)(?!:)', re.UNICODE)
+    supports_execution = True
 
     def __init__(self, text = "", bind=None, bindparams=None, typemap=None, autocommit=False):
         self._bind = bind
@@ -1953,9 +1951,7 @@ class _TextClause(ClauseElement):
 
     def _get_from_objects(self, **modifiers):
         return []
-
-    def supports_execution(self):
-        return True
+    
 
 class _Null(ColumnElement):
     """Represent the NULL keyword in a SQL statement.
@@ -2410,6 +2406,7 @@ class Alias(FromClause):
         while isinstance(baseselectable, Alias):
             baseselectable = baseselectable.element
         self.original = baseselectable
+        self.supports_execution = baseselectable.supports_execution
         self.element = selectable
         if alias is None:
             if self.original.named_with_column:
@@ -2425,9 +2422,6 @@ class Alias(FromClause):
         if fromclause in util.Set(self._cloned_set):
             return True
         return self.element.is_derived_from(fromclause)
-
-    def supports_execution(self):
-        return self.original.supports_execution()
 
     def _populate_column_collection(self):
         for col in self.element.columns:
@@ -2721,6 +2715,8 @@ class TableClause(_Immutable, FromClause):
 class _SelectBaseMixin(object):
     """Base class for ``Select`` and ``CompoundSelects``."""
 
+    supports_execution = True
+    
     def __init__(self, use_labels=False, for_update=False, limit=None, offset=None, order_by=None, group_by=None, bind=None, autocommit=False):
         self.use_labels = use_labels
         self.for_update = for_update
@@ -2765,11 +2761,6 @@ class _SelectBaseMixin(object):
 
         """
         return self.as_scalar().label(name)
-
-    def supports_execution(self):
-        """part of the ClauseElement contract; returns ``True`` in all cases for this class."""
-
-        return True
 
     def autocommit(self):
         """return a new selectable with the 'autocommit' flag set to True."""
@@ -3289,23 +3280,20 @@ class Select(_SelectBaseMixin, FromClause):
     def bind(self):
         if self._bind:
             return self._bind
-        for f in self._froms:
-            if f is self:
-                continue
-            e = f.bind
+        if not self._froms:
+            for c in self._raw_columns:
+                e = c.bind
+                if e:
+                    self._bind = e
+                    return e
+        else:
+            e = list(self._froms)[0].bind
             if e:
                 self._bind = e
                 return e
-        # look through the columns (largely synomous with looking
-        # through the FROMs except in the case of _CalculatedClause/_Function)
-        for c in self._raw_columns:
-            if getattr(c, 'table', None) is self:
-                continue
-            e = c.bind
-            if e:
-                self._bind = e
-                return e
+
         return None
+        
     def _set_bind(self, bind):
         self._bind = bind
     bind = property(bind, _set_bind)
@@ -3313,8 +3301,7 @@ class Select(_SelectBaseMixin, FromClause):
 class _UpdateBase(ClauseElement):
     """Form the base for ``INSERT``, ``UPDATE``, and ``DELETE`` statements."""
 
-    def supports_execution(self):
-        return True
+    supports_execution = True
 
     def _generate(self):
         s = self.__class__.__new__(self.__class__)
@@ -3469,10 +3456,10 @@ class Delete(_UpdateBase):
         self._whereclause = clone(self._whereclause)
 
 class _IdentifiedClause(ClauseElement):
+    supports_execution = True
+    
     def __init__(self, ident):
         self.ident = ident
-    def supports_execution(self):
-        return True
 
 class SavepointClause(_IdentifiedClause):
     pass

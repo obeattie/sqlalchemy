@@ -91,6 +91,9 @@ class ColumnProperty(StrategizedProperty):
             col = self.__clause_element__()
             return op(col._bind_param(other), col, **kwargs)
 
+    def __str__(self):
+        return str(self.parent.class_.__name__) + "." + self.key
+
 ColumnProperty.logger = logging.class_logger(ColumnProperty)
 
 class CompositeProperty(ColumnProperty):
@@ -149,6 +152,9 @@ class CompositeProperty(ColumnProperty):
             return sql.or_(*[a!=b for a, b in
                              zip(self.prop.columns,
                                  other.__composite_values__())])
+
+    def __str__(self):
+        return str(self.parent.class_.__name__) + "." + self.key
 
 class SynonymProperty(MapperProperty):
     def __init__(self, name, map_column=None, descriptor=None):
@@ -404,7 +410,7 @@ class PropertyLoader(StrategizedProperty):
         return self._get_strategy(strategies.LazyLoader).lazy_clause(value, reverse_direction=not value_is_parent)
 
     def __str__(self):
-        return str(self.parent.class_.__name__) + "." + self.key + " (" + str(self.mapper.class_.__name__)  + ")"
+        return str(self.parent.class_.__name__) + "." + self.key
 
     def merge(self, session, source, dest, dont_load, _recursive):
         if not dont_load and self._reverse_property and (source, self._reverse_property) in _recursive:

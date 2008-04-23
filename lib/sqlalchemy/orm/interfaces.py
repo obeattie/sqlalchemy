@@ -794,6 +794,19 @@ class LoaderStrategy(object):
 
         raise NotImplementedError()
 
+    def __str__(self):
+        return str(self.parent_property)
+
+    def debug_callable(self, fn, logger, announcement, logfn):
+        if announcement:
+            logger.debug(announcement)
+        if logfn:
+            def call(*args, **kwargs):
+                logger.debug(logfn(*args, **kwargs))
+                return fn(*args, **kwargs)
+            return call
+        else:
+            return fn
 
 class InstrumentationManager(object):
     """User-defined class instrumentation extension."""

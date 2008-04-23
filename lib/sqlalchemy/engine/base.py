@@ -451,7 +451,7 @@ class Compiled(object):
         self.statement = statement
         self.column_keys = column_keys
         self.bind = bind
-        self.can_execute = statement.supports_execution()
+        self.can_execute = statement.supports_execution
 
     def compile(self):
         """Produce the internal string representation of this element."""

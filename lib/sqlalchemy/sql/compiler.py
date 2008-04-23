@@ -162,13 +162,10 @@ class DefaultCompiler(engine.Compiled):
         # for aliases
         self.generated_ids = {}
 
-        # paramstyle from the dialect (comes from DB-API)
-        self.paramstyle = self.dialect.paramstyle
-
         # true if the paramstyle is positional
         self.positional = self.dialect.positional
 
-        self.bindtemplate = BIND_TEMPLATES[self.paramstyle]
+        self.bindtemplate = BIND_TEMPLATES[self.dialect.paramstyle]
 
         # a list of the compiled's bind parameter names, used to help
         # formulate a positional argument list
@@ -1010,7 +1007,7 @@ class IdentifierPreparer(object):
                 or (lc_value != value))
 
     def quote(self, obj, ident):
-        if getattr(obj, 'quote', False):
+        if obj.quote:
             return self.quote_identifier(ident)
         if ident in self.__strings:
             return self.__strings[ident]
@@ -1020,9 +1017,6 @@ class IdentifierPreparer(object):
             else:
                 self.__strings[ident] = ident
             return self.__strings[ident]
-
-    def should_quote(self, object):
-        return object.quote or self._requires_quotes(object.name)
 
     def format_sequence(self, sequence, use_schema=True):
         name = self.quote(sequence, sequence.name)
