@@ -219,7 +219,22 @@ class PropertyLoader(StrategizedProperty):
     of items that correspond to a related database table.
     """
 
-    def __init__(self, argument, secondary=None, primaryjoin=None, secondaryjoin=None, entity_name=None, foreign_keys=None, foreignkey=None, uselist=None, association=None, order_by=False, attributeext=None, backref=None, is_backref=False, post_update=False, cascade=None, viewonly=False, lazy=True, collection_class=None, passive_deletes=False, passive_updates=True, remote_side=None, enable_typechecks=True, join_depth=None, strategy_class=None, _local_remote_pairs=None):
+    def __init__(self, argument, 
+        secondary=None, primaryjoin=None, 
+        secondaryjoin=None, entity_name=None, 
+        foreign_keys=None, 
+        uselist=None, 
+        order_by=False, 
+        backref=None, 
+        _is_backref=False, 
+        post_update=False, 
+        cascade=None, 
+        viewonly=False, lazy=True, 
+        collection_class=None, passive_deletes=False, 
+        passive_updates=True, remote_side=None, 
+        enable_typechecks=True, join_depth=None, 
+        strategy_class=None, _local_remote_pairs=None):
+        
         self.uselist = uselist
         self.argument = argument
         self.entity_name = entity_name
@@ -231,9 +246,6 @@ class PropertyLoader(StrategizedProperty):
         self.viewonly = viewonly
         self.lazy = lazy
         self.foreign_keys = util.to_set(foreign_keys)
-        self._legacy_foreignkey = util.to_set(foreignkey)
-        if foreignkey:
-            util.warn_deprecated('foreignkey option is deprecated; see docs for details')
         self.collection_class = collection_class
         self.passive_deletes = passive_deletes
         self.passive_updates = passive_updates
@@ -266,11 +278,8 @@ class PropertyLoader(StrategizedProperty):
         if self.passive_deletes == 'all' and ("delete" in self.cascade or "delete-orphan" in self.cascade):
             raise exceptions.ArgumentError("Can't set passive_deletes='all' in conjunction with 'delete' or 'delete-orphan' cascade")
 
-        self.association = association
-        if association:
-            util.warn_deprecated('association option is deprecated; see docs for details')
         self.order_by = order_by
-        self.attributeext=attributeext
+
         if isinstance(backref, str):
             # propigate explicitly sent primary/secondary join conditions to the BackRef object if
             # just a string was sent
@@ -281,7 +290,7 @@ class PropertyLoader(StrategizedProperty):
                 self.backref = BackRef(backref, primaryjoin=primaryjoin, secondaryjoin=secondaryjoin, passive_updates=self.passive_updates)
         else:
             self.backref = backref
-        self.is_backref = is_backref
+        self._is_backref = _is_backref
 
     class Comparator(PropComparator):
         def __init__(self, prop, of_type=None):
@@ -558,9 +567,6 @@ class PropertyLoader(StrategizedProperty):
         
     def __determine_fks(self):
 
-        if self._legacy_foreignkey and not self._refers_to_parent_table():
-            self.foreign_keys = self._legacy_foreignkey
-
         arg_foreign_keys = self.foreign_keys
 
         if self._arg_local_remote_pairs:
@@ -664,13 +670,7 @@ class PropertyLoader(StrategizedProperty):
             # for a self referential mapper, if the "foreignkey" is a single or composite primary key,
             # then we are "many to one", since the remote site of the relationship identifies a singular entity.
             # otherwise we are "one to many".
-            if self._legacy_foreignkey:
-                for f in self._legacy_foreignkey:
-                    if not f.primary_key:
-                        self.direction = ONETOMANY
-                    else:
-                        self.direction = MANYTOONE
-            elif self._arg_local_remote_pairs:
+            if self._arg_local_remote_pairs:
                 remote = util.Set([r for l, r in self._arg_local_remote_pairs])
                 if self.foreign_keys.intersection(remote):
                     self.direction = ONETOMANY
@@ -728,11 +728,6 @@ class PropertyLoader(StrategizedProperty):
 
         # primary property handler, set up class attributes
         if self.is_primary():
-            # if a backref name is defined, set up an extension to populate
-            # attributes in the other direction
-            if self.backref is not None:
-                self.attributeext = self.backref.get_extension()
-
             if self.backref is not None:
                 self.backref.compile(self)
         elif not mapper.class_mapper(self.parent.class_, compile=False)._get_property(self.key, raiseerr=False):
@@ -831,7 +826,8 @@ class BackRef(object):
         self.key = key
         self.kwargs = kwargs
         self.prop = _prop
-
+        self.extension = attributes.GenericBackrefExtension(self.key)
+        
     def compile(self, prop):
         if self.prop:
             return
@@ -849,7 +845,7 @@ class BackRef(object):
 
             relation = PropertyLoader(parent, prop.secondary, pj, sj,
                                       backref=BackRef(prop.key, _prop=prop),
-                                      is_backref=True,
+                                      _is_backref=True,
                                       **self.kwargs)
 
             mapper._compile_property(self.key, relation);
@@ -859,11 +855,6 @@ class BackRef(object):
 
         else:
             raise exceptions.ArgumentError("Error creating backref '%s' on relation '%s': property of that name exists on mapper '%s'" % (self.key, prop, mapper))
-
-    def get_extension(self):
-        """Return an attribute extension to use with this backreference."""
-
-        return attributes.GenericBackrefExtension(self.key)
 
 mapper.ColumnProperty = ColumnProperty
 mapper.SynonymProperty = SynonymProperty

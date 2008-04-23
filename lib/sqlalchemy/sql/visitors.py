@@ -94,8 +94,22 @@ class ReplacingCloningVisitor(CloningVisitor):
         return replacement_traverse(obj, self.__traverse_options__, replace)
 
 def iterate(obj, opts):
-    """traverse the given expression structure, returning an iterator of all elements."""
+    """traverse the given expression structure, returning an iterator."""
 
+    stack = [obj]
+    traversal = util.deque()
+    while stack:
+        t = stack.pop()
+        yield t
+        for c in t.get_children(**opts):
+            stack.append(c)
+
+def iterate_depthfirst(obj, opts):
+    """traverse the given expression structure, returning an iterator.
+    
+    traversal is configured to be depth-first.
+    
+    """
     stack = [obj]
     traversal = util.deque()
     while stack:
@@ -115,7 +129,7 @@ def traverse(obj, opts, visitors):
     return obj
 
 def cloned_traverse(obj, opts, visitors):
-    cloned = dict([[k, k] for k in opts.get('stop_on', [])])
+    cloned = {}
 
     def clone(element):
         if element not in cloned:

@@ -21,10 +21,7 @@ def create_dependency_processor(prop):
         MANYTOONE: ManyToOneDP,
         MANYTOMANY : ManyToManyDP,
     }
-    if prop.association is not None:
-        return AssociationDP(prop)
-    else:
-        return types[prop.direction](prop)
+    return types[prop.direction](prop)
 
 class DependencyProcessor(object):
     no_dependencies = False
@@ -36,7 +33,7 @@ class DependencyProcessor(object):
         self.parent = prop.parent
         self.secondary = prop.secondary
         self.direction = prop.direction
-        self.is_backref = prop.is_backref
+        self.is_backref = prop._is_backref
         self.post_update = prop.post_update
         self.foreign_keys = prop.foreign_keys
         self.passive_deletes = prop.passive_deletes
@@ -483,12 +480,6 @@ class ManyToManyDP(DependencyProcessor):
 
     def _pks_changed(self, uowcommit, state):
         return sync.source_changes(uowcommit, state, self.parent, self.prop.synchronize_pairs)
-
-class AssociationDP(OneToManyDP):
-    def __init__(self, *args, **kwargs):
-        super(AssociationDP, self).__init__(*args, **kwargs)
-        self.cascade.delete = True
-        self.cascade.delete_orphan = True
 
 class MapperStub(object):
     """Pose as a Mapper representing the association table in a

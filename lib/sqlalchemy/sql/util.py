@@ -27,12 +27,11 @@ def sort_tables(tables, reverse=False):
 def search(clause, target):
     if not clause:
         return False
-    ret = [False]
-    def search(elem):
+    for elem in visitors.iterate(clause, {'column_collections':False}):
         if elem is target:
-            ret[0] = True
-    visitors.traverse(clause, {'column_collections':False}, {target.__visit_name__:search})
-    return ret[0]
+            return True
+    else:
+        return False
 
 def find_tables(clause, check_columns=False, include_aliases=False, include_joins=False, include_selects=False):
     """locate Table objects within the given expression."""

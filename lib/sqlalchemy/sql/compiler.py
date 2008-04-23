@@ -115,8 +115,6 @@ class DefaultCompiler(engine.Compiled):
     paradigm as visitors.ClauseVisitor but implements its own traversal.
     """
 
-    __traverse_options__ = {'column_collections':False, 'entry':True}
-
     operators = OPERATORS
     functions = FUNCTIONS
 
@@ -164,12 +162,10 @@ class DefaultCompiler(engine.Compiled):
 
         # true if the paramstyle is positional
         self.positional = self.dialect.positional
+        if self.positional:
+            self.positiontup = []
 
         self.bindtemplate = BIND_TEMPLATES[self.dialect.paramstyle]
-
-        # a list of the compiled's bind parameter names, used to help
-        # formulate a positional argument list
-        self.positiontup = []
 
         # an IdentifierPreparer that formats the quoting of identifiers
         self.preparer = self.dialect.identifier_preparer
@@ -436,8 +432,9 @@ class DefaultCompiler(engine.Compiled):
     def bindparam_string(self, name):
         if self.positional:
             self.positiontup.append(name)
-
-        return self.bindtemplate % {'name':name, 'position':len(self.positiontup)}
+            return self.bindtemplate % {'name':name, 'position':len(self.positiontup)}
+        else:
+            return self.bindtemplate % {'name':name}
 
     def visit_alias(self, alias, asfrom=False, **kwargs):
         if asfrom:

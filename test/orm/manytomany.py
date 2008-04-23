@@ -75,14 +75,7 @@ class M2MTest(ORMTest):
         mapper(Transition, transition, properties={
             'places':relation(Place, secondary=place_input, backref='transitions')
         })
-        try:
-            compile_mappers()
-            assert False
-        except exceptions.ArgumentError, e:
-            assert str(e) in [
-                "Error creating backref 'transitions' on relation 'Transition.places (Place)': property of that name exists on mapper 'Mapper|Place|place'",
-                "Error creating backref 'places' on relation 'Place.transitions (Transition)': property of that name exists on mapper 'Mapper|Transition|transition'"
-            ]
+        self.assertRaisesMessage(exceptions.ArgumentError, "Error creating backref", compile_mappers)
 
 
     def testcircular(self):

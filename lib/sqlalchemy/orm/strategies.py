@@ -159,7 +159,7 @@ class DeferredColumnLoader(LoaderStrategy):
 DeferredColumnLoader.logger = logging.class_logger(DeferredColumnLoader)
 
 class LoadDeferredColumns(object):
-    """callable, serializable loader object used by DeferredColumnLoader"""
+    """serializable loader object used by DeferredColumnLoader"""
     
     def __init__(self, state, key, keys):
         self.state = state
@@ -227,7 +227,7 @@ class UndeferGroupOption(MapperOption):
 class AbstractRelationLoader(LoaderStrategy):
     def init(self):
         super(AbstractRelationLoader, self).init()
-        for attr in ['primaryjoin', 'secondaryjoin', 'secondary', 'foreign_keys', 'mapper', 'target', 'table', 'uselist', 'cascade', 'attributeext', 'order_by', 'remote_side', 'direction']:
+        for attr in ['mapper', 'target', 'table', 'uselist']:
             setattr(self, attr, getattr(self.parent_property, attr))
         self._should_log_debug = logging.is_debug_enabled(self.logger)
         
@@ -239,7 +239,13 @@ class AbstractRelationLoader(LoaderStrategy):
         
     def _register_attribute(self, class_, callable_=None, **kwargs):
         self.logger.info("%s register managed %s attribute" % (self, (self.uselist and "collection" or "scalar")))
-        sessionlib.register_attribute(class_, self.key, uselist=self.uselist, useobject=True, extension=self.attributeext, cascade=self.cascade,  trackparent=True, typecallable=self.parent_property.collection_class, callable_=callable_, comparator=self.parent_property.comparator, parententity=self.parent, **kwargs)
+        
+        if self.parent_property.backref:
+            attribute_ext = self.parent_property.backref.extension
+        else:
+            attribute_ext = None
+        
+        sessionlib.register_attribute(class_, self.key, uselist=self.uselist, useobject=True, extension=attribute_ext, cascade=self.parent_property.cascade,  trackparent=True, typecallable=self.parent_property.collection_class, callable_=callable_, comparator=self.parent_property.comparator, parententity=self.parent, **kwargs)
 
 class NoLoader(AbstractRelationLoader):
     def init_class_attribute(self):
@@ -406,7 +412,7 @@ class LazyLoader(AbstractRelationLoader):
 LazyLoader.logger = logging.class_logger(LazyLoader)
 
 class LoadLazyAttribute(object):
-    """callable, serializable loader object used by LazyLoader"""
+    """serializable loader object used by LazyLoader"""
 
     def __init__(self, state, key, options, path):
         self.state = state
@@ -462,10 +468,10 @@ class LoadLazyAttribute(object):
                 q = q._conditional_options(*self.options)
             return q.get(ident)
             
-        if strategy.order_by is not False:
-            q = q.order_by(strategy.order_by)
-        elif strategy.secondary is not None and strategy.secondary.default_order_by() is not None:
-            q = q.order_by(strategy.secondary.default_order_by())
+        if prop.order_by is not False:
+            q = q.order_by(prop.order_by)
+        elif prop.secondary is not None and prop.secondary.default_order_by() is not None:
+            q = q.order_by(prop.secondary.default_order_by())
 
         if self.options:
             q = q._conditional_options(*self.options)
@@ -558,26 +564,26 @@ class EagerLoader(AbstractRelationLoader):
         
         context.eager_joins[entity_key] = eagerjoin = mapperutil.outerjoin(towrap, clauses.aliased_class, onclause)
         
-        if not self.secondary and context.query._should_nest_selectable and not parentmapper:
+        if not self.parent_property.secondary and context.query._should_nest_selectable and not parentmapper:
             # for parentclause that is the non-eager end of the join,
             # ensure all the parent cols in the primaryjoin are actually in the
             # columns clause (i.e. are not deferred), so that aliasing applied by the Query propagates 
             # those columns outward.  This has the effect of "undefering" those columns.
-            for col in sql_util.find_columns(self.primaryjoin):
+            for col in sql_util.find_columns(self.parent_property.primaryjoin):
                 if localparent.mapped_table.c.contains_column(col):
                     if parentclauses:
                         col = parentclauses.aliased_column(col)
                     context.primary_columns.append(col)
             
-        if self.order_by is False:
-            if self.secondaryjoin:
+        if self.parent_property.order_by is False:
+            if self.parent_property.secondaryjoin:
                 default_order_by = eagerjoin.left.right.default_order_by()
             else:
                 default_order_by = eagerjoin.right.default_order_by()
             if default_order_by:
                 context.eager_order_by += default_order_by
-        elif self.order_by:
-            context.eager_order_by += eagerjoin._target_adapter.copy_and_process(util.to_list(self.order_by))
+        elif self.parent_property.order_by:
+            context.eager_order_by += eagerjoin._target_adapter.copy_and_process(util.to_list(self.parent_property.order_by))
 
         # place the "row_decorator" from the AliasedClauses into the QueryContext, where it will
         # be picked up in create_row_processor() when results are fetched

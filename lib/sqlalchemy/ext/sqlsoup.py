@@ -442,7 +442,7 @@ def _is_outer_join(selectable):
 
 def _selectable_name(selectable):
     if isinstance(selectable, sql.Alias):
-        return _selectable_name(selectable.selectable)
+        return _selectable_name(selectable.element)
     elif isinstance(selectable, sql.Select):
         return ''.join([_selectable_name(s) for s in selectable.froms])
     elif isinstance(selectable, schema.Table):

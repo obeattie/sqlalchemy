@@ -42,7 +42,8 @@ class SchemaItem(object):
     """Base class for items that define a database schema."""
 
     __metaclass__ = expression._FigureVisitName
-
+    quote = False
+    
     def _init_items(self, *args):
         """Initialize the list of child items for this SchemaItem."""
 
@@ -214,7 +215,7 @@ class Table(SchemaItem, expression.TableClause):
 
         self._set_parent(metadata)
 
-	self.__extra_kwargs(**kwargs)
+        self.__extra_kwargs(**kwargs)
 
         # load column definitions from the database if 'autoload' is defined
         # we do it after the table is in the singleton dictionary to support
@@ -632,8 +633,8 @@ class Column(SchemaItem, expression._ColumnClause):
         """Create a copy of this ``Column``, unitialized.
 
         This is used in ``Table.tometadata``.
-        """
 
+        """
         return Column(self.name, self.type, self.default, key = self.key, primary_key = self.primary_key, nullable = self.nullable, _is_oid = self._is_oid, quote=self.quote, index=self.index, *[c.copy() for c in self.constraints])
     
     def _make_proxy(self, selectable, name=None):
@@ -641,8 +642,8 @@ class Column(SchemaItem, expression._ColumnClause):
 
         This is a copy of this ``Column`` referenced by a different parent
         (such as an alias or select statement).
-        """
 
+        """
         fk = [ForeignKey(f._colspec) for f in self.foreign_keys]
         c = Column(name or self.name, self.type, self.default, key = name or self.key, primary_key = self.primary_key, nullable = self.nullable, _is_oid = self._is_oid, quote=self.quote, *fk)
         c.table = selectable
@@ -654,7 +655,6 @@ class Column(SchemaItem, expression._ColumnClause):
                 selectable.primary_key.add(c)
         [c._init_items(f) for f in fk]
         return c
-
 
     def get_children(self, schema_visitor=False, **kwargs):
         if schema_visitor:
@@ -671,8 +671,8 @@ class ForeignKey(SchemaItem):
 
     For a composite (multiple column) FOREIGN KEY, use a ForeignKeyConstraint
     within the Table definition.
-    """
 
+    """
     def __init__(self, column, constraint=None, use_alter=False, name=None, onupdate=None, ondelete=None, deferrable=None, initially=None):
         """Construct a column-level FOREIGN KEY.
 
@@ -750,6 +750,7 @@ class ForeignKey(SchemaItem):
         """Return the column in the given table referenced by this ForeignKey.
 
         Returns None if this ``ForeignKey`` does not reference the given table.
+
         """
         return table.corresponding_column(self.column)
 
@@ -909,7 +910,6 @@ class ColumnDefault(DefaultGenerator):
                 "positional arguments")
         return fn
 
-
     def _visit_name(self):
         if self.for_update:
             return "column_onupdate"
@@ -958,7 +958,6 @@ class Sequence(DefaultGenerator):
             bind = _bind_or_error(self)
         bind.drop(self, checkfirst=checkfirst)
 
-
 class Constraint(SchemaItem):
     """A table-level SQL constraint, such as a KEY.
 
@@ -988,7 +987,10 @@ class Constraint(SchemaItem):
 
     def __contains__(self, x):
         return x in self.columns
-
+    
+    def contains_column(self, col):
+        return self.columns.contains_column(col)
+        
     def keys(self):
         return self.columns.keys()
 

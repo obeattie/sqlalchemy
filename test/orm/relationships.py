@@ -652,11 +652,8 @@ class TypeMatchTest(ORMTest):
         sess.save(a1)
         sess.save(b1)
         sess.save(c1)
-        try:
-            sess.flush()
-            assert False
-        except exceptions.FlushError, err:
-            assert str(err).startswith("Attempting to flush an item of type %s on collection 'A.bs (B)', which is handled by mapper 'Mapper|B|b' and does not load items of that type.  Did you mean to use a polymorphic mapper for this relationship ?" % C)
+        self.assertRaisesMessage(exceptions.FlushError, "Attempting to flush an item", sess.flush)
+
     def test_o2m_nopoly_onflush(self):
         class A(object):pass
         class B(object):pass
@@ -674,11 +671,7 @@ class TypeMatchTest(ORMTest):
         sess.save(a1)
         sess.save(b1)
         sess.save(c1)
-        try:
-            sess.flush()
-            assert False
-        except exceptions.FlushError, err:
-            assert str(err).startswith("Attempting to flush an item of type %s on collection 'A.bs (B)', which is handled by mapper 'Mapper|B|b' and does not load items of that type.  Did you mean to use a polymorphic mapper for this relationship ?" % C)
+        self.assertRaisesMessage(exceptions.FlushError, "Attempting to flush an item", sess.flush)
 
     def test_m2o_nopoly_onflush(self):
         class A(object):pass
@@ -693,11 +686,8 @@ class TypeMatchTest(ORMTest):
         sess = create_session()
         sess.save(b1)
         sess.save(d1)
-        try:
-            sess.flush()
-            assert False
-        except exceptions.FlushError, err:
-            assert str(err).startswith("Attempting to flush an item of type %s on collection 'D.a (A)', which is handled by mapper 'Mapper|A|a' and does not load items of that type.  Did you mean to use a polymorphic mapper for this relationship ?" % B)
+        self.assertRaisesMessage(exceptions.FlushError, "Attempting to flush an item", sess.flush)
+
     def test_m2o_oncascade(self):
         class A(object):pass
         class B(object):pass
@@ -709,11 +699,7 @@ class TypeMatchTest(ORMTest):
         d1 = D()
         d1.a = b1
         sess = create_session()
-        try:
-            sess.save(d1)
-            assert False
-        except exceptions.AssertionError, err:
-            assert str(err) == "Attribute 'a' on class '%s' doesn't handle objects of type '%s'" % (D, B)
+        self.assertRaisesMessage(exceptions.AssertionError, "doesn't handle objects of type", sess.save, d1)
 
 class TypedAssociationTable(ORMTest):
     def define_tables(self, metadata):

@@ -328,8 +328,8 @@ class ReflectionTest(TestBase, ComparesTables):
         try:
             metadata = MetaData(bind=testing.db)
             book = Table('book', metadata, autoload=True)
-            assert book.c.id  in book.primary_key
-            assert book.c.series not in book.primary_key
+            assert book.primary_key.contains_column(book.c.id)
+            assert not book.primary_key.contains_column(book.c.series)
             assert len(book.primary_key) == 1
         finally:
             testing.db.execute("drop table book")
@@ -363,9 +363,9 @@ class ReflectionTest(TestBase, ComparesTables):
         try:
             metadata = MetaData(bind=testing.db)
             book = Table('book', metadata, autoload=True)
-            assert book.c.id  in book.primary_key
-            assert book.c.isbn  in book.primary_key
-            assert book.c.series not in book.primary_key
+            assert book.primary_key.contains_column(book.c.id)
+            assert book.primary_key.contains_column(book.c.isbn)
+            assert not book.primary_key.contains_column(book.c.series)
             assert len(book.primary_key) == 2
         finally:
             testing.db.execute("drop table book")
