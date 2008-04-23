@@ -157,33 +157,28 @@ class Query(object):
             if alias:
                 return alias.adapt_clause(element)
     
-    class _DefaultAdapter(visitors.ReplacingCloningVisitor):
-        """default adapter used for all internal adaptation"""
-        
-        __traverse_options__ = {'column_collections':False}
-        def __init__(self, adapters):
-            self.adapters = adapters
-        def before_clone(self, elem):
+    def __replace_element(self, adapters):
+        def replace(elem):
             if '_Query__no_adapt' in elem._annotations:
                 return elem
 
-            for adapter in self.adapters:
+            for adapter in adapters:
                 e = adapter(elem)
                 if e:
                     return e
-
-    class _ORMOnlyAdapter(_DefaultAdapter):
-        """adapter used by end-user methods, filter(), having(), order_by(), group_by()."""
-        
-        def before_clone(self, elem):
+        return replace
+    
+    def __replace_orm_element(self, adapters):
+        def replace(elem):
             if '_Query__no_adapt' in elem._annotations:
                 return elem
 
             if "_orm_adapt" in elem._annotations or "parententity" in elem._annotations:
-                for adapter in self.adapters:
+                for adapter in adapters:
                     e = adapter(elem)
                     if e:
                         return e
+        return replace
 
     def _adapt_all_clauses(self):
         self._disable_orm_filtering = True
@@ -192,18 +187,18 @@ class Query(object):
     def _adapt_clause(self, clause, as_filter, orm_only):
         adapters = []    
         if as_filter and self._filter_aliases:
-            adapters.append(self._filter_aliases.adapter.before_clone)
+            adapters.append(self._filter_aliases.adapter.replace)
         
         if self._polymorphic_adapters:
             adapters.append(self.__adapt_polymorphic_element)
 
         if self._from_obj_alias:
-            adapters.append(self._from_obj_alias.adapter.before_clone)
+            adapters.append(self._from_obj_alias.adapter.replace)
 
         if getattr(self, '_disable_orm_filtering', not orm_only):
-            return Query._DefaultAdapter(adapters).traverse(clause)
+            return visitors.replacement_traverse(clause, {'column_collections':False}, self.__replace_element(adapters))
         else:
-            return Query._ORMOnlyAdapter(adapters).traverse(clause)
+            return visitors.replacement_traverse(clause, {'column_collections':False}, self.__replace_orm_element(adapters))
         
     def _entity_zero(self):
         if not getattr(self._entities[0], 'primary_entity', False):
@@ -1472,16 +1467,13 @@ class _ColumnEntity(_QueryEntity):
         self.alias_id = id
         self.entity_name = None
         self.froms = util.Set()
-        self.entities = util.Set([elem._annotations['parententity'] for elem in visitors.iterate(column) if 'parententity' in elem._annotations])
+        self.entities = util.Set([elem._annotations['parententity'] for elem in visitors.iterate(column, {}) if 'parententity' in elem._annotations])
             
     def setup_entity(self, entity, mapper, adapter, from_obj, is_aliased_class, with_polymorphic):
         self.froms.add(from_obj)
 
     def __resolve_expr_against_query_aliases(self, query, expr, context):
-        expr = query._adapt_clause(expr, False, True)
-#        while hasattr(expr, '__clause_element__'):
-#            expr = expr.__clause_element__()
-        return expr
+        return query._adapt_clause(expr, False, True)
         
     def row_processor(self, query, context, custom_rows):
         column = self.__resolve_expr_against_query_aliases(query, self.column, context)

@@ -282,7 +282,7 @@ class LazyLoader(AbstractRelationLoader):
                 # also its a deferred value; so that when used by Query, the committed value is used
                 # after an autoflush occurs
                 bindparam.value = lambda: mapper._get_committed_state_attr_by_column(state, bind_to_col[bindparam.key])
-        return visitors.traverse(criterion, clone=True, visit_bindparam=visit_bindparam)
+        return visitors.cloned_traverse(criterion, {}, {'bindparam':visit_bindparam})
     
     def _lazy_none_clause(self, reverse_direction=False):
         if not reverse_direction:
@@ -301,7 +301,7 @@ class LazyLoader(AbstractRelationLoader):
                 binary.right = expression.null()
                 binary.operator = operators.is_
         
-        return visitors.traverse(criterion, clone=True, visit_binary=visit_binary)
+        return visitors.cloned_traverse(criterion, {}, {'binary':visit_binary})
         
     def class_level_loader(self, state, options=None, path=None):
         if not mapperutil._state_has_mapper(state):
@@ -372,12 +372,12 @@ class LazyLoader(AbstractRelationLoader):
         lazywhere = prop.primaryjoin
 
         if not prop.secondaryjoin or not reverse_direction:
-            lazywhere = visitors.traverse(lazywhere, before_clone=col_to_bind, clone=True) 
+            lazywhere = visitors.replacement_traverse(lazywhere, {}, col_to_bind) 
         
         if prop.secondaryjoin is not None:
             secondaryjoin = prop.secondaryjoin
             if reverse_direction:
-                secondaryjoin = visitors.traverse(secondaryjoin, before_clone=col_to_bind, clone=True)
+                secondaryjoin = visitors.replacement_traverse(secondaryjoin, {}, col_to_bind)
             lazywhere = sql.and_(lazywhere, secondaryjoin)
     
         bind_to_col = dict([(binds[col].key, col) for col in binds])

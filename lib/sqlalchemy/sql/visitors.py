@@ -1,38 +1,45 @@
 from sqlalchemy import util
 
-class ClauseVisitor(object):
-    """Traverses and visits ``ClauseElement`` structures."""
+class _VisitorMeta(type):
+    def __init__(cls, classname, bases, dict_):
+        cls._name_registry = [name for name in dict_ if name.startswith('visit_')]
+        for b in bases:
+            if isinstance(b, _VisitorMeta):
+                cls._name_registry += b._name_registry
+        return type.__init__(cls, classname, bases, dict_)
+    
+    def __call__(cls, *args, **kwargs):
+        obj = type.__call__(cls, *args, **kwargs)
+        obj._registry = dict([(name[6:], getattr(obj, name)) for name in cls._name_registry])
+        return obj
+        
+    def __setattr__(cls, key, value):
+        if key.startswith('visit_'):
+            cls._name_registry.append(key)
+        type.__setattr__(cls, key, value)
 
+class ClauseVisitor(object):
+    __metaclass__ = _VisitorMeta
     __traverse_options__ = {}
     
-    def traverse_single(self, obj, **kwargs):
-        """visit a single element, without traversing its child elements."""
-        
+    def traverse_single(self, obj):
         for v in self._iterate_visitors:
-            meth = getattr(v, "visit_%s" % obj.__visit_name__, None)
+            meth = v._registry.get(obj.__visit_name__, None)
             if meth:
-                return meth(obj, **kwargs)
+                return meth(obj)
     
     def iterate(self, obj):
         """traverse the given expression structure, returning an iterator of all elements."""
-        
-        opts = self.__traverse_options__
-        stack = [obj]
-        traversal = util.deque()
-        while stack:
-            t = stack.pop()
-            traversal.appendleft(t)
-            for c in t.get_children(**opts):
-                stack.append(c)
-        return iter(traversal)
+
+        return iterate(obj, self.__traverse_options__)
         
     def traverse(self, obj):
         """traverse and visit the given expression structure."""
 
-        ts = self.traverse_single
-        for target in self.iterate(obj):
-            ts(target)
-        return obj
+        visitors = {}
+        for v in reversed(list(self._iterate_visitors)):
+            visitors.update(v._registry)
+        return traverse(obj, self.__traverse_options__, visitors)
 
     def _iterate_visitors(self):
         """iterate through this visitor and each 'chained' visitor."""
@@ -52,7 +59,6 @@ class ClauseVisitor(object):
         tail._next = visitor
         return self
 
-
 class CloningVisitor(ClauseVisitor):
     def copy_and_process(self, list_):
         """Apply cloned traversal to the given list of elements, and return the new list."""
@@ -60,30 +66,15 @@ class CloningVisitor(ClauseVisitor):
         return [self.traverse(x) for x in list_]
 
     def traverse(self, obj):
-        opts = self.__traverse_options__
-        cloned = dict([[k, k] for k in opts.get('stop_on', [])])
-        ts = self.traverse_single
+        """traverse and visit the given expression structure."""
 
-        def clone(element):
-            if element not in cloned:
-                cloned[element] = element._clone()
-            return cloned[element]
-        
-        obj = clone(obj)
-        stack = [obj]
-        while stack:
-            t = stack.pop()
-            if t in cloned:
-                continue
-            t._copy_internals(clone=clone)
-            ts(t)
-            for c in t.get_children(**opts):
-                stack.append(c)
-        return obj
-
+        visitors = {}
+        for v in reversed(list(self._iterate_visitors)):
+            visitors.update(v._registry)
+        return cloned_traverse(obj, self.__traverse_options__, visitors)
 
 class ReplacingCloningVisitor(CloningVisitor):
-    def before_clone(self, elem):
+    def replace(self, elem):
         """receive pre-copied elements during a cloning traversal.
         
         If the method returns a new element, the element is used 
@@ -93,70 +84,82 @@ class ReplacingCloningVisitor(CloningVisitor):
         return None
 
     def traverse(self, obj):
-        # TODO: the lazy clause visiting in test/orm/relationships.py/RelationTest2 
-        # depends explicitly on the separate "stop_on" list being used in addition to
-        # the cloned dictionary.  Add unit tests to test/sql/generative.py to test this
-        opts = self.__traverse_options__
-        cloned = {}
-        stop_on = util.Set(opts.get('stop_on', []))
-        ts = self.traverse_single
+        """traverse and visit the given expression structure."""
 
-        def clone(element):
+        def replace(elem):
             for v in self._iterate_visitors:
-                newelem = v.before_clone(element)
-                if newelem:
-                    stop_on.add(newelem)
-                    return newelem
+                e = v.replace(elem)
+                if e:
+                    return e
+        return replacement_traverse(obj, self.__traverse_options__, replace)
 
-            if element not in cloned:
-                cloned[element] = element._clone()
-            return cloned[element]
-
-        obj = clone(obj)
-        stack = [obj]
-        while stack:
-            t = stack.pop()
-            if t in stop_on:
-                continue
-            t._copy_internals(clone=clone)
-            ts(t)
-            for c in t.get_children(**opts):
-                stack.append(c)
-        return obj
-
-def visitor(**kwargs):
-    clone = kwargs.pop('clone', False)
-    if clone:
-        if 'before_clone' in kwargs:
-            base = ReplacingCloningVisitor
-        else:
-            base = CloningVisitor
-    else:
-        base = ClauseVisitor
-
-    class Vis(base):
-        __traverse_options__ = kwargs.pop('traverse_options', {})
-
-        def traverse_single(self, obj):
-            k = "visit_%s" % obj.__visit_name__ 
-            if k in kwargs:
-                return kwargs[k](obj)
-    vis = Vis()
-    if 'before_clone' in kwargs:
-        setattr(vis, 'before_clone', kwargs['before_clone'])
-    return vis
-    
-def traverse(clause, **kwargs):
-    return visitor(**kwargs).traverse(clause)
-
-def iterate(clause, **traverse_options):
+def iterate(obj, opts):
     """traverse the given expression structure, returning an iterator of all elements."""
-    
-    stack = [clause]
+
+    stack = [obj]
     traversal = util.deque()
     while stack:
         t = stack.pop()
         traversal.appendleft(t)
-        for c in t.get_children(**traverse_options):
+        for c in t.get_children(**opts):
             stack.append(c)
     return iter(traversal)
+
+def traverse(obj, opts, visitors):
+    """traverse and visit the given expression structure."""
+
+    for target in iterate(obj, opts):
+        meth = visitors.get(target.__visit_name__, None)
+        if meth:
+            meth(target)
+    return obj
+
+def cloned_traverse(obj, opts, visitors):
+    cloned = dict([[k, k] for k in opts.get('stop_on', [])])
+
+    def clone(element):
+        if element not in cloned:
+            cloned[element] = element._clone()
+        return cloned[element]
+
+    obj = clone(obj)
+    stack = [obj]
+
+    while stack:
+        t = stack.pop()
+        if t in cloned:
+            continue
+        t._copy_internals(clone=clone)
+
+        meth = visitors.get(t.__visit_name__, None)
+        if meth:
+            meth(t)
+
+        for c in t.get_children(**opts):
+            stack.append(c)
+    return obj
+
+def replacement_traverse(obj, opts, replace):
+    cloned = {}
+    stop_on = util.Set(opts.get('stop_on', []))
+
+    def clone(element):
+        newelem = replace(element)
+        if newelem:
+            stop_on.add(newelem)
+            return newelem
+
+        if element not in cloned:
+            cloned[element] = element._clone()
+        return cloned[element]
+
+    obj = clone(obj)
+    stack = [obj]
+    while stack:
+        t = stack.pop()
+        if t in stop_on:
+            continue
+        t._copy_internals(clone=clone)
+        for c in t.get_children(**opts):
+            stack.append(c)
+    return obj

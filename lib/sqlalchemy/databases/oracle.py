@@ -627,12 +627,12 @@ class OracleCompiler(compiler.DefaultCompiler):
                             binary.left = _OuterJoinColumn(binary.left)
                         elif binary.right.table is join.right:
                             binary.right = _OuterJoinColumn(binary.right)
-                clauses.append(visitors.traverse(join.onclause, visit_binary=visit_binary, clone=True))
+                clauses.append(visitors.cloned_traverse(join.onclause, {}, {'binary':visit_binary}))
             else:
                 clauses.append(join.onclause)
         
         for f in froms:
-            visitors.traverse(f, visit_join=visit_join)
+            visitors.traverse(f, {}, {'join':visit_join})
         return sql.and_(*clauses)
         
     def visit_outer_join_column(self, vc):

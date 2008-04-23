@@ -1024,7 +1024,7 @@ class ClauseElement(object):
                 bind.value = kwargs[bind.key]
             if unique:
                 bind._convert_to_unique()
-        return visitors.traverse(self, visit_bindparam=visit_bindparam, clone=True)
+        return visitors.cloned_traverse(self, {}, {'bindparam':visit_bindparam})
 
     def compare(self, other):
         """Compare this ClauseElement to the given ClauseElement.

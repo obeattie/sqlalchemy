@@ -8,11 +8,8 @@
 based on join conditions.
 """
 
-from sqlalchemy import schema, exceptions, util
-from sqlalchemy.sql import visitors, operators, util as sqlutil
-from sqlalchemy import logging
+from sqlalchemy import exceptions
 from sqlalchemy.orm import util as mapperutil
-from sqlalchemy.orm.interfaces import ONETOMANY, MANYTOONE, MANYTOMANY  # legacy
 
 def populate(source, source_mapper, dest, dest_mapper, synchronize_pairs):
     for l, r in synchronize_pairs:
@@ -41,7 +38,7 @@ def update(source, source_mapper, dest, old_prefix, synchronize_pairs):
             oldvalue = source_mapper._get_committed_attr_by_column(source.obj(), l)
             value = source_mapper._get_state_attr_by_column(source, l)
         except exceptions.UnmappedColumnError:
-            self._raise_col_to_prop(False, source_mapper, l, None, r)
+            _raise_col_to_prop(False, source_mapper, l, None, r)
         dest[r.key] = value
         dest[old_prefix + r.key] = oldvalue
 

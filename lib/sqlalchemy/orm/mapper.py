@@ -563,7 +563,7 @@ class Mapper(object):
                     result[binary.right] = util.Set([binary.left])
         for mapper in self.base_mapper.polymorphic_iterator():
             if mapper.inherit_condition:
-                visitors.traverse(mapper.inherit_condition, visit_binary=visit_binary)
+                visitors.traverse(mapper.inherit_condition, {}, {'binary':visit_binary})
 
         # TODO: matching of cols to foreign keys might better be generalized
         # into general column translation (i.e. corresponding_column)
@@ -1538,7 +1538,7 @@ class Mapper(object):
             if mapper.local_table in tables:
                 start = True
             if start:
-                allconds.append(visitors.traverse(mapper.inherit_condition, clone=True, visit_binary=visit_binary))
+                allconds.append(visitors.cloned_traverse(mapper.inherit_condition, {}, {'binary':visit_binary}))
         
         cond = sql.and_(*allconds)
         return sql.select(tables, cond, use_labels=True)

@@ -8,17 +8,16 @@ def sort_tables(tables, reverse=False):
     """sort a collection of Table objects in order of their foreign-key dependency."""
     
     tuples = []
-    class TVisitor(schema.SchemaVisitor):
-        def visit_foreign_key(_self, fkey):
-            if fkey.use_alter:
-                return
-            parent_table = fkey.column.table
-            if parent_table in tables:
-                child_table = fkey.parent.table
-                tuples.append( ( parent_table, child_table ) )
-    vis = TVisitor()
+    def visit_foreign_key(fkey):
+        if fkey.use_alter:
+            return
+        parent_table = fkey.column.table
+        if parent_table in tables:
+            child_table = fkey.parent.table
+            tuples.append( ( parent_table, child_table ) )
+
     for table in tables:
-        vis.traverse(table)
+        visitors.traverse(table, {'schema_visitor':True}, {'foreign_key':visit_foreign_key})    
     sequence = topological.sort(tuples, tables)
     if reverse:
         return util.reversed(sequence)
@@ -28,40 +27,39 @@ def sort_tables(tables, reverse=False):
 def search(clause, target):
     if not clause:
         return False
-    meth = "visit_%s" % target.__visit_name__
     ret = [False]
     def search(elem):
         if elem is target:
             ret[0] = True
-    visitors.traverse(clause, traverse_options={'column_collections':False}, **{meth:search})
+    visitors.traverse(clause, {'column_collections':False}, {target.__visit_name__:search})
     return ret[0]
 
 def find_tables(clause, check_columns=False, include_aliases=False, include_joins=False, include_selects=False):
     """locate Table objects within the given expression."""
     
     tables = []
-    kwargs = {}
+    _visitors = {}
     
     def visit_something(elem):
         tables.append(elem)
         
     if include_selects:
-        kwargs['visit_select'] = kwargs['visit_compound_select'] = visit_something
+        _visitors['select'] = _visitors['compound_select'] = visit_something
     
     if include_joins:
-        kwargs['visit_join'] = visit_something
+        _visitors['join'] = visit_something
         
     if include_aliases:
-        kwargs['visit_alias']  = visit_something
+        _visitors['alias']  = visit_something
 
     if check_columns:
         def visit_column(column):
             tables.append(column.table)
-        kwargs['visit_column'] = visit_column
+        _visitors['column'] = visit_column
 
-    kwargs['visit_table'] = visit_something
+    _visitors['table'] = visit_something
 
-    visitors.traverse(clause, traverse_options= {'column_collections':False}, **kwargs)
+    visitors.traverse(clause, {'column_collections':False}, _visitors)
     return tables
 
 def find_columns(clause):
@@ -70,7 +68,7 @@ def find_columns(clause):
     cols = util.Set()
     def visit_column(col):
         cols.add(col)
-    visitors.traverse(clause, visit_column=visit_column)
+    visitors.traverse(clause, {}, {'column':visit_column})
     return cols
 
 
@@ -114,18 +112,6 @@ class Annotated(object):
 
     def __cmp__(self, other):
         return cmp(hash(self.__element), hash(other))
-    
-    
-        
-def _recursive_splice_joins(left, right):
-    if isinstance(right, expression.Join):
-        right = right._clone()
-        right._reset_exported()
-        right.left = splice_joins(left, right.left)
-        right.onclause = ClauseAdapter(left).traverse(right.onclause)
-        return right
-    else:
-        return ClauseAdapter(left).traverse(right)
 
 def splice_joins(left, right):
     if left is None:
@@ -189,7 +175,7 @@ def reduce_columns(columns, *clauses):
                             omit.add(c)
                             break
         for clause in clauses:
-            visitors.traverse(clause, visit_binary=visit_binary)
+            visitors.traverse(clause, {}, {'binary':visit_binary})
 
     return expression.ColumnSet(columns.difference(omit))
 
@@ -222,7 +208,7 @@ def criterion_as_pairs(expression, consider_as_foreign_keys=None, consider_as_re
                 elif binary.right.references(binary.left):
                     pairs.append((binary.left, binary.right))
     pairs = []
-    visitors.traverse(expression, visit_binary=visit_binary)
+    visitors.traverse(expression, {}, {'binary':visit_binary})
     return pairs
 
 def folded_equivalents(join, equivs=None):
@@ -241,7 +227,7 @@ def folded_equivalents(join, equivs=None):
         if binary.operator == operators.eq and binary.left.name == binary.right.name:
             equivs.add(binary.right)
             equivs.add(binary.left)
-    visitors.traverse(join.onclause, visit_binary=visit_binary)
+    visitors.traverse(join.onclause, {}, {'binary':visit_binary})
     collist = []
     if isinstance(join.left, expression.Join):
         left = folded_equivalents(join.left, equivs)
@@ -318,19 +304,6 @@ class row_adapter(object):
     def __call__(self, row):
         return AliasedRow(row, self.map)
 
-class ColumnsInClause(visitors.ClauseVisitor):
-    """Given a selectable, visit clauses and determine if any columns
-    from the clause are in the selectable.
-    """
-
-    def __init__(self, selectable):
-        self.selectable = selectable
-        self.result = False
-
-    def visit_column(self, column):
-        if self.selectable.c.get(column.key) is column:
-            self.result = True
-
 class ClauseAdapter(visitors.ReplacingCloningVisitor):
     """Given a clause (like as in a WHERE criterion), locate columns
     which are embedded within a given selectable, and changes those
@@ -359,17 +332,14 @@ class ClauseAdapter(visitors.ReplacingCloningVisitor):
       s.c.col1 == table2.c.col1
     """
 
-    __traverse_options__ = {'column_collections':False, 'clone':True}
-
     def __init__(self, selectable, include=None, exclude=None, equivalents=None):
-        self.__traverse_options__ = self.__traverse_options__.copy()
-        self.__traverse_options__['stop_on'] = [selectable]
+        self.__traverse_options__ = {'column_collections':False, 'stop_on':[selectable]}
         self.selectable = selectable
         self.include = include
         self.exclude = exclude
-        self.equivalents = equivalents
+        self.equivalents = equivalents or {}
 
-    def before_clone(self, col):
+    def replace(self, col):
             
         if isinstance(col, expression.FromClause):
             if self.selectable.is_derived_from(col):
@@ -387,7 +357,7 @@ class ClauseAdapter(visitors.ReplacingCloningVisitor):
                 
         newcol = self.selectable.corresponding_column(col, require_embedded=True)
         
-        if not newcol and self.equivalents and col in self.equivalents:
+        if not newcol and col in self.equivalents:
             for equiv in self.equivalents[col]:
                 newcol = self.selectable.corresponding_column(equiv, require_embedded=True)
                 if newcol:
