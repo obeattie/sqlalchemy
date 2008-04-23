@@ -19,12 +19,18 @@ class _VisitorMeta(type):
         type.__setattr__(cls, key, value)
 
 class ClauseVisitor(object):
-    __metaclass__ = _VisitorMeta
+    # for some reason, when VisitorMeta is uncommented here, specifically the "obj._registry[x] = <somemethod>"
+    # causes test/sql/testtypes.py UnicodeTest to hang in a heisenberg-like fashion (i.e. error
+    # disappears when SQL logging is turned on) for Postgres on OSX.  has to do with the dict
+    # being attached to the instance *and* having methods from the instance inside of it.
+    
+#    __metaclass__ = _VisitorMeta
     __traverse_options__ = {}
     
     def traverse_single(self, obj):
         for v in self._iterate_visitors:
-            meth = v._registry.get(obj.__visit_name__, None)
+            meth = getattr(v, "visit_%s" % obj.__visit_name__, None)
+            #meth = v._registry.get(obj.__visit_name__, None)
             if meth:
                 return meth(obj)
     
@@ -37,8 +43,13 @@ class ClauseVisitor(object):
         """traverse and visit the given expression structure."""
 
         visitors = {}
-        for v in reversed(list(self._iterate_visitors)):
-            visitors.update(v._registry)
+#        for v in reversed(list(self._iterate_visitors)):
+#            visitors.update(v._registry)
+
+        for name in dir(self):
+            if name.startswith('visit_'):
+                visitors[name[6:]] = getattr(self, name)
+            
         return traverse(obj, self.__traverse_options__, visitors)
 
     def _iterate_visitors(self):
@@ -69,8 +80,13 @@ class CloningVisitor(ClauseVisitor):
         """traverse and visit the given expression structure."""
 
         visitors = {}
-        for v in reversed(list(self._iterate_visitors)):
-            visitors.update(v._registry)
+#        for v in reversed(list(self._iterate_visitors)):
+#            visitors.update(v._registry)
+
+        for name in dir(self):
+            if name.startswith('visit_'):
+                visitors[name[6:]] = getattr(self, name)
+            
         return cloned_traverse(obj, self.__traverse_options__, visitors)
 
 class ReplacingCloningVisitor(CloningVisitor):
