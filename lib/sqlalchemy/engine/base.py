@@ -806,11 +806,11 @@ class Connection(Connectable):
 
         # TODO: have the dialect determine if autocommit can be set on
         # the connection directly without this extra step
-        if not self.in_transaction() and context.should_autocommit:
+        if not self.__transaction and context.should_autocommit:
             self._commit_impl()
 
     def _autorollback(self):
-        if not self.in_transaction():
+        if not self.__transaction:
             self._rollback_impl()
 
     def close(self):
@@ -1296,6 +1296,8 @@ class RowProxy(object):
     results that correspond to constructed SQL expressions).
     """
 
+    __slots__ = ['__parent', '__row']
+    
     def __init__(self, parent, row):
         """RowProxy objects are constructed by ResultProxy objects."""
 

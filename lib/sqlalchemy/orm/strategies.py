@@ -37,19 +37,21 @@ class ColumnLoader(LoaderStrategy):
         sessionlib.register_attribute(self.parent.class_, self.key, uselist=False, useobject=False, copy_function=coltype.copy_value, compare_function=coltype.compare_values, mutable_scalars=self.columns[0].type.is_mutable(), comparator=self.parent_property.comparator, parententity=self.parent)
         
     def create_row_processor(self, selectcontext, mapper, row):
-        if self.columns[0] in row:
+        key, col = self.key, self.columns[0]
+        if col in row:
             def new_execute(state, row, **flags):
-                state.dict[self.key] = row[self.columns[0]]
+                state.dict[key] = row[col]
+                
             if self._should_log_debug:
                 new_execute = self.debug_callable(new_execute, self.logger,
                     "%s returning active column fetcher" % self,
-                    lambda state, row, **flags: "%s populating %s" % (self, mapperutil.state_attribute_str(state, self.key))
+                    lambda state, row, **flags: "%s populating %s" % (self, mapperutil.state_attribute_str(state, key))
                 )
             return (new_execute, None)
         else:
             def new_execute(state, row, isnew, **flags):
                 if isnew:
-                    state.expire_attributes([self.key])
+                    state.expire_attributes([key])
             if self._should_log_debug:
                 self.logger.debug("%s deferring load" % self)
             return (new_execute, None)
@@ -75,22 +77,23 @@ class CompositeColumnLoader(ColumnLoader):
         sessionlib.register_attribute(self.parent.class_, self.key, uselist=False, useobject=False, copy_function=copy, compare_function=compare, mutable_scalars=True, comparator=self.parent_property.comparator, parententity=self.parent)
 
     def create_row_processor(self, selectcontext, mapper, row):
-        for c in self.columns:
+        key, columns, composite_class = self.key, self.columns, self.parent_property.composite_class
+        for c in columns:
             if c not in row:
                 def new_execute(state, row, isnew, **flags):
                     if isnew:
-                        state.expire_attributes([self.key])
+                        state.expire_attributes([key])
                 if self._should_log_debug:
                     self.logger.debug("%s deferring load" % self)
                 return (new_execute, None)
         else:
             def new_execute(state, row, **flags):
-                state.dict[self.key] = self.parent_property.composite_class(*[row[c] for c in self.columns])
+                state.dict[key] = composite_class(*[row[c] for c in columns])
 
             if self._should_log_debug:
                 new_execute = self.debug_callable(new_execute, self.logger,
                     "%s returning active composite column fetcher" % self,
-                    lambda state, row, **flags: "populating %s" % (mapperutil.state_attribute_str(state, self.key))
+                    lambda state, row, **flags: "populating %s" % (mapperutil.state_attribute_str(state, key))
                 )
 
             return (new_execute, None)
@@ -627,37 +630,43 @@ class EagerLoader(AbstractRelationLoader):
 
         row_decorator = self._create_row_decorator(selectcontext, row, selectcontext.path)
         pathstr = ','.join([str(x) for x in selectcontext.path])
+        
         if row_decorator is not None:
-            def execute(state, row, isnew, **flags):
-                decorated_row = row_decorator(row)
+            
+            key, _instance, base_mapper = self.key, self.mapper._instance, self.mapper.base_mapper
+            
+            if not self.uselist:
+                def execute(state, row, isnew, **flags):
+                    decorated_row = row_decorator(row)
 
-                if not self.uselist:
                     if isnew:
                         # set a scalar object instance directly on the
                         # parent object, bypassing InstrumentedAttribute
                         # event handlers.
-                        #
-                        state.dict[self.key] = (
-                            self.mapper._instance(
-                                selectcontext, self.mapper.base_mapper, decorated_row, None))
+                        state.dict[key] = (
+                            _instance(
+                                selectcontext, base_mapper, decorated_row, None))
                     else:
                         # call _instance on the row, even though the object has been created,
                         # so that we further descend into properties
-                        self.mapper._instance(selectcontext, self.mapper.base_mapper, decorated_row, None)
-                else:
-                    if isnew or self.key not in state.appenders:
+                        _instance(selectcontext, base_mapper, decorated_row, None)
+            else:
+                def execute(state, row, isnew, **flags):
+                    decorated_row = row_decorator(row)
+
+                    if isnew or key not in state.appenders:
                         # appender_key can be absent from selectcontext.attributes with isnew=False
                         # when self-referential eager loading is used; the same instance may be present
                         # in two distinct sets of result columns
 
-                        collection = attributes.init_collection(state, self.key)
+                        collection = attributes.init_collection(state, key)
                         appender = util.UniqueAppender(collection, 'append_without_event')
 
-                        state.appenders[self.key] = appender
+                        state.appenders[key] = appender
 
-                    result_list = state.appenders[self.key]
+                    result_list = state.appenders[key]
                     
-                    self.mapper._instance(selectcontext, self.mapper.base_mapper, decorated_row, result_list)
+                    _instance(selectcontext, base_mapper, decorated_row, result_list)
 
             if self._should_log_debug:
                 execute = self.debug_callable(execute, self.logger, 
