@@ -541,7 +541,7 @@ class Connection(Connectable):
         self.__savepoint_seq = 0
         self.__branch = _branch
         self.__invalid = False
-
+        
     def _branch(self):
         """Return a new Connection which references this Connection's
         engine and connection; but does not have close_with_result enabled,
@@ -550,7 +550,7 @@ class Connection(Connectable):
         This is used to execute "sub" statements within a single execution,
         usually an INSERT statement.
         """
-        return Connection(self.engine, self.__connection, _branch=True)
+        return self.engine.Connection(self.engine, self.__connection, _branch=True)
 
     def dialect(self):
         "Dialect used by this Connection."
@@ -1110,14 +1110,18 @@ class Engine(Connectable):
     provide a default implementation of SchemaEngine.
     """
 
-    def __init__(self, pool, dialect, url, echo=None):
+    def __init__(self, pool, dialect, url, echo=None, proxy=None):
         self.pool = pool
         self.url = url
         self.dialect=dialect
         self.echo = echo
         self.engine = self
         self.logger = logging.instance_logger(self, echoflag=echo)
-
+        if proxy:
+            self.Connection = _proxy_connection_cls(Connection, proxy)
+        else:
+            self.Connection = Connection
+                
     def name(self):
         "String name of the [sqlalchemy.engine#Dialect] in use by this ``Engine``."
 
@@ -1228,7 +1232,7 @@ class Engine(Connectable):
     def connect(self, **kwargs):
         """Return a newly allocated Connection object."""
 
-        return Connection(self, **kwargs)
+        return self.Connection(self, **kwargs)
 
     def contextual_connect(self, close_with_result=False, **kwargs):
         """Return a Connection object which may be newly allocated, or may be part of some ongoing context.
@@ -1236,7 +1240,7 @@ class Engine(Connectable):
         This Connection is meant to be used by the various "auto-connecting" operations.
         """
 
-        return Connection(self, self.pool.connect(), close_with_result=close_with_result, **kwargs)
+        return self.Connection(self, self.pool.connect(), close_with_result=close_with_result, **kwargs)
 
     def table_names(self, schema=None, connection=None):
         """Return a list of all table names available in the database.
@@ -1285,6 +1289,22 @@ class Engine(Connectable):
 
         return self.pool.unique_connection()
 
+
+def _proxy_connection_cls(cls, proxy):
+    class ProxyConnection(cls):
+        def execute(self, object, *multiparams, **params):
+            return proxy.execute(self, super(ProxyConnection, self).execute, object, *multiparams, **params)
+ 
+        def execute_clauseelement(self, elem, multiparams=None, params=None):
+            return proxy.execute(self, super(ProxyConnection, self).execute, elem, *(multiparams or []), **(params or {}))
+            
+        def _cursor_execute(self, cursor, statement, parameters, context=None):
+            return proxy.cursor_execute(super(ProxyConnection, self)._cursor_execute, cursor, statement, parameters, context, False)
+ 
+        def _cursor_executemany(self, cursor, statement, parameters, context=None):
+            return proxy.cursor_execute(super(ProxyConnection, self)._cursor_executemany, cursor, statement, parameters, context, True)
+
+    return ProxyConnection
 
 class RowProxy(object):
     """Proxy a single cursor row for a parent ResultProxy.
