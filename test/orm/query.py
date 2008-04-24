@@ -948,12 +948,14 @@ class InstancesTest(QueryTest):
                 d[c] = row[adalias.corresponding_column(c)]
             return d
 
-        def go():
-            # test using a custom 'decorate' function
-            l = q.options(contains_eager('addresses', decorator=decorate)).instances(selectquery.execute())
-            assert fixtures.user_address_result == l
-        self.assert_sql_count(testing.db, go, 1)
-        sess.clear()
+        if False:
+            # custom decorate functions no longer supported
+            def go():
+                # test using a custom 'decorate' function
+                l = q.options(contains_eager('addresses', decorator=decorate)).instances(selectquery.execute())
+                assert fixtures.user_address_result == l
+            self.assert_sql_count(testing.db, go, 1)
+            sess.clear()
 
         oalias = orders.alias('o1')
         ialias = items.alias('i1')
@@ -1023,7 +1025,7 @@ class MixedEntitiesTest(QueryTest):
 
     def test_column_queries(self):
         sess = create_session()
-        
+
         self.assertEquals(sess.query(User.name).all(), [(u'jack',), (u'ed',), (u'fred',), (u'chuck',)])
         
         sel = users.select(User.id.in_([7, 8])).alias()

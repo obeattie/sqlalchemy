@@ -159,7 +159,7 @@ class SessionTransaction(object):
         if bind in self._connections:
             return self._connections[bind][0]
         
-        if self._parent is not None:
+        if self._parent:
             conn = self._parent.get_or_add(bind)
             if not self.nested:
                 return conn
@@ -663,28 +663,28 @@ class Session(object):
         """
 
         if mapper is None and clause is None:
-            if self.bind is not None:
+            if self.bind:
                 return self.bind
             else:
                 raise exceptions.UnboundExecutionError("This session is unbound to any Engine or Connection; specify a mapper to get_bind()")
 
-        elif len(self.__binds):
-            if mapper is not None:
+        elif self.__binds:
+            if mapper:
                 mapper = _class_to_mapper(mapper)
                 if mapper.base_mapper in self.__binds:
                     return self.__binds[mapper.base_mapper]
                 elif mapper.mapped_table in self.__binds:
                     return self.__binds[mapper.mapped_table]
-            if clause is not None:
+            if clause:
                 for t in sql_util.find_tables(clause):
                     if t in self.__binds:
                         return self.__binds[t]
 
-        if self.bind is not None:
+        if self.bind:
             return self.bind
-        elif isinstance(clause, sql.expression.ClauseElement) and clause.bind is not None:
+        elif isinstance(clause, sql.expression.ClauseElement) and clause.bind:
             return clause.bind
-        elif mapper is None:
+        elif not mapper:
             raise exceptions.UnboundExecutionError("Could not locate any mapper associated with SQL expression")
         else:
             mapper = _class_to_mapper(mapper)

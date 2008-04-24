@@ -912,7 +912,7 @@ class Mapper(object):
         return sqlalchemy.orm.Query(self, session).instances(cursor, *mappers, **kwargs)
     instances = util.deprecated(None, False)(instances)
 
-    def identity_key_from_row(self, row):
+    def identity_key_from_row(self, row, adapter=None):
         """Return an identity-map key for use in storing/retrieving an
         item from the identity map.
 
@@ -921,7 +921,12 @@ class Mapper(object):
           dictionary corresponding result-set ``ColumnElement``
           instances to their values within a row.
         """
-        return (self._identity_class, tuple([row[column] for column in self.primary_key]), self.entity_name)
+        
+        pk_cols = self.primary_key
+        if adapter:
+            pk_cols = [adapter.columns[c] for c in pk_cols]
+        
+        return (self._identity_class, tuple([row[column] for column in pk_cols]), self.entity_name)
 
     def identity_key_from_primary_key(self, primary_key):
         """Return an identity-map key for use in storing/retrieving an
@@ -1351,168 +1356,194 @@ class Mapper(object):
             except StopIteration:
                 visitables.pop()
 
-    def _instance(self, context, path_entity, row, result=None, polymorphic_from=None, extension=None, only_load_props=None, refresh_instance=None):
-        if not extension:
-            extension = self.extension
-
-        if 'translate_row' in extension.methods:
-            ret = extension.translate_row(self, context, row)
-            if ret is not EXT_CONTINUE:
-                row = ret
-
-        if not polymorphic_from and not refresh_instance and self.polymorphic_on:
-            discriminator = row[self.polymorphic_on]
-            if discriminator is not None:
-                try:
-                    mapper = self.polymorphic_map[discriminator]
-                except KeyError:
-                    raise exceptions.AssertionError("No such polymorphic_identity %r is defined" % discriminator)
-                if mapper is not self:
-                    return mapper._instance(context, path_entity, row, result=result, polymorphic_from=self)
-
-        # determine identity key
-        if refresh_instance:
-            # TODO: refresh_instance seems to be named wrongly -- it is always an instance state.
-            refresh_state = refresh_instance
-            identitykey = refresh_state.key
-            if identitykey is None:
-                # super-rare condition; a refresh is being called
-                # on a non-instance-key instance; this is meant to only
-                # occur within a flush()
-                identitykey = self._identity_key_from_state(refresh_state)
+    def _instance_processor(self, context, path, adapter, polymorphic_from=None, extension=None, only_load_props=None, refresh_instance=None):
+        pk_cols = self.primary_key
+        
+        if polymorphic_from or refresh_instance:
+            polymorphic_on = None
         else:
-            identitykey = self.identity_key_from_row(row)
+            polymorphic_on = self.polymorphic_on
+            
+        version_id_col = self.version_id_col
+        
+        if adapter:
+            pk_cols = [adapter.columns[c] for c in pk_cols]
+            if polymorphic_on:
+                polymorphic_on = adapter.columns[polymorphic_on]
+            if version_id_col:
+                version_id_col = adapter.columns[version_id_col]
+                
+        identity_class, entity_name = self._identity_class, self.entity_name
+        def identity_key(row):
+            return (identity_class, tuple([row[column] for column in pk_cols]), entity_name)
+
+        new_populators = []
+        existing_populators = []
+            
+        def populate_state(state, row, isnew, only_load_props, **flags):
+            if not new_populators:
+                new_populators[:], existing_populators[:] = self.__populators(context, path, row, adapter)
+                
+            if isnew:
+                populators = new_populators
+            else:
+                populators = existing_populators
+
+            if only_load_props:
+                populators = [p for p in populators if p[0] in only_load_props]
+
+            for key, populator in populators:
+                populator(state, row, isnew=isnew, **flags)
         
         session_identity_map = context.session.identity_map
-
-        if identitykey in session_identity_map:
-            instance = session_identity_map[identitykey]
-            state = attributes.instance_state(instance)
-
-            if self.__should_log_debug:
-                self.__log_debug("_instance(): using existing instance %s identity %s" % (instance_str(instance), str(identitykey)))
-
-            isnew = state.runid != context.runid
-            currentload = not isnew
-            loaded_instance = False
-
-            if not currentload and context.version_check and self.version_id_col and self._get_state_attr_by_column(state, self.version_id_col) != row[self.version_id_col]:
-                raise exceptions.ConcurrentModificationError("Instance '%s' version of %s does not match %s" % (state_str(state), self._get_state_attr_by_column(state, self.version_id_col), row[self.version_id_col]))
-        elif refresh_instance:
-            # out of band refresh_instance detected (i.e. its not in the session.identity_map)
-            # honor it anyway.  this can happen if a _get() occurs within save_obj(), such as
-            # when eager_defaults is True.
-            state = refresh_instance
-            instance = state.obj()
-            isnew = state.runid != context.runid
-            currentload = True
-            loaded_instance = False
-        else:
-            if self.__should_log_debug:
-                self.__log_debug("_instance(): identity key %s not in session" % str(identitykey))
-
-            if self.allow_null_pks:
-                for x in identitykey[1]:
-                    if x is not None:
-                        break
-                else:
-                    return None
-            else:
-                if None in identitykey[1]:
-                    return None
-            isnew = True
-            currentload = True
-            loaded_instance = True
-
-            if 'create_instance' in extension.methods:
-                instance = extension.create_instance(self, context, row, self.class_)
-                if instance is EXT_CONTINUE:
-                    instance = self.class_manager.new_instance()
-                else:
-                    manager = attributes.manager_for_cls(instance.__class__)
-                    # TODO: if manager is None, raise a friendly error about
-                    # returning instances of unmapped types
-                    manager.setup_instance(instance)
-            else:
-                instance = self.class_manager.new_instance()
-
-            if self.__should_log_debug:
-                self.__log_debug("_instance(): created new instance %s identity %s" % (instance_str(instance), str(identitykey)))
-
-            state = attributes.instance_state(instance)
-            state.entity_name = self.entity_name
-            state.key = identitykey
-            state.session_id = context.session.hash_key
-            session_identity_map.add(state)
-
-        if currentload or context.populate_existing or self.always_refresh:
-            if isnew:
-                state.runid = context.runid
-                context.progress.add(state)
-
-            if 'populate_instance' not in extension.methods or extension.populate_instance(self, context, row, instance, only_load_props=only_load_props, instancekey=identitykey, isnew=isnew) is EXT_CONTINUE:
-                self._populate_instance(context, path_entity, state, row, isnew, only_load_props)
         
-        else:
-            # populate attributes on non-loading instances which have been expired
-            # TODO: also support deferred attributes here [ticket:870]
-            if state.expired_attributes: 
-                if state in context.partials:
-                    isnew = False
-                    attrs = context.partials[state]
-                else:
-                    isnew = True
-                    attrs = state.expired_attributes.intersection(state.unmodified)
-                    context.partials[state] = attrs  #<-- allow query.instances to commit the subset of attrs
-                
-                if 'populate_instance' not in extension.methods or extension.populate_instance(self, context, row, instance, only_load_props=attrs, instancekey=identitykey, isnew=isnew) is EXT_CONTINUE:
-                    self._populate_instance(context, path_entity, state, row, isnew, attrs, instancekey=identitykey)
-
-        if result is not None and ('append_result' not in extension.methods or extension.append_result(self, context, row, instance, result, instancekey=identitykey, isnew=isnew) is EXT_CONTINUE):
-            result.append(instance)
-
-        if loaded_instance:
-            state._run_on_load(instance)
-
-        return instance
-
-    def populate_instance(self, selectcontext, instance, row, isnew=False, only_load_props=None, **flags):
-        """compatibility layer for _populate_instance."""
-        
-        # TODO
-        raise NotImplementedError("TODO")
-        
-    def _populate_instance(self, selectcontext, path_start, state, row, isnew, only_load_props, **flags):
-        """populate an instance from a result row."""
-        
-        snapshot = selectcontext.path + (path_start,)
-        # retrieve a set of "row population" functions derived from the MapperProperties attached
-        # to this Mapper.  These are keyed in the select context based primarily off the
-        # "snapshot" of the stack, which represents a path from the lead mapper in the query to this one,
-        # including relation() names.  the key also includes "self", and allows us to distinguish between
-        # other mappers within our inheritance hierarchy
-        populators = selectcontext.attributes.get(('populators', self, snapshot), None)
-        if not populators:
-            populators = []
-            for prop in self.__props.values():
-                newpop, existingpop = selectcontext.exec_with_path(path_start, prop.key, prop.create_row_processor, selectcontext, self, row)
-                populators.append((prop.key, newpop, existingpop))
+        def configure_subclass_mapper(discriminator):
+            try:
+                mapper = self.polymorphic_map[discriminator]
+            except KeyError:
+                raise exceptions.AssertionError("No such polymorphic_identity %r is defined" % discriminator)
+            if mapper is self:
+                return None
+            return mapper._instance_processor(context, path, adapter, polymorphic_from=self)
             
-            selectcontext.attributes[('populators', self, snapshot)] = populators = (
-                [(key, newpop) for key, newpop, existingpop in populators if newpop],
-                [(key, existingpop) for key, newpop, existingpop in populators if existingpop]
-            )
+        polymorphic_instances = util.PopulateDict(configure_subclass_mapper)
+        
+        if not extension:
+            extension = self.extension
+        
+        translate_row = 'translate_row' in extension.methods
+        create_instance = 'create_instance' in extension.methods
+        populate_instance = 'populate_instance' in extension.methods
+        append_result = 'append_result' in extension.methods
+        populate_existing = context.populate_existing or self.always_refresh
+        
+        def _instance(row, result):
+            if translate_row:
+                ret = extension.translate_row(self, context, row)
+                if ret is not EXT_CONTINUE:
+                    row = ret
 
-        if isnew:
-            populators = populators[0]
-        else:
-            populators = populators[1]
+            if polymorphic_on:
+                discriminator = row[polymorphic_on]
+                if discriminator is not None:
+                    _instance = polymorphic_instances[discriminator]
+                    if _instance:
+                        return _instance(row, result)
 
-        if only_load_props:
-            populators = [p for p in populators if p[0] in only_load_props]
+            # determine identity key
+            if refresh_instance:
+                # TODO: refresh_instance seems to be named wrongly -- it is always an instance state.
+                refresh_state = refresh_instance
+                identitykey = refresh_state.key
+                if identitykey is None:
+                    # super-rare condition; a refresh is being called
+                    # on a non-instance-key instance; this is meant to only
+                    # occur within a flush()
+                    identitykey = self._identity_key_from_state(refresh_state)
+            else:
+                identitykey = identity_key(row)
 
-        for (key, populator) in populators:
-            selectcontext.exec_with_path(path_start, key, populator, state, row, isnew=isnew, **flags)
+            if identitykey in session_identity_map:
+                instance = session_identity_map[identitykey]
+                state = attributes.instance_state(instance)
+
+                if self.__should_log_debug:
+                    self.__log_debug("_instance(): using existing instance %s identity %s" % (instance_str(instance), str(identitykey)))
+
+                isnew = state.runid != context.runid
+                currentload = not isnew
+                loaded_instance = False
+
+                if not currentload and version_id_col and context.version_check and self._get_state_attr_by_column(state, self.version_id_col) != row[version_id_col]:
+                    raise exceptions.ConcurrentModificationError("Instance '%s' version of %s does not match %s" % (state_str(state), self._get_state_attr_by_column(state, self.version_id_col), row[version_id_col]))
+            elif refresh_instance:
+                # out of band refresh_instance detected (i.e. its not in the session.identity_map)
+                # honor it anyway.  this can happen if a _get() occurs within save_obj(), such as
+                # when eager_defaults is True.
+                state = refresh_instance
+                instance = state.obj()
+                isnew = state.runid != context.runid
+                currentload = True
+                loaded_instance = False
+            else:
+                if self.__should_log_debug:
+                    self.__log_debug("_instance(): identity key %s not in session" % str(identitykey))
+
+                if self.allow_null_pks:
+                    for x in identitykey[1]:
+                        if x is not None:
+                            break
+                    else:
+                        return None
+                else:
+                    if None in identitykey[1]:
+                        return None
+                isnew = True
+                currentload = True
+                loaded_instance = True
+
+                if create_instance:
+                    instance = extension.create_instance(self, context, row, self.class_)
+                    if instance is EXT_CONTINUE:
+                        instance = self.class_manager.new_instance()
+                    else:
+                        manager = attributes.manager_for_cls(instance.__class__)
+                        # TODO: if manager is None, raise a friendly error about
+                        # returning instances of unmapped types
+                        manager.setup_instance(instance)
+                else:
+                    instance = self.class_manager.new_instance()
+
+                if self.__should_log_debug:
+                    self.__log_debug("_instance(): created new instance %s identity %s" % (instance_str(instance), str(identitykey)))
+
+                state = attributes.instance_state(instance)
+                state.entity_name = self.entity_name
+                state.key = identitykey
+                state.session_id = context.session.hash_key
+                session_identity_map.add(state)
+
+            if currentload or populate_existing:
+                if isnew:
+                    state.runid = context.runid
+                    context.progress.add(state)
+
+                if not populate_instance or extension.populate_instance(self, context, row, instance, only_load_props=only_load_props, instancekey=identitykey, isnew=isnew) is EXT_CONTINUE:
+                    populate_state(state, row, isnew, only_load_props)
+        
+            else:
+                # populate attributes on non-loading instances which have been expired
+                # TODO: also support deferred attributes here [ticket:870]
+                if state.expired_attributes: 
+                    if state in context.partials:
+                        isnew = False
+                        attrs = context.partials[state]
+                    else:
+                        isnew = True
+                        attrs = state.expired_attributes.intersection(state.unmodified)
+                        context.partials[state] = attrs  #<-- allow query.instances to commit the subset of attrs
+                
+                    if not populate_instance or extension.populate_instance(self, context, row, instance, only_load_props=attrs, instancekey=identitykey, isnew=isnew) is EXT_CONTINUE:
+                        populate_state(state, row, isnew, attrs, instancekey=identitykey)
+
+            if result is not None and (not append_result or extension.append_result(self, context, row, instance, result, instancekey=identitykey, isnew=isnew) is EXT_CONTINUE):
+                result.append(instance)
+
+            if loaded_instance:
+                state._run_on_load(instance)
+
+            return instance
+        return _instance
+        
+    def __populators(self, context, path, row, adapter):
+        new_populators, existing_populators = [], []
+        for prop in self.__props.values():
+            newpop, existingpop = prop.create_row_processor(context, path, self, row, adapter)
+            if newpop:
+                new_populators.append((prop.key, newpop))
+            if existingpop:
+                existing_populators.append((prop.key, existingpop))
+        return new_populators, existing_populators
 
     def _optimized_get_statement(self, state, attribute_names):
         props = self.__props

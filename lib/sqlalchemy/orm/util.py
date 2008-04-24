@@ -6,12 +6,11 @@
 
 import new
 from sqlalchemy import sql, util, exceptions
-from sqlalchemy.sql.util import row_adapter as create_row_adapter
 from sqlalchemy.sql import visitors, expression, util as sql_util, operators
 from sqlalchemy.orm.interfaces import MapperExtension, EXT_CONTINUE, PropComparator, MapperProperty
 from sqlalchemy.orm import attributes
 
-all_cascades = util.Set(["delete", "delete-orphan", "all", "merge",
+all_cascades = util.FrozenSet(["delete", "delete-orphan", "all", "merge",
                          "expunge", "save-update", "refresh-expire", "none"])
 
 class CascadeOptions(object):
@@ -217,65 +216,15 @@ class ExtensionCarrier(object):
             raise AttributeError(key)
         return self.methods.get(key, self._pass)
 
-class AliasedClauses(object):
-    """Provide aliasing services for ORM join operations."""
-
-    def __init__(self, alias, equivalents=None, chain_to=None):
-        mapper, self.selectable, is_aliased_class = _entity_info(alias)
+class ORMAdapter(sql_util.ColumnAdapter):
+    def __init__(self, entity, equivalents=None, chain_to=None):
+        mapper, selectable, is_aliased_class = _entity_info(entity)
         if is_aliased_class:
-            self.aliased_class = alias
+            self.aliased_class = entity
         else:
             self.aliased_class = None
-        self.equivalents = equivalents
-        self.adapter = sql_util.ClauseAdapter(self.selectable, equivalents=equivalents)
-        if chain_to:
-            self.adapter.chain(chain_to.adapter)
-        self.__wrap = None
-        self.row_decorator = self._create_row_adapter()
-        
-    def wrap(self, aliasedclauses):
-        """Wrap the operations performed by this AliasedClauses by another AliasedClauses."""
-        ac = AliasedClauses.__new__(AliasedClauses)
-        ac.__dict__ = self.__dict__.copy()
-        ac.__wrap = aliasedclauses
-        ac.row_decorator = ac._create_row_adapter()
-        return ac
+        sql_util.ColumnAdapter.__init__(self, selectable, equivalents, chain_to)
 
-    def aliased_column(self, column):
-        """adapt the given column to this AliasedClauses' selectable, and add it to the row adapter."""
-        
-        if self.__wrap:
-            column = self.__wrap.aliased_column(column)
-            
-        conv = self.selectable.corresponding_column(column)
-        if conv:
-            return conv
-        
-        # process column-level subqueries    
-        aliased_column = self.adapter.traverse(column)
-
-        # add to row decorator explicitly
-        self.row_decorator.map[column] = aliased_column
-        return aliased_column
-
-    def adapt_clause(self, clause):
-        if self.__wrap:
-            clause = self.__wrap.adapt_clause(clause)
-            
-        return self.adapter.traverse(clause)
-    
-    def adapt_list(self, clauses):
-        if self.__wrap:
-            clauses = self.__wrap.adapt_list(clauses)
-            
-        return self.adapter.copy_and_process(clauses)
-        
-    def _create_row_adapter(self):
-        adapter = create_row_adapter(self.selectable, equivalent_columns=self.equivalents)
-        if self.__wrap:
-            return self.__wrap.row_decorator.wrap(adapter)
-        else:
-            return adapter
 
 class AliasedClass(object):
     def __init__(self, cls, alias=None):

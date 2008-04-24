@@ -269,39 +269,6 @@ class AliasedRow(object):
     def keys(self):
         return self.row.keys()
 
-class row_adapter(object):
-    def __init__(self, from_, equivalent_columns=None, _wrap=None):
-        self.from_ = from_
-        self.equivalent_columns = equivalent_columns or {}
-        if _wrap:
-            self.__locate_col = self.__decorate_locate(self.__locate_col, _wrap.__locate_col)
-        self.map = util.PopulateDict(self.__locate_col)
-
-    def wrap(self, adapter):
-        return row_adapter(self.from_, self.equivalent_columns, _wrap=adapter)
-    
-    def translate_col(self, col):
-        return self.__locate_col(col)
-        
-    def __decorate_locate(self, local, wrapped):
-        def locate(col):
-            col = local(col)
-            return wrapped(col)
-        return locate
-        
-    def __locate_col(self, col):
-        c = self.from_.corresponding_column(col)
-        if c:
-            return c
-        elif col in self.equivalent_columns:
-            for c2 in self.equivalent_columns[col]:
-                corr = self.from_.corresponding_column(c2)
-                if corr:
-                    return corr
-        return col
-
-    def __call__(self, row):
-        return AliasedRow(row, self.map)
 
 class ClauseAdapter(visitors.ReplacingCloningVisitor):
     """Given a clause (like as in a WHERE criterion), locate columns
@@ -331,35 +298,68 @@ class ClauseAdapter(visitors.ReplacingCloningVisitor):
       s.c.col1 == table2.c.col1
     """
 
-    def __init__(self, selectable, include=None, exclude=None, equivalents=None):
+    def __init__(self, selectable, equivalents=None, include=None, exclude=None):
         self.__traverse_options__ = {'column_collections':False, 'stop_on':[selectable]}
         self.selectable = selectable
         self.include = include
         self.exclude = exclude
         self.equivalents = equivalents or {}
 
-    def replace(self, col):
-            
-        if isinstance(col, expression.FromClause):
-            if self.selectable.is_derived_from(col):
-                return self.selectable
-                
-        if not isinstance(col, expression.ColumnElement):
-            return None
-            
-        if self.include:
-            if col not in self.include:
-                return None
-        if self.exclude:
-            if col in self.exclude:
-                return None
-                
-        newcol = self.selectable.corresponding_column(col, require_embedded=True)
-        
+    def _corresponding_column(self, col, require_embedded):
+        newcol = self.selectable.corresponding_column(col, require_embedded=require_embedded)
+
         if not newcol and col in self.equivalents:
             for equiv in self.equivalents[col]:
-                newcol = self.selectable.corresponding_column(equiv, require_embedded=True)
+                newcol = self.selectable.corresponding_column(equiv, require_embedded=require_embedded)
                 if newcol:
                     return newcol
         return newcol
 
+    def replace(self, col):
+        if isinstance(col, expression.FromClause):
+            if self.selectable.is_derived_from(col):
+                return self.selectable
+
+        if not isinstance(col, expression.ColumnElement):
+            return None
+
+        if self.include and col not in self.include:
+            return None
+        elif self.exclude and col in self.exclude:
+            return None
+
+        return self._corresponding_column(col, True)
+
+class ColumnAdapter(ClauseAdapter):
+
+    def __init__(self, selectable, equivalents=None, chain_to=None, include=None, exclude=None):
+        ClauseAdapter.__init__(self, selectable, equivalents, include, exclude)
+        if chain_to:
+            self.chain(chain_to)
+        self.columns = util.PopulateDict(self.__locate_col)
+
+    def wrap(self, adapter):
+        ac = self.__class__.__new__(self.__class__)
+        ac.__dict__ = self.__dict__.copy()
+        ac.__locate_col = ac.__wrap(ac.__locate_col, adapter.__locate_col)
+        ac.adapt_clause = ac.__wrap(ac.adapt_clause, adapter.adapt_clause)
+        ac.adapt_list = ac.__wrap(ac.adapt_list, adapter.adapt_list)
+        ac.columns = util.PopulateDict(ac.__locate_col)
+        return ac
+
+    adapt_clause = ClauseAdapter.traverse
+    adapt_list = ClauseAdapter.copy_and_process
+
+    def __wrap(self, local, wrapped):
+        def locate(col):
+            col = local(col)
+            return wrapped(col)
+        return locate
+
+    def __locate_col(self, col):
+        return self._corresponding_column(col, False) or \
+            self.adapt_clause(col)
+
+    def adapted_row(self, row):
+        return AliasedRow(row, self.columns)
+    

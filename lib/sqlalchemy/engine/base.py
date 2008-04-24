@@ -862,7 +862,7 @@ class Connection(Connectable):
         in the case of 'raw' execution which accepts positional parameters,
         it may be a list of tuples or lists."""
 
-        if multiparams is None or len(multiparams) == 0:
+        if not multiparams:
             if params:
                 return [params]
             else:

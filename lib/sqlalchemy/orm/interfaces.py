@@ -328,7 +328,7 @@ class MapperProperty(object):
     attribute access, loading behavior, and dependency calculations.
     """
 
-    def setup(self, querycontext, **kwargs):
+    def setup(self, context, entity, path, adapter, **kwargs):
         """Called by Query for the purposes of constructing a SQL statement.
 
         Each MapperProperty associated with the target mapper processes the
@@ -338,7 +338,7 @@ class MapperProperty(object):
 
         pass
 
-    def create_row_processor(self, selectcontext, mapper, row):
+    def create_row_processor(self, selectcontext, path, mapper, row, adapter):
         """Return a 2-tuple consiting of two row processing functions and an instance post-processing function.
 
         Input arguments are the query.SelectionContext and the *first*
@@ -534,29 +534,36 @@ class StrategizedProperty(MapperProperty):
     ``StrategizedOption`` objects via the Query.options() method.
     """
 
-    def _get_context_strategy(self, context):
-        path = context.path
-        return self._get_strategy(context.attributes.get(("loaderstrategy", path), self.strategy.__class__))
-
+    def __get_context_strategy(self, context, path):
+        cls = context.attributes.get(("loaderstrategy", path), None)
+        if cls:
+            try:
+                return self.__all_strategies[cls]
+            except KeyError:
+                return self.__init_strategy(cls)
+        else:
+            return self.strategy
+    
     def _get_strategy(self, cls):
         try:
-            return self._all_strategies[cls]
+            return self.__all_strategies[cls]
         except KeyError:
-            # cache the located strategy per class for faster re-lookup
-            strategy = cls(self)
-            strategy.init()
-            self._all_strategies[cls] = strategy
-            return strategy
+            return self.__init_strategy(cls)
+    
+    def __init_strategy(self, cls):
+        self.__all_strategies[cls] = strategy = cls(self)
+        strategy.init()
+        return strategy
+        
+    def setup(self, context, entity, path, adapter, **kwargs):
+        self.__get_context_strategy(context, path + (self.key,)).setup_query(context, entity, path, adapter, **kwargs)
 
-    def setup(self, querycontext, **kwargs):
-        self._get_context_strategy(querycontext).setup_query(querycontext, **kwargs)
-
-    def create_row_processor(self, selectcontext, mapper, row):
-        return self._get_context_strategy(selectcontext).create_row_processor(selectcontext, mapper, row)
+    def create_row_processor(self, context, path, mapper, row, adapter):
+        return self.__get_context_strategy(context, path + (self.key,)).create_row_processor(context, path, mapper, row, adapter)
 
     def do_init(self):
-        self._all_strategies = {}
-        self.strategy = self._get_strategy(self.strategy_class)
+        self.__all_strategies = {}
+        self.strategy = self.__init_strategy(self.strategy_class)
         if self.is_primary():
             self.strategy.init_class_attribute()
 
@@ -781,10 +788,10 @@ class LoaderStrategy(object):
     def init_class_attribute(self):
         pass
 
-    def setup_query(self, context, **kwargs):
+    def setup_query(self, context, entity, path, adapter, **kwargs):
         pass
 
-    def create_row_processor(self, selectcontext, mapper, row):
+    def create_row_processor(self, selectcontext, path, mapper, row, adapter):
         """Return row processing functions which fulfill the contract specified
         by MapperProperty.create_row_processor.
 

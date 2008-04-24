@@ -162,10 +162,10 @@ class SynonymProperty(MapperProperty):
         self.map_column=map_column
         self.descriptor = descriptor
 
-    def setup(self, querycontext, **kwargs):
+    def setup(self, context, entity, path, adapter, **kwargs):
         pass
 
-    def create_row_processor(self, selectcontext, mapper, row):
+    def create_row_processor(self, selectcontext, path, mapper, row, adapter):
         return (None, None)
 
     def do_init(self):
@@ -207,10 +207,10 @@ class ComparableProperty(MapperProperty):
                                       useobject=False,
                                       comparator=self.comparator)
 
-    def setup(self, querycontext, **kwargs):
+    def setup(self, context, entity, path, adapter, **kwargs):
         pass
 
-    def create_row_processor(self, selectcontext, mapper, row):
+    def create_row_processor(self, selectcontext, path, mapper, row, adapter):
         return (None, None)
 
 

@@ -17,7 +17,8 @@ from sqlalchemy.orm.properties import SynonymProperty, ComparableProperty, Prope
 from sqlalchemy.orm import mapper as mapperlib
 from sqlalchemy.orm import strategies
 from sqlalchemy.orm.query import Query, aliased
-from sqlalchemy.orm.util import polymorphic_union, create_row_adapter, join, outerjoin, with_parent
+from sqlalchemy.orm.util import polymorphic_union, join, outerjoin, with_parent
+from sqlalchemy.sql import util as sql_util
 from sqlalchemy.orm.session import Session as _Session
 from sqlalchemy.orm.session import object_session, sessionmaker
 from sqlalchemy.orm.scoping import ScopedSession
@@ -732,16 +733,16 @@ def contains_alias(alias):
             if isinstance(self.alias, basestring):
                 self.translator = None
             else:
-                self.translator = create_row_adapter(alias)
+                self.translator = sql_util.ColumnAdapter(alias)
         
         def translate_row(self, mapper, context, row):
             if not self.translator:
-                self.translator = create_row_adapter(mapper.mapped_table.alias(self.alias))
-            return self.translator(row)
+                self.translator = sql_util.ColumnAdapter(mapper.mapped_table.alias(self.alias))
+            return self.translator.adapted_row(row)
 
     return ExtensionOption(AliasedRow(alias))
 
-def contains_eager(key, alias=None, decorator=None):
+def contains_eager(key, alias=None):
     """Return a ``MapperOption`` that will indicate to the query that
     the given attribute will be eagerly loaded.
 
@@ -752,14 +753,9 @@ def contains_eager(key, alias=None, decorator=None):
     `alias` is the string name of an alias, **or** an ``sql.Alias``
     object, which represents the aliased columns in the query.  This
     argument is optional.
-
-    `decorator` is mutually exclusive of `alias` and is a
-    row-processing function which will be applied to the incoming row
-    before sending to the eager load handler.  use this for more
-    sophisticated row adjustments beyond a straight alias.
     """
 
-    return (strategies.EagerLazyOption(key, lazy=False), strategies.RowDecorateOption(key, alias=alias, decorator=decorator))
+    return (strategies.EagerLazyOption(key, lazy=False), strategies.RowDecorateOption(key, alias=alias))
 
 def defer(name):
     """Return a ``MapperOption`` that will convert the column property

@@ -12,7 +12,7 @@ class DynaLoader(strategies.AbstractRelationLoader):
         self.is_class_level = True
         self._register_attribute(self.parent.class_, impl_class=DynamicAttributeImpl, target_mapper=self.parent_property.mapper, order_by=self.parent_property.order_by)
 
-    def create_row_processor(self, selectcontext, mapper, row):
+    def create_row_processor(self, selectcontext, path, mapper, row, adapter):
         return (None, None)
 
 DynaLoader.logger = logging.class_logger(DynaLoader)

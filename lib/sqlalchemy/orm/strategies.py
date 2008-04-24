@@ -24,10 +24,10 @@ class ColumnLoader(LoaderStrategy):
         self._should_log_debug = logging.is_debug_enabled(self.logger)
         self.is_composite = hasattr(self.parent_property, 'composite_class')
         
-    def setup_query(self, context, column_collection=None, parentclauses=None, **kwargs):
+    def setup_query(self, context, entity, path, adapter, column_collection=None, **kwargs):
         for c in self.columns:
-            if parentclauses:
-                c = parentclauses.aliased_column(c)
+            if adapter:
+                c = adapter.columns[c]
             column_collection.append(c)
         
     def init_class_attribute(self):
@@ -36,8 +36,10 @@ class ColumnLoader(LoaderStrategy):
         coltype = self.columns[0].type
         sessionlib.register_attribute(self.parent.class_, self.key, uselist=False, useobject=False, copy_function=coltype.copy_value, compare_function=coltype.compare_values, mutable_scalars=self.columns[0].type.is_mutable(), comparator=self.parent_property.comparator, parententity=self.parent)
         
-    def create_row_processor(self, selectcontext, mapper, row):
+    def create_row_processor(self, selectcontext, path, mapper, row, adapter):
         key, col = self.key, self.columns[0]
+        if adapter:
+            col = adapter.columns[col]
         if col in row:
             def new_execute(state, row, **flags):
                 state.dict[key] = row[col]
@@ -76,8 +78,10 @@ class CompositeColumnLoader(ColumnLoader):
                 return True
         sessionlib.register_attribute(self.parent.class_, self.key, uselist=False, useobject=False, copy_function=copy, compare_function=compare, mutable_scalars=True, comparator=self.parent_property.comparator, parententity=self.parent)
 
-    def create_row_processor(self, selectcontext, mapper, row):
+    def create_row_processor(self, selectcontext, path, mapper, row, adapter):
         key, columns, composite_class = self.key, self.columns, self.parent_property.composite_class
+        if adapter:
+            columns = [adapter.columns[c] for c in columns]
         for c in columns:
             if c not in row:
                 def new_execute(state, row, isnew, **flags):
@@ -103,9 +107,12 @@ CompositeColumnLoader.logger = logging.class_logger(CompositeColumnLoader)
 class DeferredColumnLoader(LoaderStrategy):
     """Deferred column loader, a per-column or per-column-group lazy loader."""
     
-    def create_row_processor(self, selectcontext, mapper, row):
-        if self.columns[0] in row:
-            return self.parent_property._get_strategy(ColumnLoader).create_row_processor(selectcontext, mapper, row)
+    def create_row_processor(self, selectcontext, path, mapper, row, adapter):
+        col = self.columns[0]
+        if adapter:
+            col = adapter.columns[col]
+        if col in row:
+            return self.parent_property._get_strategy(ColumnLoader).create_row_processor(selectcontext, path, mapper, row, adapter)
 
         elif not self.is_class_level or len(selectcontext.options):
             def new_execute(state, row, **flags):
@@ -133,12 +140,12 @@ class DeferredColumnLoader(LoaderStrategy):
         self.logger.info("%s register managed attribute" % self)
         sessionlib.register_attribute(self.parent.class_, self.key, uselist=False, useobject=False, callable_=self.class_level_loader, copy_function=self.columns[0].type.copy_value, compare_function=self.columns[0].type.compare_values, mutable_scalars=self.columns[0].type.is_mutable(), comparator=self.parent_property.comparator, parententity=self.parent)
 
-    def setup_query(self, context, only_load_props=None, **kwargs):
+    def setup_query(self, context, entity, path, adapter, only_load_props=None, **kwargs):
         if \
             (self.group is not None and context.attributes.get(('undefer', self.group), False)) or \
             (only_load_props and self.key in only_load_props):
             
-            self.parent_property._get_strategy(ColumnLoader).setup_query(context, **kwargs)
+            self.parent_property._get_strategy(ColumnLoader).setup_query(context, entity, path, adapter, **kwargs)
     
     def class_level_loader(self, state, props=None):
         if not mapperutil._state_has_mapper(state):
@@ -255,7 +262,7 @@ class NoLoader(AbstractRelationLoader):
         self.is_class_level = True
         self._register_attribute(self.parent.class_)
 
-    def create_row_processor(self, selectcontext, mapper, row):
+    def create_row_processor(self, selectcontext, path, mapper, row, adapter):
         def new_execute(state, row, **flags):
             self._init_instance_attribute(state)
 
@@ -341,13 +348,13 @@ class LazyLoader(AbstractRelationLoader):
     def setup_loader(self, state, options=None, path=None):
         return LoadLazyAttribute(state, self.key, options, path)
 
-    def create_row_processor(self, selectcontext, mapper, row):
+    def create_row_processor(self, selectcontext, path, mapper, row, adapter):
         if not self.is_class_level or len(selectcontext.options):
+            path = path + (self.key,)
             def new_execute(state, row, **flags):
                 # we are not the primary manager for this attribute on this class - set up a per-instance lazyloader,
                 # which will override the class-level behavior
-                
-                self._init_instance_attribute(state, callable_=self.setup_loader(state, selectcontext.options, selectcontext.query._current_path + selectcontext.path))
+                self._init_instance_attribute(state, callable_=self.setup_loader(state, selectcontext.options, selectcontext.query._current_path + path))
 
             if self._should_log_debug:
                 new_execute = self.debug_callable(new_execute, self.logger, None,
@@ -499,16 +506,12 @@ class EagerLoader(AbstractRelationLoader):
         self.join_depth = self.parent_property.join_depth
 
     def init_class_attribute(self):
-        # initialize a lazy loader on the class level attribute
         self.parent_property._get_strategy(LazyLoader).init_class_attribute()
         
-    def setup_query(self, context, parentclauses=None, parentmapper=None, entity=None, column_collection=None, **kwargs):
+    def setup_query(self, context, entity, path, adapter, column_collection=None, parentmapper=None, **kwargs):
         """Add a left outer join to the statement thats being constructed."""
 
-        if entity is None or entity.alias_id:
-            return
-
-        path = context.path
+        path = path + (self.key,)
         
         # check for join_depth or basic recursion,
         # if the current path was not explicitly stated as 
@@ -553,15 +556,15 @@ class EagerLoader(AbstractRelationLoader):
         try:
             clauses = self.clauses[path_key]
         except KeyError:
-            self.clauses[path_key] = clauses = mapperutil.AliasedClauses(mapperutil.AliasedClass(self.mapper), 
+            self.clauses[path_key] = clauses = mapperutil.ORMAdapter(mapperutil.AliasedClass(self.mapper), 
                     equivalents=self.mapper._equivalent_columns, 
-                    chain_to=parentclauses)
+                    chain_to=adapter)
 
-        if parentclauses:
-            if parentclauses.aliased_class:
-                onclause = getattr(parentclauses.aliased_class, self.key, self.parent_property)
+        if adapter:
+            if getattr(adapter, 'aliased_class', None):
+                onclause = getattr(adapter.aliased_class, self.key, self.parent_property)
             else:
-                onclause = getattr(mapperutil.AliasedClass(self.parent, parentclauses.selectable), self.key, self.parent_property)
+                onclause = getattr(mapperutil.AliasedClass(self.parent, adapter.selectable), self.key, self.parent_property)
         else:
             onclause = self.parent_property
         
@@ -574,8 +577,8 @@ class EagerLoader(AbstractRelationLoader):
             # those columns outward.  This has the effect of "undefering" those columns.
             for col in sql_util.find_columns(self.parent_property.primaryjoin):
                 if localparent.mapped_table.c.contains_column(col):
-                    if parentclauses:
-                        col = parentclauses.aliased_column(col)
+                    if adapter:
+                        col = adapter.columns[col]
                     context.primary_columns.append(col)
             
         if self.parent_property.order_by is False:
@@ -588,74 +591,56 @@ class EagerLoader(AbstractRelationLoader):
         elif self.parent_property.order_by:
             context.eager_order_by += eagerjoin._target_adapter.copy_and_process(util.to_list(self.parent_property.order_by))
 
-        # place the "row_decorator" from the AliasedClauses into the QueryContext, where it will
-        # be picked up in create_row_processor() when results are fetched
-        context.attributes[("eager_row_processor", path)] = clauses.row_decorator
+        context.attributes[("eager_row_processor", path)] = clauses
             
         for value in self.mapper._iterate_polymorphic_properties():
-            context.exec_with_path(self.mapper.base_mapper, value.key, value.setup, context, parentclauses=clauses, parentmapper=self.mapper, entity=entity, column_collection=context.secondary_columns)
-        
-    def _create_row_decorator(self, selectcontext, row, path):
-        """Create a *row decorating* function that will apply eager
-        aliasing to the row.
-        
-        Also check that an identity key can be retrieved from the row,
-        else return None.
-        """
-        
-        #print "creating row decorator for path ", "->".join([str(s) for s in path])
-        
-        if ("eager_row_processor", path) in selectcontext.attributes:
-            decorator = selectcontext.attributes[("eager_row_processor", path)]
-            if decorator is None:
-                decorator = lambda row: row
+            value.setup(context, entity, path + (self.mapper.base_mapper,), clauses, parentmapper=self.mapper, column_collection=context.secondary_columns)
+            
+    def __create_eager_adapter(self, context, row, adapter, path):
+        if ("eager_row_processor", path) in context.attributes:
+            decorator = context.attributes[("eager_row_processor", path)]
         else:
             if self._should_log_debug:
                 self.logger.debug("Could not locate aliased clauses for key: " + str(path))
-            return None
+            return False
 
+        if adapter and decorator:
+            decorator = adapter.wrap(decorator)
+        elif adapter:
+            decorator = adapter
+            
         try:
-            decorated_row = decorator(row)
-            # check for identity key
-            identity_key = self.mapper.identity_key_from_row(decorated_row)
-            # and its good
+            identity_key = self.mapper.identity_key_from_row(row, decorator)
             return decorator
         except KeyError, k:
             # no identity key - dont return a row processor, will cause a degrade to lazy
             if self._should_log_debug:
-                self.logger.debug("could not locate identity key from row '%s'; missing column '%s'" % (repr(decorated_row), str(k)))
-            return None
+                self.logger.debug("could not locate identity key from row; missing column '%s'" % k)
+            return False
 
-    def create_row_processor(self, selectcontext, mapper, row):
-
-        row_decorator = self._create_row_decorator(selectcontext, row, selectcontext.path)
-        pathstr = ','.join([str(x) for x in selectcontext.path])
+    def create_row_processor(self, context, path, mapper, row, adapter):
+        path = path + (self.key,)
+        eager_adapter = self.__create_eager_adapter(context, row, adapter, path)
         
-        if row_decorator is not None:
-            
-            key, _instance, base_mapper = self.key, self.mapper._instance, self.mapper.base_mapper
+        if eager_adapter is not False:
+            key = self.key
+            _instance = self.mapper._instance_processor(context, path + (self.mapper.base_mapper,), eager_adapter)
             
             if not self.uselist:
                 def execute(state, row, isnew, **flags):
-                    decorated_row = row_decorator(row)
-
                     if isnew:
                         # set a scalar object instance directly on the
                         # parent object, bypassing InstrumentedAttribute
                         # event handlers.
-                        state.dict[key] = (
-                            _instance(
-                                selectcontext, base_mapper, decorated_row, None))
+                        state.dict[key] = _instance(row, None)
                     else:
                         # call _instance on the row, even though the object has been created,
                         # so that we further descend into properties
-                        _instance(selectcontext, base_mapper, decorated_row, None)
+                        _instance(row, None)
             else:
                 def execute(state, row, isnew, **flags):
-                    decorated_row = row_decorator(row)
-
                     if isnew or key not in state.appenders:
-                        # appender_key can be absent from selectcontext.attributes with isnew=False
+                        # appender_key can be absent from context.attributes with isnew=False
                         # when self-referential eager loading is used; the same instance may be present
                         # in two distinct sets of result columns
 
@@ -666,7 +651,7 @@ class EagerLoader(AbstractRelationLoader):
 
                     result_list = state.appenders[key]
                     
-                    _instance(selectcontext, base_mapper, decorated_row, result_list)
+                    _instance(row, result_list)
 
             if self._should_log_debug:
                 execute = self.debug_callable(execute, self.logger, 
@@ -678,7 +663,7 @@ class EagerLoader(AbstractRelationLoader):
         else:
             if self._should_log_debug:
                 self.logger.debug("%s degrading to lazy loader" % self)
-            return self.parent_property._get_strategy(LazyLoader).create_row_processor(selectcontext, mapper, row)
+            return self.parent_property._get_strategy(LazyLoader).create_row_processor(context, path, mapper, row, adapter)
 
 EagerLoader.logger = logging.class_logger(EagerLoader)
 
@@ -702,21 +687,21 @@ class EagerLazyOption(StrategizedOption):
 EagerLazyOption.logger = logging.class_logger(EagerLazyOption)
 
 class RowDecorateOption(PropertyOption):
-    def __init__(self, key, decorator=None, alias=None):
+    def __init__(self, key, alias=None):
         super(RowDecorateOption, self).__init__(key)
-        self.decorator = decorator
         self.alias = alias
 
     def process_query_property(self, query, paths):
-        if self.alias is not None and self.decorator is None:
+        if self.alias:
             (mapper, propname) = paths[-1][-2:]
 
             prop = mapper.get_property(propname, resolve_synonyms=True)
             if isinstance(self.alias, basestring):
                 self.alias = prop.target.alias(self.alias)
 
-            self.decorator = mapperutil.create_row_adapter(self.alias)
-        query._attributes[("eager_row_processor", paths[-1])] = self.decorator
+            query._attributes[("eager_row_processor", paths[-1])] = sql_util.ColumnAdapter(self.alias)
+        else:
+            query._attributes[("eager_row_processor", paths[-1])] = None
 
 RowDecorateOption.logger = logging.class_logger(RowDecorateOption)
         
