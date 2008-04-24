@@ -1292,7 +1292,7 @@ class _QueryEntity(object):
                 cls = _MapperEntity
             else:
                 cls = _ColumnEntity
-        return object.__new__(cls, *args, **kwargs)
+        return object.__new__(cls)
             
     def _clone(self):
         q = self.__class__.__new__(self.__class__)

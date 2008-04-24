@@ -976,20 +976,12 @@ class Mapper(object):
             else:
                 raise exceptions.UnmappedColumnError("No column %s.%s is configured on mapper %s..." % (column.table.name, column.name, str(self)))
 
-    # TODO: all these crazy names will be simplified once we are entirely using InstanceState
+    # TODO: improve names
     def _get_state_attr_by_column(self, state, column):
         return self._get_col_to_prop(column).getattr(state, column)
 
     def _set_state_attr_by_column(self, state, column, value):
         return self._get_col_to_prop(column).setattr(state, value, column)
-
-#    def _get_attr_by_column(self, obj, column):
-#        state = attributes.instance_state(obj)
-#        return self._get_state_attr_by_column(state, column)
-
-#    def _set_attr_by_column(self, obj, column, value):
-#        state = attributes.instance_state(obj)
-#        self._set_state_attr_by_column(state, column, value)
 
     def _get_committed_attr_by_column(self, obj, column):
         state = attributes.instance_state(obj)

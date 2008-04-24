@@ -89,8 +89,7 @@ class Annotated(object):
         else:
             element, values = args
             return object.__new__(
-                type.__new__(type, "Annotated%s" % element.__class__.__name__, (Annotated, element.__class__), {}), 
-                element, values
+                type.__new__(type, "Annotated%s" % element.__class__.__name__, (Annotated, element.__class__), {}) 
             )
 
     def __init__(self, element, values):
