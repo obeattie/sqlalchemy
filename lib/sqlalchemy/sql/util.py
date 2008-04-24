@@ -217,8 +217,8 @@ def folded_equivalents(join, equivs=None):
     This function is used by Join.select(fold_equivalents=True).
     
     TODO: deprecate ?
-    """
 
+    """
     if equivs is None:
         equivs = util.Set()
     def visit_binary(binary):
@@ -295,8 +295,8 @@ class ClauseAdapter(visitors.ReplacingCloningVisitor):
     condition to read::
 
       s.c.col1 == table2.c.col1
-    """
 
+    """
     def __init__(self, selectable, equivalents=None, include=None, exclude=None):
         self.__traverse_options__ = {'column_collections':False, 'stop_on':[selectable]}
         self.selectable = selectable

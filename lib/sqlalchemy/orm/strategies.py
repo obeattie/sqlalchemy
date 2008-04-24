@@ -512,7 +512,29 @@ class EagerLoader(AbstractRelationLoader):
         """Add a left outer join to the statement thats being constructed."""
 
         path = path + (self.key,)
+
+        # check for user-defined eager alias
+        if ("eager_row_processor", path) in context.attributes:
+            clauses = context.attributes[("eager_row_processor", path)]
+            
+            adapter = entity._get_entity_clauses(context.query, context)
+            if adapter and clauses:
+                context.attributes[("eager_row_processor", path)] = clauses = adapter.wrap(clauses)
+            elif adapter:
+                context.attributes[("eager_row_processor", path)] = clauses = adapter
+                
+        else:
         
+            clauses = self.__create_eager_join(context, entity, path, adapter, parentmapper)
+            if not clauses:
+                return
+
+            context.attributes[("eager_row_processor", path)] = clauses
+            
+        for value in self.mapper._iterate_polymorphic_properties():
+            value.setup(context, entity, path + (self.mapper.base_mapper,), clauses, parentmapper=self.mapper, column_collection=context.secondary_columns)
+    
+    def __create_eager_join(self, context, entity, path, adapter, parentmapper):
         # check for join_depth or basic recursion,
         # if the current path was not explicitly stated as 
         # a desired "loaderstrategy" (i.e. via query.options())
@@ -528,11 +550,11 @@ class EagerLoader(AbstractRelationLoader):
             localparent = entity.mapper
         else:
             localparent = parentmapper
-        
+    
         # whether or not the Query will wrap the selectable in a subquery,
         # and then attach eager load joins to that (i.e., in the case of LIMIT/OFFSET etc.)
         should_nest_selectable = context.query._should_nest_selectable
-        
+    
         if entity in context.eager_joins:
             entity_key, default_towrap = entity, entity.selectable
         elif should_nest_selectable or not context.from_clause or not sql_util.search(context.from_clause, entity.selectable):
@@ -546,9 +568,9 @@ class EagerLoader(AbstractRelationLoader):
             # Query._compile_context will adapt as needed and append to the
             # FROM clause of the select().
             entity_key, default_towrap = None, context.from_clause
-        
+    
         towrap = context.eager_joins.setdefault(entity_key, default_towrap)
-        
+    
         # create AliasedClauses object to build up the eager query.  this is cached after 1st creation.
         # this also allows ORMJoin to cache the aliased joins it produces since we pass the same
         # args each time in the typical case.
@@ -567,9 +589,9 @@ class EagerLoader(AbstractRelationLoader):
                 onclause = getattr(mapperutil.AliasedClass(self.parent, adapter.selectable), self.key, self.parent_property)
         else:
             onclause = self.parent_property
-        
+    
         context.eager_joins[entity_key] = eagerjoin = mapperutil.outerjoin(towrap, clauses.aliased_class, onclause)
-        
+    
         if not self.parent_property.secondary and context.query._should_nest_selectable and not parentmapper:
             # for parentclause that is the non-eager end of the join,
             # ensure all the parent cols in the primaryjoin are actually in the
@@ -580,7 +602,7 @@ class EagerLoader(AbstractRelationLoader):
                     if adapter:
                         col = adapter.columns[col]
                     context.primary_columns.append(col)
-            
+        
         if self.parent_property.order_by is False:
             if self.parent_property.secondaryjoin:
                 default_order_by = eagerjoin.left.right.default_order_by()
@@ -590,12 +612,9 @@ class EagerLoader(AbstractRelationLoader):
                 context.eager_order_by += default_order_by
         elif self.parent_property.order_by:
             context.eager_order_by += eagerjoin._target_adapter.copy_and_process(util.to_list(self.parent_property.order_by))
-
-        context.attributes[("eager_row_processor", path)] = clauses
             
-        for value in self.mapper._iterate_polymorphic_properties():
-            value.setup(context, entity, path + (self.mapper.base_mapper,), clauses, parentmapper=self.mapper, column_collection=context.secondary_columns)
-            
+        return clauses
+        
     def __create_eager_adapter(self, context, row, adapter, path):
         if ("eager_row_processor", path) in context.attributes:
             decorator = context.attributes[("eager_row_processor", path)]
@@ -684,11 +703,9 @@ class EagerLazyOption(StrategizedOption):
         elif self.lazy is None:
             return NoLoader
 
-EagerLazyOption.logger = logging.class_logger(EagerLazyOption)
-
-class RowDecorateOption(PropertyOption):
+class LoadEagerFromAliasOption(PropertyOption):
     def __init__(self, key, alias=None):
-        super(RowDecorateOption, self).__init__(key)
+        super(LoadEagerFromAliasOption, self).__init__(key)
         self.alias = alias
 
     def process_query_property(self, query, paths):
@@ -703,5 +720,4 @@ class RowDecorateOption(PropertyOption):
         else:
             query._attributes[("eager_row_processor", paths[-1])] = None
 
-RowDecorateOption.logger = logging.class_logger(RowDecorateOption)
         

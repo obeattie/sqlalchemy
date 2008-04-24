@@ -903,6 +903,12 @@ class InstancesTest(QueryTest):
             assert fixtures.user_address_result == l
         self.assert_sql_count(testing.db, go, 1)
 
+        # better way.  use select_from()
+        def go():
+            l = sess.query(User).select_from(query).options(contains_eager('addresses')).all()
+            assert fixtures.user_address_result == l
+        self.assert_sql_count(testing.db, go, 1)
+
     def test_contains_eager(self):
 
         selectquery = users.outerjoin(addresses).select(users.c.id<10, use_labels=True, order_by=[users.c.id, addresses.c.id])

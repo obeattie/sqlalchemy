@@ -1507,6 +1507,18 @@ class QueryContext(object):
         
         self.options = query._with_options
         self.attributes = query._attributes.copy()
+
+class AliasOption(interfaces.MapperOption):
+
+    def __init__(self, alias):
+        self.alias = alias
+
+    def process_query(self, query):
+        if isinstance(self.alias, basestring):
+            alias = query._mapper_zero().mapped_table.alias(self.alias)
+        else:
+            alias = self.alias
+        query._from_obj_alias = sql_util.ColumnAdapter(alias)
     
 
 _runid = 1L

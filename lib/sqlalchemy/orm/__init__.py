@@ -16,8 +16,8 @@ from sqlalchemy.orm.interfaces import MapperExtension, SessionExtension, EXT_CON
 from sqlalchemy.orm.properties import SynonymProperty, ComparableProperty, PropertyLoader, ColumnProperty, CompositeProperty, BackRef
 from sqlalchemy.orm import mapper as mapperlib
 from sqlalchemy.orm import strategies
-from sqlalchemy.orm.query import Query, aliased
-from sqlalchemy.orm.util import polymorphic_union, join, outerjoin, with_parent
+from sqlalchemy.orm.query import Query, AliasOption
+from sqlalchemy.orm.util import polymorphic_union, join, outerjoin, with_parent, AliasedClass as aliased
 from sqlalchemy.sql import util as sql_util
 from sqlalchemy.orm.session import Session as _Session
 from sqlalchemy.orm.session import object_session, sessionmaker
@@ -727,20 +727,7 @@ def contains_alias(alias):
     alias.
     """
 
-    class AliasedRow(MapperExtension):
-        def __init__(self, alias):
-            self.alias = alias
-            if isinstance(self.alias, basestring):
-                self.translator = None
-            else:
-                self.translator = sql_util.ColumnAdapter(alias)
-        
-        def translate_row(self, mapper, context, row):
-            if not self.translator:
-                self.translator = sql_util.ColumnAdapter(mapper.mapped_table.alias(self.alias))
-            return self.translator.adapted_row(row)
-
-    return ExtensionOption(AliasedRow(alias))
+    return AliasOption(alias)
 
 def contains_eager(key, alias=None):
     """Return a ``MapperOption`` that will indicate to the query that
@@ -755,7 +742,7 @@ def contains_eager(key, alias=None):
     argument is optional.
     """
 
-    return (strategies.EagerLazyOption(key, lazy=False), strategies.RowDecorateOption(key, alias=alias))
+    return (strategies.EagerLazyOption(key, lazy=False), strategies.LoadEagerFromAliasOption(key, alias=alias))
 
 def defer(name):
     """Return a ``MapperOption`` that will convert the column property
