@@ -1363,6 +1363,7 @@ class Mapper(object):
             polymorphic_on = None
         else:
             polymorphic_on = self.polymorphic_on
+            polymorphic_instances = util.PopulateDict(self.__configure_subclass_mapper(context, path, adapter))
             
         version_id_col = self.version_id_col
         
@@ -1396,18 +1397,7 @@ class Mapper(object):
                 populator(state, row, isnew=isnew, **flags)
         
         session_identity_map = context.session.identity_map
-        
-        def configure_subclass_mapper(discriminator):
-            try:
-                mapper = self.polymorphic_map[discriminator]
-            except KeyError:
-                raise exceptions.AssertionError("No such polymorphic_identity %r is defined" % discriminator)
-            if mapper is self:
-                return None
-            return mapper._instance_processor(context, path, adapter, polymorphic_from=self)
-            
-        polymorphic_instances = util.PopulateDict(configure_subclass_mapper)
-        
+
         if not extension:
             extension = self.extension
         
@@ -1544,6 +1534,17 @@ class Mapper(object):
             if existingpop:
                 existing_populators.append((prop.key, existingpop))
         return new_populators, existing_populators
+    
+    def __configure_subclass_mapper(self, context, path, adapter):
+        def configure_subclass_mapper(discriminator):
+            try:
+                mapper = self.polymorphic_map[discriminator]
+            except KeyError:
+                raise exceptions.AssertionError("No such polymorphic_identity %r is defined" % discriminator)
+            if mapper is self:
+                return None
+            return mapper._instance_processor(context, path, adapter, polymorphic_from=self)
+        return configure_subclass_mapper
 
     def _optimized_get_statement(self, state, attribute_names):
         props = self.__props

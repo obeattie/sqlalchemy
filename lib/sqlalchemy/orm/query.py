@@ -88,10 +88,7 @@ class Query(object):
         self.__currenttables = util.Set()
 
         for ent in util.to_list(entities):
-            if _is_mapped_class(ent):
-                _MapperEntity(self, ent, entity_name=entity_name)
-            else:
-                _ColumnEntity(self, ent)
+            _QueryEntity(self, ent, entity_name=entity_name)
                 
         self.__setup_aliasizers(self._entities)
         
@@ -187,14 +184,12 @@ class Query(object):
     def _adapt_clause(self, clause, as_filter, orm_only):
         adapters = []    
         if as_filter and self._filter_aliases:
-#            adapters.append(self._filter_aliases.adapter.replace)
             adapters.append(self._filter_aliases.replace)
         
         if self._polymorphic_adapters:
             adapters.append(self.__adapt_polymorphic_element)
 
         if self._from_obj_alias:
-#            adapters.append(self._from_obj_alias.adapter.replace)
             adapters.append(self._from_obj_alias.replace)
         
         if not adapters:
@@ -254,7 +249,6 @@ class Query(object):
         else:
             return self._entity_zero().selectable
 
-        
     def __all_equivs(self):
         equivs = {}
         for ent in self._mapper_entities:
@@ -535,10 +529,7 @@ class Query(object):
         if entities:
             self._entities = []
             for ent in entities:
-                if _is_mapped_class(ent):
-                    _MapperEntity(self, ent)
-                else:
-                    _ColumnEntity(self, ent)
+                _QueryEntity(self, ent)
             self.__setup_aliasizers(self._entities)
             
     from_self = _generative()(from_self)
@@ -565,7 +556,6 @@ class Query(object):
         self._entities = list(self._entities)
         c = _ColumnEntity(self, column)
         self.__setup_aliasizers([c])
-        
     add_column = _generative()(add_column)
     
     def options(self, *args):
@@ -1223,9 +1213,6 @@ class Query(object):
         for entity in self._entities:
             entity.setup_context(self, context)
 
-#        if context.order_by:
-#            context.order_by = [expression._literal_as_text(o) for o in util.to_list(context.order_by)]
-        
         eager_joins = context.eager_joins.values()
 
         if context.from_clause:
@@ -1298,6 +1285,15 @@ class Query(object):
 class _QueryEntity(object):
     """represent an entity column returned within a Query result."""
     
+    def __new__(cls, *args, **kwargs):
+        if cls is _QueryEntity:
+            entity = args[1]
+            if _is_mapped_class(entity):
+                cls = _MapperEntity
+            else:
+                cls = _ColumnEntity
+        return object.__new__(cls, *args, **kwargs)
+            
     def _clone(self):
         q = self.__class__.__new__(self.__class__)
         q.__dict__ = self.__dict__.copy()
@@ -1435,7 +1431,7 @@ class _MapperEntity(_QueryEntity):
 class _ColumnEntity(_QueryEntity):
     """Column/expression based entity."""
 
-    def __init__(self, query, column):
+    def __init__(self, query, column, entity_name=None):
         if query:
             query._entities.append(self)
 
