@@ -3,6 +3,7 @@ from sqlalchemy import *
 from sqlalchemy.orm import *
 from testlib import *
 from testlib.tables import *
+from testlib import fixtures
 
 class EntityTest(TestBase, AssertsExecutionResults):
     """tests mappers that are constructed based on "entity names", which allows the same class
@@ -223,6 +224,44 @@ class EntityTest(TestBase, AssertsExecutionResults):
         assert u1list[0].name == 'this is user 1'
         assert u2list[0].name == 'this is user 2'
 
+class SelfReferentialTest(ORMTest):
+    def define_tables(self, metadata):
+        global nodes
+            
+        nodes = Table('nodes', metadata,
+            Column('id', Integer, primary_key=True),
+            Column('parent_id', Integer, ForeignKey('nodes.id')),
+            Column('data', String(50)),
+            Column('type', String(50)),
+            )
+
+    def test_relation(self):
+        class Node(fixtures.Base):
+            pass
+        
+        foonodes = nodes.select().where(nodes.c.type=='foo').alias()
+        barnodes = nodes.select().where(nodes.c.type=='bar').alias()
+        
+        m1 = mapper(Node, nodes)
+        m2 = mapper(Node, foonodes, entity_name='foo')
+        m3 = mapper(Node, barnodes, entity_name='bar')
+        
+        m1.add_property('foonodes', relation(m2, primaryjoin=nodes.c.id==foonodes.c.parent_id, 
+            backref=backref('foo_parent', remote_side=nodes.c.id, primaryjoin=nodes.c.id==foonodes.c.parent_id)))
+        m1.add_property('barnodes', relation(m3, primaryjoin=nodes.c.id==barnodes.c.parent_id, 
+            backref=backref('bar_parent', remote_side=nodes.c.id, primaryjoin=nodes.c.id==barnodes.c.parent_id)))
+        
+        sess = create_session()
+        
+        n1 = Node(data='n1', type='bat')
+        n1.foonodes.append(Node(data='n2', type='foo'))
+        Node(data='n3', type='bar', bar_parent=n1)
+        sess.save(n1)
+        sess.flush()
+        sess.clear()
+        
+        self.assertEquals(sess.query(Node, entity_name="bar").one(), Node(data='n3'))
+        self.assertEquals(sess.query(Node).filter(Node.data=='n1').one(), Node(data='n1', foonodes=[Node(data='n2')], barnodes=[Node(data='n3')]))
 
 if __name__ == "__main__":
     testenv.main()

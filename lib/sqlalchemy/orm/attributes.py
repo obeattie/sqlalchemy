@@ -59,7 +59,7 @@ searches for INSTRUMENTATION_MANAGER.  If all finders return None, standard
 ClassManager instrumentation is used.
 
 """
-
+    
 class QueryableAttribute(interfaces.PropComparator):
 
     def __init__(self, impl, comparator=None, parententity=None):

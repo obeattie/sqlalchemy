@@ -1583,6 +1583,7 @@ def create_instance(*mixed, **kwargs):
       Will be passed along to cls.__init__
 
     """
+
     try:
         cls, options, args = mixed[0], mixed[1], mixed[1:]
     except IndexError:
@@ -1596,6 +1597,7 @@ def create_instance(*mixed, **kwargs):
     # should always be a 2 shot process
     instance = manager.new_instance()
     state = manager.state_of(instance)
+
     if 'entity_name' in options:
         state.entity_name = options['entity_name']
     session = options.get('session')
