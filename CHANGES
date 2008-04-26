@@ -79,6 +79,9 @@ user_defined_state
       the class, not the mapped selectable, as the source of
       column attributes - so a warning is still issued.
       
+    - refined mapper._save_obj() which was unnecessarily calling
+      __ne__() on scalar values during flush [ticket:1015]
+      
 - sql
     - Added COLLATE support via the .collate(<collation>)
       expression operator and collate(<expr>, <collation>) sql

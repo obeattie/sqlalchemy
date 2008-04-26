@@ -5,6 +5,7 @@ from sqlalchemy import *
 from sqlalchemy import exceptions, sql
 from sqlalchemy.orm import *
 from testlib import *
+from testlib import fixtures
 from testlib.tables import *
 import testlib.tables as tables
 
@@ -1451,13 +1452,12 @@ class MapperExtensionTest(TestBase):
             'create_instance', 'populate_instance', 'append_result', 'before_update', 'after_update', 'before_delete', 'after_delete']
             )
 
-class RequirementsTest(TestBase, AssertsExecutionResults):
+class RequirementsTest(ORMTest):
     """Tests the contract for user classes."""
 
-    def setUpAll(self):
-        global metadata, t1, t2, t3, t4, t5, t6
+    def define_tables(self, metadata):
+        global t1, t2, t3, t4, t5, t6
 
-        metadata = MetaData(testing.db)
         t1 = Table('ht1', metadata,
                    Column('id', Integer, primary_key=True),
                    Column('value', String(10)))
@@ -1483,13 +1483,6 @@ class RequirementsTest(TestBase, AssertsExecutionResults):
                    Column('ht1b_id', Integer, ForeignKey('ht1.id'),
                           primary_key=True),
                    Column('value', String(10)))
-        metadata.create_all()
-
-    def setUp(self):
-        clear_mappers()
-
-    def tearDownAll(self):
-        metadata.drop_all()
 
     def test_baseclass(self):
         class OldStyle:
@@ -1560,6 +1553,7 @@ class RequirementsTest(TestBase, AssertsExecutionResults):
                     return self.value == other.value
                 return False
 
+                
         mapper(H1, t1, properties={
             'h2s': relation(H2, backref='h1'),
             'h3s': relation(H3, secondary=t4, backref='h1s'),
@@ -1621,6 +1615,13 @@ class RequirementsTest(TestBase, AssertsExecutionResults):
                                   eagerload_all('h3s.h1s')).all()
         self.assertEqual(len(h1s), 5)
 
+class NoEqFoo(object):
+    def __init__(self, data):
+        self.data = data
+    def __eq__(self, other):
+        raise NotImplementedError()
+    def __ne__(self, other):
+        raise NotImplementedError()
 
 class MagicNamesTest(ORMTest):
 
@@ -1707,6 +1708,30 @@ class MagicNamesTest(ORMTest):
             sess.query(M).filter(getattr(M, syn1) == 'AK').one()
             sess.query(M).filter(getattr(M, syn2) == '10x10').one()
 
+
+class ScalarRequirementsTest(ORMTest):
+    def define_tables(self, metadata):
+        import pickle
+        global t1
+        t1 = Table('t1', metadata, Column('id', Integer, primary_key=True),
+            Column('data', PickleType(pickler=pickle))  # dont use cPickle due to import weirdness
+        )
+        
+    def test_correct_comparison(self):
+                
+        class H1(fixtures.Base):
+            pass
+            
+        mapper(H1, t1)
+        
+        h1 = H1(data=NoEqFoo('12345'))
+        s = create_session()
+        s.save(h1)
+        s.flush()
+        s.clear()
+        h1 = s.get(H1, h1.id)
+        assert h1.data.data == '12345'
+        
 
 if __name__ == "__main__":
     testenv.main()

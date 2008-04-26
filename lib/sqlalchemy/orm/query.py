@@ -1005,9 +1005,6 @@ class Query(object):
         This results in an execution of the underlying query.
 
         """
-        if hasattr(self, '_column_aggregate'):
-            return self._col_aggregate(*self._column_aggregate)
-
         ret = list(self[0:1])
         if len(ret) > 0:
             return ret[0]
@@ -1020,9 +1017,6 @@ class Query(object):
         This results in an execution of the underlying query.
 
         """
-        if hasattr(self, '_column_aggregate'):
-            return self._col_aggregate(*self._column_aggregate)
-
         ret = list(self[0:2])
 
         if len(ret) == 1:

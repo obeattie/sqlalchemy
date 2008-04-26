@@ -1596,7 +1596,10 @@ class ResultProxy(object):
         See ExecutionContext for details.
         """
         return self.context.postfetch_cols
-
+    
+    def prefetch_cols(self):
+        return self.context.prefetch_cols
+        
     def supports_sane_rowcount(self):
         """Return ``supports_sane_rowcount`` from the dialect.
 
