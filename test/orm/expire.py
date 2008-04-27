@@ -82,13 +82,14 @@ class ExpireTest(FixtureTest):
         sess.expunge(u)
         self.assertRaises(exceptions.UnboundExecutionError, getattr, u, 'name')
     
-    def test_pending_doesnt_raise(self):
+    def test_pending_raises(self):
+        # this was the opposite in 0.4, but the reasoning there seemed off.
+        # expiring a pending instance makes no sense, so should raise
         mapper(User, users)
         sess = create_session()
         u = User(id=15)
         sess.save(u)
-        sess.expire(u, ['name'])
-        assert u.name is None
+        self.assertRaises(exceptions.InvalidRequestError, sess.expire, u, ['name'])
         
     def test_no_instance_key(self):
         # this tests an artificial condition such that 

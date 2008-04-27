@@ -109,9 +109,17 @@ class WeakInstanceDict(IdentityMap):
         self.remove(state)
         
     def remove(self, state):
+        if not self.contains_state(state):
+            raise exceptions.AssertionError("State %s is not present in this identity map" % state)
         dict.__delitem__(self, state.key)
         del state._instance_dict
         self._manage_removed_state(state)
+    
+    def discard(self, state):
+        if self.contains_state(state):
+            dict.__delitem__(self, state.key)
+            del state._instance_dict
+            self._manage_removed_state(state)
         
     def get(self, key, default=None):
         try:
@@ -155,9 +163,16 @@ class StrongInstanceDict(IdentityMap):
         self._manage_incoming_state(state)
     
     def remove(self, state):
+        if not self.contains_state(state):
+            raise exceptions.AssertionError("State %s is not present in this identity map" % state)
         dict.__delitem__(self, state.key)
         self._manage_removed_state(state)
-
+    
+    def discard(self, state):
+        if self.contains_state(state):
+            dict.__delitem__(self, state.key)
+            self._manage_removed_state(state)
+            
     def remove_key(self, key):
         state = dict.__getitem__(self, key)
         self.remove(state)

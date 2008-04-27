@@ -824,7 +824,7 @@ class Session(object):
                 self._remove_persistent(s)
         
     def _remove_persistent(self, state):
-        self.identity_map.remove(state)
+        self.identity_map.discard(state)
         self._deleted.pop(state, None)
         del state.session_id
 
