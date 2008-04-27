@@ -35,8 +35,8 @@ class GenerativeQueryTest(TestBase):
 
     def test_selectby(self):
         res = create_session(bind=testing.db).query(Foo).filter_by(range=5)
-        assert res.order_by([Foo.c.bar])[0].bar == 5
-        assert res.order_by([desc(Foo.c.bar)])[0].bar == 95
+        assert res.order_by([Foo.bar])[0].bar == 5
+        assert res.order_by([desc(Foo.bar)])[0].bar == 95
 
     @testing.unsupported('mssql')
     @testing.fails_on('maxdb')
@@ -89,8 +89,8 @@ class GenerativeQueryTest(TestBase):
     def test_filter(self):
         query = create_session(bind=testing.db).query(Foo)
         assert query.count() == 100
-        assert query.filter(Foo.c.bar < 30).count() == 30
-        res2 = query.filter(Foo.c.bar < 30).filter(Foo.c.bar > 10)
+        assert query.filter(Foo.bar < 30).count() == 30
+        res2 = query.filter(Foo.bar < 30).filter(Foo.bar > 10)
         assert res2.count() == 19
 
     def test_options(self):
@@ -103,12 +103,12 @@ class GenerativeQueryTest(TestBase):
 
     def test_order_by(self):
         query = create_session(bind=testing.db).query(Foo)
-        assert query.order_by([Foo.c.bar])[0].bar == 0
-        assert query.order_by([desc(Foo.c.bar)])[0].bar == 99
+        assert query.order_by([Foo.bar])[0].bar == 0
+        assert query.order_by([desc(Foo.bar)])[0].bar == 99
 
     def test_offset(self):
         query = create_session(bind=testing.db).query(Foo)
-        assert list(query.order_by([Foo.c.bar]).offset(10))[0].bar == 10
+        assert list(query.order_by([Foo.bar]).offset(10))[0].bar == 10
 
     def test_offset(self):
         query = create_session(bind=testing.db).query(Foo)
@@ -166,7 +166,7 @@ class RelationsTest(TestBase, AssertsExecutionResults):
         })
         session = create_session(bind=testing.db)
         query = session.query(tables.User)
-        x = query.join(['orders', 'items']).filter(tables.Item.c.item_id==2)
+        x = query.join(['orders', 'items']).filter(tables.Item.item_id==2)
         print x.compile()
         self.assert_result(list(x), tables.User, tables.user_result[2])
     def test_outerjointo(self):
@@ -178,7 +178,7 @@ class RelationsTest(TestBase, AssertsExecutionResults):
         })
         session = create_session(bind=testing.db)
         query = session.query(tables.User)
-        x = query.outerjoin(['orders', 'items']).filter(or_(tables.Order.c.order_id==None,tables.Item.c.item_id==2))
+        x = query.outerjoin(['orders', 'items']).filter(or_(tables.Order.order_id==None,tables.Item.item_id==2))
         print x.compile()
         self.assert_result(list(x), tables.User, *tables.user_result[1:3])
     def test_outerjointo_count(self):
@@ -190,7 +190,7 @@ class RelationsTest(TestBase, AssertsExecutionResults):
         })
         session = create_session(bind=testing.db)
         query = session.query(tables.User)
-        x = query.outerjoin(['orders', 'items']).filter(or_(tables.Order.c.order_id==None,tables.Item.c.item_id==2)).count()
+        x = query.outerjoin(['orders', 'items']).filter(or_(tables.Order.order_id==None,tables.Item.item_id==2)).count()
         assert x==2
     def test_from(self):
         mapper(tables.User, tables.users, properties={
@@ -201,7 +201,7 @@ class RelationsTest(TestBase, AssertsExecutionResults):
         session = create_session(bind=testing.db)
         query = session.query(tables.User)
         x = query.select_from(tables.users.outerjoin(tables.orders).outerjoin(tables.orderitems)).\
-            filter(or_(tables.Order.c.order_id==None,tables.Item.c.item_id==2))
+            filter(or_(tables.Order.order_id==None,tables.Item.item_id==2))
         print x.compile()
         self.assert_result(list(x), tables.User, *tables.user_result[1:3])
 

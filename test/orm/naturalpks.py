@@ -63,7 +63,7 @@ class NaturalPKTest(ORMTest):
         sess.flush()
         assert sess.get(User, 'jack') is u1
 
-        users.update(values={u1.c.username:'jack'}).execute(username='ed')
+        users.update(values={User.username:'jack'}).execute(username='ed')
 
         try:
             # expire/refresh works off of primary key.  the PK is gone

@@ -807,10 +807,6 @@ class Mapper(object):
         primaries.append(self)
         manager.mappers[self.entity_name] = self
 
-        # Legacy, will be removed circa 0.5
-        if self.entity_name is None:
-            manager.install_member('c', self.c)
-
         # The remaining members can be added by any mapper, e_name None or not.
         if has_been_initialized:
             return
@@ -909,17 +905,6 @@ class Mapper(object):
                 return s
 
         raise exceptions.InvalidRequestError("No contextual Session is established.")
-
-    def instances(self, cursor, session, *mappers, **kwargs):
-        """Return a list of mapped instances corresponding to the rows
-        in a given ResultProxy.
-
-        DEPRECATED.
-        """
-
-        import sqlalchemy.orm.query
-        return sqlalchemy.orm.Query(self, session).instances(cursor, *mappers, **kwargs)
-    instances = util.deprecated(None, False)(instances)
 
     def identity_key_from_row(self, row, adapter=None):
         """Return an identity-map key for use in storing/retrieving an

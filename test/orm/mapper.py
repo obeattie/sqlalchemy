@@ -414,7 +414,6 @@ class MapperTest(MapperSuperTest):
         def assert_props(cls, want):
             have = set([n for n in dir(cls) if not n.startswith('_')])
             want = set(want)
-            want.add('c')
             self.assert_(have == want, repr(have) + " " + repr(want))
 
         assert_props(Person, ['id', 'name', 'type'])

@@ -165,7 +165,7 @@ class LazyTest(FixtureTest):
         u2 = users.alias('u2')
         s = union_all(u2.select(use_labels=True), u2.select(use_labels=True), u2.select(use_labels=True)).alias('u')
         print [key for key in s.c.keys()]
-        l = q.filter(s.c.u2_id==User.c.id).distinct().all()
+        l = q.filter(s.c.u2_id==User.id).distinct().all()
         assert fixtures.user_all_result == l
 
     def test_one_to_many_scalar(self):

@@ -727,7 +727,7 @@ class GenerativeTest(TestBase, AssertsExecutionResults):
 
         # this particular adapt used to cause a recursion overflow;
         # added here for testing
-        e = exists([Car.c.owner], Car.c.owner==employee_join.c.person_id)
+        e = exists([Car.owner], Car.owner==employee_join.c.person_id)
         Query(Person)._adapt_clause(employee_join, False, False)
         
         r = session.query(Person).filter(Person.name.like('%2')).join('status').filter_by(name="active")

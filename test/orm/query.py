@@ -479,9 +479,9 @@ class AggregateTest(QueryTest):
 
     def test_having(self):
         sess = create_session()
-        assert [User(name=u'ed',id=8)] == sess.query(User).group_by([c for c in User.c]).join('addresses').having(func.count(Address.c.id)> 2).all()
+        assert [User(name=u'ed',id=8)] == sess.query(User).group_by(User).join('addresses').having(func.count(Address.id)> 2).all()
 
-        assert [User(name=u'jack',id=7), User(name=u'fred',id=9)] == sess.query(User).group_by([c for c in User.c]).join('addresses').having(func.count(Address.c.id)< 2).all()
+        assert [User(name=u'jack',id=7), User(name=u'fred',id=9)] == sess.query(User).group_by(User).join('addresses').having(func.count(Address.id)< 2).all()
 
 class CountTest(QueryTest):
     def test_basic(self):
@@ -1206,7 +1206,7 @@ class MixedEntitiesTest(QueryTest):
 
         expected = [(u, u.name) for u in sess.query(User).all()]
 
-        for add_col in (User.name, users.c.name, User.c.name):
+        for add_col in (User.name, users.c.name):
             assert sess.query(User).add_column(add_col).all() == expected
             sess.clear()
 

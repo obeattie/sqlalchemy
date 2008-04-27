@@ -376,7 +376,7 @@ class EagerTest(FixtureTest):
         q = sess.query(User)
 
         def go():
-            l = q.filter(s.c.u2_id==User.c.id).distinct().all()
+            l = q.filter(s.c.u2_id==User.id).distinct().all()
             assert fixtures.user_address_result == l
         self.assert_sql_count(testing.db, go, 1)
 
@@ -389,7 +389,7 @@ class EagerTest(FixtureTest):
 
         sess = create_session()
         q = sess.query(Item)
-        l = q.filter((Item.c.description=='item 2') | (Item.c.description=='item 5') | (Item.c.description=='item 3')).\
+        l = q.filter((Item.description=='item 2') | (Item.description=='item 5') | (Item.description=='item 3')).\
             order_by(Item.id).limit(2).all()
 
         assert fixtures.item_keyword_result[1:3] == l

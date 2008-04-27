@@ -349,7 +349,7 @@ class EagerTest4(ORMTest):
         sess.flush()
 
         q = sess.query(Department)
-        q = q.join('employees').filter(Employee.c.name.startswith('J')).distinct().order_by([desc(Department.c.name)])
+        q = q.join('employees').filter(Employee.name.startswith('J')).distinct().order_by([desc(Department.name)])
         assert q.count() == 2
         assert q[0] is d2
 
