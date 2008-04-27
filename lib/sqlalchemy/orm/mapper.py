@@ -15,6 +15,7 @@ from itertools import chain
 from sqlalchemy import sql, util, exceptions, logging
 from sqlalchemy.sql import expression, visitors, operators, util as sqlutil
 from sqlalchemy.orm import sync, attributes
+from sqlalchemy.orm.identity import IdentityManagedState
 from sqlalchemy.orm.interfaces import MapperProperty, EXT_CONTINUE, PropComparator
 from sqlalchemy.orm.util import has_identity, _state_has_identity, _is_mapped_class, has_mapper, \
     _state_mapper, class_mapper, object_mapper, _class_to_mapper,\
@@ -43,7 +44,6 @@ SynonymProperty = None
 ComparableProperty = None
 _expire_state = None
 _state_session = None
-SessionManagedState = None
 
 
 _INITIALIZED = ('mapper', 'initialized')
@@ -799,7 +799,7 @@ class Mapper(object):
             # Don't want to do it via the "custom managers" system though since this needs to happen
             # even if user-defined custom manager is already present.  more args to create_manager_for_cls
             # OK here ?
-            manager = attributes.create_manager_for_cls(self.class_, instance_state_factory=SessionManagedState) 
+            manager = attributes.create_manager_for_cls(self.class_, instance_state_factory=IdentityManagedState) 
         self.class_manager = manager
 
         has_been_initialized = manager.info.get(_INITIALIZED, False)

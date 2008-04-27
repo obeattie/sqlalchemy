@@ -790,7 +790,12 @@ class InstanceState(object):
     """tracks state information at the instance level."""
 
     _cleanup = None
-
+    session_id = None
+    key = None
+    runid = None
+    entity_name = NO_ENTITY_NAME
+    expired_attributes = EMPTY_SET
+    
     def __init__(self, obj, manager):
         self.class_ = obj.__class__
         self.manager = manager
@@ -802,12 +807,11 @@ class InstanceState(object):
         self.parents = {}
         self.pending = {}
         self.savepoints = []
-        self.runid = None
         self.expired = False
-        self.key = self.session_id = None
-        self.entity_name = NO_ENTITY_NAME
-        self.expired_attributes = EMPTY_SET
     
+    def dispose(self):
+        del self.session_id
+        
     def check_modified(self):
         if self.modified:
             return True
@@ -1018,7 +1022,6 @@ class InstanceState(object):
                 self.committed_state.pop(key, None)
 
         self.expired = False
-        
         # unexpire attributes which have loaded
         for key in self.expired_attributes.intersection(keys):
             if key in self.dict:

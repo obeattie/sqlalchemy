@@ -68,6 +68,7 @@ class WeakInstanceDict(IdentityMap):
 
     def __init__(self):
         IdentityMap.__init__(self)
+        self._wr = weakref.ref(self)
         # RLock because the mutex is used by a cleanup
         # handler, which can be called at any time (including within an already mutexed block)
         self._mutex = threading.RLock()
@@ -100,6 +101,7 @@ class WeakInstanceDict(IdentityMap):
                 raise exceptions.AssertionError("A conflicting state is already present in the identity map for key %r" % state.key)
         else:
             dict.__setitem__(self, state.key, state)
+            state._instance_dict = self._wr
             self._manage_incoming_state(state)
     
     def remove_key(self, key):
@@ -108,6 +110,7 @@ class WeakInstanceDict(IdentityMap):
         
     def remove(self, state):
         dict.__delitem__(self, state.key)
+        del state._instance_dict
         self._manage_removed_state(state)
         
     def get(self, key, default=None):
@@ -171,40 +174,42 @@ class StrongInstanceDict(IdentityMap):
         return ref_count - len(self)
         
 class IdentityManagedState(attributes.InstanceState):
+    def _instance_dict(self):
+        return None
+    
     def _check_resurrect(self, instance_dict):
         instance_dict._mutex.acquire()
         try:
             return self.obj() or self.__resurrect(instance_dict)
         finally:
             instance_dict._mutex.release()
-
-    def instance_dict():
-        raise NotImplementedError()
-    instance_dict = property(instance_dict)
-
+    
     def modified_event(self, attr, should_copy, previous, passive=False):
         attributes.InstanceState.modified_event(self, attr, should_copy, previous, passive)
-        instance_dict = self.instance_dict
+        
+        instance_dict = self._instance_dict()
         if instance_dict:
             instance_dict.modified = True
         
     def _cleanup(self, ref):
         # tiptoe around Python GC unpredictableness
-        instance_dict = self.instance_dict
-        if instance_dict and instance_dict._mutex:
-            # the mutexing here is based on the assumption that gc.collect()
-            # may be firing off cleanup handlers in a different thread than that
-            # which is normally operating upon the instance dict.
+        try:
+            instance_dict = self._instance_dict()
             instance_dict._mutex.acquire()
+        except:
+            return
+        # the mutexing here is based on the assumption that gc.collect()
+        # may be firing off cleanup handlers in a different thread than that
+        # which is normally operating upon the instance dict.
+        try:
             try:
-                try:
-                    self.__resurrect(instance_dict)
-                except:
-                    # catch app cleanup exceptions.  no other way around this
-                    # without warnings being produced
-                    pass
-            finally:
-                instance_dict._mutex.release()
+                self.__resurrect(instance_dict)
+            except:
+                # catch app cleanup exceptions.  no other way around this
+                # without warnings being produced
+                pass
+        finally:
+            instance_dict._mutex.release()
 
     def __resurrect(self, instance_dict):
         if self.check_modified():
@@ -220,4 +225,5 @@ class IdentityManagedState(attributes.InstanceState):
             return obj
         else:
             instance_dict.remove(self)
+            self.dispose()
             return None

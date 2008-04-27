@@ -2,6 +2,7 @@ import testenv; testenv.configure_for_tests()
 from sqlalchemy import *
 from sqlalchemy import exceptions, util
 from sqlalchemy.orm import *
+from sqlalchemy.orm import attributes
 from sqlalchemy.orm.session import SessionExtension
 from sqlalchemy.orm.session import Session as SessionCls
 from testlib import *
@@ -83,6 +84,10 @@ class SessionTest(TestBase, AssertsExecutionResults):
 
         # then see if expunge fails
         session.expunge(u)
+        
+        assert object_session(u) is attributes.instance_state(u).session_id is None
+        for a in u.addresses:
+            assert object_session(a) is attributes.instance_state(a).session_id is None
 
     @engines.close_open_connections
     def test_binds_from_expression(self):
@@ -877,6 +882,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
         sess.expunge(u1)
 
         assert u1 not in sess
+        assert Session.object_session(u1) is None
 
         u2 = sess.query(User).get(u1.user_id)
         assert u2 is not None and u2 is not u1
@@ -886,12 +892,14 @@ class SessionTest(TestBase, AssertsExecutionResults):
 
         sess.expunge(u2)
         assert u2 not in sess
+        assert Session.object_session(u2) is None
 
         u1.user_name = "John"
         u2.user_name = "Doe"
 
         sess.update(u1)
         assert u1 in sess
+        assert Session.object_session(u1) is sess
 
         sess.flush()
 

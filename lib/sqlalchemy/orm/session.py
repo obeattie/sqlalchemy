@@ -614,7 +614,7 @@ class Session(object):
         """
         
         for state in self.identity_map.all_states() + list(self._new):
-            self._unattach(state)
+            del state.session_id
 
         self.identity_map = self._identity_cls()
         self._new = {}
@@ -819,14 +819,14 @@ class Session(object):
         for s, m in [(state, None)] + list(_cascade_state_iterator('expunge', state)):
             if s in self._new:
                 self._new.pop(s)
-                self._unattach(s)
+                del s.session_id
             elif self.identity_map.contains_state(s):
                 self._remove_persistent(s)
         
     def _remove_persistent(self, state):
         self.identity_map.remove(state)
         self._deleted.pop(state, None)
-        self._unattach(state)
+        del state.session_id
 
     def save(self, instance, entity_name=None):
         """Add a transient (unsaved) instance to this ``Session``.
@@ -974,7 +974,7 @@ class Session(object):
     object_session = classmethod(object_session)
 
     def _validate_persistent(self, state):
-        if state not in self._new and not self.identity_map.contains_state(state):
+        if not self.identity_map.contains_state(state):
             raise exceptions.InvalidRequestError("Instance '%s' is not persistent within this Session" % mapperutil.state_str(state))
 
     def _save_impl(self, state):
@@ -1029,20 +1029,12 @@ class Session(object):
         self._attach(state)
 
     def _attach(self, state):
-        old_id = state.session_id
-        if old_id == self.hash_key:
-            return
-        if (old_id is not None and old_id in _sessions and
-            _sessions[old_id]._contains_state(state)):
+        if state.session_id and state.session_id is not self.hash_key:
             raise exceptions.InvalidRequestError(
                 "Object '%s' is already attached to session '%s' "
                 "(this is '%s')" % (mapperutil.state_str(state),
-                                    old_id, id(self)))
+                                    state.session_id, self.hash_key))
         state.session_id = self.hash_key
-
-    def _unattach(self, state):
-        if state.session_id == self.hash_key:
-            state.session_id = None
 
     def __contains__(self, instance):
         """Return True if the given instance is associated with this session.
@@ -1292,23 +1284,12 @@ def object_session(instance):
     return _state_session(attributes.instance_state(instance))
     
 def _state_session(state):
-    if state.session_id is None:
-        return None
-    session = _sessions.get(state.session_id)
-    if session is not None and session._contains_state(state):
-        return session
-    else:
-        return None
-
-
-class SessionManagedState(identity.IdentityManagedState):
-    def instance_dict(self):
-        sess = _sessions.get(self.session_id)
-        if sess:
-            return sess.identity_map
-        return None
-    instance_dict = property(instance_dict)
-    
+    if state.session_id:
+        try:
+            return _sessions[state.session_id]
+        except KeyError:
+            pass
+    return None
 
 # Lazy initialization to avoid circular imports
 unitofwork.object_session = object_session
@@ -1316,4 +1297,3 @@ unitofwork._state_session = _state_session
 from sqlalchemy.orm import mapper
 mapper._expire_state = _expire_state
 mapper._state_session = _state_session
-mapper.SessionManagedState = SessionManagedState
