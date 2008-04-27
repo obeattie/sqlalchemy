@@ -789,20 +789,21 @@ class GenericBackrefExtension(interfaces.AttributeExtension):
 class InstanceState(object):
     """tracks state information at the instance level."""
 
+    _cleanup = None
+
     def __init__(self, obj, manager):
         self.class_ = obj.__class__
         self.manager = manager
-        self.obj = weakref.ref(obj, self.__cleanup)
+        self.obj = weakref.ref(obj, self._cleanup)
         self.dict = obj.__dict__
         self.committed_state = {}
         self.modified = False
         self.callables = {}
         self.parents = {}
         self.pending = {}
-        self.appenders = {}
         self.savepoints = []
-        self.instance_dict = None
         self.runid = None
+        self.expired = False
         self.key = self.session_id = None
         self.entity_name = NO_ENTITY_NAME
         self.expired_attributes = EMPTY_SET
@@ -816,37 +817,6 @@ class InstanceState(object):
                     return True
             else:
                 return False
-
-    def __cleanup(self, ref):
-        # tiptoe around Python GC unpredictableness
-        instance_dict = self.instance_dict
-        if instance_dict is None:
-            return
-
-        instance_dict = instance_dict()
-        if instance_dict is None or instance_dict._mutex is None:
-            return
-
-        # the mutexing here is based on the assumption that gc.collect()
-        # may be firing off cleanup handlers in a different thread than that
-        # which is normally operating upon the instance dict.
-        instance_dict._mutex.acquire()
-        try:
-            try:
-                self.__resurrect(instance_dict)
-            except:
-                # catch app cleanup exceptions.  no other way around this
-                # without warnings being produced
-                pass
-        finally:
-            instance_dict._mutex.release()
-
-    def _check_resurrect(self, instance_dict):
-        instance_dict._mutex.acquire()
-        try:
-            return self.obj() or self.__resurrect(instance_dict)
-        finally:
-            instance_dict._mutex.release()
 
     def initialize_instance(*mixed, **kwargs):
         self, instance, args = mixed[0], mixed[1], mixed[2:]
@@ -895,22 +865,6 @@ class InstanceState(object):
         else:
             return [x]
 
-    def __resurrect(self, instance_dict):
-        if self.check_modified():
-            # store strong ref'ed version of the object; will revert
-            # to weakref when changes are persisted
-            obj = self.manager.new_instance(state=self)
-            self.obj = weakref.ref(obj, self.__cleanup)
-            self._strong_obj = obj
-            # todo: revisit this wrt user-defined-state
-            obj.__dict__.update(self.dict)
-            self.dict = obj.__dict__
-            self._run_on_load(obj)
-            return obj
-        else:
-            instance_dict.remove(self)
-            return None
-
     def _run_on_load(self, instance=None):
         if instance is None:
             instance = self.obj()
@@ -923,6 +877,7 @@ class InstanceState(object):
                 'pending': self.pending,
                 'parents': self.parents,
                 'modified': self.modified,
+                'expired':self.expired,
                 'instance': self.obj(),
                 'expired_attributes':self.expired_attributes,
                 'callables': self.callables}
@@ -942,8 +897,7 @@ class InstanceState(object):
         self.callables = state['callables']
         self.savepoints = []
         self.runid = None
-        self.appenders = {}
-        self.instance_dict = None
+        self.expired = state['expired']
         self.expired_attributes = state['expired_attributes']
 
     def initialize(self, key):
@@ -975,9 +929,6 @@ class InstanceState(object):
     def unmodified(self):
         """a set of keys which have no uncommitted changes"""
 
-        for attr in self.manager.attributes:
-            assert (attr.impl.key not in self.manager.mutable_attributes) == (not hasattr(attr.impl, 'check_mutable_modified')), repr([attr.impl.key, attr.impl, attr.impl.key not in self.manager.mutable_attributes, (not hasattr(attr.impl, 'check_mutable_modified'))])
-            
         return util.Set([
             key for key in self.manager.keys() if 
             key not in self.committed_state
@@ -990,6 +941,7 @@ class InstanceState(object):
 
         if attribute_names is None:
             attribute_names = self.manager.keys()
+            self.expired = True
         for key in attribute_names:
             self.dict.pop(key, None)
             self.committed_state.pop(key, None)
@@ -1028,10 +980,6 @@ class InstanceState(object):
                 self.savepoints[-1][0][attr.key] = previous
                 
         self.modified = True
-        if self.instance_dict:
-            idict = self.instance_dict()
-            if idict is not None:
-                idict.modified = True
 
     def set_savepoint(self):
         self.savepoints.append(({}, self.parents.copy(), self.pending.copy(), self.committed_state.copy()))
@@ -1069,6 +1017,8 @@ class InstanceState(object):
             else:
                 self.committed_state.pop(key, None)
 
+        self.expired = False
+        
         # unexpire attributes which have loaded
         for key in self.expired_attributes.intersection(keys):
             if key in self.dict:
@@ -1085,7 +1035,6 @@ class InstanceState(object):
          - all attributes are marked as "committed"
          - the "strong dirty reference" is removed
          - the "modified" flag is set to False
-         - any "appenders" used for the load operation are removed
          - any "expired" markers/callables are removed.
 
 
@@ -1104,9 +1053,8 @@ class InstanceState(object):
             if key in self.dict:
                 self.manager[key].impl.commit_to_state(self, self.committed_state)
 
-        self.modified = False
+        self.modified = self.expired = False
         self._strong_obj = None
-        self.appenders = {}
 
 
 class Events(object):
@@ -1140,7 +1088,7 @@ class ClassManager(dict):
     STATE_ATTR = '_foostate'
     event_registry_factory = Events
 
-    def __init__(self, class_):
+    def __init__(self, class_, instance_state_factory=None):
         self.class_ = class_
         self.factory = None  # where we came from, for inheritance bookkeeping
         self.info = {}
@@ -1155,6 +1103,7 @@ class ClassManager(dict):
         self.registered = False
         self._instantiable = False
         self.events = self.event_registry_factory()
+        self.instance_state_factory = instance_state_factory or InstanceState
 
     def instantiable(self, boolean):
         # experiment, probably won't stay in this form
@@ -1190,7 +1139,7 @@ class ClassManager(dict):
         for cls in self.class_.__subclasses__():
             manager = manager_of_class(cls)
             if manager is None:
-                manager = create_manager_for_cls(cls)
+                manager = create_manager_for_cls(cls, instance_state_factory=self.instance_state_factory)
             manager.instrument_attribute(key, inst, True)
 
     def uninstrument_attribute(self, key, propagated=False):
@@ -1208,7 +1157,11 @@ class ClassManager(dict):
         for cls in self.class_.__subclasses__():
             manager = manager_of_class(cls)
             if manager is None:
-                manager = create_manager_for_cls(cls)
+                try:
+                    manager = create_manager_for_cls(cls, instance_state_factory=self.instance_state_factory)
+                except TypeError:
+                    import pdb
+                    pdb.set_trace()
             manager.uninstrument_attribute(key, True)
 
     def unregister(self):
@@ -1281,7 +1234,7 @@ class ClassManager(dict):
                 assert state is with_state
             return state
         if with_state is None:
-            with_state = InstanceState(instance, self)
+            with_state = self.instance_state_factory(instance, self)
         self.install_state(instance, with_state)
         return with_state
 
@@ -1316,7 +1269,7 @@ class ClassManager(dict):
         if self.has_state(instance):
             return False
         else:
-            new_state = InstanceState(instance, self)
+            new_state = self.instance_state_factory(instance, self)
             self.install_state(instance, new_state)
             return new_state
 
@@ -1375,6 +1328,7 @@ class _ClassInstrumentationAdapter(ClassManager):
             return delegate(key, state, factory)
         else:
             return ClassManager.initialize_collection(self, key, state, factory)
+            
     def setup_instance(self, instance, state=None):
         self._adapted.initialize_instance_dict(self.class_, instance)
         state = ClassManager.setup_instance(self, instance, with_state=state)
@@ -1487,6 +1441,9 @@ def has_parent(cls, obj, key, optimistic=False):
 
 def register_class(class_):
     """TODO"""
+    
+    # TODO: what's this function for ?  why would I call this and not create_manager_for_cls ?
+    
     manager = manager_of_class(class_)
     if manager is None:
         manager = create_manager_for_cls(class_)
@@ -1569,7 +1526,7 @@ class InstrumentationRegistry(object):
     state_finders = util.WeakIdentityMapping()
     extended = False
 
-    def create_manager_for_cls(self, class_):
+    def create_manager_for_cls(self, class_, **kwargs):
         assert class_ is not None
         assert manager_of_class(class_) is None
 
@@ -1588,7 +1545,7 @@ class InstrumentationRegistry(object):
                 "in %s inheritance hierarchy: %r" % (
                     class_.__name__, list(existing_factories)))
 
-        manager = factory(class_)
+        manager = factory(class_, **kwargs)
         if not isinstance(manager, ClassManager):
             manager = _ClassInstrumentationAdapter(class_, manager)
         if factory != ClassManager and not self.extended:

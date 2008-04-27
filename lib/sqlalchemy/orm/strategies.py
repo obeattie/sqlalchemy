@@ -658,7 +658,7 @@ class EagerLoader(AbstractRelationLoader):
                         _instance(row, None)
             else:
                 def execute(state, row, isnew, **flags):
-                    if isnew or key not in state.appenders:
+                    if isnew or (state, key) not in context.attributes:
                         # appender_key can be absent from context.attributes with isnew=False
                         # when self-referential eager loading is used; the same instance may be present
                         # in two distinct sets of result columns
@@ -666,9 +666,9 @@ class EagerLoader(AbstractRelationLoader):
                         collection = attributes.init_collection(state, key)
                         appender = util.UniqueAppender(collection, 'append_without_event')
 
-                        state.appenders[key] = appender
+                        context.attributes[(state, key)] = appender
 
-                    result_list = state.appenders[key]
+                    result_list = context.attributes[(state, key)]
                     
                     _instance(row, result_list)
 

@@ -242,6 +242,9 @@ class SelfReferentialTest(ORMTest):
         foonodes = nodes.select().where(nodes.c.type=='foo').alias()
         barnodes = nodes.select().where(nodes.c.type=='bar').alias()
         
+        # TODO: the order of instrumentation here is not deterministic;
+        # therefore the test fails sporadically since "Node.data" references
+        # different mappers at different times
         m1 = mapper(Node, nodes)
         m2 = mapper(Node, foonodes, entity_name='foo')
         m3 = mapper(Node, barnodes, entity_name='bar')

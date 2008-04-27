@@ -42,6 +42,9 @@ ColumnProperty = None
 SynonymProperty = None
 ComparableProperty = None
 _expire_state = None
+_state_session = None
+SessionManagedState = None
+
 
 _INITIALIZED = ('mapper', 'initialized')
 _PRIMARIES = ('mapper', 'primaries')
@@ -792,7 +795,11 @@ class Mapper(object):
         _mapper_registry[self] = True
 
         if manager is None:
-            manager = attributes.create_manager_for_cls(self.class_)
+            # TODO: need ClassState to be configured specifically to the ORM (i.e. uses custom InstanceState).  
+            # Don't want to do it via the "custom managers" system though since this needs to happen
+            # even if user-defined custom manager is already present.  more args to create_manager_for_cls
+            # OK here ?
+            manager = attributes.create_manager_for_cls(self.class_, instance_state_factory=SessionManagedState) 
         self.class_manager = manager
 
         has_been_initialized = manager.info.get(_INITIALIZED, False)
@@ -808,7 +815,9 @@ class Mapper(object):
         if has_been_initialized:
             return
 
-        attributes.register_class(self.class_)
+        attributes.register_class(self.class_)  # TODO: why do we need to call this ?  we've already called
+                                                # two separate "setup class management" functions from attributes.py
+                                                
         manager.deferred_scalar_loader = _load_scalar_attributes
 
         event_registry = manager.events
@@ -1590,6 +1599,9 @@ def create_instance(*mixed, **kwargs):
 
     """
 
+    # TODO: is this a core function ?  a util ?  an extension ?
+    # a recipe ?  doesn't (yet) seem like core to me.....
+    
     try:
         cls, options, args = mixed[0], mixed[1], mixed[1:]
     except IndexError:
@@ -1695,7 +1707,6 @@ def _legacy_descriptors():
 _legacy_descriptors = _legacy_descriptors()
 
     
-_state_session = None
 
 def _load_scalar_attributes(state, attribute_names):
     mapper = _state_mapper(state)
