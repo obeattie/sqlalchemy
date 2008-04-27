@@ -1297,11 +1297,8 @@ class _MapperEntity(_QueryEntity):
     """mapper/class/AliasedClass entity"""
     
     def __init__(self, query, entity, entity_name=None):
-        if query:
-            self.primary_entity = not query._entities
-            query._entities.append(self)
-        else:
-            self.primary_entity = False
+        self.primary_entity = not query._entities
+        query._entities.append(self)
 
         self.entities = [entity]
         self.entity_name = entity_name
@@ -1426,8 +1423,12 @@ class _ColumnEntity(_QueryEntity):
     """Column/expression based entity."""
 
     def __init__(self, query, column, entity_name=None):
-        if query:
-            query._entities.append(self)
+        if isinstance(column, expression.FromClause) and not isinstance(column, expression.ColumnElement):
+            for c in column.c:
+                _ColumnEntity(query, c)
+            return
+            
+        query._entities.append(self)
 
         if isinstance(column, basestring):
             column = sql.literal_column(column)
