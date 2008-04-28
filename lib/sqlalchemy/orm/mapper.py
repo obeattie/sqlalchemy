@@ -1719,5 +1719,5 @@ def _load_scalar_attributes(state, attribute_names):
     
     # if instance is pending, a refresh operation may not complete (even if PK attributes are assigned)
     if has_key and result is None:
-        raise exceptions.InvalidRequestError("Could not refresh instance '%s'" % state_str(state))
+        raise exceptions.ObjectDeletedError("Instance '%s' has been deleted." % state_str(state))
 

@@ -50,6 +50,9 @@ class UnmappedColumnError(InvalidRequestError):
     """A mapper was asked to return mapped information about a column
     which it does not map"""
 
+class ObjectDeletedError(InvalidRequestError):
+    """an refresh() operation failed to re-locate an object's row in the database."""
+    
 class NoSuchTableError(InvalidRequestError):
     """SQLAlchemy was asked to load a table's definition from the
     database, but the table doesn't exist.

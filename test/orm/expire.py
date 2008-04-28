@@ -57,8 +57,30 @@ class ExpireTest(FixtureTest):
         u = s.get(User, 7)
         s.clear()
 
-        self.assertRaisesMessage(exceptions.InvalidRequestError, r"is not persistent within this Session", lambda: s.expire(u))
+        self.assertRaisesMessage(exceptions.InvalidRequestError, r"is not persistent within this Session", s.expire, u)
+    
+    def test_get_refreshes(self):
+        mapper(User, users)
+        s = create_session()
+        u = s.get(User, 10)
+        s.expire_all()
 
+        def go():
+            u = s.get(User, 10)  # get() refreshes
+        self.assert_sql_count(testing.db, go, 1)
+        def go():
+            self.assertEquals(u.name, 'chuck')  # attributes unexpired
+        self.assert_sql_count(testing.db, go, 0)
+        def go():
+            u = s.get(User, 10)  # expire flag reset, so not expired
+        self.assert_sql_count(testing.db, go, 0)
+
+        s.expire_all()
+        users.delete().where(User.id==10).execute()
+        
+        # object is gone, get() raises
+        self.assertRaises(exceptions.ObjectDeletedError, s.get, User, 10)
+        
     def test_expire_doesntload_on_set(self):
         mapper(User, users)
 

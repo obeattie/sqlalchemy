@@ -702,7 +702,7 @@ class Session(object):
         if self.autoflush and (self.transaction is None or self.transaction.autoflush):
             self.flush()
 
-    def get(self, class_, ident, **kwargs):
+    def get(self, class_, ident, entity_name=None):
         """Return an instance of the object based on the given
         identifier, or ``None`` if not found.
 
@@ -715,10 +715,9 @@ class Session(object):
         query.
         """
 
-        entity_name = kwargs.pop('entity_name', None)
-        return self.query(class_, entity_name=entity_name).get(ident, **kwargs)
+        return self.query(class_, entity_name=entity_name).get(ident)
 
-    def load(self, class_, ident, **kwargs):
+    def load(self, class_, ident, entity_name=None):
         """Return an instance of the object based on the given
         identifier.
 
@@ -733,8 +732,7 @@ class Session(object):
         query.
         """
 
-        entity_name = kwargs.pop('entity_name', None)
-        return self.query(class_, entity_name=entity_name).load(ident, **kwargs)
+        return self.query(class_, entity_name=entity_name).load(ident)
 
     def refresh(self, instance, attribute_names=None):
         """Refresh the attributes on the given instance.
@@ -982,10 +980,10 @@ class Session(object):
             raise exceptions.InvalidRequestError(
                 "Object '%s' already has an identity - it can't be registered "
                 "as pending" % repr(obj))
+        self._attach(state)
         if state not in self._new:
             self._new[state] = state.obj()
             state.insert_order = len(self._new)
-        self._attach(state)
 
     def _update_impl(self, state):
         if self.identity_map.contains_state(state) and state not in self._deleted:
@@ -1001,8 +999,8 @@ class Session(object):
                 "Could not update instance '%s', identity key %s; a different "
                 "instance with the same identity key already exists in this "
                 "session." % (mapperutil.state_str(state), state.key))
-        self.identity_map.add(state)
         self._attach(state)
+        self.identity_map.add(state)
         
     def _save_or_update_impl(self, state):
         if state.key is None:
@@ -1090,6 +1088,7 @@ class Session(object):
         """
         if not self.identity_map.check_modified() and not self._deleted and not self._new:
             return
+            
         dirty = self._dirty_states
         if not dirty and not self._deleted and not self._new:
             self.identity_map.modified = False

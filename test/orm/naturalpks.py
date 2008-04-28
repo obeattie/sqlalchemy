@@ -65,15 +65,11 @@ class NaturalPKTest(ORMTest):
 
         users.update(values={User.username:'jack'}).execute(username='ed')
 
-        try:
-            # expire/refresh works off of primary key.  the PK is gone
-            # in this case so theres no way to look it up.  criterion-
-            # based session invalidation could solve this [ticket:911]
-            sess.expire(u1)
-            u1.username
-            assert False
-        except exceptions.InvalidRequestError, e:
-            assert "Could not refresh instance" in str(e)
+        # expire/refresh works off of primary key.  the PK is gone
+        # in this case so theres no way to look it up.  criterion-
+        # based session invalidation could solve this [ticket:911]
+        sess.expire(u1)
+        self.assertRaises(exceptions.ObjectDeletedError, getattr, u1, 'username')
 
         sess.clear()
         assert sess.get(User, 'jack') is None

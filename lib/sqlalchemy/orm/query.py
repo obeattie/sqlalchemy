@@ -389,8 +389,6 @@ class Query(object):
             return ret
 
         # convert composite types to individual args
-        # TODO: account for the order of columns in the
-        # ColumnProperty it corresponds to
         if hasattr(ident, '__composite_values__'):
             ident = ident.__composite_values__()
 
@@ -409,6 +407,11 @@ class Query(object):
         ret = self._extension_zero().load(self, ident, **kwargs)
         if ret is not mapper.EXT_CONTINUE:
             return ret
+
+        # convert composite types to individual args
+        if hasattr(ident, '__composite_values__'):
+            ident = ident.__composite_values__()
+
         key = self._only_mapper_zero().identity_key_from_primary_key(ident)
         instance = self.populate_existing()._get(key, ident, **kwargs)
         if instance is None and raiseerr:
@@ -1107,8 +1110,11 @@ class Query(object):
         lockmode = lockmode or self._lockmode
         if not self._populate_existing and not refresh_instance and not self._mapper_zero().always_refresh and lockmode is None:
             try:
-                # TODO: expire check here
-                return self.session.identity_map[key]
+                instance = self.session.identity_map[key]
+                state = attributes.instance_state(instance)
+                if state.expired:
+                    state()
+                return instance
             except KeyError:
                 pass
 
