@@ -18,7 +18,7 @@ remainder of this module is generally private to the ORM.
 from itertools import chain
 
 import sqlalchemy.exceptions as sa_exc
-from sqlalchemy import logging, util
+from sqlalchemy import log, util
 from sqlalchemy.sql import expression
 
 class_mapper = None
@@ -719,8 +719,8 @@ class PropertyOption(MapperOption):
             
         return l
 
-PropertyOption.logger = logging.class_logger(PropertyOption)
-PropertyOption._should_log_debug = logging.is_debug_enabled(PropertyOption.logger)
+PropertyOption.logger = log.class_logger(PropertyOption)
+PropertyOption._should_log_debug = log.is_debug_enabled(PropertyOption.logger)
 
 class AttributeExtension(object):
     """An abstract class which specifies `append`, `delete`, and `set`

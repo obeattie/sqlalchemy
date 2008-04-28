@@ -20,7 +20,7 @@ iterable result sets.
 
 from itertools import chain
 
-from sqlalchemy import sql, util, logging
+from sqlalchemy import sql, util, log
 import sqlalchemy.exceptions as sa_exc
 import sqlalchemy.sql.util as sql_util
 from sqlalchemy.sql import expression, visitors, operators
@@ -1477,7 +1477,7 @@ class _ColumnEntity(_QueryEntity):
     def __str__(self):
         return str(self.column)
 
-Query.logger = logging.class_logger(Query)
+Query.logger = log.class_logger(Query)
 
 class QueryContext(object):
     def __init__(self, query):

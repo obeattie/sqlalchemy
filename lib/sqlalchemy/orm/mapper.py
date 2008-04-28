@@ -17,7 +17,7 @@ available in [sqlalchemy.orm#].
 import weakref
 from itertools import chain
 
-from sqlalchemy import sql, util, logging
+from sqlalchemy import sql, util, log
 import sqlalchemy.exceptions as sa_exc
 from sqlalchemy.sql import expression, visitors, operators
 import sqlalchemy.sql.util as sqlutil
@@ -184,8 +184,8 @@ class Mapper(object):
 
         self.compiled = False
 
-        self.__should_log_info = logging.is_info_enabled(self.logger)
-        self.__should_log_debug = logging.is_debug_enabled(self.logger)
+        self.__should_log_info = log.is_info_enabled(self.logger)
+        self.__should_log_debug = log.is_debug_enabled(self.logger)
 
         self.__compile_inheritance()
         self.__compile_extensions()
@@ -1578,7 +1578,7 @@ class Mapper(object):
         cond = sql.and_(*allconds)
         return sql.select(tables, cond, use_labels=True)
 
-Mapper.logger = logging.class_logger(Mapper)
+Mapper.logger = log.class_logger(Mapper)
 
 def create_instance(*mixed, **kwargs):
     """Generically create a new instance of a mapped class.

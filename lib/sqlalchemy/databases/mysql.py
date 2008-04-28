@@ -156,7 +156,7 @@ timely information affecting MySQL in SQLAlchemy.
 import datetime, inspect, re, sys
 from array import array as _array
 
-from sqlalchemy import exc, logging, schema, sql, util
+from sqlalchemy import exc, log, schema, sql, util
 from sqlalchemy.sql import operators as sql_operators
 from sqlalchemy.sql import functions as sql_functions
 from sqlalchemy.sql import compiler
@@ -2643,7 +2643,7 @@ class MySQLSchemaReflector(object):
 
         return self._re_keyexprs.findall(identifiers)
 
-MySQLSchemaReflector.logger = logging.class_logger(MySQLSchemaReflector)
+MySQLSchemaReflector.logger = log.class_logger(MySQLSchemaReflector)
 
 
 class _MySQLIdentifierPreparer(compiler.IdentifierPreparer):

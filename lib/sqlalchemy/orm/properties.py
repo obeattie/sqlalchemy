@@ -11,7 +11,7 @@ attributes.
 
 """
 
-from sqlalchemy import sql, schema, util, logging
+from sqlalchemy import sql, schema, util, log
 import sqlalchemy.exceptions as sa_exc
 from sqlalchemy.sql.util import ClauseAdapter, criterion_as_pairs, find_columns
 from sqlalchemy.sql import visitors, operators, ColumnElement, expression
@@ -96,7 +96,7 @@ class ColumnProperty(StrategizedProperty):
     def __str__(self):
         return str(self.parent.class_.__name__) + "." + self.key
 
-ColumnProperty.logger = logging.class_logger(ColumnProperty)
+ColumnProperty.logger = log.class_logger(ColumnProperty)
 
 class CompositeProperty(ColumnProperty):
     """subclasses ColumnProperty to provide composite type support."""
@@ -190,7 +190,7 @@ class SynonymProperty(MapperProperty):
 
     def merge(self, session, source, dest, _recursive):
         pass
-SynonymProperty.logger = logging.class_logger(SynonymProperty)
+SynonymProperty.logger = log.class_logger(SynonymProperty)
 
 class ComparableProperty(MapperProperty):
     """Instruments a Python property for use in query expressions."""
@@ -711,7 +711,7 @@ class PropertyLoader(StrategizedProperty):
                     "argument." % (str(self)))
 
     def _post_init(self):
-        if logging.is_info_enabled(self.logger):
+        if log.is_info_enabled(self.logger):
             self.logger.info(str(self) + " setup primary join %s" % self.primaryjoin)
             self.logger.info(str(self) + " setup secondary join %s" % self.secondaryjoin)
             self.logger.info(str(self) + " synchronize pairs [%s]" % ",".join(["(%s => %s)" % (l, r) for l, r in self.synchronize_pairs]))
@@ -817,7 +817,7 @@ class PropertyLoader(StrategizedProperty):
         if not self.viewonly:
             self._dependency_processor.register_dependencies(uowcommit)
 
-PropertyLoader.logger = logging.class_logger(PropertyLoader)
+PropertyLoader.logger = log.class_logger(PropertyLoader)
 
 class BackRef(object):
     """Attached to a PropertyLoader to indicate a complementary reverse relationship.

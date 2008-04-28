@@ -50,6 +50,8 @@ user_defined_state
       UnmappedColumnError compatibility aliases are installed in
       sqlalchemy.exc during the import of sqlalchemy.orm.
 
+    - sqlalchemy.logging has been renamed to sqlalchemy.log.
+
 
 0.4.6
 =====

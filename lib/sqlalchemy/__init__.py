@@ -38,3 +38,4 @@ __all__ = [ name for name, obj in locals().items()
 
 __version__ = 'svn'
 
+del inspect, sys

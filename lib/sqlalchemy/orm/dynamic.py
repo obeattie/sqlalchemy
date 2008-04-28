@@ -11,7 +11,7 @@ basic add/delete mutation.
 
 """
 
-from sqlalchemy import logging, util
+from sqlalchemy import log, util
 import sqlalchemy.exceptions as sa_exc
 
 from sqlalchemy.orm import attributes, object_session, \
@@ -28,7 +28,7 @@ class DynaLoader(strategies.AbstractRelationLoader):
     def create_row_processor(self, selectcontext, path, mapper, row, adapter):
         return (None, None)
 
-DynaLoader.logger = logging.class_logger(DynaLoader)
+DynaLoader.logger = log.class_logger(DynaLoader)
 
 class DynamicAttributeImpl(attributes.AttributeImpl):
     uses_objects = True

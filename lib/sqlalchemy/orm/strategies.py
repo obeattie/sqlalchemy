@@ -7,7 +7,7 @@
 """sqlalchemy.orm.interfaces.LoaderStrategy implementations, and related MapperOptions."""
 
 import sqlalchemy.exceptions as sa_exc
-from sqlalchemy import sql, util, logging
+from sqlalchemy import sql, util, log
 from sqlalchemy.sql import util as sql_util
 from sqlalchemy.sql import visitors, expression, operators
 from sqlalchemy.orm import mapper, attributes
@@ -23,7 +23,7 @@ class ColumnLoader(LoaderStrategy):
     def init(self):
         super(ColumnLoader, self).init()
         self.columns = self.parent_property.columns
-        self._should_log_debug = logging.is_debug_enabled(self.logger)
+        self._should_log_debug = log.is_debug_enabled(self.logger)
         self.is_composite = hasattr(self.parent_property, 'composite_class')
         
     def setup_query(self, context, entity, path, adapter, column_collection=None, **kwargs):
@@ -60,7 +60,7 @@ class ColumnLoader(LoaderStrategy):
                 self.logger.debug("%s deferring load" % self)
             return (new_execute, None)
 
-ColumnLoader.logger = logging.class_logger(ColumnLoader)
+ColumnLoader.logger = log.class_logger(ColumnLoader)
 
 class CompositeColumnLoader(ColumnLoader):
     def init_class_attribute(self):
@@ -104,7 +104,7 @@ class CompositeColumnLoader(ColumnLoader):
 
             return (new_execute, None)
 
-CompositeColumnLoader.logger = logging.class_logger(CompositeColumnLoader)
+CompositeColumnLoader.logger = log.class_logger(CompositeColumnLoader)
     
 class DeferredColumnLoader(LoaderStrategy):
     """Deferred column loader, a per-column or per-column-group lazy loader."""
@@ -135,7 +135,7 @@ class DeferredColumnLoader(LoaderStrategy):
             raise NotImplementedError("Deferred loading for composite types not implemented yet")
         self.columns = self.parent_property.columns
         self.group = self.parent_property.group
-        self._should_log_debug = logging.is_debug_enabled(self.logger)
+        self._should_log_debug = log.is_debug_enabled(self.logger)
 
     def init_class_attribute(self):
         self.is_class_level = True
@@ -168,7 +168,7 @@ class DeferredColumnLoader(LoaderStrategy):
     def setup_loader(self, state, props=None, create_statement=None):
         return LoadDeferredColumns(state, self.key, props)
                 
-DeferredColumnLoader.logger = logging.class_logger(DeferredColumnLoader)
+DeferredColumnLoader.logger = log.class_logger(DeferredColumnLoader)
 
 class LoadDeferredColumns(object):
     """serializable loader object used by DeferredColumnLoader"""
@@ -241,7 +241,7 @@ class AbstractRelationLoader(LoaderStrategy):
         super(AbstractRelationLoader, self).init()
         for attr in ['mapper', 'target', 'table', 'uselist']:
             setattr(self, attr, getattr(self.parent_property, attr))
-        self._should_log_debug = logging.is_debug_enabled(self.logger)
+        self._should_log_debug = log.is_debug_enabled(self.logger)
         
     def _init_instance_attribute(self, state, callable_=None):
         if callable_:
@@ -274,7 +274,7 @@ class NoLoader(AbstractRelationLoader):
             )
         return (new_execute, None)
 
-NoLoader.logger = logging.class_logger(NoLoader)
+NoLoader.logger = log.class_logger(NoLoader)
         
 class LazyLoader(AbstractRelationLoader):
     def init(self):
@@ -421,7 +421,7 @@ class LazyLoader(AbstractRelationLoader):
         return (lazywhere, bind_to_col, equated_columns)
     __create_lazy_clause = classmethod(__create_lazy_clause)
     
-LazyLoader.logger = logging.class_logger(LazyLoader)
+LazyLoader.logger = log.class_logger(LazyLoader)
 
 class LoadLazyAttribute(object):
     """serializable loader object used by LazyLoader"""
@@ -686,7 +686,7 @@ class EagerLoader(AbstractRelationLoader):
                 self.logger.debug("%s degrading to lazy loader" % self)
             return self.parent_property._get_strategy(LazyLoader).create_row_processor(context, path, mapper, row, adapter)
 
-EagerLoader.logger = logging.class_logger(EagerLoader)
+EagerLoader.logger = log.class_logger(EagerLoader)
 
 class EagerLazyOption(StrategizedOption):
     def __init__(self, key, lazy=True, chained=False, mapper=None):

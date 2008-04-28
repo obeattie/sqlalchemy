@@ -13,7 +13,7 @@ and result contexts.
 """
 
 import inspect, StringIO, sys
-from sqlalchemy import exc, schema, util, types, logging
+from sqlalchemy import exc, schema, util, types, log
 from sqlalchemy.sql import expression
 
 
@@ -1116,19 +1116,19 @@ class Engine(Connectable):
         self.dialect=dialect
         self.echo = echo
         self.engine = self
-        self.logger = logging.instance_logger(self, echoflag=echo)
+        self.logger = log.instance_logger(self, echoflag=echo)
         if proxy:
             self.Connection = _proxy_connection_cls(Connection, proxy)
         else:
             self.Connection = Connection
-                
+
     def name(self):
         "String name of the [sqlalchemy.engine#Dialect] in use by this ``Engine``."
 
         return sys.modules[self.dialect.__module__].descriptor()['name']
     name = property(name)
 
-    echo = logging.echo_property()
+    echo = log.echo_property()
 
     def __repr__(self):
         return 'Engine(%s)' % str(self.url)

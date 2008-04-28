@@ -18,7 +18,7 @@ SQLAlchemy connection pool.
 
 import weakref, time
 
-from sqlalchemy import exc, logging
+from sqlalchemy import exc, log
 from sqlalchemy import queue as Queue
 from sqlalchemy.util import thread, threading, pickle, as_interface
 
@@ -114,7 +114,7 @@ class Pool(object):
 
     def __init__(self, creator, recycle=-1, echo=None, use_threadlocal=True,
                  listeners=None):
-        self.logger = logging.instance_logger(self, echoflag=echo)
+        self.logger = log.instance_logger(self, echoflag=echo)
         # the WeakValueDictionary works more nicely than a regular dict
         # of weakrefs.  the latter can pile up dead reference objects which don't
         # get cleaned out.  WVD adds from 1-6 method calls to a checkout operation.

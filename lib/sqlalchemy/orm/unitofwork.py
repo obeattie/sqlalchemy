@@ -22,7 +22,7 @@ changes at once.
 
 import StringIO
 
-from sqlalchemy import util, logging, topological
+from sqlalchemy import util, log, topological
 from sqlalchemy.orm import attributes, interfaces
 from sqlalchemy.orm import util as mapperutil
 from sqlalchemy.orm.mapper import _state_mapper
@@ -115,7 +115,7 @@ class UOWTransaction(object):
         # information. 
         self.attributes = {}
 
-        self.logger = logging.instance_logger(self, echoflag=session.echo_uow)
+        self.logger = log.instance_logger(self, echoflag=session.echo_uow)
 
     def get_attribute_history(self, state, key, passive=True):
         hashkey = ("history", state, key)

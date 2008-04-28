@@ -7,7 +7,7 @@
 
 import datetime, random, re
 
-from sqlalchemy import util, sql, schema, exc, logging
+from sqlalchemy import util, sql, schema, exc, log
 from sqlalchemy.engine import default, base
 from sqlalchemy.sql import compiler, visitors
 from sqlalchemy.sql import operators as sql_operators, functions as sql_functions
@@ -566,7 +566,7 @@ class OracleDialect(default.DefaultDialect):
             table.append_constraint(schema.ForeignKeyConstraint(value[0], value[1], name=name))
 
 
-OracleDialect.logger = logging.class_logger(OracleDialect)
+OracleDialect.logger = log.class_logger(OracleDialect)
 
 class _OuterJoinColumn(sql.ClauseElement):
     __visit_name__ = 'outer_join_column'
