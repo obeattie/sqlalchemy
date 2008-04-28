@@ -1,7 +1,7 @@
 import testenv; testenv.configure_for_tests()
 import datetime, re, operator
 from sqlalchemy import *
-from sqlalchemy import exceptions, sql, util
+from sqlalchemy import exc, sql, util
 from sqlalchemy.sql import table, column, compiler
 from sqlalchemy.databases import sqlite, postgres, mysql, oracle, firebird, mssql
 from testlib import *
@@ -154,7 +154,7 @@ sq.myothertable_othername AS sq_myothertable_othername FROM (" + sqstring + ") A
         t2 = table('t2', column('c'), column('d'))
         s = select([t.c.a]).where(t.c.a==t2.c.d).as_scalar()
         s2 =select([t, t2, s])
-        self.assertRaises(exceptions.InvalidRequestError, str, s2)
+        self.assertRaises(exc.InvalidRequestError, str, s2)
 
         # intentional again
         s = s.correlate(t, t2)
@@ -245,14 +245,14 @@ sq.myothertable_othername AS sq_myothertable_othername FROM (" + sqstring + ") A
         try:
             s = select([table1.c.myid, table1.c.name]).as_scalar()
             assert False
-        except exceptions.InvalidRequestError, err:
+        except exc.InvalidRequestError, err:
             assert str(err) == "Scalar select can only be created from a Select object that has exactly one column expression.", str(err)
 
         try:
             # generic function which will look at the type of expression
             func.coalesce(select([table1.c.myid]))
             assert False
-        except exceptions.InvalidRequestError, err:
+        except exc.InvalidRequestError, err:
             assert str(err) == "Select objects don't have a type.  Call as_scalar() on this Select object to return a 'scalar' version of this Select.", str(err)
 
         s = select([table1.c.myid], scalar=True, correlate=False)
@@ -278,12 +278,12 @@ sq.myothertable_othername AS sq_myothertable_othername FROM (" + sqstring + ") A
         s = select([table1.c.myid]).as_scalar()
         try:
             s.c.foo
-        except exceptions.InvalidRequestError, err:
+        except exc.InvalidRequestError, err:
             assert str(err) == 'Scalar Select expression has no columns; use this object directly within a column-level expression.'
 
         try:
             s.columns.foo
-        except exceptions.InvalidRequestError, err:
+        except exc.InvalidRequestError, err:
             assert str(err) == 'Scalar Select expression has no columns; use this object directly within a column-level expression.'
 
         zips = table('zips',
@@ -852,7 +852,7 @@ EXISTS (select yay from foo where boo = lar)",
     def test_compound_selects(self):
         try:
             union(table3.select(), table1.select())
-        except exceptions.ArgumentError, err:
+        except exc.ArgumentError, err:
             assert str(err) == "All selectables passed to CompoundSelect must have identical numbers of columns; select #1 has 2 columns, select #2 has 3"
     
         x = union(
@@ -1046,10 +1046,10 @@ UNION SELECT mytable.myid FROM mytable"
 
         # check that conflicts with "unique" params are caught
         s = select([table1], or_(table1.c.myid==7, table1.c.myid==bindparam('myid_1')))
-        self.assertRaisesMessage(exceptions.CompileError, "conflicts with unique bind parameter of the same name", str, s)
+        self.assertRaisesMessage(exc.CompileError, "conflicts with unique bind parameter of the same name", str, s)
 
         s = select([table1], or_(table1.c.myid==7, table1.c.myid==8, table1.c.myid==bindparam('myid_1')))
-        self.assertRaisesMessage(exceptions.CompileError, "conflicts with unique bind parameter of the same name", str, s)
+        self.assertRaisesMessage(exc.CompileError, "conflicts with unique bind parameter of the same name", str, s)
 
 
 

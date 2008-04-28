@@ -1,7 +1,6 @@
 import testenv; testenv.configure_for_tests()
 from sqlalchemy import *
 from sqlalchemy.orm import *
-from sqlalchemy import exceptions
 from testlib import *
 import testlib.tables as tables
 

@@ -2,7 +2,7 @@
 
 import testenv; testenv.configure_for_tests()
 from sqlalchemy import *
-from sqlalchemy import exceptions
+from sqlalchemy import exc as sa_exc
 from sqlalchemy.orm import *
 from testlib import *
 from testlib.fixtures import *
@@ -44,7 +44,7 @@ class LazyTest(FixtureTest):
         q = sess.query(User)
         u = q.filter(users.c.id == 7).first()
         sess.expunge(u)
-        self.assertRaises(exceptions.InvalidRequestError, getattr, u, 'addresses')
+        self.assertRaises(sa_exc.InvalidRequestError, getattr, u, 'addresses')
 
     def test_orderby(self):
         mapper(User, users, properties = {

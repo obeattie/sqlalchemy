@@ -2,7 +2,7 @@ import testenv; testenv.configure_for_tests()
 import pickle
 import sqlalchemy.orm.attributes as attributes
 from sqlalchemy.orm.collections import collection
-from sqlalchemy import exceptions, util
+from sqlalchemy import exc as sa_exc, util
 from testlib import *
 from testlib import fixtures
 
@@ -28,7 +28,7 @@ class AttrTestBase(object):
     def test_needs_savepoint(self):
         f = Foo()
         f.x = data1
-        self.assertRaises(exceptions.InvalidRequestError, attributes.instance_state(f).rollback)
+        self.assertRaises(sa_exc.InvalidRequestError, attributes.instance_state(f).rollback)
         
     def test_rback_to_set(self):
         f = Foo()

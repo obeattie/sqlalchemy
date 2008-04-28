@@ -2,7 +2,7 @@
 
 import testenv; testenv.configure_for_tests()
 from sqlalchemy import *
-from sqlalchemy import exceptions, sql
+from sqlalchemy import exc as sa_exc, sql
 from sqlalchemy.orm import *
 from testlib import *
 from testlib import fixtures
@@ -31,7 +31,7 @@ class MapperTest(MapperSuperTest):
             properties={
             'addresses':relation(Address, backref='email_address')
         })
-        self.assertRaises(exceptions.ArgumentError, compile_mappers)
+        self.assertRaises(sa_exc.ArgumentError, compile_mappers)
 
     def test_prop_accessor(self):
         mapper(User, users)
@@ -68,7 +68,7 @@ class MapperTest(MapperSuperTest):
         
     def test_badcascade(self):
         mapper(Address, addresses)
-        self.assertRaises(exceptions.ArgumentError, relation, Address, cascade="fake, all, delete-orphan")
+        self.assertRaises(sa_exc.ArgumentError, relation, Address, cascade="fake, all, delete-orphan")
 
     def test_columnprefix(self):
         mapper(User, users, column_prefix='_', properties={
@@ -84,7 +84,7 @@ class MapperTest(MapperSuperTest):
 
     def test_no_pks(self):
         s = select([users.c.user_name]).alias('foo')
-        self.assertRaises(exceptions.ArgumentError, mapper, User, s)
+        self.assertRaises(sa_exc.ArgumentError, mapper, User, s)
     
     def test_recompile_on_othermapper(self):
         """test the global '__new_mappers' flag such that a compile 
@@ -132,7 +132,7 @@ class MapperTest(MapperSuperTest):
         assert len(list(sess)) == 0
         self.assertRaises(TypeError, Foo, 'one')
 
-    def test_constructorexceptions(self):
+    def test_constructorexc(self):
         """test that exceptions raised in the mapped class are not masked by sa decorations"""
         ex = AssertionError('oops')
         sess = create_session()
@@ -158,7 +158,7 @@ class MapperTest(MapperSuperTest):
             Foo(_sa_session=sess)
             assert False
         except Exception, e:
-            assert isinstance(e, exceptions.SAWarning), e
+            assert isinstance(e, sa_exc.SAWarning), e
 
         clear_mappers()
 
@@ -365,14 +365,14 @@ class MapperTest(MapperSuperTest):
                 'addresses':relation(Address)
             }).compile()
             assert False
-        except exceptions.ArgumentError, e:
+        except sa_exc.ArgumentError, e:
             assert "Attempting to assign a new relation 'addresses' to a non-primary mapper on class 'User'" in str(e)
 
     def test_illegal_non_primary_2(self):
         try:
             mapper(User, users, non_primary=True)
             assert False
-        except exceptions.InvalidRequestError, e:
+        except sa_exc.InvalidRequestError, e:
             assert "Configure a primary mapper first" in str(e)
 
     def test_propfilters(self):
@@ -545,7 +545,7 @@ class MapperTest(MapperSuperTest):
                     'user_name' : relation(mapper(Address, addresses)),
                 }).compile()
             self.assert_(False, "should have raised ArgumentError")
-        except exceptions.ArgumentError, e:
+        except sa_exc.ArgumentError, e:
             self.assert_(True)
 
         clear_mappers()
@@ -636,7 +636,7 @@ class MapperTest(MapperSuperTest):
             })
             User.not_user_name
             assert False
-        except exceptions.ArgumentError, e:
+        except sa_exc.ArgumentError, e:
             assert str(e) == "Can't compile synonym '_user_name': no column on table 'users' named 'not_user_name'"
 
         clear_mappers()
@@ -895,7 +895,7 @@ class OptionsTest(MapperSuperTest):
 
         sess.clear()
 
-        self.assertRaisesMessage(exceptions.ArgumentError, 
+        self.assertRaisesMessage(sa_exc.ArgumentError, 
             r"Can't find entity Mapper\|Order\|orders in Query.  Current list: \['Mapper\|User\|users'\]", 
             sess.query(User).options, eagerload('items', Order)
         )
@@ -1487,13 +1487,13 @@ class RequirementsTest(ORMTest):
         class OldStyle:
             pass
 
-        self.assertRaises(exceptions.ArgumentError, mapper, OldStyle, t1)
+        self.assertRaises(sa_exc.ArgumentError, mapper, OldStyle, t1)
 
         class NoWeakrefSupport(str):
             pass
 
         # TODO: is weakref support detectable without an instance?
-        #self.assertRaises(exceptions.ArgumentError, mapper, NoWeakrefSupport, t2)
+        #self.assertRaises(sa_exc.ArgumentError, mapper, NoWeakrefSupport, t2)
 
     def test_comparison_overrides(self):
         """Simple tests to ensure users can supply comparison __methods__.

@@ -1,7 +1,7 @@
 import testenv; testenv.configure_for_tests()
 import StringIO, unicodedata
 from sqlalchemy import *
-from sqlalchemy import exceptions
+from sqlalchemy import exc
 from sqlalchemy import types as sqltypes
 from testlib import *
 from testlib import engines
@@ -100,7 +100,7 @@ class ReflectionTest(TestBase, ComparesTables):
                 m2 = MetaData(testing.db)
                 t2 = Table("test", m2, autoload=True)
                 assert False
-            except exceptions.SAWarning:
+            except exc.SAWarning:
                 assert True
 
             @testing.emits_warning('Did not recognize type')
@@ -299,7 +299,7 @@ class ReflectionTest(TestBase, ComparesTables):
             try:
                 users = Table('users', meta2, Column('name', Unicode), autoload=True)
                 assert False
-            except exceptions.InvalidRequestError, err:
+            except exc.InvalidRequestError, err:
                 assert str(err) == "Table 'users' is already defined for this MetaData instance.  Specify 'useexisting=True' to redefine options and columns on an existing Table object."
             
             users = Table('users', meta2, Column('name', Unicode), autoload=True, useexisting=True)
@@ -344,7 +344,7 @@ class ReflectionTest(TestBase, ComparesTables):
         try:
             metadata.create_all()
             assert False
-        except exceptions.InvalidRequestError, err:
+        except exc.InvalidRequestError, err:
             assert str(err) == "Could not find table 'pkgs' with which to generate a foreign key"
 
     def test_composite_pks(self):
@@ -484,7 +484,7 @@ class ReflectionTest(TestBase, ComparesTables):
             try:
                 m4.reflect(only=['rt_a', 'rt_f'])
                 self.assert_(False)
-            except exceptions.InvalidRequestError, e:
+            except exc.InvalidRequestError, e:
                 self.assert_(e.args[0].endswith('(rt_f)'))
 
             m5 = MetaData(testing.db)
@@ -501,7 +501,7 @@ class ReflectionTest(TestBase, ComparesTables):
             try:
                 m8 = MetaData(reflect=True)
                 self.assert_(False)
-            except exceptions.ArgumentError, e:
+            except exc.ArgumentError, e:
                 self.assert_(
                     e.args[0] ==
                     "A bind must be supplied in conjunction with reflect=True")

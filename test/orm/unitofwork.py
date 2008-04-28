@@ -5,9 +5,9 @@
 import testenv; testenv.configure_for_tests()
 import pickleable
 from sqlalchemy import *
-from sqlalchemy import exceptions, sql
+from sqlalchemy import exc as sa_exc, sql
 from sqlalchemy.orm import *
-from sqlalchemy.orm import attributes
+from sqlalchemy.orm import attributes, exc as orm_exc
 from testlib import *
 from testlib.tables import *
 from testlib import engines, tables, fixtures
@@ -84,7 +84,7 @@ class VersioningTest(ORMTest):
             # a concurrent session has modified this, should throw
             # an exception
             s.commit()
-        except exceptions.ConcurrentModificationError, e:
+        except orm_exc.ConcurrentModificationError, e:
             #print e
             success = True
 
@@ -104,7 +104,7 @@ class VersioningTest(ORMTest):
         success = False
         try:
             s.commit()
-        except exceptions.ConcurrentModificationError, e:
+        except orm_exc.ConcurrentModificationError, e:
             #print e
             success = True
         if testing.db.dialect.supports_sane_multi_rowcount:
@@ -128,7 +128,7 @@ class VersioningTest(ORMTest):
             # load, version is wrong
             s1.query(Foo).with_lockmode('read').get(f1s1.id)
             assert False
-        except exceptions.ConcurrentModificationError, e:
+        except orm_exc.ConcurrentModificationError, e:
             assert True
         # reload it
         s1.query(Foo).load(f1s1.id)
@@ -653,7 +653,7 @@ class ExtraPassiveDeletesTest(ORMTest):
                 'children':relation(MyOtherClass, passive_deletes='all', cascade="all")
             })
             assert False
-        except exceptions.ArgumentError, e:
+        except sa_exc.ArgumentError, e:
             assert str(e) == "Can't set passive_deletes='all' in conjunction with 'delete' or 'delete-orphan' cascade"
 
     @testing.unsupported('sqlite')
@@ -681,7 +681,7 @@ class ExtraPassiveDeletesTest(ORMTest):
         assert myothertable.count().scalar() == 4
         mc = sess.query(MyClass).get(mc.id)
         sess.delete(mc)
-        self.assertRaises(exceptions.DBAPIError, sess.commit)
+        self.assertRaises(sa_exc.DBAPIError, sess.commit)
 
     @testing.unsupported('sqlite')
     def test_extra_passive_2(self):
@@ -706,7 +706,7 @@ class ExtraPassiveDeletesTest(ORMTest):
         mc = sess.query(MyClass).get(mc.id)
         sess.delete(mc)
         mc.children[0].data = 'some new data'
-        self.assertRaises(exceptions.DBAPIError, sess.commit)
+        self.assertRaises(sa_exc.DBAPIError, sess.commit)
 
 
 class DefaultTest(ORMTest):

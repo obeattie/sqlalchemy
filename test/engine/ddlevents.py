@@ -1,6 +1,6 @@
 import testenv; testenv.configure_for_tests()
 from sqlalchemy import *
-from sqlalchemy import exceptions
+from sqlalchemy import exc
 from sqlalchemy.schema import DDL
 import sqlalchemy
 from testlib import *
@@ -294,7 +294,7 @@ class DDLExecutionTest(TestBase):
             try:
                 r = eval(py)
                 assert False
-            except exceptions.UnboundExecutionError:
+            except exc.UnboundExecutionError:
                 pass
 
         for bind in engine, cx:

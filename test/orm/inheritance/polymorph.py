@@ -4,7 +4,7 @@ import testenv; testenv.configure_for_tests()
 import sets
 from sqlalchemy import *
 from sqlalchemy.orm import *
-from sqlalchemy import exceptions
+from sqlalchemy.orm import exc as orm_exc
 from testlib import *
 from testlib import fixtures
 
@@ -266,7 +266,7 @@ def generate_round_trip_test(include_base, lazy_relation, redefine_colprop, with
         # test standalone orphans
         daboss = Boss(status='BBB', manager_name='boss', golf_swing='fore', **{person_attribute_name:'daboss'})
         session.save(daboss)
-        self.assertRaises(exceptions.FlushError, session.flush)
+        self.assertRaises(orm_exc.FlushError, session.flush)
         c = session.query(Company).first()
         daboss.company = c
         manager_list = [e for e in c.employees if isinstance(e, Manager)]

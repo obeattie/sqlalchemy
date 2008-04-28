@@ -1,7 +1,7 @@
 import testenv; testenv.configure_for_tests()
 import ConfigParser, StringIO
 from sqlalchemy import *
-from sqlalchemy import exceptions, pool, engine
+from sqlalchemy import exc, pool, engine
 import sqlalchemy.engine.url as url
 from testlib import *
 
@@ -181,7 +181,7 @@ pool_timeout=10
         try:
             c = e.connect()
             assert False
-        except exceptions.DBAPIError:
+        except exc.DBAPIError:
             assert True
 
     def test_urlattr(self):

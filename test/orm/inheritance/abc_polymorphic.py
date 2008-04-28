@@ -1,6 +1,6 @@
 import testenv; testenv.configure_for_tests()
 from sqlalchemy import *
-from sqlalchemy import exceptions, util
+from sqlalchemy import util
 from sqlalchemy.orm import *
 from testlib import *
 from testlib import fixtures

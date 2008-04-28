@@ -3,7 +3,7 @@
 import testenv; testenv.configure_for_tests()
 import datetime
 from sqlalchemy import *
-from sqlalchemy import exceptions
+from sqlalchemy import exc
 from sqlalchemy.databases import sqlite
 from testlib import *
 
@@ -212,7 +212,7 @@ class DialectTest(TestBase, AssertsExecutionResults):
         except:
             try:
                 cx.execute('DROP TABLE tempy')
-            except exceptions.DBAPIError:
+            except exc.DBAPIError:
                 pass
             raise
 
@@ -247,7 +247,7 @@ class InsertTest(TestBase, AssertsExecutionResults):
     @testing.exclude('sqlite', '<', (3, 4))
     def test_empty_insert_pk2(self):
         self.assertRaises(
-            exceptions.DBAPIError,
+            exc.DBAPIError,
             self._test_empty_insert,
             Table('b', MetaData(testing.db),
                   Column('x', Integer, primary_key=True),
@@ -256,7 +256,7 @@ class InsertTest(TestBase, AssertsExecutionResults):
     @testing.exclude('sqlite', '<', (3, 4))
     def test_empty_insert_pk3(self):
         self.assertRaises(
-            exceptions.DBAPIError,
+            exc.DBAPIError,
             self._test_empty_insert,
             Table('c', MetaData(testing.db),
                   Column('x', Integer, primary_key=True),

@@ -2,8 +2,6 @@ import testenv; testenv.configure_for_tests()
 from sqlalchemy import *
 from sqlalchemy.orm import *
 from sqlalchemy.orm import attributes, exc as orm_exc
-from sqlalchemy import exceptions
-
 from testlib.fixtures import *
 from testlib import *
 

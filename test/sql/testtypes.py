@@ -1,7 +1,7 @@
 import testenv; testenv.configure_for_tests()
 import datetime, os, pickleable, re
 from sqlalchemy import *
-from sqlalchemy import exceptions, types, util
+from sqlalchemy import exc, types, util
 from sqlalchemy.sql import operators
 import sqlalchemy.engine.url as url
 from sqlalchemy.databases import mssql, oracle, mysql, postgres, firebird
@@ -344,7 +344,7 @@ class UnicodeTest(TestBase, AssertsExecutionResults):
         try:
             unicode_table.insert().execute(unicode_varchar='not unicode')
             assert False
-        except exceptions.SAWarning, e:
+        except exc.SAWarning, e:
             assert str(e) == "Unicode type received non-unicode bind param value 'not unicode'", str(e)
 
         unicode_engine = engines.utf8_engine(options={'convert_unicode':True,
@@ -353,7 +353,7 @@ class UnicodeTest(TestBase, AssertsExecutionResults):
             try:
                 unicode_engine.execute(unicode_table.insert(), plain_varchar='im not unicode')
                 assert False
-            except exceptions.InvalidRequestError, e:
+            except exc.InvalidRequestError, e:
                 assert str(e) == "Unicode type received non-unicode bind param value 'im not unicode'"
 
             @testing.emits_warning('.*non-unicode bind')
@@ -676,7 +676,7 @@ class StringTest(TestBase, AssertsExecutionResults):
             # warning during CREATE
             foo.create()
             assert False
-        except exceptions.SADeprecationWarning, e:
+        except exc.SADeprecationWarning, e:
             assert "Using String type with no length" in str(e)
             assert re.search(r'\bone\b', str(e))
 

@@ -1,8 +1,9 @@
 import testenv; testenv.configure_for_tests()
-from sqlalchemy import *
-from sqlalchemy import exceptions
-from testlib import *
 import pickle
+from sqlalchemy import *
+from sqlalchemy import exc
+from testlib import *
+
 
 class MetaDataTest(TestBase, ComparesTables):
     def test_metadata_connect(self):
@@ -30,7 +31,7 @@ class MetaDataTest(TestBase, ComparesTables):
                 t2 = Table('table1', metadata, Column('col1', Integer, primary_key=True),
                     Column('col2', String(20)))
                 assert False
-            except exceptions.InvalidRequestError, e:
+            except exc.InvalidRequestError, e:
                 assert str(e) == "Table 'table1' is already defined for this MetaData instance.  Specify 'useexisting=True' to redefine options and columns on an existing Table object."
         finally:
             metadata.drop_all()
@@ -109,7 +110,7 @@ class MetaDataTest(TestBase, ComparesTables):
             meta.drop_all(testing.db)
 
     def test_nonexistent(self):
-        self.assertRaises(exceptions.NoSuchTableError, Table,
+        self.assertRaises(exc.NoSuchTableError, Table,
                           'fake_table',
                           MetaData(testing.db), autoload=True)
 

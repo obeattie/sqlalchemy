@@ -1,6 +1,6 @@
 import testenv; testenv.configure_for_tests()
 import sys, weakref
-from sqlalchemy import create_engine, exceptions, select, MetaData, Table, Column, Integer, String
+from sqlalchemy import create_engine, exc, select, MetaData, Table, Column, Integer, String
 from testlib import *
 
 
@@ -80,7 +80,7 @@ class MockReconnectTest(TestBase):
         try:
             conn.execute(select([1]))
             assert False
-        except exceptions.DBAPIError:
+        except exc.DBAPIError:
             pass
 
         # assert was invalidated
@@ -108,7 +108,7 @@ class MockReconnectTest(TestBase):
         try:
             conn.execute(select([1]))
             assert False
-        except exceptions.DBAPIError:
+        except exc.DBAPIError:
             pass
 
         # assert was invalidated
@@ -120,7 +120,7 @@ class MockReconnectTest(TestBase):
         try:
             conn.execute(select([1]))
             assert False
-        except exceptions.InvalidRequestError, e:
+        except exc.InvalidRequestError, e:
             assert str(e) == "Can't reconnect until invalid transaction is rolled back"
 
         assert trans.is_active
@@ -128,7 +128,7 @@ class MockReconnectTest(TestBase):
         try:
             trans.commit()
             assert False
-        except exceptions.InvalidRequestError, e:
+        except exc.InvalidRequestError, e:
             assert str(e) == "Can't reconnect until invalid transaction is rolled back"
 
         assert trans.is_active
@@ -154,7 +154,7 @@ class MockReconnectTest(TestBase):
         try:
             conn.execute(select([1]))
             assert False
-        except exceptions.DBAPIError:
+        except exc.DBAPIError:
             pass
 
         assert not conn.closed
@@ -188,7 +188,7 @@ class RealReconnectTest(TestBase):
         try:
             conn.execute(select([1]))
             assert False
-        except exceptions.DBAPIError, e:
+        except exc.DBAPIError, e:
             if not e.connection_invalidated:
                 raise
 
@@ -204,7 +204,7 @@ class RealReconnectTest(TestBase):
         try:
             conn.execute(select([1]))
             assert False
-        except exceptions.DBAPIError, e:
+        except exc.DBAPIError, e:
             if not e.connection_invalidated:
                 raise
         assert conn.invalidated
@@ -223,7 +223,7 @@ class RealReconnectTest(TestBase):
         try:
             conn.execute(select([1]))
             assert False
-        except exceptions.DBAPIError, e:
+        except exc.DBAPIError, e:
             if not e.connection_invalidated:
                 raise
 
@@ -244,7 +244,7 @@ class RealReconnectTest(TestBase):
         try:
             conn.execute(select([1]))
             assert False
-        except exceptions.DBAPIError, e:
+        except exc.DBAPIError, e:
             if not e.connection_invalidated:
                 raise
 
@@ -255,7 +255,7 @@ class RealReconnectTest(TestBase):
         try:
             conn.execute(select([1]))
             assert False
-        except exceptions.InvalidRequestError, e:
+        except exc.InvalidRequestError, e:
             assert str(e) == "Can't reconnect until invalid transaction is rolled back"
 
         assert trans.is_active
@@ -263,7 +263,7 @@ class RealReconnectTest(TestBase):
         try:
             trans.commit()
             assert False
-        except exceptions.InvalidRequestError, e:
+        except exc.InvalidRequestError, e:
             assert str(e) == "Can't reconnect until invalid transaction is rolled back"
 
         assert trans.is_active
@@ -304,7 +304,7 @@ class InvalidateDuringResultTest(TestBase):
         try:
             result.fetchone()
             assert False
-        except exceptions.DBAPIError, e:
+        except exc.DBAPIError, e:
             if not e.connection_invalidated:
                 raise
 

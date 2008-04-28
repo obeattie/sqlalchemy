@@ -3,7 +3,7 @@ import pickle
 import sqlalchemy.orm.attributes as attributes
 from sqlalchemy.orm.collections import collection
 from sqlalchemy.orm.interfaces import AttributeExtension
-from sqlalchemy import exceptions
+from sqlalchemy import exc as sa_exc
 from testlib import *
 from testlib import fixtures
 
@@ -452,7 +452,7 @@ class AttributesTest(TestBase):
         try:
             attributes.register_attribute(Foo, "collection", uselist=True, typecallable=dict, useobject=True)
             assert False
-        except exceptions.ArgumentError, e:
+        except sa_exc.ArgumentError, e:
             assert str(e) == "Type InstrumentedDict must elect an appender method to be a collection class"
 
         class MyDict(dict):
@@ -471,7 +471,7 @@ class AttributesTest(TestBase):
         try:
             attributes.register_attribute(Foo, "collection", uselist=True, typecallable=MyColl, useobject=True)
             assert False
-        except exceptions.ArgumentError, e:
+        except sa_exc.ArgumentError, e:
             assert str(e) == "Type MyColl must elect an appender method to be a collection class"
 
         class MyColl(object):
@@ -488,7 +488,7 @@ class AttributesTest(TestBase):
         try:
             Foo().collection
             assert True
-        except exceptions.ArgumentError, e:
+        except sa_exc.ArgumentError, e:
             assert False
 
 

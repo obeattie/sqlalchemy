@@ -2,7 +2,7 @@
 import testenv; testenv.configure_for_tests()
 import sys, unittest
 import exceptions as stdlib_exceptions
-from sqlalchemy import exceptions as sa_exceptions
+from sqlalchemy import exc as sa_exceptions
 from testlib import *
 
 

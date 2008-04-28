@@ -7,7 +7,7 @@ import testenv; testenv.configure_for_tests()
 import sets
 from sqlalchemy import *
 from sqlalchemy.orm import *
-from sqlalchemy import exceptions
+from sqlalchemy import exc as sa_exc
 from testlib import *
 from testlib import fixtures
 
@@ -665,7 +665,7 @@ class SelfReferentialTest(ORMTest):
         sess = create_session()
         def go():
             sess.query(Engineer).join('reports_to')
-        self.assertRaises(exceptions.InvalidRequestError, go)
+        self.assertRaises(sa_exc.InvalidRequestError, go)
 
 if __name__ == "__main__":
     testenv.main()

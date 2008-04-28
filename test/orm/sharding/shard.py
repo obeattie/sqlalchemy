@@ -1,7 +1,7 @@
 import testenv; testenv.configure_for_tests()
 import datetime, os
 from sqlalchemy import *
-from sqlalchemy import exceptions, sql
+from sqlalchemy import sql
 from sqlalchemy.orm import *
 from sqlalchemy.orm.shard import ShardedSession
 from sqlalchemy.sql import operators

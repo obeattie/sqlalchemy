@@ -1,6 +1,6 @@
 import testenv; testenv.configure_for_tests()
 from sqlalchemy import *
-from sqlalchemy import exceptions
+from sqlalchemy import exc as sa_exc
 from sqlalchemy.orm import *
 from testlib import *
 from testlib import fixtures
@@ -115,7 +115,7 @@ class ScopedMapperTest(TestBase):
         Session.mapper(ValidatedOtherObject, table2, validate=True)
 
         v1 = ValidatedOtherObject(someid=12)
-        self.assertRaises(exceptions.ArgumentError, ValidatedOtherObject, someid=12, bogus=345)
+        self.assertRaises(sa_exc.ArgumentError, ValidatedOtherObject, someid=12, bogus=345)
 
     def test_dont_clobber_methods(self):
         class MyClass(object):

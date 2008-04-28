@@ -7,7 +7,6 @@ from sqlalchemy.orm.attributes import set_attribute, get_attribute, del_attribut
 from sqlalchemy.orm import clear_mappers
 from sqlalchemy.orm import InstrumentationManager
 
-from sqlalchemy import exceptions
 from testlib import *
 
 class MyTypesManager(InstrumentationManager):

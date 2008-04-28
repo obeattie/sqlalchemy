@@ -1,7 +1,7 @@
 import testenv; testenv.configure_for_tests()
 import operator
 from sqlalchemy import *
-from sqlalchemy import exceptions, util
+from sqlalchemy import exc as sa_exc, util
 from sqlalchemy.sql import compiler
 from sqlalchemy.engine import default
 from sqlalchemy.orm import *
@@ -70,7 +70,7 @@ class GetTest(QueryTest):
         s = create_session()
         
         q = s.query(User).join('addresses').filter(Address.user_id==8)
-        self.assertRaises(exceptions.SAWarning, q.get, 7)
+        self.assertRaises(sa_exc.SAWarning, q.get, 7)
 
         @testing.emits_warning('Query.*')
         def warns():
@@ -117,7 +117,7 @@ class GetTest(QueryTest):
         try:
             assert s.query(User).load(19) is None
             assert False
-        except exceptions.InvalidRequestError:
+        except sa_exc.InvalidRequestError:
             assert True
 
         u = s.query(User).load(7)
@@ -196,20 +196,20 @@ class InvalidGenerationsTest(QueryTest):
         s = create_session()
         
         q = s.query(User).limit(2)
-        self.assertRaises(exceptions.SAWarning, q.join, "addresses")
+        self.assertRaises(sa_exc.SAWarning, q.join, "addresses")
 
-        self.assertRaises(exceptions.SAWarning, q.filter, User.name=='ed')
+        self.assertRaises(sa_exc.SAWarning, q.filter, User.name=='ed')
 
-        self.assertRaises(exceptions.SAWarning, q.filter_by, name='ed')
+        self.assertRaises(sa_exc.SAWarning, q.filter_by, name='ed')
     
     def test_no_from(self):
         s = create_session()
     
         q = s.query(User).select_from(users)
-        self.assertRaises(exceptions.InvalidRequestError, q.select_from, users)
+        self.assertRaises(sa_exc.InvalidRequestError, q.select_from, users)
 
         q = s.query(User).join('addresses')
-        self.assertRaises(exceptions.InvalidRequestError, q.select_from, users)
+        self.assertRaises(sa_exc.InvalidRequestError, q.select_from, users)
         
         # this is fine, however
         q.from_self()
@@ -376,7 +376,7 @@ class FilterTest(QueryTest):
         try:
             sess.query(User).filter(User.addresses == address)
             assert False
-        except exceptions.InvalidRequestError:
+        except sa_exc.InvalidRequestError:
             assert True
 
         assert [User(id=10)] == sess.query(User).filter(User.addresses==None).all()
@@ -384,7 +384,7 @@ class FilterTest(QueryTest):
         try:
             assert [User(id=7), User(id=9), User(id=10)] == sess.query(User).filter(User.addresses!=address).all()
             assert False
-        except exceptions.InvalidRequestError:
+        except sa_exc.InvalidRequestError:
             assert True
 
         #assert [User(id=7), User(id=9), User(id=10)] == sess.query(User).filter(User.addresses!=address).all()
@@ -626,7 +626,7 @@ class ParentTest(QueryTest):
         try:
             q = sess.query(Item).with_parent(u1)
             assert False
-        except exceptions.InvalidRequestError, e:
+        except sa_exc.InvalidRequestError, e:
             assert str(e) == "Could not locate a property which relates instances of class 'Item' to instances of class 'User'"
 
     def test_m2m(self):
@@ -858,7 +858,7 @@ class MultiplePathTest(ORMTest):
         mapper(T2, t2)
 
         q = create_session().query(T1).join('t2s_1').filter(t2.c.id==5).reset_joinpoint()
-        self.assertRaisesMessage(exceptions.InvalidRequestError, "a path to this table along a different secondary table already exists.",
+        self.assertRaisesMessage(sa_exc.InvalidRequestError, "a path to this table along a different secondary table already exists.",
             q.join, 't2s_2'
         )
 
@@ -1240,7 +1240,7 @@ class MixedEntitiesTest(QueryTest):
             assert sess.query(User).add_column(add_col).all() == expected
             sess.clear()
 
-        self.assertRaises(exceptions.InvalidRequestError, sess.query(User).add_column, object())
+        self.assertRaises(sa_exc.InvalidRequestError, sess.query(User).add_column, object())
     
     def test_multi_columns_2(self):
         """test aliased/nonalised joins with the usage of add_column()"""
@@ -1591,7 +1591,7 @@ class SelfReferentialTest(ORMTest):
         sess = create_session()
         
         n1 = aliased(Node)
-        self.assertRaises(exceptions.InvalidRequestError, sess.query(n1).join, n1.parent)
+        self.assertRaises(sa_exc.InvalidRequestError, sess.query(n1).join, n1.parent)
 
         self.assertEquals(
             sess.query(n1).join((n1.parent, Node)).filter(Node.data=='n1').all(),
@@ -1745,12 +1745,12 @@ class ExternalColumnsTest(QueryTest):
 
     def test_external_columns_bad(self):
 
-        self.assertRaisesMessage(exceptions.ArgumentError, "not represented in mapper's table", mapper, User, users, properties={
+        self.assertRaisesMessage(sa_exc.ArgumentError, "not represented in mapper's table", mapper, User, users, properties={
             'concat': (users.c.id * 2),
         })
         clear_mappers()
 
-        self.assertRaisesMessage(exceptions.ArgumentError, "must be given a ColumnElement as its argument.", column_property,
+        self.assertRaisesMessage(sa_exc.ArgumentError, "must be given a ColumnElement as its argument.", column_property,
             select([func.count(addresses.c.id)], users.c.id==addresses.c.user_id).correlate(users)
         )
 

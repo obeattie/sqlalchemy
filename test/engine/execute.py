@@ -1,10 +1,10 @@
 import testenv; testenv.configure_for_tests()
+import re
 from sqlalchemy import *
-from sqlalchemy import exceptions
+from sqlalchemy import exc
 from testlib import *
 from sqlalchemy.interfaces import ConnectionProxy
 from testlib import engines
-import re
 
 class ExecuteTest(TestBase):
     def setUpAll(self):
@@ -73,7 +73,7 @@ class ExecuteTest(TestBase):
             try:
                 conn.execute("osdjafioajwoejoasfjdoifjowejfoawejqoijwef")
                 assert False
-            except exceptions.DBAPIError:
+            except exc.DBAPIError:
                 assert True
 
 class ProxyConnectionTest(TestBase):

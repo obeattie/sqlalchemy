@@ -1,6 +1,6 @@
 import testenv; testenv.configure_for_tests()
 from sqlalchemy import *
-from sqlalchemy import exceptions
+from sqlalchemy import exc as sa_exc
 from sqlalchemy.orm import *
 from sqlalchemy.orm import mapperlib, attributes
 from sqlalchemy.util import OrderedSet
@@ -410,7 +410,7 @@ class MergeTest(TestBase, AssertsExecutionResults):
 
         sess = create_session()
         u = User()
-        self.assertRaisesMessage(exceptions.InvalidRequestError, "dont_load=True option does not support", sess.merge, u, dont_load=True)
+        self.assertRaisesMessage(sa_exc.InvalidRequestError, "dont_load=True option does not support", sess.merge, u, dont_load=True)
 
 
     def test_dontload_with_backrefs(self):
@@ -495,7 +495,7 @@ class MergeTest(TestBase, AssertsExecutionResults):
         try:
             sess2.merge(u, dont_load=True)
             assert False
-        except exceptions.InvalidRequestError, e:
+        except sa_exc.InvalidRequestError, e:
             assert "merge() with dont_load=True option does not support objects marked as 'dirty'.  flush() all changes on mapped instances before merging with dont_load=True." in str(e)
 
         u2 = sess2.query(User).get(7)
@@ -619,7 +619,7 @@ class MergeTest(TestBase, AssertsExecutionResults):
             sess2.flush()
             sess2.clear()
             assert sess2.query(User).get(u2.user_id).addresses[0].email_address == 'somenewaddress'
-        except exceptions.InvalidRequestError, e:
+        except sa_exc.InvalidRequestError, e:
             assert "dont_load=True option does not support" in str(e)
 
 

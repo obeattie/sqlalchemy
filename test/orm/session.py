@@ -1,6 +1,6 @@
 import testenv; testenv.configure_for_tests()
 from sqlalchemy import *
-from sqlalchemy import exceptions, util
+from sqlalchemy import exc as sa_exc, util
 from sqlalchemy.orm import *
 from sqlalchemy.orm import attributes
 from sqlalchemy.orm.session import SessionExtension
@@ -501,7 +501,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
         sess.flush()
 
         sess.rollback()
-        self.assertRaisesMessage(exceptions.InvalidRequestError, "inactive due to a rollback in a subtransaction", sess.begin)
+        self.assertRaisesMessage(sa_exc.InvalidRequestError, "inactive due to a rollback in a subtransaction", sess.begin)
         sess.close()
 
     @engines.close_open_connections
@@ -517,9 +517,9 @@ class SessionTest(TestBase, AssertsExecutionResults):
         sess.flush()
         assert transaction.get_or_add(testing.db) is transaction.get_or_add(c) is c
 
-        self.assertRaisesMessage(exceptions.InvalidRequestError, "Session already has a Connection associated", transaction.add, testing.db.connect())
-        self.assertRaisesMessage(exceptions.InvalidRequestError, "Session already has a Connection associated", transaction.get_or_add, testing.db.connect())
-        self.assertRaisesMessage(exceptions.InvalidRequestError, "Session already has a Connection associated", transaction.add, testing.db)
+        self.assertRaisesMessage(sa_exc.InvalidRequestError, "Session already has a Connection associated", transaction.add, testing.db.connect())
+        self.assertRaisesMessage(sa_exc.InvalidRequestError, "Session already has a Connection associated", transaction.get_or_add, testing.db.connect())
+        self.assertRaisesMessage(sa_exc.InvalidRequestError, "Session already has a Connection associated", transaction.add, testing.db)
 
         transaction._rollback()
         assert len(sess.query(User).all()) == 0
@@ -571,8 +571,8 @@ class SessionTest(TestBase, AssertsExecutionResults):
 
         user = User()
 
-        self.assertRaisesMessage(exceptions.InvalidRequestError, "is not persisted", s.update, user)
-        self.assertRaisesMessage(exceptions.InvalidRequestError, "is not persisted", s.delete, user)
+        self.assertRaisesMessage(sa_exc.InvalidRequestError, "is not persisted", s.update, user)
+        self.assertRaisesMessage(sa_exc.InvalidRequestError, "is not persisted", s.delete, user)
 
         s.save(user)
         s.flush()
@@ -598,13 +598,13 @@ class SessionTest(TestBase, AssertsExecutionResults):
         assert user in s
         assert user not in s.dirty
 
-        self.assertRaisesMessage(exceptions.InvalidRequestError, "is already persistent", s.save, user)
+        self.assertRaisesMessage(sa_exc.InvalidRequestError, "is already persistent", s.save, user)
 
         s2 = create_session()
-        self.assertRaisesMessage(exceptions.InvalidRequestError, "is already attached to session", s2.delete, user)
+        self.assertRaisesMessage(sa_exc.InvalidRequestError, "is already attached to session", s2.delete, user)
 
         u2 = s2.query(User).get(user.user_id)
-        self.assertRaisesMessage(exceptions.InvalidRequestError, "already persisted with a different identity", s.delete, u2)
+        self.assertRaisesMessage(sa_exc.InvalidRequestError, "already persisted with a different identity", s.delete, u2)
 
         s.delete(user)
         s.flush()
@@ -863,7 +863,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
         u1 = User()
         sess1.save(u1)
 
-        self.assertRaisesMessage(exceptions.InvalidRequestError, "already attached to session", sess2.save, u1)
+        self.assertRaisesMessage(sa_exc.InvalidRequestError, "already attached to session", sess2.save, u1)
 
         u2 = pickle.loads(pickle.dumps(u1))
 

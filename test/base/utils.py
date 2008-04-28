@@ -1,6 +1,6 @@
 import testenv; testenv.configure_for_tests()
 import threading, time, unittest
-from sqlalchemy import util, sql, exceptions
+from sqlalchemy import util, sql, exc
 from testlib import *
 from testlib import sorted
 
@@ -59,7 +59,7 @@ class ColumnCollectionTest(TestBase):
         try:
             cc['col1'] in cc
             assert False
-        except exceptions.ArgumentError, e:
+        except exc.ArgumentError, e:
             assert str(e) == "__contains__ requires a string argument"
 
     def test_compare(self):

@@ -3,7 +3,7 @@ including the deprecated versions of these arguments"""
 
 import testenv; testenv.configure_for_tests()
 from sqlalchemy import *
-from sqlalchemy import engine, exceptions
+from sqlalchemy import engine, exc
 from testlib import *
 
 
@@ -41,7 +41,7 @@ class BindTest(TestBase):
             try:
                 meth()
                 assert False
-            except exceptions.UnboundExecutionError, e:
+            except exc.UnboundExecutionError, e:
                 self.assertEquals(
                     str(e),
                     "The MetaData "
@@ -59,7 +59,7 @@ class BindTest(TestBase):
             try:
                 meth()
                 assert False
-            except exceptions.UnboundExecutionError, e:
+            except exc.UnboundExecutionError, e:
                 self.assertEquals(
                     str(e),
                     "The Table 'test_table' "
@@ -79,7 +79,7 @@ class BindTest(TestBase):
             try:
                 meth()
                 assert False
-            except exceptions.UnboundExecutionError, e:
+            except exc.UnboundExecutionError, e:
                 self.assertEquals(
                     str(e),
                     "The Table 'test_table' "
@@ -201,7 +201,7 @@ class BindTest(TestBase):
                     assert e.bind is None
                     e.execute()
                     assert False
-                except exceptions.UnboundExecutionError, e:
+                except exc.UnboundExecutionError, e:
                     assert str(e).endswith(
                         'is not bound and does not support direct '
                         'execution. Supply this statement to a Connection or '
@@ -248,7 +248,7 @@ class BindTest(TestBase):
             try:
                 sess.flush()
                 assert False
-            except exceptions.InvalidRequestError, e:
+            except exc.InvalidRequestError, e:
                 assert str(e).startswith("Could not locate any Engine or Connection bound to mapper")
         finally:
             if isinstance(bind, engine.Connection):

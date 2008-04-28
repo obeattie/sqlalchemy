@@ -8,7 +8,7 @@ import testlib.config as config
 from testlib.compat import *
 
 sql, sqltypes, schema, MetaData, clear_mappers, Session, util = None, None, None, None, None, None, None
-sa_exceptions = None
+sa_exc = None
 
 __all__ = ('TestBase', 'AssertsExecutionResults', 'ComparesTables', 'ORMTest', 'AssertsCompiledSQL')
 
@@ -224,17 +224,17 @@ def emits_warning(*messages):
     # - update: jython looks ok, it uses cpython's module
     def decorate(fn):
         def safe(*args, **kw):
-            global sa_exceptions
-            if sa_exceptions is None:
-                import sqlalchemy.exceptions as sa_exceptions
+            global sa_exc
+            if sa_exc is None:
+                import sqlalchemy.exc as sa_exc
 
             if not messages:
                 filters = [dict(action='ignore',
-                                category=sa_exceptions.SAWarning)]
+                                category=sa_exc.SAWarning)]
             else:
                 filters = [dict(action='ignore',
                                 message=message,
-                                category=sa_exceptions.SAWarning)
+                                category=sa_exc.SAWarning)
                            for message in messages ]
             for f in filters:
                 warnings.filterwarnings(**f)
@@ -259,17 +259,17 @@ def uses_deprecated(*messages):
 
     def decorate(fn):
         def safe(*args, **kw):
-            global sa_exceptions
-            if sa_exceptions is None:
-                import sqlalchemy.exceptions as sa_exceptions
+            global sa_exc
+            if sa_exc is None:
+                import sqlalchemy.exc as sa_exc
 
             if not messages:
                 filters = [dict(action='ignore',
-                                category=sa_exceptions.SADeprecationWarning)]
+                                category=sa_exc.SADeprecationWarning)]
             else:
                 filters = [dict(action='ignore',
                                 message=message,
-                                category=sa_exceptions.SADeprecationWarning)
+                                category=sa_exc.SADeprecationWarning)
                            for message in
                            [ (m.startswith('//') and
                               ('Call to deprecated function ' + m[2:]) or m)
@@ -287,13 +287,13 @@ def uses_deprecated(*messages):
 def resetwarnings():
     """Reset warning behavior to testing defaults."""
 
-    global sa_exceptions
-    if sa_exceptions is None:
-        import sqlalchemy.exceptions as sa_exceptions
+    global sa_exc
+    if sa_exc is None:
+        import sqlalchemy.exc as sa_exc
 
     warnings.resetwarnings()
-    warnings.filterwarnings('error', category=sa_exceptions.SADeprecationWarning)
-    warnings.filterwarnings('error', category=sa_exceptions.SAWarning)
+    warnings.filterwarnings('error', category=sa_exc.SADeprecationWarning)
+    warnings.filterwarnings('error', category=sa_exc.SAWarning)
 
     if sys.version_info < (2, 4):
         warnings.filterwarnings('ignore', category=FutureWarning)
