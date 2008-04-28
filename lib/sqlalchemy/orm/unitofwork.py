@@ -17,13 +17,15 @@ unique against their primary key identity using an *identity map*
 pattern.  The Unit of Work then maintains lists of objects that are
 new, dirty, or deleted and provides the capability to flush all those
 changes at once.
+
 """
 
-import StringIO, weakref
-from sqlalchemy import util, logging, topological, exceptions
-from sqlalchemy.orm import attributes, interfaces, identity
+import StringIO
+
+from sqlalchemy import util, logging, topological
+from sqlalchemy.orm import attributes, interfaces
 from sqlalchemy.orm import util as mapperutil
-from sqlalchemy.orm.mapper import object_mapper, _state_mapper, _state_has_identity
+from sqlalchemy.orm.mapper import _state_mapper
 
 # Load lazily
 object_session = None

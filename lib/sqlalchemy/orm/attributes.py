@@ -4,12 +4,16 @@
 # This module is part of SQLAlchemy and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
-import inspect, operator, new, weakref
+import inspect
+import operator
+import new
+import weakref
 from itertools import chain
+
 from sqlalchemy import util
 from sqlalchemy.util import attrgetter, itemgetter, EMPTY_SET
 from sqlalchemy.orm import interfaces, collections
-from sqlalchemy import exceptions
+import sqlalchemy.exceptions as sa_exc
 
 
 PASSIVE_NORESULT = util.symbol('PASSIVE_NORESULT')
@@ -433,7 +437,7 @@ class MutableScalarAttributeImpl(ScalarAttributeImpl):
         super(ScalarAttributeImpl, self).__init__(class_, key, callable_, class_manager, compare_function=compare_function, **kwargs)
         class_manager.mutable_attributes.add(key)
         if copy_function is None:
-            raise exceptions.ArgumentError("MutableScalarAttributeImpl requires a copy function")
+            raise sa_exc.ArgumentError("MutableScalarAttributeImpl requires a copy function")
         self.copy = copy_function
 
     def get_history(self, state, passive=False):
@@ -993,7 +997,7 @@ class InstanceState(object):
 
     def rollback(self):
         if not self.savepoints:
-            raise exceptions.InvalidRequestError("No savepoints are set; can't rollback.")
+            raise sa_exc.InvalidRequestError("No savepoints are set; can't rollback.")
         
         (savepoint, self.parents, self.pending, self.committed_state) = self.savepoints.pop()
         

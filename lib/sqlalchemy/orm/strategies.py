@@ -6,11 +6,13 @@
 
 """sqlalchemy.orm.interfaces.LoaderStrategy implementations, and related MapperOptions."""
 
-from sqlalchemy import sql, util, exceptions, logging
+import sqlalchemy.exceptions as sa_exc
+from sqlalchemy import sql, util, logging
 from sqlalchemy.sql import util as sql_util
 from sqlalchemy.sql import visitors, expression, operators
 from sqlalchemy.orm import mapper, attributes
-from sqlalchemy.orm.interfaces import LoaderStrategy, StrategizedOption, MapperOption, PropertyOption, serialize_path, deserialize_path
+from sqlalchemy.orm.interfaces import LoaderStrategy, StrategizedOption,\
+     MapperOption, PropertyOption, serialize_path, deserialize_path
 from sqlalchemy.orm import session as sessionlib
 from sqlalchemy.orm import util as mapperutil
 
@@ -210,7 +212,7 @@ class LoadDeferredColumns(object):
 
         session = sessionlib._state_session(state)
         if session is None:
-            raise exceptions.UnboundExecutionError("Parent instance %s is not bound to a Session; deferred load operation of attribute '%s' cannot proceed" % (mapperutil.state_str(state), self.key))
+            raise sa_exc.UnboundExecutionError("Parent instance %s is not bound to a Session; deferred load operation of attribute '%s' cannot proceed" % (mapperutil.state_str(state), self.key))
 
         query = session.query(localparent)
         ident = state.key[1]
@@ -455,8 +457,8 @@ class LoadLazyAttribute(object):
         if session is None:
             try:
                 session = instance_mapper.get_session()
-            except exceptions.InvalidRequestError:
-                raise exceptions.UnboundExecutionError("Parent instance %s is not bound to a Session, and no contextual session is established; lazy load operation of attribute '%s' cannot proceed" % (mapperutil.state_str, self.key))
+            except sa_exc.InvalidRequestError:
+                raise sa_exc.UnboundExecutionError("Parent instance %s is not bound to a Session, and no contextual session is established; lazy load operation of attribute '%s' cannot proceed" % (mapperutil.state_str, self.key))
 
         q = session.query(prop.mapper).autoflush(False)._adapt_all_clauses()
         

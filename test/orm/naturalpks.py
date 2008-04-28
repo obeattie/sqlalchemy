@@ -1,7 +1,7 @@
 import testenv; testenv.configure_for_tests()
 from sqlalchemy import *
 from sqlalchemy.orm import *
-from sqlalchemy.orm import attributes
+from sqlalchemy.orm import attributes, exc as orm_exc
 from sqlalchemy import exceptions
 
 from testlib.fixtures import *
@@ -69,7 +69,7 @@ class NaturalPKTest(ORMTest):
         # in this case so theres no way to look it up.  criterion-
         # based session invalidation could solve this [ticket:911]
         sess.expire(u1)
-        self.assertRaises(exceptions.ObjectDeletedError, getattr, u1, 'username')
+        self.assertRaises(orm_exc.ObjectDeletedError, getattr, u1, 'username')
 
         sess.clear()
         assert sess.get(User, 'jack') is None

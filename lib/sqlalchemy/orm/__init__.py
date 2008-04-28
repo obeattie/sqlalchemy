@@ -11,6 +11,7 @@ See the SQLAlchemy object relational tutorial and mapper configuration
 documentation for an overview of how this module is used.
 """
 
+from sqlalchemy.orm import exc
 from sqlalchemy.orm.mapper import Mapper, object_mapper, class_mapper, _mapper_registry
 from sqlalchemy.orm.interfaces import MapperExtension, SessionExtension, EXT_CONTINUE, EXT_STOP, EXT_PASS, ExtensionOption, PropComparator, InstrumentationManager
 from sqlalchemy.orm.properties import SynonymProperty, ComparableProperty, PropertyLoader, ColumnProperty, CompositeProperty, BackRef

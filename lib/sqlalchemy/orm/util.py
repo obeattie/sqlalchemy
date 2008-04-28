@@ -5,8 +5,10 @@
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
 import new
-from sqlalchemy import sql, util, exceptions
-from sqlalchemy.sql import visitors, expression, util as sql_util, operators
+
+import sqlalchemy.exceptions as sa_exc
+from sqlalchemy import sql, util
+from sqlalchemy.sql import expression, util as sql_util, operators
 from sqlalchemy.orm.interfaces import MapperExtension, EXT_CONTINUE, PropComparator, MapperProperty
 from sqlalchemy.orm import attributes
 
@@ -26,7 +28,7 @@ class CascadeOptions(object):
         self.refresh_expire = "refresh-expire" in values or "all" in values
         for x in values:
             if x not in all_cascades:
-                raise exceptions.ArgumentError("Invalid cascade option '%s'" % x)
+                raise sa_exc.ArgumentError("Invalid cascade option '%s'" % x)
 
     def __contains__(self, item):
         return getattr(self, item.replace("-", "_"), False)
@@ -125,10 +127,10 @@ def identity_key(*args, **kwargs):
         elif len(args) == 3:
             class_, ident, entity_name = args
         else:
-            raise exceptions.ArgumentError("expected up to three "
+            raise sa_exc.ArgumentError("expected up to three "
                 "positional arguments, got %s" % len(args))
         if kwargs:
-            raise exceptions.ArgumentError("unknown keyword arguments: %s"
+            raise sa_exc.ArgumentError("unknown keyword arguments: %s"
                 % ", ".join(kwargs.keys()))
         mapper = class_mapper(class_, entity_name=entity_name)
         if "ident" in locals():
@@ -136,7 +138,7 @@ def identity_key(*args, **kwargs):
         return mapper.identity_key_from_row(row)
     instance = kwargs.pop("instance")
     if kwargs:
-        raise exceptions.ArgumentError("unknown keyword arguments: %s"
+        raise sa_exc.ArgumentError("unknown keyword arguments: %s"
             % ", ".join(kwargs.keys()))
     mapper = object_mapper(instance)
     return mapper.identity_key_from_instance(instance)
@@ -201,7 +203,7 @@ class ExtensionCarrier(object):
             else:
                 return EXT_CONTINUE
         try:
-            _do.__name__ = funcname
+            _do.__name__ = method.im_func.func_name
         except:
             pass
         return _do
@@ -468,7 +470,7 @@ def class_mapper(class_, entity_name=None, compile=True, raiseerror=True):
     except (KeyError, AttributeError):
         if not raiseerror:
             return
-        raise exceptions.InvalidRequestError(
+        raise sa_exc.InvalidRequestError(
             "Class '%s' entity name '%s' has no mapper associated with it" %
             (class_.__name__, entity_name))
     if compile:
@@ -541,7 +543,6 @@ def identity_equal(a, b):
     return state_a.key == state_b.key
 
 # TODO: Avoid circular import.
-from sqlalchemy.orm import attributes
 attributes.identity_equal = identity_equal
 attributes._is_aliased_class = _is_aliased_class
 attributes._entity_info = _entity_info

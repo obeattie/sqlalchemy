@@ -15,21 +15,23 @@ operations at the SQL (non-ORM) level.  ``Query`` differs from ``Select`` in
 that it returns ORM-mapped objects and interacts with an ORM session, whereas
 the ``Select`` construct interacts directly with the database to return
 iterable result sets.
+
 """
 
 from itertools import chain
-from sqlalchemy import sql, util, exceptions, logging
-from sqlalchemy.sql import util as sql_util
+
+from sqlalchemy import sql, util, logging
+import sqlalchemy.exceptions as sa_exc
+import sqlalchemy.sql.util as sql_util
 from sqlalchemy.sql import expression, visitors, operators
-from sqlalchemy.orm import mapper, object_mapper
-
-from sqlalchemy.orm.util import _state_mapper, _is_mapped_class, _is_aliased_class, _entity_descriptor, _entity_info, _class_to_mapper, _orm_columns, AliasedClass, _orm_selectable
-from sqlalchemy.orm import util as mapperutil
-from sqlalchemy.orm import interfaces
-from sqlalchemy.orm import attributes
-
+from sqlalchemy.orm import attributes, interfaces, mapper, object_mapper
+from sqlalchemy.orm.util import _state_mapper, _is_mapped_class, \
+     _is_aliased_class, _entity_descriptor, _entity_info, _class_to_mapper, \
+     _orm_columns, AliasedClass, _orm_selectable, join as orm_join, ORMAdapter
 
 __all__ = ['Query', 'QueryContext', 'aliased']
+
+
 aliased = AliasedClass
 
 def _generative(*assertions):
@@ -202,7 +204,7 @@ class Query(object):
         
     def _entity_zero(self):
         if not getattr(self._entities[0], 'primary_entity', False):
-            raise exceptions.InvalidRequestError("No primary mapper set up for this Query.")
+            raise sa_exc.InvalidRequestError("No primary mapper set up for this Query.")
         return self._entities[0]
 
     def _mapper_zero(self):
@@ -228,17 +230,17 @@ class Query(object):
         
     def _only_mapper_zero(self):
         if len(self._entities) > 1:
-            raise exceptions.InvalidRequestError("This operation requires a Query against a single mapper.")
+            raise sa_exc.InvalidRequestError("This operation requires a Query against a single mapper.")
         return self._mapper_zero()
     
     def _only_entity_zero(self):
         if len(self._entities) > 1:
-            raise exceptions.InvalidRequestError("This operation requires a Query against a single mapper.")
+            raise sa_exc.InvalidRequestError("This operation requires a Query against a single mapper.")
         return self._entity_zero()
 
     def _generate_mapper_zero(self):
         if not getattr(self._entities[0], 'primary_entity', False):
-            raise exceptions.InvalidRequestError("No primary mapper set up for this Query.")
+            raise sa_exc.InvalidRequestError("No primary mapper set up for this Query.")
         entity = self._entities[0]._clone()
         self._entities = [entity] + self._entities[1:]
         return entity
@@ -267,11 +269,11 @@ class Query(object):
     
     def __no_from_condition(self, meth):
         if self._from_obj:
-            raise exceptions.InvalidRequestError("Query.%s() being called on a Query which already has a FROM clause established.  This usage is deprecated.")
+            raise sa_exc.InvalidRequestError("Query.%s() being called on a Query which already has a FROM clause established.  This usage is deprecated.")
 
     def __no_statement_condition(self, meth):
         if self._statement:
-            raise exceptions.InvalidRequestError(
+            raise sa_exc.InvalidRequestError(
                 ("Query.%s() being called on a Query with an existing full "
                  "statement - can't apply criterion.") % meth)
     
@@ -415,7 +417,7 @@ class Query(object):
         key = self._only_mapper_zero().identity_key_from_primary_key(ident)
         instance = self.populate_existing()._get(key, ident, **kwargs)
         if instance is None and raiseerr:
-            raise exceptions.InvalidRequestError("No instance found for identity %s" % repr(ident))
+            raise sa_exc.InvalidRequestError("No instance found for identity %s" % repr(ident))
         return instance
 
     def query_from_parent(cls, instance, property, **kwargs):
@@ -501,7 +503,7 @@ class Query(object):
                 if isinstance(prop, properties.PropertyLoader) and prop.mapper is self._mapper_zero():
                     break
             else:
-                raise exceptions.InvalidRequestError("Could not locate a property which relates instances of class '%s' to instances of class '%s'" % (self._mapper_zero().class_.__name__, instance.__class__.__name__))
+                raise sa_exc.InvalidRequestError("Could not locate a property which relates instances of class '%s' to instances of class '%s'" % (self._mapper_zero().class_.__name__, instance.__class__.__name__))
         else:
             prop = mapper.get_property(property, resolve_synonyms=True)
         return self.filter(prop.compare(operators.eq, instance, value_is_parent=True))
@@ -603,7 +605,7 @@ class Query(object):
         if len(args) == 1:
             kwargs.update(args[0])
         elif len(args) > 0:
-            raise exceptions.ArgumentError("params() takes zero or one positional argument, which is a dictionary.")
+            raise sa_exc.ArgumentError("params() takes zero or one positional argument, which is a dictionary.")
         self._params = self._params.copy()
         self._params.update(kwargs)
     params = _generative()(params)
@@ -618,7 +620,7 @@ class Query(object):
             criterion = sql.text(criterion)
 
         if criterion is not None and not isinstance(criterion, sql.ClauseElement):
-            raise exceptions.ArgumentError("filter() argument must be of type sqlalchemy.sql.ClauseElement or string")
+            raise sa_exc.ArgumentError("filter() argument must be of type sqlalchemy.sql.ClauseElement or string")
             
         criterion = self._adapt_clause(criterion, True, True)
         
@@ -688,7 +690,7 @@ class Query(object):
             criterion = sql.text(criterion)
 
         if criterion is not None and not isinstance(criterion, sql.ClauseElement):
-            raise exceptions.ArgumentError("having() argument must be of type sqlalchemy.sql.ClauseElement or string")
+            raise sa_exc.ArgumentError("having() argument must be of type sqlalchemy.sql.ClauseElement or string")
 
         criterion = self._adapt_clause(criterion, True, True)
 
@@ -835,7 +837,7 @@ class Query(object):
                                 clause = ent.selectable
                                 break
                         else:
-                            raise exceptions.InvalidRequestError("No clause to join from")
+                            raise sa_exc.InvalidRequestError("No clause to join from")
 
                 descriptor, prop = _entity_descriptor(target, key)
 
@@ -854,7 +856,7 @@ class Query(object):
                             target = use_selectable
                     else:
                         if not use_selectable.is_derived_from(prop.mapper.mapped_table):
-                            raise exceptions.InvalidRequestError("Selectable '%s' is not derived from '%s'" % (use_selectable.description, prop.mapper.mapped_table.description))
+                            raise sa_exc.InvalidRequestError("Selectable '%s' is not derived from '%s'" % (use_selectable.description, prop.mapper.mapped_table.description))
             
                         if not isinstance(use_selectable, expression.Alias):
                             use_selectable = use_selectable.alias()
@@ -867,7 +869,7 @@ class Query(object):
                         if prop.secondary is not None and prop.secondary not in self.__currenttables:
                             # TODO: this check is not strong enough for different paths to the same endpoint which
                             # does not use secondary tables
-                            raise exceptions.InvalidRequestError("Can't join to property '%s'; a path to this table along a different secondary table already exists.  Use the `alias=True` argument to `join()`." % descriptor)
+                            raise sa_exc.InvalidRequestError("Can't join to property '%s'; a path to this table along a different secondary table already exists.  Use the `alias=True` argument to `join()`." % descriptor)
 
                         target = prop.mapper
                         continue
@@ -886,15 +888,15 @@ class Query(object):
                     target = prop.mapper
 
             if prop._is_self_referential() and not create_aliases and not use_selectable:
-                raise exceptions.InvalidRequestError("Self-referential join on %s requires target selectable, or the aliased=True flag" % descriptor)
+                raise sa_exc.InvalidRequestError("Self-referential join on %s requires target selectable, or the aliased=True flag" % descriptor)
 
-            clause = mapperutil.join(clause, target, prop, isouter=outerjoin)
+            clause = orm_join(clause, target, prop, isouter=outerjoin)
             if alias_criterion: 
-                self._filter_aliases = mapperutil.ORMAdapter(target, 
+                self._filter_aliases = ORMAdapter(target, 
                         equivalents=prop.mapper._equivalent_columns, chain_to=self._filter_aliases)
 
                 if aliased_entity:
-                    self.__mapper_loads_polymorphically_with(prop.mapper, mapperutil.ORMAdapter(target, equivalents=prop.mapper._equivalent_columns))
+                    self.__mapper_loads_polymorphically_with(prop.mapper, ORMAdapter(target, equivalents=prop.mapper._equivalent_columns))
 
         self._from_obj = clause
         self._joinpoint = target
@@ -1025,9 +1027,9 @@ class Query(object):
         if len(ret) == 1:
             return ret[0]
         elif len(ret) == 0:
-            raise exceptions.InvalidRequestError('No rows returned for one()')
+            raise sa_exc.InvalidRequestError('No rows returned for one()')
         else:
-            raise exceptions.InvalidRequestError('Multiple rows returned for one()')
+            raise sa_exc.InvalidRequestError('Multiple rows returned for one()')
 
     def __iter__(self):
         context = self._compile_context()
@@ -1141,7 +1143,7 @@ class Query(object):
                 try:
                     params[_get_params[primary_key].key] = ident[i]
                 except IndexError:
-                    raise exceptions.InvalidRequestError("Could not find enough values to formulate primary key for query.get(); primary key columns are %s" % ', '.join(["'%s'" % str(c) for c in q.mapper.primary_key]))
+                    raise sa_exc.InvalidRequestError("Could not find enough values to formulate primary key for query.get(); primary key columns are %s" % ', '.join(["'%s'" % str(c) for c in q.mapper.primary_key]))
             q._params = params
 
         if lockmode is not None:
@@ -1206,7 +1208,7 @@ class Query(object):
             try:
                 for_update = {'read':'read','update':True,'update_nowait':'nowait',None:False}[self._lockmode]
             except KeyError:
-                raise exceptions.ArgumentError("Unknown lockmode '%s'" % self._lockmode)
+                raise sa_exc.ArgumentError("Unknown lockmode '%s'" % self._lockmode)
         else:
             for_update = False
             
@@ -1441,7 +1443,7 @@ class _ColumnEntity(_QueryEntity):
         elif isinstance(column, (attributes.QueryableAttribute, mapper.Mapper._CompileOnAttr)):
             column = column.__clause_element__()
         elif not isinstance(column, sql.ColumnElement):
-            raise exceptions.InvalidRequestError("Invalid column expression '%r'" % column)
+            raise sa_exc.InvalidRequestError("Invalid column expression '%r'" % column)
 
         if not hasattr(column, '_label'):
             column = column.label(None)

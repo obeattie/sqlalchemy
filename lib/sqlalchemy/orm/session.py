@@ -6,12 +6,14 @@
 
 """Provides the Session class and related utilities."""
 
-
 import weakref
+
+import sqlalchemy.exceptions as sa_exc
 import sqlalchemy.orm.attributes
-from sqlalchemy import util, exceptions, sql, engine
+from sqlalchemy import util, sql, engine
 from sqlalchemy.sql import util as sql_util
-from sqlalchemy.orm import unitofwork, query, attributes, util as mapperutil, SessionExtension
+from sqlalchemy.orm import exc, unitofwork, query, attributes, \
+     util as mapperutil, SessionExtension
 from sqlalchemy.orm.util import object_mapper as _object_mapper
 from sqlalchemy.orm.util import class_mapper as _class_mapper
 from sqlalchemy.orm.util import _state_mapper, _state_has_identity, _class_to_mapper
@@ -20,6 +22,7 @@ from sqlalchemy.orm.unitofwork import UOWTransaction
 from sqlalchemy.orm import identity
 
 __all__ = ['Session', 'SessionTransaction', 'SessionExtension']
+
 
 def sessionmaker(bind=None, class_=None, autoflush=True, transactional=True, **kwargs):
     """Generate a custom-configured [sqlalchemy.orm.session#Session] class.
@@ -121,11 +124,11 @@ class SessionTransaction(object):
     def _assert_is_active(self):
         self._assert_is_open()
         if not self._active:
-            raise exceptions.InvalidRequestError("The transaction is inactive due to a rollback in a subtransaction and should be closed")
+            raise sa_exc.InvalidRequestError("The transaction is inactive due to a rollback in a subtransaction and should be closed")
 
     def _assert_is_open(self):
         if self.session is None:
-            raise exceptions.InvalidRequestError("The transaction is closed")
+            raise sa_exc.InvalidRequestError("The transaction is closed")
 
     def connection(self, bindkey, **kwargs):
         self._assert_is_active()
@@ -141,7 +144,7 @@ class SessionTransaction(object):
             return (self,)
         else:
             if self._parent is None:
-                raise exceptions.InvalidRequestError("Transaction %s is not on the active transaction list" % upto)
+                raise sa_exc.InvalidRequestError("Transaction %s is not on the active transaction list" % upto)
             return (self,) + self._parent._iterate_parents(upto)
 
     def add(self, bind):
@@ -150,7 +153,7 @@ class SessionTransaction(object):
             return self._parent.add(bind)
 
         if bind.engine in self._connections:
-            raise exceptions.InvalidRequestError("Session already has a Connection associated for the given %sEngine" % (isinstance(bind, engine.Connection) and "Connection's " or ""))
+            raise sa_exc.InvalidRequestError("Session already has a Connection associated for the given %sEngine" % (isinstance(bind, engine.Connection) and "Connection's " or ""))
         return self.get_or_add(bind)
 
     def get_or_add(self, bind):
@@ -167,7 +170,7 @@ class SessionTransaction(object):
             if isinstance(bind, engine.Connection):
                 conn = bind
                 if conn.engine in self._connections:
-                    raise exceptions.InvalidRequestError("Session already has a Connection associated for the given Connection's Engine")
+                    raise sa_exc.InvalidRequestError("Session already has a Connection associated for the given Connection's Engine")
             else:
                 conn = bind.contextual_connect()
 
@@ -183,7 +186,7 @@ class SessionTransaction(object):
 
     def _prepare(self):
         if self._parent is not None or not self.session.twophase:
-            raise exceptions.InvalidRequestError("Only root two phase transactions of can be prepared")
+            raise sa_exc.InvalidRequestError("Only root two phase transactions of can be prepared")
         self._prepare_impl()
     prepare = util.deprecated()(_prepare)
     
@@ -508,7 +511,7 @@ class Session(object):
             if self.transactional:
                 self.begin()
             else:
-                raise exceptions.InvalidRequestError("No transaction is begun.")
+                raise sa_exc.InvalidRequestError("No transaction is begun.")
 
         self.transaction._commit()
         if self.transaction is None and self.transactional:
@@ -527,7 +530,7 @@ class Session(object):
             if self.transactional:
                 self.begin()
             else:
-                raise exceptions.InvalidRequestError("No transaction is begun.")
+                raise sa_exc.InvalidRequestError("No transaction is begun.")
 
         self.transaction._prepare()
 
@@ -666,7 +669,7 @@ class Session(object):
             if self.bind:
                 return self.bind
             else:
-                raise exceptions.UnboundExecutionError("This session is unbound to any Engine or Connection; specify a mapper to get_bind()")
+                raise sa_exc.UnboundExecutionError("This session is not bound to any Engine or Connection; specify a mapper to get_bind()")
 
         elif self.__binds:
             if mapper:
@@ -685,12 +688,12 @@ class Session(object):
         elif isinstance(clause, sql.expression.ClauseElement) and clause.bind:
             return clause.bind
         elif not mapper:
-            raise exceptions.UnboundExecutionError("Could not locate any mapper associated with SQL expression")
+            raise sa_exc.UnboundExecutionError("Could not locate any mapper associated with SQL expression")
         else:
             mapper = _class_to_mapper(mapper)
             e = mapper.mapped_table.bind
             if e is None:
-                raise exceptions.UnboundExecutionError("Could not locate any Engine or Connection bound to mapper '%s'" % str(mapper))
+                raise sa_exc.UnboundExecutionError("Could not locate any Engine or Connection bound to mapper '%s'" % str(mapper))
             return e
 
     def query(self, *entities, **kwargs):
@@ -758,7 +761,7 @@ class Session(object):
         if self.query(_object_mapper(instance))._get(
                 state.key, refresh_instance=state,
                 only_load_props=attribute_names) is None:
-            raise exceptions.InvalidRequestError("Could not refresh instance '%s'" % mapperutil.instance_str(instance))
+            raise sa_exc.InvalidRequestError("Could not refresh instance '%s'" % mapperutil.instance_str(instance))
 
     def expire_all(self):
         """Expires all persistent instances within this Session.  
@@ -923,7 +926,7 @@ class Session(object):
         key = state.key
         if key is None:
             if dont_load:
-                raise exceptions.InvalidRequestError("merge() with dont_load=True option does not support objects transient (i.e. unpersisted) objects.  flush() all changes on mapped instances before merging with dont_load=True.")
+                raise sa_exc.InvalidRequestError("merge() with dont_load=True option does not support objects transient (i.e. unpersisted) objects.  flush() all changes on mapped instances before merging with dont_load=True.")
             key = mapper._identity_key_from_state(state)
 
         merged = None
@@ -932,7 +935,7 @@ class Session(object):
                 merged = self.identity_map[key]
             elif dont_load:
                 if state.modified:
-                    raise exceptions.InvalidRequestError("merge() with dont_load=True option does not support objects marked as 'dirty'.  flush() all changes on mapped instances before merging with dont_load=True.")
+                    raise sa_exc.InvalidRequestError("merge() with dont_load=True option does not support objects marked as 'dirty'.  flush() all changes on mapped instances before merging with dont_load=True.")
 
                 merged = mapper.class_manager.new_instance()
                 merged_state = attributes.instance_state(merged)
@@ -973,11 +976,11 @@ class Session(object):
 
     def _validate_persistent(self, state):
         if not self.identity_map.contains_state(state):
-            raise exceptions.InvalidRequestError("Instance '%s' is not persistent within this Session" % mapperutil.state_str(state))
+            raise sa_exc.InvalidRequestError("Instance '%s' is not persistent within this Session" % mapperutil.state_str(state))
 
     def _save_impl(self, state):
         if state.key is not None:
-            raise exceptions.InvalidRequestError(
+            raise sa_exc.InvalidRequestError(
                 "Object '%s' already has an identity - it can't be registered "
                 "as pending" % repr(obj))
         self._attach(state)
@@ -990,12 +993,12 @@ class Session(object):
             return
 
         if state.key is None:
-            raise exceptions.InvalidRequestError(
+            raise sa_exc.InvalidRequestError(
                 "Instance '%s' is not persisted" %
                 mapperutil.state_str(state))
                 
         if state.key in self.identity_map and not self.identity_map.contains_state(state):
-            raise exceptions.InvalidRequestError(
+            raise sa_exc.InvalidRequestError(
                 "Could not update instance '%s', identity key %s; a different "
                 "instance with the same identity key already exists in this "
                 "session." % (mapperutil.state_str(state), state.key))
@@ -1016,9 +1019,9 @@ class Session(object):
             if ignore_transient:
                 return
             else:
-                raise exceptions.InvalidRequestError("Instance '%s' is not persisted" % mapperutil.state_str(state))
+                raise sa_exc.InvalidRequestError("Instance '%s' is not persisted" % mapperutil.state_str(state))
         if state.key in self.identity_map and not self.identity_map.contains_state(state):
-            raise exceptions.InvalidRequestError(
+            raise sa_exc.InvalidRequestError(
                 "Instance '%s' is with key %s already persisted with a "
                 "different identity" % (mapperutil.state_str(state),
                                         state.key))
@@ -1028,7 +1031,7 @@ class Session(object):
 
     def _attach(self, state):
         if state.session_id and state.session_id is not self.hash_key:
-            raise exceptions.InvalidRequestError(
+            raise sa_exc.InvalidRequestError(
                 "Object '%s' is already attached to session '%s' "
                 "(this is '%s')" % (mapperutil.state_str(state),
                                     state.session_id, self.hash_key))
@@ -1119,7 +1122,7 @@ class Session(object):
         for state in new.union(dirty).intersection(objset).difference(deleted):
             is_orphan = _state_mapper(state)._is_orphan(state)
             if is_orphan and not _state_has_identity(state):
-                raise exceptions.FlushError("instance %s is an unsaved, pending instance and is an orphan (is not attached to %s)" %
+                raise exc.FlushError("instance %s is an unsaved, pending instance and is an orphan (is not attached to %s)" %
                     (
                         mapperutil.state_str(state),
                         ", nor ".join(["any parent '%s' instance via that classes' '%s' attribute" % (klass.__name__, key) for (key,klass) in _state_mapper(state).delete_orphans])
@@ -1261,7 +1264,7 @@ def _state_for_unsaved_instance(instance, entity_name):
     if manager.has_state(instance):
         state = manager.state_of(instance)
         if state.key is not None:
-            raise exceptions.InvalidRequestError(
+            raise sa_exc.InvalidRequestError(
                 "Instance '%s' is already persistent" %
                 mapperutil.state_str(state))
     else:

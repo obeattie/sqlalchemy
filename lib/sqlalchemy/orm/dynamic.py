@@ -1,8 +1,21 @@
-"""'dynamic' collection API.  returns Query() objects on the 'read' side, alters
-a special AttributeHistory on the 'write' side."""
+# dynamic.py
+# Copyright (C) the SQLAlchemy authors and contributors
+#
+# This module is part of SQLAlchemy and is released under
+# the MIT License: http://www.opensource.org/licenses/mit-license.php
 
-from sqlalchemy import exceptions, util, logging
-from sqlalchemy.orm import attributes, object_session, util as mapperutil, strategies
+"""Dynamic collection API.
+
+Dynamic collections act like Query() objects for read operations and support
+basic add/delete mutation.
+
+"""
+
+from sqlalchemy import logging, util
+import sqlalchemy.exceptions as sa_exc
+
+from sqlalchemy.orm import attributes, object_session, \
+     util as mapperutil, strategies
 from sqlalchemy.orm.query import Query
 from sqlalchemy.orm.mapper import has_identity, object_mapper
 
@@ -150,8 +163,8 @@ class AppenderQuery(Query):
             if sess is None:
                 try:
                     sess = object_mapper(instance).get_session()
-                except exceptions.InvalidRequestError:
-                    raise exceptions.UnboundExecutionError("Parent instance %s is not bound to a Session, and no contextual session is established; lazy load operation of attribute '%s' cannot proceed" % (mapperutil.instance_str(instance), self.attr.key))
+                except sa_exc.InvalidRequestError:
+                    raise sa_exc.UnboundExecutionError("Parent instance %s is not bound to a Session, and no contextual session is established; lazy load operation of attribute '%s' cannot proceed" % (mapperutil.instance_str(instance), self.attr.key))
 
         q = sess.query(self.attr.target_mapper).with_parent(instance, self.attr.key)
         if self.attr.order_by:

@@ -2,9 +2,9 @@
 
 import testenv; testenv.configure_for_tests()
 from sqlalchemy import *
-from sqlalchemy import exceptions
+from sqlalchemy import exceptions as base_exc
 from sqlalchemy.orm import *
-from sqlalchemy.orm import attributes
+from sqlalchemy.orm import attributes, exc
 from testlib import *
 from testlib.fixtures import *
 import gc
@@ -57,7 +57,7 @@ class ExpireTest(FixtureTest):
         u = s.get(User, 7)
         s.clear()
 
-        self.assertRaisesMessage(exceptions.InvalidRequestError, r"is not persistent within this Session", s.expire, u)
+        self.assertRaisesMessage(base_exc.InvalidRequestError, r"is not persistent within this Session", s.expire, u)
     
     def test_get_refreshes(self):
         mapper(User, users)
@@ -79,7 +79,7 @@ class ExpireTest(FixtureTest):
         users.delete().where(User.id==10).execute()
         
         # object is gone, get() raises
-        self.assertRaises(exceptions.ObjectDeletedError, s.get, User, 10)
+        self.assertRaises(exc.ObjectDeletedError, s.get, User, 10)
         
     def test_expire_doesntload_on_set(self):
         mapper(User, users)
@@ -102,7 +102,7 @@ class ExpireTest(FixtureTest):
 
         sess.expire(u, attribute_names=['name'])
         sess.expunge(u)
-        self.assertRaises(exceptions.UnboundExecutionError, getattr, u, 'name')
+        self.assertRaises(base_exc.UnboundExecutionError, getattr, u, 'name')
     
     def test_pending_raises(self):
         # this was the opposite in 0.4, but the reasoning there seemed off.
@@ -111,7 +111,7 @@ class ExpireTest(FixtureTest):
         sess = create_session()
         u = User(id=15)
         sess.save(u)
-        self.assertRaises(exceptions.InvalidRequestError, sess.expire, u, ['name'])
+        self.assertRaises(base_exc.InvalidRequestError, sess.expire, u, ['name'])
         
     def test_no_instance_key(self):
         # this tests an artificial condition such that 
@@ -685,7 +685,7 @@ class RefreshTest(FixtureTest):
         s = create_session()
         u = s.get(User, 7)
         s.clear()
-        self.assertRaisesMessage(exceptions.InvalidRequestError, r"is not persistent within this Session", lambda: s.refresh(u))
+        self.assertRaisesMessage(base_exc.InvalidRequestError, r"is not persistent within this Session", lambda: s.refresh(u))
         
     def test_refresh_expired(self):
         mapper(User, users)

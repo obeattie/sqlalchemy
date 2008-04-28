@@ -6,18 +6,20 @@
 
 """MapperProperty implementations.
 
-This is a private module which defines the behavior of
-invidual ORM-mapped attributes.
+This is a private module which defines the behavior of invidual ORM-mapped
+attributes.
+
 """
 
-from sqlalchemy import sql, schema, util, exceptions, logging
+from sqlalchemy import sql, schema, util, logging
+import sqlalchemy.exceptions as sa_exc
 from sqlalchemy.sql.util import ClauseAdapter, criterion_as_pairs, find_columns
 from sqlalchemy.sql import visitors, operators, ColumnElement, expression
-from sqlalchemy.orm import mapper, sync, strategies, attributes, dependency, object_mapper
-from sqlalchemy.orm import session as sessionlib
+from sqlalchemy.orm import mapper, sync, strategies, attributes, dependency, \
+     object_mapper, session as sessionlib
 from sqlalchemy.orm.util import CascadeOptions, _class_to_mapper, _orm_annotate
-from sqlalchemy.orm.interfaces import StrategizedProperty, PropComparator, MapperProperty, ONETOMANY, MANYTOONE, MANYTOMANY
-from sqlalchemy.exceptions import ArgumentError
+from sqlalchemy.orm.interfaces import StrategizedProperty, PropComparator, \
+     MapperProperty, ONETOMANY, MANYTOONE, MANYTOMANY
 
 __all__ = ('ColumnProperty', 'CompositeProperty', 'SynonymProperty',
            'ComparableProperty', 'PropertyLoader', 'BackRef')
@@ -44,7 +46,7 @@ class ColumnProperty(StrategizedProperty):
         # sanity check
         for col in columns:
             if not isinstance(col, ColumnElement):
-                raise ArgumentError('column_property() must be given a ColumnElement as its argument.  Try .label() or .as_scalar() for selectables.')
+                raise sa_exc.ArgumentError('column_property() must be given a ColumnElement as its argument.  Try .label() or .as_scalar() for selectables.')
 
     def do_init(self):
         super(ColumnProperty, self).do_init()
@@ -276,7 +278,7 @@ class PropertyLoader(StrategizedProperty):
             self.cascade = CascadeOptions("save-update, merge")
 
         if self.passive_deletes == 'all' and ("delete" in self.cascade or "delete-orphan" in self.cascade):
-            raise exceptions.ArgumentError("Can't set passive_deletes='all' in conjunction with 'delete' or 'delete-orphan' cascade")
+            raise sa_exc.ArgumentError("Can't set passive_deletes='all' in conjunction with 'delete' or 'delete-orphan' cascade")
 
         self.order_by = order_by
 
@@ -316,7 +318,7 @@ class PropertyLoader(StrategizedProperty):
                     return self.prop._optimized_compare(None)
             elif self.prop.uselist:
                 if not hasattr(other, '__iter__'):
-                    raise exceptions.InvalidRequestError("Can only compare a collection to an iterable object.  Use contains().")
+                    raise sa_exc.InvalidRequestError("Can only compare a collection to an iterable object.  Use contains().")
                 else:
                     j = self.prop.primaryjoin
                     if self.prop.secondaryjoin:
@@ -359,7 +361,7 @@ class PropertyLoader(StrategizedProperty):
             
         def any(self, criterion=None, **kwargs):
             if not self.prop.uselist:
-                raise exceptions.InvalidRequestError("'any()' not implemented for scalar attributes. Use has().")
+                raise sa_exc.InvalidRequestError("'any()' not implemented for scalar attributes. Use has().")
 
             j, criterion, from_obj = self.__join_and_criterion(criterion, **kwargs)
 
@@ -367,14 +369,14 @@ class PropertyLoader(StrategizedProperty):
 
         def has(self, criterion=None, **kwargs):
             if self.prop.uselist:
-                raise exceptions.InvalidRequestError("'has()' not implemented for collections.  Use any().")
+                raise sa_exc.InvalidRequestError("'has()' not implemented for collections.  Use any().")
             j, criterion, from_obj = self.__join_and_criterion(criterion, **kwargs)
 
             return sql.exists([1], j & criterion, from_obj=from_obj)
 
         def contains(self, other):
             if not self.prop.uselist:
-                raise exceptions.InvalidRequestError("'contains' not implemented for scalar attributes.  Use ==")
+                raise sa_exc.InvalidRequestError("'contains' not implemented for scalar attributes.  Use ==")
             clause = self.prop._optimized_compare(other)
 
             if self.prop.secondaryjoin:
@@ -397,7 +399,7 @@ class PropertyLoader(StrategizedProperty):
                     return self.has()
 
             if self.prop.uselist and not hasattr(other, '__iter__'):
-                raise exceptions.InvalidRequestError("Can only compare a collection to an iterable object")
+                raise sa_exc.InvalidRequestError("Can only compare a collection to an iterable object")
 
             return self.__negated_contains_or_equals(other)
 
@@ -471,7 +473,7 @@ class PropertyLoader(StrategizedProperty):
             for c in instances:
                 if c is not None and c not in visited_instances and (halt_on is None or not halt_on(c)):
                     if not isinstance(c, self.mapper.class_):
-                        raise exceptions.AssertionError("Attribute '%s' on class '%s' doesn't handle objects of type '%s'" % (self.key, str(self.parent.class_), str(c.__class__)))
+                        raise sa_exc.AssertionError("Attribute '%s' on class '%s' doesn't handle objects of type '%s'" % (self.key, str(self.parent.class_), str(c.__class__)))
                     visited_instances.add(c)
 
                     # cascade using the mapper local to this object, so that its individual properties are located
@@ -505,7 +507,7 @@ class PropertyLoader(StrategizedProperty):
             # accept a callable to suit various deferred-configurational schemes
             self.mapper = mapper.class_mapper(self.argument(), entity_name=self.entity_name, compile=False)
         else:
-            raise exceptions.ArgumentError("relation '%s' expects a class or a mapper argument (received: %s)" % (self.key, type(self.argument)))
+            raise sa_exc.ArgumentError("relation '%s' expects a class or a mapper argument (received: %s)" % (self.key, type(self.argument)))
         assert isinstance(self.mapper, mapper.Mapper), self.mapper
 
         if not self.parent.concrete:
@@ -522,14 +524,14 @@ class PropertyLoader(StrategizedProperty):
 
         if self.cascade.delete_orphan:
             if self.parent.class_ is self.mapper.class_:
-                raise exceptions.ArgumentError("In relationship '%s', can't establish 'delete-orphan' cascade "
+                raise sa_exc.ArgumentError("In relationship '%s', can't establish 'delete-orphan' cascade "
                             "rule on a self-referential relationship.  "
                             "You probably want cascade='all', which includes delete cascading but not orphan detection." %(str(self)))
             self.mapper.primary_mapper().delete_orphans.append((self.key, self.parent.class_))
 
     def __determine_joins(self):
         if self.secondaryjoin is not None and self.secondary is None:
-            raise exceptions.ArgumentError("Property '" + self.key + "' specified with secondary join condition but no secondary argument")
+            raise sa_exc.ArgumentError("Property '" + self.key + "' specified with secondary join condition but no secondary argument")
         # if join conditions were not specified, figure them out based on foreign keys
 
         def _search_for_join(mapper, table):
@@ -539,7 +541,7 @@ class PropertyLoader(StrategizedProperty):
             is a join."""
             try:
                 return sql.join(mapper.local_table, table)
-            except exceptions.ArgumentError, e:
+            except sa_exc.ArgumentError, e:
                 return sql.join(mapper.mapped_table, table)
 
         try:
@@ -551,8 +553,8 @@ class PropertyLoader(StrategizedProperty):
             else:
                 if self.primaryjoin is None:
                     self.primaryjoin = _search_for_join(self.parent, self.target).onclause
-        except exceptions.ArgumentError, e:
-            raise exceptions.ArgumentError("Could not determine join condition between parent/child tables on relation %s.  "
+        except sa_exc.ArgumentError, e:
+            raise sa_exc.ArgumentError("Could not determine join condition between parent/child tables on relation %s.  "
                         "Specify a 'primaryjoin' expression.  If this is a many-to-many relation, 'secondaryjoin' is needed as well." % (self))
 
 
@@ -571,7 +573,7 @@ class PropertyLoader(StrategizedProperty):
 
         if self._arg_local_remote_pairs:
             if not arg_foreign_keys:
-                raise exceptions.ArgumentError("foreign_keys argument is required with _local_remote_pairs argument")
+                raise sa_exc.ArgumentError("foreign_keys argument is required with _local_remote_pairs argument")
             self.foreign_keys = util.OrderedSet(arg_foreign_keys)
             self._opposite_side = util.OrderedSet()
             for l, r in self._arg_local_remote_pairs:
@@ -586,15 +588,15 @@ class PropertyLoader(StrategizedProperty):
 
             if not eq_pairs:
                 if not self.viewonly and criterion_as_pairs(self.primaryjoin, consider_as_foreign_keys=arg_foreign_keys, any_operator=True):
-                    raise exceptions.ArgumentError("Could not locate any equated, locally mapped column pairs for primaryjoin condition '%s' on relation %s. "
+                    raise sa_exc.ArgumentError("Could not locate any equated, locally mapped column pairs for primaryjoin condition '%s' on relation %s. "
                         "For more relaxed rules on join conditions, the relation may be marked as viewonly=True." % (self.primaryjoin, self)
                     )
                 else:
                     if arg_foreign_keys:
-                        raise exceptions.ArgumentError("Could not determine relation direction for primaryjoin condition '%s', on relation %s. "
+                        raise sa_exc.ArgumentError("Could not determine relation direction for primaryjoin condition '%s', on relation %s. "
                             "Specify _local_remote_pairs=[(local, remote), (local, remote), ...] to explicitly establish the local/remote column pairs." % (self.primaryjoin, self))
                     else:
-                        raise exceptions.ArgumentError("Could not determine relation direction for primaryjoin condition '%s', on relation %s. "
+                        raise sa_exc.ArgumentError("Could not determine relation direction for primaryjoin condition '%s', on relation %s. "
                             "Specify the foreign_keys argument to indicate which columns on the relation are foreign." % (self.primaryjoin, self))
         
             self.foreign_keys = util.OrderedSet([r for l, r in eq_pairs])
@@ -607,11 +609,11 @@ class PropertyLoader(StrategizedProperty):
             
             if not sq_pairs:
                 if not self.viewonly and criterion_as_pairs(self.secondaryjoin, consider_as_foreign_keys=arg_foreign_keys, any_operator=True):
-                    raise exceptions.ArgumentError("Could not locate any equated, locally mapped column pairs for secondaryjoin condition '%s' on relation %s. "
+                    raise sa_exc.ArgumentError("Could not locate any equated, locally mapped column pairs for secondaryjoin condition '%s' on relation %s. "
                         "For more relaxed rules on join conditions, the relation may be marked as viewonly=True." % (self.secondaryjoin, self)
                     )
                 else:
-                    raise exceptions.ArgumentError("Could not determine relation direction for secondaryjoin condition '%s', on relation %s. "
+                    raise sa_exc.ArgumentError("Could not determine relation direction for secondaryjoin condition '%s', on relation %s. "
                     "Specify the foreign_keys argument to indicate which columns on the relation are foreign." % (self.secondaryjoin, self))
 
             self.foreign_keys.update([r for l, r in sq_pairs])
@@ -623,7 +625,7 @@ class PropertyLoader(StrategizedProperty):
     def __determine_remote_side(self):
         if self._arg_local_remote_pairs:
             if self.remote_side:
-                raise exceptions.ArgumentError("remote_side argument is redundant against more detailed _local_remote_side argument.")
+                raise sa_exc.ArgumentError("remote_side argument is redundant against more detailed _local_remote_side argument.")
             if self.direction is MANYTOONE:
                 eq_pairs = [(r, l) for l, r in self._arg_local_remote_pairs]
             else:
@@ -653,11 +655,11 @@ class PropertyLoader(StrategizedProperty):
         if self.direction is ONETOMANY:
             for l in self.local_side:
                 if not self.__col_is_part_of_mappings(l):
-                    raise exceptions.ArgumentError("Local column '%s' is not part of mapping %s.  Specify remote_side argument to indicate which column lazy join condition should compare against." % (l, self.parent))
+                    raise sa_exc.ArgumentError("Local column '%s' is not part of mapping %s.  Specify remote_side argument to indicate which column lazy join condition should compare against." % (l, self.parent))
         elif self.direction is MANYTOONE:
             for r in self.remote_side:
                 if not self.__col_is_part_of_mappings(r):
-                    raise exceptions.ArgumentError("Remote column '%s' is not part of mapping %s.  Specify remote_side argument to indicate which column lazy join condition should bind." % (r, self.mapper))
+                    raise sa_exc.ArgumentError("Remote column '%s' is not part of mapping %s.  Specify remote_side argument to indicate which column lazy join condition should bind." % (r, self.mapper))
             
     def __determine_direction(self):
         """Determine our *direction*, i.e. do we represent one to
@@ -689,7 +691,7 @@ class PropertyLoader(StrategizedProperty):
                 manytoone = [c for c in self.foreign_keys if parenttable.c.contains_column(c)]
 
                 if not onetomany and not manytoone:
-                    raise exceptions.ArgumentError(
+                    raise sa_exc.ArgumentError(
                         "Can't determine relation direction for relationship '%s' "
                         "- foreign key columns are present in neither the "
                         "parent nor the child's mapped tables" %(str(self)))
@@ -702,7 +704,7 @@ class PropertyLoader(StrategizedProperty):
                     self.direction = MANYTOONE
                     break
             else:
-                raise exceptions.ArgumentError(
+                raise sa_exc.ArgumentError(
                     "Can't determine relation direction for relationship '%s' "
                     "- foreign key columns are present in both the parent and "
                     "the child's mapped tables.  Specify 'foreign_keys' "
@@ -731,7 +733,7 @@ class PropertyLoader(StrategizedProperty):
             if self.backref is not None:
                 self.backref.compile(self)
         elif not mapper.class_mapper(self.parent.class_, compile=False)._get_property(self.key, raiseerr=False):
-            raise exceptions.ArgumentError("Attempting to assign a new relation '%s' to a non-primary mapper on class '%s'.  New relations can only be added to the primary mapper, i.e. the very first mapper created for class '%s' " % (self.key, self.parent.class_.__name__, self.parent.class_.__name__))
+            raise sa_exc.ArgumentError("Attempting to assign a new relation '%s' to a non-primary mapper on class '%s'.  New relations can only be added to the primary mapper, i.e. the very first mapper created for class '%s' " % (self.key, self.parent.class_.__name__, self.parent.class_.__name__))
 
         super(PropertyLoader, self).do_init()
 
@@ -854,7 +856,7 @@ class BackRef(object):
             mapper._get_property(self.key)._reverse_property = prop
 
         else:
-            raise exceptions.ArgumentError("Error creating backref '%s' on relation '%s': property of that name exists on mapper '%s'" % (self.key, prop, mapper))
+            raise sa_exc.ArgumentError("Error creating backref '%s' on relation '%s': property of that name exists on mapper '%s'" % (self.key, prop, mapper))
 
 mapper.ColumnProperty = ColumnProperty
 mapper.SynonymProperty = SynonymProperty

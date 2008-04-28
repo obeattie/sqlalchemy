@@ -93,16 +93,26 @@ explicit control over triggering append and remove events.
 
 The owning object and InstrumentedCollectionAttribute are also reachable
 through the adapter, allowing for some very sophisticated behavior.
+
 """
 
-import copy, inspect, sys, weakref
+import copy
+import inspect
+import sys
+import weakref
 
-from sqlalchemy import exceptions, schema, util as sautil
+import sqlalchemy.exceptions as sa_exc
+from sqlalchemy import schema
+import sqlalchemy.util as sautil
 from sqlalchemy.util import attrgetter, Set
+
 
 __all__ = ['collection', 'collection_adapter',
            'mapped_collection', 'column_mapped_collection',
            'attribute_mapped_collection']
+
+__instrumentation_mutex = sautil.threading.Lock()
+
 
 def column_mapped_collection(mapping_spec):
     """A dictionary-based collection type with column-based keying.
@@ -114,8 +124,8 @@ def column_mapped_collection(mapping_spec):
     can not, for example, map on foreign key values if those key values will
     change during the session, i.e. from None to a database-assigned integer
     after a session flush.
-    """
 
+    """
     from sqlalchemy.orm.util import _state_mapper
     from sqlalchemy.orm.attributes import instance_state
 
@@ -128,7 +138,7 @@ def column_mapped_collection(mapping_spec):
         cols = []
         for c in mapping_spec:
             if not isinstance(c, schema.Column):
-                raise exceptions.ArgumentError(
+                raise sa_exc.ArgumentError(
                     "mapping_spec tuple may only contain columns")
             cols.append(c)
         mapping_spec = tuple(cols)
@@ -149,8 +159,8 @@ def attribute_mapped_collection(attr_name):
     can not, for example, map on foreign key values if those key values will
     change during the session, i.e. from None to a database-assigned integer
     after a session flush.
-    """
 
+    """
     return lambda: MappedCollection(attrgetter(attr_name))
 
 
@@ -164,8 +174,8 @@ def mapped_collection(keyfunc):
     can not, for example, map on foreign key values if those key values will
     change during the session, i.e. from None to a database-assigned integer
     after a session flush.
-    """
 
+    """
     return lambda: MappedCollection(keyfunc)
 
 class collection(object):
@@ -192,8 +202,8 @@ class collection(object):
     Decorators can be specified in long-hand for Python 2.3, or with
     the class-level dict attribute '__instrumentation__'- see the source
     for details.
-    """
 
+    """
     # Bundled as a class solely for ease of use: packaging, doc strings,
     # importability.
 
@@ -235,8 +245,8 @@ class collection(object):
         If the appender method is internally instrumented, you must also
         receive the keyword argument '_sa_initiator' and ensure its
         promulgation to collection events.
-        """
 
+        """
         setattr(fn, '_sa_instrument_role', 'appender')
         return fn
     appender = classmethod(appender)
@@ -262,8 +272,8 @@ class collection(object):
         If the remove method is internally instrumented, you must also
         receive the keyword argument '_sa_initiator' and ensure its
         promulgation to collection events.
-        """
 
+        """
         setattr(fn, '_sa_instrument_role', 'remover')
         return fn
     remover = classmethod(remover)
@@ -276,8 +286,8 @@ class collection(object):
 
             @collection.iterator
             def __iter__(self): ...
-        """
 
+        """
         setattr(fn, '_sa_instrument_role', 'iterator')
         return fn
     iterator = classmethod(iterator)
@@ -296,8 +306,8 @@ class collection(object):
             # never be called, unless:
             @collection.internally_instrumented
             def extend(self, items): ...
-        """
 
+        """
         setattr(fn, '_sa_instrumented', True)
         return fn
     internally_instrumented = classmethod(internally_instrumented)
@@ -310,8 +320,8 @@ class collection(object):
         invoked immediately after the '_sa_adapter' property is set on
         the instance.  A single argument is passed: the collection adapter
         that has been linked, or None if unlinking.
-        """
 
+        """
         setattr(fn, '_sa_instrument_role', 'on_link')
         return fn
     on_link = classmethod(on_link)
@@ -343,8 +353,8 @@ class collection(object):
         Supply an implementation of this method if you want to expand the
         range of possible types that can be assigned in bulk or perform
         validation on the values about to be assigned.
-        """
 
+        """
         setattr(fn, '_sa_instrument_role', 'converter')
         return fn
     converter = classmethod(converter)
@@ -361,8 +371,8 @@ class collection(object):
 
             @collection.adds('entity')
             def do_stuff(self, thing, entity=None): ...
-        """
 
+        """
         def decorator(fn):
             setattr(fn, '_sa_instrument_before', ('fire_append_event', arg))
             return fn
@@ -381,8 +391,8 @@ class collection(object):
 
             @collection.replaces(2)
             def __setitem__(self, index, item): ...
-        """
 
+        """
         def decorator(fn):
             setattr(fn, '_sa_instrument_before', ('fire_append_event', arg))
             setattr(fn, '_sa_instrument_after', 'fire_remove_event')
@@ -403,8 +413,8 @@ class collection(object):
 
         For methods where the value to remove is not known at call-time, use
         collection.removes_return.
-        """
 
+        """
         def decorator(fn):
             setattr(fn, '_sa_instrument_before', ('fire_remove_event', arg))
             return fn
@@ -423,8 +433,8 @@ class collection(object):
 
         For methods where the value to remove is known at call-time, use
         collection.remove.
-        """
 
+        """
         def decorator(fn):
             setattr(fn, '_sa_instrument_after', 'fire_remove_event')
             return fn
@@ -436,7 +446,6 @@ class collection(object):
 # implementations
 def collection_adapter(collection):
     """Fetch the CollectionAdapter for a collection."""
-
     return getattr(collection, '_sa_adapter', None)
 
 def collection_iter(collection):
@@ -444,8 +453,8 @@ def collection_iter(collection):
 
     If the collection is an ORM collection, it need not be attached to an
     object to be iterable.
-    """
 
+    """
     try:
         return getattr(collection, '_sa_iterator',
                        getattr(collection, '__iter__'))()
@@ -463,8 +472,8 @@ class CollectionAdapter(object):
 
     The ORM uses an CollectionAdapter exclusively for interaction with
     entity collections.
-    """
 
+    """
     def __init__(self, attr, owner_state, data):
         self.attr = attr
         self._data = weakref.ref(data)
@@ -476,14 +485,12 @@ class CollectionAdapter(object):
 
     def link_to_self(self, data):
         """Link a collection to this adapter, and fire a link event."""
-
         setattr(data, '_sa_adapter', self)
         if hasattr(data, '_sa_on_link'):
             getattr(data, '_sa_on_link')(self)
 
     def unlink(self, data):
         """Unlink a collection from any adapter, and fire a link event."""
-
         setattr(data, '_sa_adapter', None)
         if hasattr(data, '_sa_on_link'):
             getattr(data, '_sa_on_link')(None)
@@ -500,8 +507,8 @@ class CollectionAdapter(object):
 
         If a converter implementation is not supplied on the collection,
         a default duck-typing-based implementation is used.
-        """
 
+        """
         converter = getattr(self._data(), '_sa_converter', None)
         if converter is not None:
             return converter(obj)
@@ -530,44 +537,36 @@ class CollectionAdapter(object):
 
     def append_with_event(self, item, initiator=None):
         """Add an entity to the collection, firing mutation events."""
-
         getattr(self._data(), '_sa_appender')(item, _sa_initiator=initiator)
 
     def append_without_event(self, item):
         """Add or restore an entity to the collection, firing no events."""
-
         getattr(self._data(), '_sa_appender')(item, _sa_initiator=False)
 
     def remove_with_event(self, item, initiator=None):
         """Remove an entity from the collection, firing mutation events."""
-
         getattr(self._data(), '_sa_remover')(item, _sa_initiator=initiator)
 
     def remove_without_event(self, item):
         """Remove an entity from the collection, firing no events."""
-
         getattr(self._data(), '_sa_remover')(item, _sa_initiator=False)
 
     def clear_with_event(self, initiator=None):
         """Empty the collection, firing a mutation event for each entity."""
-
         for item in list(self):
             self.remove_with_event(item, initiator)
 
     def clear_without_event(self):
         """Empty the collection, firing no events."""
-
         for item in list(self):
             self.remove_without_event(item)
 
     def __iter__(self):
         """Iterate over entities in the collection."""
-
         return getattr(self._data(), '_sa_iterator')()
 
     def __len__(self):
         """Count entities in the collection."""
-
         return len(list(getattr(self._data(), '_sa_iterator')()))
 
     def __nonzero__(self):
@@ -579,8 +578,8 @@ class CollectionAdapter(object):
         Initiator is the InstrumentedAttribute that initiated the membership
         mutation, and should be left as None unless you are passing along
         an initiator value from a chained operation.
-        """
 
+        """
         if initiator is not False and item is not None:
             self.attr.fire_append_event(self.owner_state, item, initiator)
 
@@ -590,8 +589,8 @@ class CollectionAdapter(object):
         Initiator is the InstrumentedAttribute that initiated the membership
         mutation, and should be left as None unless you are passing along
         an initiator value from a chained operation.
-        """
 
+        """
         if initiator is not False and item is not None:
             self.attr.fire_remove_event(self.owner_state, item, initiator)
 
@@ -600,8 +599,8 @@ class CollectionAdapter(object):
 
         Only called if the entity cannot be removed after calling
         fire_remove_event().
-        """
 
+        """
         self.attr.fire_pre_remove_event(self.owner_state, initiator=initiator)
 
     def __getstate__(self):
@@ -652,7 +651,6 @@ def bulk_replace(values, existing_adapter, new_adapter):
         for member in removals:
             existing_adapter.remove_with_event(member)
 
-__instrumentation_mutex = sautil.threading.Lock()
 def prepare_instrumentation(factory):
     """Prepare a callable for future use as a collection class factory.
 
@@ -662,8 +660,8 @@ def prepare_instrumentation(factory):
 
     This function is responsible for converting collection_class=list
     into the run-time behavior of collection_class=InstrumentedList.
-    """
 
+    """
     # Convert a builtin to 'Instrumented*'
     if factory in __canned_instrumentation:
         factory = __canned_instrumentation[factory]
@@ -686,8 +684,6 @@ def prepare_instrumentation(factory):
             __instrumentation_mutex.release()
 
     return factory
-# this was non-public but semi-advertised pre 0.4.4
-_prepare_instrumentation = prepare_instrumentation
 
 def __converting_factory(original_factory):
     """Convert the type returned by collection factories on the fly.
@@ -695,8 +691,8 @@ def __converting_factory(original_factory):
     Given a collection factory that returns a builtin type (e.g. a list),
     return a wrapped function that converts that type to one of our
     instrumented types.
-    """
 
+    """
     def wrapper():
         collection = original_factory()
         type_ = type(collection)
@@ -705,7 +701,7 @@ def __converting_factory(original_factory):
             # collection
             return __canned_instrumentation[type_](collection)
         else:
-            raise exceptions.InvalidRequestError(
+            raise sa_exc.InvalidRequestError(
                 "Collection class factories must produce instances of a "
                 "single class.")
     try:
@@ -718,7 +714,6 @@ def __converting_factory(original_factory):
 
 def _instrument_class(cls):
     """Modify methods in a class and install instrumentation."""
-
     # FIXME: more formally document this as a decoratorless/Python 2.3
     # option for specifying instrumentation.  (likely doc'd here in code only,
     # not in online docs.)
@@ -738,7 +733,7 @@ def _instrument_class(cls):
     # types is transformed into one of our trivial subclasses
     # (e.g. InstrumentedList).  Catch anything else that sneaks in here...
     if cls.__module__ == '__builtin__':
-        raise exceptions.ArgumentError(
+        raise sa_exc.ArgumentError(
             "Can not instrument a built-in type. Use a "
             "subclass, even a trivial one.")
 
@@ -791,7 +786,7 @@ def _instrument_class(cls):
     # ensure all roles are present, and apply implicit instrumentation if
     # needed
     if 'appender' not in roles or not hasattr(cls, roles['appender']):
-        raise exceptions.ArgumentError(
+        raise sa_exc.ArgumentError(
             "Type %s must elect an appender method to be "
             "a collection class" % cls.__name__)
     elif (roles['appender'] not in methods and
@@ -799,7 +794,7 @@ def _instrument_class(cls):
         methods[roles['appender']] = ('fire_append_event', 1, None)
 
     if 'remover' not in roles or not hasattr(cls, roles['remover']):
-        raise exceptions.ArgumentError(
+        raise sa_exc.ArgumentError(
             "Type %s must elect a remover method to be "
             "a collection class" % cls.__name__)
     elif (roles['remover'] not in methods and
@@ -807,7 +802,7 @@ def _instrument_class(cls):
         methods[roles['remover']] = ('fire_remove_event', 1, None)
 
     if 'iterator' not in roles or not hasattr(cls, roles['iterator']):
-        raise exceptions.ArgumentError(
+        raise sa_exc.ArgumentError(
             "Type %s must elect an iterator method to be "
             "a collection class" % cls.__name__)
 
@@ -825,7 +820,6 @@ def _instrument_class(cls):
 
 def _instrument_membership_mutator(method, before, argument, after):
     """Route method args and/or return value through the collection adapter."""
-
     # This isn't smart enough to handle @adds(1) for 'def fn(self, (a, b))'
     if before:
         fn_args = list(sautil.flatten_iterator(inspect.getargspec(method)[0]))
@@ -844,7 +838,7 @@ def _instrument_membership_mutator(method, before, argument, after):
         if before:
             if pos_arg is None:
                 if named_arg not in kw:
-                    raise exceptions.ArgumentError(
+                    raise sa_exc.ArgumentError(
                         "Missing argument %s" % argument)
                 value = kw[named_arg]
             else:
@@ -853,7 +847,7 @@ def _instrument_membership_mutator(method, before, argument, after):
                 elif named_arg in kw:
                     value = kw[named_arg]
                 else:
-                    raise exceptions.ArgumentError(
+                    raise sa_exc.ArgumentError(
                         "Missing argument %s" % argument)
 
         initiator = kw.pop('_sa_initiator', None)
@@ -882,7 +876,6 @@ def _instrument_membership_mutator(method, before, argument, after):
 
 def __set(collection, item, _sa_initiator=None):
     """Run set events, may eventually be inlined into decorators."""
-
     if _sa_initiator is not False and item is not None:
         executor = getattr(collection, '_sa_adapter', None)
         if executor:
@@ -890,7 +883,6 @@ def __set(collection, item, _sa_initiator=None):
 
 def __del(collection, item, _sa_initiator=None):
     """Run del events, may eventually be inlined into decorators."""
-
     if _sa_initiator is not False and item is not None:
         executor = getattr(collection, '_sa_adapter', None)
         if executor:
@@ -898,14 +890,12 @@ def __del(collection, item, _sa_initiator=None):
 
 def __before_delete(collection, _sa_initiator=None):
     """Special method to run 'commit existing value' methods"""
-
     executor = getattr(collection, '_sa_adapter', None)
     if executor:
         getattr(executor, 'fire_pre_remove_event')(_sa_initiator)
 
 def _list_decorators():
-    """Hand-turned instrumentation wrappers that can decorate any list-like
-    class."""
+    """Tailored instrumentation wrappers for any list-like class."""
 
     def _tidy(fn):
         setattr(fn, '_sa_instrumented', True)
@@ -1046,8 +1036,7 @@ def _list_decorators():
     return l
 
 def _dict_decorators():
-    """Hand-turned instrumentation wrappers that can decorate any dict-like
-    mapping class."""
+    """Tailored instrumentation wrappers for any dict-like mapping class."""
 
     def _tidy(fn):
         setattr(fn, '_sa_instrumented', True)
@@ -1142,8 +1131,7 @@ def _dict_decorators():
     return l
 
 def _set_decorators():
-    """Hand-turned instrumentation wrappers that can decorate any set-like
-    sequence class."""
+    """Tailored instrumentation wrappers for any set-like class."""
 
     def _tidy(fn):
         setattr(fn, '_sa_instrumented', True)
@@ -1351,6 +1339,7 @@ class MappedCollection(dict):
     ``set`` and ``remove`` are implemented in terms of a keying function: any
     callable that takes an object and returns an object for use as a dictionary
     key.
+
     """
 
     def __init__(self, keyfunc):
@@ -1360,16 +1349,17 @@ class MappedCollection(dict):
         returns an object for use as a dictionary key.
 
         The keyfunc will be called every time the ORM needs to add a member by
-        value-only (such as when loading instances from the database) or remove
-        a member.  The usual cautions about dictionary keying apply-
+        value-only (such as when loading instances from the database) or
+        remove a member.  The usual cautions about dictionary keying apply-
         ``keyfunc(object)`` should return the same output for the life of the
         collection.  Keying based on mutable properties can result in
         unreachable instances "lost" in the collection.
+
         """
         self.keyfunc = keyfunc
 
     def set(self, value, _sa_initiator=None):
-        """Add an item to the collection, with a key provided by this instance's keyfunc."""
+        """Add an item by value, consulting the keyfunc for the key."""
 
         key = self.keyfunc(value)
         self.__setitem__(key, value, _sa_initiator)
@@ -1377,12 +1367,12 @@ class MappedCollection(dict):
     set = collection.appender(set)
 
     def remove(self, value, _sa_initiator=None):
-        """Remove an item from the collection by value, consulting this instance's keyfunc for the key."""
+        """Remove an item by value, consulting the keyfunc for the key."""
 
         key = self.keyfunc(value)
         # Let self[key] raise if key is not in this collection
         if self[key] != value:
-            raise exceptions.InvalidRequestError(
+            raise sa_exc.InvalidRequestError(
                 "Can not remove '%s': collection holds '%s' for key '%s'. "
                 "Possible cause: is the MappedCollection key function "
                 "based on mutable properties or properties that only obtain "
@@ -1403,8 +1393,8 @@ class MappedCollection(dict):
         Raises a TypeError if the key in any (key, value) pair in the dictlike
         object does not match the key that this collection's keyfunc would
         have assigned for that value.
-        """
 
+        """
         for incoming_key, value in sautil.dictlike_iteritems(dictlike):
             new_key = self.keyfunc(value)
             if incoming_key != new_key:

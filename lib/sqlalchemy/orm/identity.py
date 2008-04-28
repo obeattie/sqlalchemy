@@ -1,8 +1,15 @@
-import weakref
-import threading
+# identity.py
+# Copyright (C) the SQLAlchemy authors and contributors
+#
+# This module is part of SQLAlchemy and is released under
+# the MIT License: http://www.opensource.org/licenses/mit-license.php
 
+import weakref
+
+import sqlalchemy.exceptions as sa_exc
+from sqlalchemy import util as base_util
 from sqlalchemy.orm import attributes
-from sqlalchemy import exceptions
+
 
 class IdentityMap(dict):
     def __init__(self):
@@ -71,7 +78,7 @@ class WeakInstanceDict(IdentityMap):
         self._wr = weakref.ref(self)
         # RLock because the mutex is used by a cleanup
         # handler, which can be called at any time (including within an already mutexed block)
-        self._mutex = threading.RLock()
+        self._mutex = base_util.threading.RLock()
 
     def __getitem__(self, key):
         state = dict.__getitem__(self, key)
@@ -98,7 +105,7 @@ class WeakInstanceDict(IdentityMap):
     def add(self, state):
         if state.key in self:
             if dict.__getitem__(self, state.key) is not state:
-                raise exceptions.AssertionError("A conflicting state is already present in the identity map for key %r" % state.key)
+                raise sa_exc.AssertionError("A conflicting state is already present in the identity map for key %r" % state.key)
         else:
             dict.__setitem__(self, state.key, state)
             state._instance_dict = self._wr
@@ -110,7 +117,7 @@ class WeakInstanceDict(IdentityMap):
         
     def remove(self, state):
         if not self.contains_state(state):
-            raise exceptions.AssertionError("State %s is not present in this identity map" % state)
+            raise sa_exc.AssertionError("State %s is not present in this identity map" % state)
         dict.__delitem__(self, state.key)
         del state._instance_dict
         self._manage_removed_state(state)
@@ -164,7 +171,7 @@ class StrongInstanceDict(IdentityMap):
     
     def remove(self, state):
         if not self.contains_state(state):
-            raise exceptions.AssertionError("State %s is not present in this identity map" % state)
+            raise sa_exc.AssertionError("State %s is not present in this identity map" % state)
         dict.__delitem__(self, state.key)
         self._manage_removed_state(state)
     

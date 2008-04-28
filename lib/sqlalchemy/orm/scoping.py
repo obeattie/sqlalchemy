@@ -1,8 +1,17 @@
-import inspect, types
+# scoping.py
+# Copyright (C) the SQLAlchemy authors and contributors
+#
+# This module is part of SQLAlchemy and is released under
+# the MIT License: http://www.opensource.org/licenses/mit-license.php
+
+import inspect
+import types
+
+import sqlalchemy.exceptions as sa_exc
 from sqlalchemy.util import ScopedRegistry, to_list, get_cls_kwargs
-from sqlalchemy.orm import MapperExtension, EXT_CONTINUE, object_session, class_mapper
+from sqlalchemy.orm import MapperExtension, EXT_CONTINUE, object_session, \
+     class_mapper
 from sqlalchemy.orm.session import Session
-from sqlalchemy import exceptions
 
 __all__ = ['ScopedSession']
 
@@ -33,7 +42,7 @@ class ScopedSession(object):
             scope = kwargs.pop('scope', False)
             if scope is not None:
                 if self.registry.has():
-                    raise exceptions.InvalidRequestError("Scoped session is already present; no new arguments may be specified.")
+                    raise sa_exc.InvalidRequestError("Scoped session is already present; no new arguments may be specified.")
                 else:
                     sess = self.session_factory(**kwargs)
                     self.registry.set(sess)
@@ -161,7 +170,7 @@ class _ScopedExt(MapperExtension):
                 if self.validate:
                     if not mapper.get_property(key, resolve_synonyms=False,
                                                raiseerr=False):
-                        raise exceptions.ArgumentError(
+                        raise sa_exc.ArgumentError(
                             "Invalid __init__ argument: '%s'" % key)
                 setattr(instance, key, value)
             kwargs.clear()

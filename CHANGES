@@ -1,3 +1,5 @@
+-*- coding: utf8; fill-column: 68 -*-
+
 =======
 CHANGES
 =======
@@ -5,39 +7,46 @@ CHANGES
 user_defined_state
 ==================
 
-    - The "__init__" trigger/decorator added by mapper now
-      attempts to exactly mirror the argument signature of the
-      original __init__.  The pass-through for '_sa_session' is
-      no longer implicit- you must allow for this keyword
-      argument in your constructor.
+    - The "__init__" trigger/decorator added by mapper now attempts
+      to exactly mirror the argument signature of the original
+      __init__.  The pass-through for '_sa_session' is no longer
+      implicit- you must allow for this keyword argument in your
+      constructor.
 
     - ClassState is renamed to ClassManager.
 
     - Classes may supply their own InstrumentationManager by
       providing a __sa_instrumentation_manager__ property.
 
-    - Custom instrumentation may use any mechanism to associate
-      a ClassManager with a class and an InstanceState with an
-      instance.  Attributes on those objects are still the
-      default association mechanism used by SQLAlchemy's native
+    - Custom instrumentation may use any mechanism to associate a
+      ClassManager with a class and an InstanceState with an
+      instance.  Attributes on those objects are still the default
+      association mechanism used by SQLAlchemy's native
       instrumentation.
 
-    - Moved entity_name, _sa_session_id, and _instance_key from
-      the instance object to the instance state.  These values
-      are still available in the old way, which is now
-      deprecated, using descriptors attached to the class.  A
-      deprecation warning will be issued when accessed.
+    - Moved entity_name, _sa_session_id, and _instance_key from the
+      instance object to the instance state.  These values are still
+      available in the old way, which is now deprecated, using
+      descriptors attached to the class.  A deprecation warning will
+      be issued when accessed.
 
-    - attribute savepoint/rollback capability has been added.  
-      For starters, this takes effect within the flush() call,
-      so that attribute changes which occur within flush()
-      are rolled back when the flush fails.  Since it's 
-      primarily new primary key values that get assigned within
-      flush(), expiring those attributes is not an option.
-      The next place we might use savepoints is within
-      SAVEPOINT transactions, since rolling back to a savepoint
-      is a transaction-contained operation.
-      
+    - attribute savepoint/rollback capability has been added.  For
+      starters, this takes effect within the flush() call, so that
+      attribute changes which occur within flush() are rolled back
+      when the flush fails.  Since it's primarily new primary key
+      values that get assigned within flush(), expiring those
+      attributes is not an option.  The next place we might use
+      savepoints is within SAVEPOINT transactions, since rolling
+      back to a savepoint is a transaction-contained operation.
+
+    - The _prepare_instrumentation alias for prepare_instrumentation
+      has been removed.
+
+    - ORM-related exceptions are now defined in sqlalchemy.orm.exc.
+      ConcurrentModificationError, FlushError, and
+      UnmappedColumnError compatibility aliases are installed in
+      sqlalchemy.exceptions during the import of sqlalchemy.orm.
+
 
 0.4.6
 =====

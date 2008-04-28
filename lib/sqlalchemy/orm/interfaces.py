@@ -4,17 +4,21 @@
 # This module is part of SQLAlchemy and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
-"""Semi-private implementation objects which form the basis
-of ORM-mapped attributes, query options and mapper extension.
+"""
 
-Defines the [sqlalchemy.orm.interfaces#MapperExtension] class,
-which can be end-user subclassed to add event-based functionality
-to mappers.  The remainder of this module is generally private to the
-ORM.
+Semi-private implementation objects which form the basis of ORM-mapped
+attributes, query options and mapper extension.
+
+Defines the [sqlalchemy.orm.interfaces#MapperExtension] class, which can be
+end-user subclassed to add event-based functionality to mappers.  The
+remainder of this module is generally private to the ORM.
+
 """
 
 from itertools import chain
-from sqlalchemy import exceptions, logging, util
+
+import sqlalchemy.exceptions as sa_exc
+from sqlalchemy import logging, util
 from sqlalchemy.sql import expression
 
 class_mapper = None
@@ -657,7 +661,7 @@ class PropertyOption(MapperOption):
                 return ent
         else:
             if raiseerr:
-                raise exceptions.ArgumentError("Can't find entity %s in Query.  Current list: %r" % (searchfor, [str(m.path_entity) for m in query._entities]))
+                raise sa_exc.ArgumentError("Can't find entity %s in Query.  Current list: %r" % (searchfor, [str(m.path_entity) for m in query._entities]))
             else:
                 return None
             
@@ -695,7 +699,7 @@ class PropertyOption(MapperOption):
                     path_element = entity.path_entity
                 key = prop.key
             else:
-                raise exceptions.ArgumentError("mapper option expects string key or list of attributes")
+                raise sa_exc.ArgumentError("mapper option expects string key or list of attributes")
             
             if current_path and key == current_path[1]:
                 current_path = current_path[2:]

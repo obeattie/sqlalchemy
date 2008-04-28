@@ -4,14 +4,17 @@
 # This module is part of SQLAlchemy and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
+"""Relationship dependencies.
 
-"""Bridge the ``PropertyLoader`` (i.e. a ``relation()``) and the
+Bridges the ``PropertyLoader`` (i.e. a ``relation()``) and the
 ``UOWTransaction`` together to allow processing of relation()-based
- dependencies at flush time.
+dependencies at flush time.
+
 """
 
-from sqlalchemy.orm import sync, attributes
-from sqlalchemy import sql, util, exceptions
+from sqlalchemy import sql, util
+import sqlalchemy.exceptions as sa_exc
+from sqlalchemy.orm import attributes, exc, sync
 from sqlalchemy.orm.interfaces import ONETOMANY, MANYTOONE, MANYTOMANY
 
 
@@ -41,7 +44,7 @@ class DependencyProcessor(object):
         self.enable_typechecks = prop.enable_typechecks
         self.key = prop.key
         if not self.prop.synchronize_pairs:
-            raise exceptions.ArgumentError("Can't build a DependencyProcessor for relation %s.  No target attributes to populate between parent and child are present" % self.prop)
+            raise sa_exc.ArgumentError("Can't build a DependencyProcessor for relation %s.  No target attributes to populate between parent and child are present" % self.prop)
 
     def _get_instrumented_attribute(self):
         """Return the ``InstrumentedAttribute`` handled by this
@@ -108,7 +111,7 @@ class DependencyProcessor(object):
         if not self.enable_typechecks:
             return
         if state is not None and not self.mapper._canload(state):
-            raise exceptions.FlushError("Attempting to flush an item of type %s on collection '%s', which is handled by mapper '%s' and does not load items of that type.  Did you mean to use a polymorphic mapper for this relationship ?  Set 'enable_typechecks=False' on the relation() to disable this exception.  Mismatched typeloading may cause bi-directional relationships (backrefs) to not function properly." % (state.class_, self.prop, self.mapper))
+            raise exc.FlushError("Attempting to flush an item of type %s on collection '%s', which is handled by mapper '%s' and does not load items of that type.  Did you mean to use a polymorphic mapper for this relationship ?  Set 'enable_typechecks=False' on the relation() to disable this exception.  Mismatched typeloading may cause bi-directional relationships (backrefs) to not function properly." % (state.class_, self.prop, self.mapper))
 
     def _synchronize(self, state, child, associationrow, clearkeys, uowcommit):
         """Called during a flush to synchronize primary key identifier
@@ -445,13 +448,13 @@ class ManyToManyDP(DependencyProcessor):
             statement = self.secondary.delete(sql.and_(*[c == sql.bindparam(c.key, type_=c.type) for c in self.secondary.c if c.key in associationrow]))
             result = connection.execute(statement, secondary_delete)
             if result.supports_sane_multi_rowcount() and result.rowcount != len(secondary_delete):
-                raise exceptions.ConcurrentModificationError("Deleted rowcount %d does not match number of secondary table rows deleted from table '%s': %d" % (result.rowcount, self.secondary.description, len(secondary_delete)))
+                raise exc.ConcurrentModificationError("Deleted rowcount %d does not match number of secondary table rows deleted from table '%s': %d" % (result.rowcount, self.secondary.description, len(secondary_delete)))
 
         if secondary_update:
             statement = self.secondary.update(sql.and_(*[c == sql.bindparam("old_" + c.key, type_=c.type) for c in self.secondary.c if c.key in associationrow]))
             result = connection.execute(statement, secondary_update)
             if result.supports_sane_multi_rowcount() and result.rowcount != len(secondary_update):
-                raise exceptions.ConcurrentModificationError("Updated rowcount %d does not match number of secondary table rows updated from table '%s': %d" % (result.rowcount, self.secondary.description, len(secondary_update)))
+                raise exc.ConcurrentModificationError("Updated rowcount %d does not match number of secondary table rows updated from table '%s': %d" % (result.rowcount, self.secondary.description, len(secondary_update)))
 
         if secondary_insert:
             statement = self.secondary.insert()

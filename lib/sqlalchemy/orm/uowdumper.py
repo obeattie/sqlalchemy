@@ -6,9 +6,9 @@
 
 """Dumps out a string representation of a UOWTask structure"""
 
+from sqlalchemy import util
 from sqlalchemy.orm import unitofwork
 from sqlalchemy.orm import util as mapperutil
-from sqlalchemy import util
 
 class UOWDumper(unitofwork.UOWExecutor):
     def __init__(self, tasks, buf):

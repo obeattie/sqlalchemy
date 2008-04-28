@@ -3,79 +3,81 @@
 #
 # This module is part of SQLAlchemy and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
+
 """Exceptions used with SQLAlchemy.
 
-The base exception class is SQLAlchemyError.  Exceptions which are raised as a result
-of DBAPI exceptions are all subclasses of [sqlalchemy.exceptions#DBAPIError]."""
+The base exception class is SQLAlchemyError.  Exceptions which are raised as a
+result of DBAPI exceptions are all subclasses of
+[sqlalchemy.exceptions#DBAPIError].
+
+"""
+
 
 class SQLAlchemyError(Exception):
     """Generic error class."""
 
 
 class ArgumentError(SQLAlchemyError):
-    """Raised for all those conditions where invalid arguments are
-    sent to constructed objects.  This error generally corresponds to
-    construction time state errors.
+    """Raised when an invalid or conflicting function argument is supplied.
+
+    This error generally corresponds to construction time state errors.
+
     """
 
 
-class CompileError(SQLAlchemyError):
-    """Raised when an error occurs during SQL compilation"""
-
-
-class TimeoutError(SQLAlchemyError):
-    """Raised when a connection pool times out on getting a connection."""
-
-
-class ConcurrentModificationError(SQLAlchemyError):
-    """Raised when a concurrent modification condition is detected."""
+class AssertionError(SQLAlchemyError):
+    """Corresponds to internal state being detected in an invalid state."""
 
 
 class CircularDependencyError(SQLAlchemyError):
     """Raised by topological sorts when a circular dependency is detected"""
 
 
-class FlushError(SQLAlchemyError):
-    """Raised when an invalid condition is detected upon a ``flush()``."""
+class CompileError(SQLAlchemyError):
+    """Raised when an error occurs during SQL compilation"""
+
+
+# Moved to orm.exc; compatability definition installed by orm import until 0.6
+ConcurrentModificationError = None
+
+class DisconnectionError(SQLAlchemyError):
+    """A disconnect is detected on a raw DB-API connection.
+
+    This error is raised and consumed internally by a connection pool.  It can
+    be raised by a ``PoolListener`` so that the host pool forces a disconnect.
+
+    """
+
+
+# Moved to orm.exc; compatability definition installed by orm import until 0.6
+FlushError = None
+
+class NoSuchColumnError(KeyError, SQLAlchemyError):
+    """A nonexistent column is requested from a ``RowProxy``."""
+
+
+class TimeoutError(SQLAlchemyError):
+    """Raised when a connection pool times out on getting a connection."""
 
 
 class InvalidRequestError(SQLAlchemyError):
-    """SQLAlchemy was asked to do something it can't do, return
-    nonexistent data, etc.
+    """SQLAlchemy was asked to do something it can't do.
 
     This error generally corresponds to runtime state errors.
+
     """
 
-class UnmappedColumnError(InvalidRequestError):
-    """A mapper was asked to return mapped information about a column
-    which it does not map"""
 
-class ObjectDeletedError(InvalidRequestError):
-    """an refresh() operation failed to re-locate an object's row in the database."""
-    
 class NoSuchTableError(InvalidRequestError):
-    """SQLAlchemy was asked to load a table's definition from the
-    database, but the table doesn't exist.
-    """
+    """Table does not exist or is not visible to a connection."""
+
 
 class UnboundExecutionError(InvalidRequestError):
     """SQL was attempted without a database connection to execute it on."""
 
-class AssertionError(SQLAlchemyError):
-    """Corresponds to internal state being detected in an invalid state."""
 
-
-class NoSuchColumnError(KeyError, SQLAlchemyError):
-    """Raised by ``RowProxy`` when a nonexistent column is requested from a row."""
-
-
-class DisconnectionError(SQLAlchemyError):
-    """Raised within ``Pool`` when a disconnect is detected on a raw DB-API connection.
-
-    This error is consumed internally by a connection pool.  It can be raised by
-    a ``PoolListener`` so that the host pool forces a disconnect.
-    """
-
+# Moved to orm.exc; compatability definition installed by orm import until 0.6
+UnmappedColumnError = None
 
 class DBAPIError(SQLAlchemyError):
     """Raised when the execution of a database operation fails.
@@ -94,6 +96,7 @@ class DBAPIError(SQLAlchemyError):
 
     The wrapped exception object is available in the ``orig`` attribute.
     Its type and properties are DB-API implementation specific.
+
     """
 
     def instance(cls, statement, params, orig, connection_invalidated=False):
@@ -129,39 +132,50 @@ class DBAPIError(SQLAlchemyError):
                          repr(self.statement), repr(self.params)])
 
 
-# As of 0.4, SQLError is now DBAPIError
+# As of 0.4, SQLError is now DBAPIError.
+# SQLError alias will be removed in 0.6.
 SQLError = DBAPIError
 
 class InterfaceError(DBAPIError):
     """Wraps a DB-API InterfaceError."""
 
+
 class DatabaseError(DBAPIError):
     """Wraps a DB-API DatabaseError."""
+
 
 class DataError(DatabaseError):
     """Wraps a DB-API DataError."""
 
+
 class OperationalError(DatabaseError):
     """Wraps a DB-API OperationalError."""
+
 
 class IntegrityError(DatabaseError):
     """Wraps a DB-API IntegrityError."""
 
+
 class InternalError(DatabaseError):
     """Wraps a DB-API InternalError."""
+
 
 class ProgrammingError(DatabaseError):
     """Wraps a DB-API ProgrammingError."""
 
+
 class NotSupportedError(DatabaseError):
     """Wraps a DB-API NotSupportedError."""
+
 
 # Warnings
 class SADeprecationWarning(DeprecationWarning):
     """Issued once per usage of a deprecated API."""
 
+
 class SAPendingDeprecationWarning(PendingDeprecationWarning):
     """Issued once per usage of a deprecated API."""
+
 
 class SAWarning(RuntimeWarning):
     """Issued at runtime."""
