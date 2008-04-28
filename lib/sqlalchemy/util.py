@@ -67,8 +67,8 @@ except NameError:
         return locals()
 
     py24_style_ops = py24_style_ops()
-    Set = type('Set', sets.Set, py24_style_ops)
-    FrozenSet = type('frozenset', sets.ImmutableSet, py24_style_ops)
+    Set = type('Set', (sets.Set,), py24_style_ops)
+    FrozenSet = type('frozenset', (sets.ImmutableSet,), py24_style_ops)
     del py24_style_ops
 
 EMPTY_SET = FrozenSet()
