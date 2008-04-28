@@ -7,7 +7,7 @@
 
 import datetime, re, time
 
-from sqlalchemy import schema, exceptions, pool, PassiveDefault
+from sqlalchemy import schema, exc, pool, PassiveDefault
 from sqlalchemy.engine import default
 import sqlalchemy.types as sqltypes
 import sqlalchemy.util as util
@@ -227,7 +227,7 @@ class SQLiteDialect(default.DefaultDialect):
 
     def create_connect_args(self, url):
         if url.username or url.password or url.host or url.port:
-            raise exceptions.ArgumentError(
+            raise exc.ArgumentError(
                 "Invalid SQLite URL: %s\n"
                 "Valid SQLite URL forms are:\n"
                 " sqlite:///:memory: (or, sqlite://)\n"
@@ -270,7 +270,7 @@ class SQLiteDialect(default.DefaultDialect):
                      "  SELECT * FROM sqlite_temp_master) "
                      "WHERE type='table' ORDER BY name")
                 rs = connection.execute(s)
-            except exceptions.DBAPIError:
+            except exc.DBAPIError:
                 raise
                 s = ("SELECT name FROM sqlite_master "
                      "WHERE type='table' ORDER BY name")
@@ -340,7 +340,7 @@ class SQLiteDialect(default.DefaultDialect):
             table.append_column(schema.Column(name, coltype, primary_key = primary_key, nullable = nullable, *colargs))
 
         if not found_table:
-            raise exceptions.NoSuchTableError(table.name)
+            raise exc.NoSuchTableError(table.name)
 
         c = connection.execute("%sforeign_key_list(%s)" % (pragma, qtable))
         fks = {}

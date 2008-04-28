@@ -19,7 +19,7 @@ is otherwise internal to SQLAlchemy.
 """
 
 import string, re, itertools
-from sqlalchemy import schema, engine, util, exceptions
+from sqlalchemy import schema, engine, util, exc
 from sqlalchemy.sql import operators, functions
 from sqlalchemy.sql import expression as sql
 
@@ -383,7 +383,7 @@ class DefaultCompiler(engine.Compiled):
         if name in self.binds:
             existing = self.binds[name]
             if existing is not bindparam and (existing.unique or bindparam.unique):
-                raise exceptions.CompileError("Bind parameter '%s' conflicts with unique bind parameter of the same name" % bindparam.key)
+                raise exc.CompileError("Bind parameter '%s' conflicts with unique bind parameter of the same name" % bindparam.key)
         self.binds[bindparam.key] = self.binds[name] = bindparam
         return self.bindparam_string(name)
 

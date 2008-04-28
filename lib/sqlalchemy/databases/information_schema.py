@@ -1,5 +1,5 @@
 import sqlalchemy.sql as sql
-import sqlalchemy.exceptions as exceptions
+import sqlalchemy.exc as exc
 from sqlalchemy import select, MetaData, Table, Column, String, Integer
 from sqlalchemy.schema import PassiveDefault, ForeignKeyConstraint
 
@@ -130,7 +130,7 @@ def reflecttable(connection, table, include_columns, ischema_names):
         table.append_column(Column(name, coltype, nullable=nullable, *colargs))
     
     if not found_table:
-        raise exceptions.NoSuchTableError(table.name)
+        raise exc.NoSuchTableError(table.name)
 
     # we are relying on the natural ordering of the constraint_column_usage table to return the referenced columns
     # in an order that corresponds to the ordinal_position in the key_constraints table, otherwise composite foreign keys

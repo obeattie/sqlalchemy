@@ -1,4 +1,4 @@
-from sqlalchemy import exceptions, schema, topological, util, sql
+from sqlalchemy import exc, schema, topological, util, sql
 from sqlalchemy.sql import expression, operators, visitors
 from itertools import chain
 
@@ -181,7 +181,7 @@ def criterion_as_pairs(expression, consider_as_foreign_keys=None, consider_as_re
     """traverse an expression and locate binary criterion pairs."""
     
     if consider_as_foreign_keys and consider_as_referenced_keys:
-        raise exceptions.ArgumentError("Can only specify one of 'consider_as_foreign_keys' or 'consider_as_referenced_keys'")
+        raise exc.ArgumentError("Can only specify one of 'consider_as_foreign_keys' or 'consider_as_referenced_keys'")
         
     def visit_binary(binary):
         if not any_operator and binary.operator != operators.eq:

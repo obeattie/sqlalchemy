@@ -12,7 +12,6 @@ as the base class for their own corresponding classes.
 
 """
 
-
 import re, random
 from sqlalchemy.engine import base
 from sqlalchemy.sql import compiler, expression

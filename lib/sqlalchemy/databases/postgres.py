@@ -21,7 +21,7 @@ parameter when creating the queries::
 
 import random, re, string
 
-from sqlalchemy import sql, schema, exceptions, util
+from sqlalchemy import sql, schema, exc, util
 from sqlalchemy.engine import base, default
 from sqlalchemy.sql import compiler, expression
 from sqlalchemy.sql import operators as sql_operators
@@ -373,7 +373,7 @@ class PGDialect(default.DefaultDialect):
 
     def last_inserted_ids(self):
         if self.context.last_inserted_ids is None:
-            raise exceptions.InvalidRequestError("no INSERT executed, or can't use cursor.lastrowid without Postgres OIDs enabled")
+            raise exc.InvalidRequestError("no INSERT executed, or can't use cursor.lastrowid without Postgres OIDs enabled")
         else:
             return self.context.last_inserted_ids
 
@@ -419,7 +419,7 @@ class PGDialect(default.DefaultDialect):
         v = connection.execute("select version()").scalar()
         m = re.match('PostgreSQL (\d+)\.(\d+)\.(\d+)', v)
         if not m:
-            raise exceptions.AssertionError("Could not determine version from string '%s'" % v)
+            raise exc.AssertionError("Could not determine version from string '%s'" % v)
         return tuple([int(x) for x in m.group(1, 2, 3)])
 
     def reflecttable(self, connection, table, include_columns):
@@ -459,7 +459,7 @@ class PGDialect(default.DefaultDialect):
         rows = c.fetchall()
 
         if not rows:
-            raise exceptions.NoSuchTableError(table.name)
+            raise exc.NoSuchTableError(table.name)
 
         domains = self._load_domains(connection)
 

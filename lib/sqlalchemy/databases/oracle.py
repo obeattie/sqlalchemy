@@ -7,7 +7,7 @@
 
 import datetime, random, re
 
-from sqlalchemy import util, sql, schema, exceptions, logging
+from sqlalchemy import util, sql, schema, exc, logging
 from sqlalchemy.engine import default, base
 from sqlalchemy.sql import compiler, visitors
 from sqlalchemy.sql import operators as sql_operators, functions as sql_functions
@@ -430,7 +430,7 @@ class OracleDialect(default.DefaultDialect):
         else:
             rows = result.fetchall()
             if len(rows) > 1:
-                raise exceptions.AssertionError("There are multiple tables visible to the schema, you must specify owner")
+                raise exc.AssertionError("There are multiple tables visible to the schema, you must specify owner")
             elif len(rows) == 1:
                 row = rows[0]
                 return row['TABLE_NAME'], row['TABLE_OWNER'], row['DB_LINK'], row['SYNONYM_NAME']
@@ -498,7 +498,7 @@ class OracleDialect(default.DefaultDialect):
             table.append_column(schema.Column(colname, coltype, nullable=nullable, *colargs))
 
         if not table.columns:
-           raise exceptions.AssertionError("Couldn't find any column information for table %s" % actual_name)
+           raise exc.AssertionError("Couldn't find any column information for table %s" % actual_name)
 
         c = connection.execute("""SELECT
              ac.constraint_name,

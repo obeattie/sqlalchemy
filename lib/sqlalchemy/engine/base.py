@@ -13,7 +13,7 @@ and result contexts.
 """
 
 import inspect, StringIO, sys
-from sqlalchemy import exceptions, schema, util, types, logging
+from sqlalchemy import exc, schema, util, types, logging
 from sqlalchemy.sql import expression
 
 
@@ -482,7 +482,7 @@ class Compiled(object):
 
         e = self.bind
         if e is None:
-            raise exceptions.UnboundExecutionError("This Compiled object is not bound to any Engine or Connection.")
+            raise exc.UnboundExecutionError("This Compiled object is not bound to any Engine or Connection.")
         return e._execute_compiled(self, multiparams, params)
 
     def scalar(self, *multiparams, **params):
@@ -578,11 +578,11 @@ class Connection(Connectable):
         except AttributeError:
             if self.__invalid:
                 if self.__transaction is not None:
-                    raise exceptions.InvalidRequestError("Can't reconnect until invalid transaction is rolled back")
+                    raise exc.InvalidRequestError("Can't reconnect until invalid transaction is rolled back")
                 self.__connection = self.engine.raw_connection()
                 self.__invalid = False
                 return self.__connection
-            raise exceptions.InvalidRequestError("This Connection is closed")
+            raise exc.InvalidRequestError("This Connection is closed")
     connection = property(connection)
 
     def should_close_with_result(self):
@@ -702,7 +702,7 @@ class Connection(Connectable):
         """
 
         if self.__transaction is not None:
-            raise exceptions.InvalidRequestError(
+            raise exc.InvalidRequestError(
                 "Cannot start a two phase transaction when a transaction "
                 "is already in progress.")
         if xid is None:
@@ -843,7 +843,7 @@ class Connection(Connectable):
             if c in Connection.executors:
                 return Connection.executors[c](self, object, multiparams, params)
         else:
-            raise exceptions.InvalidRequestError("Unexecutable object type: " + str(type(object)))
+            raise exc.InvalidRequestError("Unexecutable object type: " + str(type(object)))
 
     def _execute_default(self, default, multiparams=None, params=None):
         return self.engine.dialect.defaultrunner(self.__create_execution_context()).traverse_single(default)
@@ -897,7 +897,7 @@ class Connection(Connectable):
     def _execute_compiled(self, compiled, multiparams=None, params=None, distilled_params=None):
         """Execute a sql.Compiled object."""
         if not compiled.can_execute:
-            raise exceptions.ArgumentError("Not an executable clause: %s" % (str(compiled)))
+            raise exc.ArgumentError("Not an executable clause: %s" % (str(compiled)))
 
         if distilled_params is None:
             distilled_params = self.__distill_params(multiparams, params)
@@ -924,7 +924,7 @@ class Connection(Connectable):
 
     def _handle_dbapi_exception(self, e, statement, parameters, cursor):
         if getattr(self, '_reentrant_error', False):
-            raise exceptions.DBAPIError.instance(None, None, e)
+            raise exc.DBAPIError.instance(None, None, e)
         self._reentrant_error = True
         try:
             if not isinstance(e, self.dialect.dbapi.Error):
@@ -939,7 +939,7 @@ class Connection(Connectable):
                 self._autorollback()
                 if self.__close_with_result:
                     self.close()
-            raise exceptions.DBAPIError.instance(statement, parameters, e, connection_invalidated=is_disconnect)
+            raise exc.DBAPIError.instance(statement, parameters, e, connection_invalidated=is_disconnect)
         finally:
             del self._reentrant_error
 
@@ -1047,7 +1047,7 @@ class Transaction(object):
 
     def commit(self):
         if not self._parent._is_active:
-            raise exceptions.InvalidRequestError("This transaction is inactive")
+            raise exc.InvalidRequestError("This transaction is inactive")
         self._do_commit()
         self._is_active = False
 
@@ -1094,7 +1094,7 @@ class TwoPhaseTransaction(Transaction):
 
     def prepare(self):
         if not self._parent._is_active:
-            raise exceptions.InvalidRequestError("This transaction is inactive")
+            raise exc.InvalidRequestError("This transaction is inactive")
         self._connection._prepare_twophase_impl(self.xid)
         self._is_prepared = True
 
@@ -1511,14 +1511,14 @@ class ResultProxy(object):
                         return props[key._label.lower()]
                     elif key.name.lower() in props:
                         return props[key.name.lower()]
-                raise exceptions.NoSuchColumnError("Could not locate column in row for column '%s'" % (str(key)))
+                raise exc.NoSuchColumnError("Could not locate column in row for column '%s'" % (str(key)))
 
             return rec
         return util.PopulateDict(lookup_key)
 
     def __ambiguous_processor(self, colname):
         def process(value):
-            raise exceptions.InvalidRequestError("Ambiguous column name '%s' in result set! try 'use_labels' option on select statement." % colname)
+            raise exc.InvalidRequestError("Ambiguous column name '%s' in result set! try 'use_labels' option on select statement." % colname)
         return process
 
     def close(self):

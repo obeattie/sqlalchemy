@@ -67,7 +67,7 @@ class PoolListener(object):
           The ``_ConnectionFairy`` which manages the connection for the span of
           the current checkout.
 
-        If you raise an ``exceptions.DisconnectionError``, the current
+        If you raise an ``exc.DisconnectionError``, the current
         connection will be disposed and a fresh connection retrieved.
         Processing of all checkout listeners will abort and restart
         using the new connection.

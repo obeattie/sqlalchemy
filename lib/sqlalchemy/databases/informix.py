@@ -8,7 +8,7 @@
 
 import datetime
 
-from sqlalchemy import sql, schema, exceptions, pool, util
+from sqlalchemy import sql, schema, exc, pool, util
 from sqlalchemy.sql import compiler
 from sqlalchemy.engine import default
 from sqlalchemy import types as sqltypes
@@ -264,18 +264,18 @@ class InfoDialect(default.DefaultDialect):
         c = connection.execute ("select distinct OWNER from systables where tabname=?", table.name.lower() )
         rows = c.fetchall()
         if not rows :
-            raise exceptions.NoSuchTableError(table.name)
+            raise exc.NoSuchTableError(table.name)
         else:
             if table.owner is not None:
                 if table.owner.lower() in [r[0] for r in rows]:
                     owner = table.owner.lower()
                 else:
-                    raise exceptions.AssertionError("Specified owner %s does not own table %s"%(table.owner, table.name))
+                    raise exc.AssertionError("Specified owner %s does not own table %s"%(table.owner, table.name))
             else:
                 if len(rows)==1:
                     owner = rows[0][0]
                 else:
-                    raise exceptions.AssertionError("There are multiple tables with name %s in the schema, you must specifie owner"%table.name)
+                    raise exc.AssertionError("There are multiple tables with name %s in the schema, you must specifie owner"%table.name)
 
         c = connection.execute ("""select colname , coltype , collength , t3.default , t1.colno from syscolumns as t1 , systables as t2 , OUTER sysdefaults as t3
                                     where t1.tabid = t2.tabid and t2.tabname=? and t2.owner=?
@@ -284,7 +284,7 @@ class InfoDialect(default.DefaultDialect):
         rows = c.fetchall()
 
         if not rows:
-            raise exceptions.NoSuchTableError(table.name)
+            raise exc.NoSuchTableError(table.name)
 
         for name , colattr , collength , default , colno in rows:
             name = name.lower()

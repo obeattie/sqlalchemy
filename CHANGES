@@ -1,4 +1,4 @@
--*- coding: utf8; fill-column: 68 -*-
+-*- coding: utf-8; fill-column: 68 -*-
 
 =======
 CHANGES
@@ -42,10 +42,13 @@ user_defined_state
     - The _prepare_instrumentation alias for prepare_instrumentation
       has been removed.
 
+    - sqlalchemy.exceptions has been renamed to sqlalchemy.exc.  The
+      module may be imported under either name.
+
     - ORM-related exceptions are now defined in sqlalchemy.orm.exc.
       ConcurrentModificationError, FlushError, and
       UnmappedColumnError compatibility aliases are installed in
-      sqlalchemy.exceptions during the import of sqlalchemy.orm.
+      sqlalchemy.exc during the import of sqlalchemy.orm.
 
 
 0.4.6

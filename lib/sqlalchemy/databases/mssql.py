@@ -40,7 +40,7 @@ Known issues / TODO:
 
 import datetime, operator, re, sys
 
-from sqlalchemy import sql, schema, exceptions, util
+from sqlalchemy import sql, schema, exc, util
 from sqlalchemy.sql import compiler, expression, operators as sqlops, functions as sql_functions
 from sqlalchemy.engine import default, base
 from sqlalchemy import types as sqltypes
@@ -440,7 +440,7 @@ class MSSQLDialect(default.DefaultDialect):
                 dialect_cls = dialect_mapping[module_name]
                 return dialect_cls.import_dbapi()
             except KeyError:
-                raise exceptions.InvalidRequestError("Unsupported MSSQL module '%s' requested (must be adodbpi, pymssql or pyodbc)" % module_name)
+                raise exc.InvalidRequestError("Unsupported MSSQL module '%s' requested (must be adodbpi, pymssql or pyodbc)" % module_name)
         else:
             for dialect_cls in [MSSQLDialect_pyodbc, MSSQLDialect_pymssql, MSSQLDialect_adodbapi]:
                 try:
@@ -512,7 +512,7 @@ class MSSQLDialect(default.DefaultDialect):
             self.context.rowcount = c.rowcount
             c.DBPROP_COMMITPRESERVE = "Y"
         except Exception, e:
-            raise exceptions.DBAPIError.instance(statement, parameters, e)
+            raise exc.DBAPIError.instance(statement, parameters, e)
 
     def table_names(self, connection, schema):
         from sqlalchemy.databases import information_schema as ischema
@@ -609,7 +609,7 @@ class MSSQLDialect(default.DefaultDialect):
             table.append_column(schema.Column(name, coltype, nullable=nullable, autoincrement=False, *colargs))
 
         if not found_table:
-            raise exceptions.NoSuchTableError(table.name)
+            raise exc.NoSuchTableError(table.name)
 
         # We also run an sp_columns to check for identity columns:
         cursor = connection.execute("sp_columns @table_name = '%s', @table_owner = '%s'" % (table.name, current_schema))
@@ -887,7 +887,7 @@ class MSSQLCompiler(compiler.DefaultCompiler):
             if select._limit:
                 s += "TOP %s " % (select._limit,)
             if select._offset:
-                raise exceptions.InvalidRequestError('MSSQL does not support LIMIT with an offset')
+                raise exc.InvalidRequestError('MSSQL does not support LIMIT with an offset')
             return s
         return compiler.DefaultCompiler.get_select_precolumns(self, select)
 

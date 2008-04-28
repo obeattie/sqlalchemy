@@ -26,7 +26,7 @@ to stay the same in future releases.
 """
 
 import itertools, re
-from sqlalchemy import util, exceptions
+from sqlalchemy import util, exc
 from sqlalchemy.sql import operators, visitors
 from sqlalchemy import types as sqltypes
 
@@ -908,14 +908,14 @@ def _no_literals(element):
     if hasattr(element, '__clause_element__'):
         return element.__clause_element__()
     elif _is_literal(element):
-        raise exceptions.ArgumentError("Ambiguous literal: %r.  Use the 'text()' function to indicate a SQL expression literal, or 'literal()' to indicate a bound value." % element)
+        raise exc.ArgumentError("Ambiguous literal: %r.  Use the 'text()' function to indicate a SQL expression literal, or 'literal()' to indicate a bound value." % element)
     else:
         return element
     
 def _corresponding_column_or_error(fromclause, column, require_embedded=False):
     c = fromclause.corresponding_column(column, require_embedded=require_embedded)
     if not c:
-        raise exceptions.InvalidRequestError("Given column '%s', attached to table '%s', failed to locate a corresponding column from table '%s'" % (str(column), str(getattr(column, 'table', None)), fromclause.description))
+        raise exc.InvalidRequestError("Given column '%s', attached to table '%s', failed to locate a corresponding column from table '%s'" % (str(column), str(getattr(column, 'table', None)), fromclause.description))
     return c
 
 def _selectable(element):
@@ -924,7 +924,7 @@ def _selectable(element):
     elif isinstance(element, Selectable):
         return element
     else:
-        raise exceptions.ArgumentError("Object '%s' is not a Selectable and does not implement `__selectable__()`" % repr(element))
+        raise exc.ArgumentError("Object '%s' is not a Selectable and does not implement `__selectable__()`" % repr(element))
 
 def is_column(col):
     """True if ``col`` is an instance of ``ColumnElement``."""
@@ -1018,7 +1018,7 @@ class ClauseElement(object):
         if len(optionaldict) == 1:
             kwargs.update(optionaldict[0])
         elif len(optionaldict) > 1:
-            raise exceptions.ArgumentError("params() takes zero or one positional dictionary argument")
+            raise exc.ArgumentError("params() takes zero or one positional dictionary argument")
 
         def visit_bindparam(bind):
             if bind.key in kwargs:
@@ -1090,7 +1090,7 @@ class ClauseElement(object):
                    'Engine for execution. Or, assign a bind to the statement '
                    'or the Metadata of its underlying tables to enable '
                    'implicit execution via this method.' % label)
-            raise exceptions.UnboundExecutionError(msg)
+            raise exc.UnboundExecutionError(msg)
         return e.execute_clauseelement(self, multiparams, params)
 
     def scalar(self, *multiparams, **params):
@@ -1293,7 +1293,7 @@ class _CompareMixin(ColumnOperators):
             elif op == operators.ne:
                 return _BinaryExpression(self, null(), operators.isnot, negate=operators.is_)
             else:
-                raise exceptions.ArgumentError("Only '='/'!=' operators can be used with NULL")
+                raise exc.ArgumentError("Only '='/'!=' operators can be used with NULL")
         else:
             obj = self._check_literal(obj)
 
@@ -1358,7 +1358,7 @@ class _CompareMixin(ColumnOperators):
         for o in seq_or_selectable:
             if not _is_literal(o):
                 if not isinstance( o, _CompareMixin):
-                    raise exceptions.InvalidRequestError( "in() function accepts either a list of non-selectable values, or a selectable: "+repr(o) )
+                    raise exc.InvalidRequestError( "in() function accepts either a list of non-selectable values, or a selectable: "+repr(o) )
             else:
                 o = self._bind_param(o)
             args.append(o)
@@ -1613,7 +1613,7 @@ class ColumnCollection(util.OrderedProperties):
 
     def __contains__(self, other):
         if not isinstance(other, basestring):
-            raise exceptions.ArgumentError("__contains__ requires a string argument")
+            raise exc.ArgumentError("__contains__ requires a string argument")
         return util.OrderedProperties.__contains__(self, other)
 
     def contains_column(self, col):
@@ -2319,11 +2319,11 @@ class Join(FromClause):
                     crit.append(col == fk.parent)
                     constraints.add(fk.constraint)
         if len(crit) == 0:
-            raise exceptions.ArgumentError(
+            raise exc.ArgumentError(
                 "Can't find any foreign key relationships "
                 "between '%s' and '%s'" % (primary.description, secondary.description))
         elif len(constraints) > 1:
-            raise exceptions.ArgumentError(
+            raise exc.ArgumentError(
                 "Can't determine join between '%s' and '%s'; "
                 "tables have more than one foreign key "
                 "constraint relationship between them. "
@@ -2844,11 +2844,11 @@ class _ScalarSelect(_Grouping):
         self.element = element
         cols = list(element.inner_columns)
         if len(cols) != 1:
-            raise exceptions.InvalidRequestError("Scalar select can only be created from a Select object that has exactly one column expression.")
+            raise exc.InvalidRequestError("Scalar select can only be created from a Select object that has exactly one column expression.")
         self.type = cols[0].type
 
     def columns(self):
-        raise exceptions.InvalidRequestError("Scalar Select expression has no columns; use this object directly within a column-level expression.")
+        raise exc.InvalidRequestError("Scalar Select expression has no columns; use this object directly within a column-level expression.")
     columns = c = property(columns)
 
     def self_group(self, **kwargs):
@@ -2873,7 +2873,7 @@ class CompoundSelect(_SelectBaseMixin, FromClause):
             if not numcols:
                 numcols = len(s.c)
             elif len(s.c) != numcols:
-                raise exceptions.ArgumentError("All selectables passed to CompoundSelect must have identical numbers of columns; select #%d has %d columns, select #%d has %d" %
+                raise exc.ArgumentError("All selectables passed to CompoundSelect must have identical numbers of columns; select #%d has %d columns, select #%d has %d" %
                     (1, len(self.selects[0].c), n+1, len(s.c))
                 )
             if s._order_by_clause:
@@ -3011,14 +3011,14 @@ class Select(_SelectBaseMixin, FromClause):
                 froms = froms.difference(_cloned_intersection(froms, existing_froms))
                 
                 if not len(froms):
-                    raise exceptions.InvalidRequestError("Select statement '%s' returned no FROM clauses due to auto-correlation; specify correlate(<tables>) to control correlation manually." % self)
+                    raise exc.InvalidRequestError("Select statement '%s' returned no FROM clauses due to auto-correlation; specify correlate(<tables>) to control correlation manually." % self)
                     
         return froms
 
     froms = property(_get_display_froms, doc="""Return a list of all FromClause elements which will be applied to the FROM clause of the resulting statement.""")
 
     def type(self):
-        raise exceptions.InvalidRequestError("Select objects don't have a type.  Call as_scalar() on this Select object to return a 'scalar' version of this Select.")
+        raise exc.InvalidRequestError("Select objects don't have a type.  Call as_scalar() on this Select object to return a 'scalar' version of this Select.")
     type = property(type)
 
     def locate_all_froms(self):

@@ -89,7 +89,7 @@ connections are active, the following setting may alleviate the problem::
 
 import datetime
 
-from sqlalchemy import exceptions, schema, types as sqltypes, sql, util
+from sqlalchemy import exc, schema, types as sqltypes, sql, util
 from sqlalchemy.engine import base, default
 
 
@@ -320,7 +320,7 @@ class FBDialect(default.DefaultDialect):
         version = fbconn.server_version
         m = match('\w+-V(\d+)\.(\d+)\.(\d+)\.(\d+) \w+ (\d+)\.(\d+)', version)
         if not m:
-            raise exceptions.AssertionError("Could not determine version from string '%s'" % version)
+            raise exc.AssertionError("Could not determine version from string '%s'" % version)
         return tuple([int(x) for x in m.group(5, 6, 4)])
 
     def _normalize_name(self, name):
@@ -509,7 +509,7 @@ class FBDialect(default.DefaultDialect):
             table.append_column(col)
 
         if not found_table:
-            raise exceptions.NoSuchTableError(table.name)
+            raise exc.NoSuchTableError(table.name)
 
         # get the foreign keys
         c = connection.execute(fkqry, ["FOREIGN KEY", tablename])

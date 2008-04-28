@@ -24,7 +24,7 @@ Known issues / TODO:
 
 import datetime, operator
 
-from sqlalchemy import util, sql, schema, exceptions
+from sqlalchemy import util, sql, schema, exc
 from sqlalchemy.sql import compiler, expression
 from sqlalchemy.engine import default, base
 from sqlalchemy import types as sqltypes
@@ -160,11 +160,11 @@ class SybaseTypeError(sqltypes.TypeEngine):
 
     def bind_processor(self, dialect):
         def process(value):
-            raise exceptions.NotSupportedError("Data type not supported", [value])
+            raise exc.NotSupportedError("Data type not supported", [value])
         return process
 
     def get_col_spec(self):
-        raise exceptions.NotSupportedError("Data type not supported")
+        raise exc.NotSupportedError("Data type not supported")
 
 class SybaseNumeric(sqltypes.Numeric):
     def get_col_spec(self):
@@ -487,7 +487,7 @@ class SybaseSQLDialect(default.DefaultDialect):
                 dialect_cls = dialect_mapping[module_name]
                 return dialect_cls.import_dbapi()
             except KeyError:
-                raise exceptions.InvalidRequestError("Unsupported SybaseSQL module '%s' requested (must be " + " or ".join([x for x in dialect_mapping.keys()]) + ")" % module_name)
+                raise exc.InvalidRequestError("Unsupported SybaseSQL module '%s' requested (must be " + " or ".join([x for x in dialect_mapping.keys()]) + ")" % module_name)
         else:
             for dialect_cls in dialect_mapping.values():
                 try:
@@ -527,7 +527,7 @@ class SybaseSQLDialect(default.DefaultDialect):
             self.context.rowcount = c.rowcount
             c.DBPROP_COMMITPRESERVE = "Y"
         except Exception, e:
-            raise exceptions.DBAPIError.instance(statement, parameters, e)
+            raise exc.DBAPIError.instance(statement, parameters, e)
 
     def table_names(self, connection, schema):
         """Ignore the schema and the charset for now."""
@@ -633,7 +633,7 @@ class SybaseSQLDialect(default.DefaultDialect):
             table.append_constraint(schema.ForeignKeyConstraint(foreignKeys[primary_table][0], foreignKeys[primary_table][1]))
 
         if not found_table:
-            raise exceptions.NoSuchTableError(table.name)
+            raise exc.NoSuchTableError(table.name)
 
 
 class SybaseSQLDialect_mxodbc(SybaseSQLDialect):

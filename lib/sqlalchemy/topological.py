@@ -19,7 +19,7 @@ conditions.
 """
 
 from sqlalchemy import util
-from sqlalchemy.exceptions import CircularDependencyError
+from sqlalchemy.exc import CircularDependencyError
 
 __all__ = ['sort', 'sort_with_cycles', 'sort_as_tree']
 

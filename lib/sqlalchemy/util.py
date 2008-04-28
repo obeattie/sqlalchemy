@@ -8,7 +8,7 @@ import inspect, itertools, new, operator, sets, sys, warnings, weakref
 import __builtin__
 types = __import__('types')
 
-from sqlalchemy import exceptions
+from sqlalchemy import exc
 
 try:
     import thread, threading
@@ -494,9 +494,9 @@ def assert_arg_type(arg, argtype, name):
         return arg
     else:
         if isinstance(argtype, tuple):
-            raise exceptions.ArgumentError("Argument '%s' is expected to be one of type %s, got '%s'" % (name, ' or '.join(["'%s'" % str(a) for a in argtype]), str(type(arg))))
+            raise exc.ArgumentError("Argument '%s' is expected to be one of type %s, got '%s'" % (name, ' or '.join(["'%s'" % str(a) for a in argtype]), str(type(arg))))
         else:
-            raise exceptions.ArgumentError("Argument '%s' is expected to be of type '%s', got '%s'" % (name, str(argtype), str(type(arg))))
+            raise exc.ArgumentError("Argument '%s' is expected to be of type '%s', got '%s'" % (name, str(argtype), str(type(arg))))
 
 def warn_exception(func, *args, **kwargs):
     """executes the given function, catches all exceptions and converts to a warning."""
@@ -1419,12 +1419,12 @@ class WeakIdentityMapping(weakref.WeakKeyDictionary):
 
 def warn(msg):
     if isinstance(msg, basestring):
-        warnings.warn(msg, exceptions.SAWarning, stacklevel=3)
+        warnings.warn(msg, exc.SAWarning, stacklevel=3)
     else:
         warnings.warn(msg, stacklevel=3)
 
 def warn_deprecated(msg):
-    warnings.warn(msg, exceptions.SADeprecationWarning, stacklevel=3)
+    warnings.warn(msg, exc.SADeprecationWarning, stacklevel=3)
 
 def deprecated(message=None, add_deprecation_to_docstring=True):
     """Decorates a function and issues a deprecation warning on use.
@@ -1449,7 +1449,7 @@ def deprecated(message=None, add_deprecation_to_docstring=True):
 
     def decorate(fn):
         return _decorate_with_warning(
-            fn, exceptions.SADeprecationWarning,
+            fn, exc.SADeprecationWarning,
             message % dict(func=fn.__name__), header)
     return decorate
 
@@ -1481,7 +1481,7 @@ def pending_deprecation(version, message=None,
 
     def decorate(fn):
         return _decorate_with_warning(
-            fn, exceptions.SAPendingDeprecationWarning,
+            fn, exc.SAPendingDeprecationWarning,
             message % dict(func=fn.__name__), header)
     return decorate
 

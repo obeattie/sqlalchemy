@@ -29,7 +29,7 @@ is equivalent to::
 """
 
 import sys, warnings
-import sqlalchemy.exceptions as sa_exc
+import sqlalchemy.exc as sa_exc
 
 # py2.5 absolute imports will fix....
 logging = __import__('logging')
