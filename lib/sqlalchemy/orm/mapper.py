@@ -1569,7 +1569,7 @@ class Mapper(object):
         allconds = []
 
         start = False
-        for mapper in reversed(list(self.iterate_to_root())):
+        for mapper in util.reversed(list(self.iterate_to_root())):
             if mapper.local_table in tables:
                 start = True
             if start:
