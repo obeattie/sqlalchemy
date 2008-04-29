@@ -33,9 +33,6 @@ import sys
 import warnings
 import sqlalchemy.exc as sa_exc
 
-# moved to sqlalchemy.exceptions.  this alias will be removed in 0.5.
-SADeprecationWarning = sa_exc.SADeprecationWarning
-
 
 rootlogger = logging.getLogger('sqlalchemy')
 if rootlogger.level == logging.NOTSET:

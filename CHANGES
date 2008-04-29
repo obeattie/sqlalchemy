@@ -52,6 +52,8 @@ user_defined_state
 
     - sqlalchemy.logging has been renamed to sqlalchemy.log.
 
+    - The transitional sqlalchemy.log.SADeprecationWarning alias for
+      the warning's definition in sqlalchemy.exc has been removed.
 
 0.4.6
 =====
