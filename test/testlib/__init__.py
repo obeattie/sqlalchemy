@@ -3,6 +3,7 @@
 Load after sqlalchemy imports to use instrumented stand-ins like Table.
 """
 
+import sys
 import testlib.config
 from testlib.schema import Table, Column
 from testlib.orm import mapper
@@ -18,6 +19,13 @@ __all__ = ('testing',
            'mapper',
            'Table', 'Column',
            'rowset',
-           'TestBase', 'AssertsExecutionResults', 'ORMTest', 'AssertsCompiledSQL', 'ComparesTables',
+           'TestBase', 'AssertsExecutionResults', 'ORMTest',
+           'AssertsCompiledSQL', 'ComparesTables',
            'profiling', 'engines',
            'set', 'frozenset', 'sorted', '_function_named')
+
+
+sys.modules['testlib.sa'] = sa = testing.CompositeModule(
+    'testlib.sa', 'sqlalchemy', 'testlib.schema', orm=testing.CompositeModule(
+    'testlib.sa.orm', 'sqlalchemy.orm', 'testlib.orm'))
+sys.modules['testlib.sa.orm'] = sa.orm

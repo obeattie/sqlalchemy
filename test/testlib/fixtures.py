@@ -1,15 +1,16 @@
-# can't be imported until the path is setup; be sure to configure
-# first if covering.
-from sqlalchemy import *
-from sqlalchemy.orm import attributes
-from sqlalchemy import util
-from testlib import *
+from testlib.sa import MetaData, Table, Column, Integer, String, ForeignKey
+from testlib.sa.orm import attributes
+from testlib import ORMTest
+from testlib.compat import set
 
-__all__ = ['keywords', 'addresses', 'Base', 'Keyword', 'FixtureTest', 'Dingaling', 'item_keywords', 
-            'dingalings', 'User', 'items', 'Fixtures', 'orders', 'install_fixture_data', 'Address', 'users', 
+
+__all__ = ['keywords', 'addresses', 'Base', 'Keyword', 'FixtureTest',
+           'Dingaling', 'item_keywords', 'dingalings', 'User', 'items',
+           'Fixtures', 'orders', 'install_fixture_data', 'Address', 'users',
             'order_items', 'Item', 'Order', 'fixtures']
-            
-_recursion_stack = util.Set()
+
+
+_recursion_stack = set()
 class Base(object):
     def __init__(self, **kwargs):
         for k in kwargs:
@@ -65,7 +66,7 @@ class Base(object):
                         #print "b class does not have attribute named '%s'" % attr
                         #raise
                         return False
-                    
+
                     if list(value) == list(battr):
                         continue
                     else:

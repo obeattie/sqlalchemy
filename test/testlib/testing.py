@@ -2,12 +2,13 @@
 
 # monkeypatches unittest.TestLoader.suiteClass at import time
 
-import itertools, os, operator, re, sys, unittest, warnings
+import itertools, operator, re, sys, types, unittest, warnings
 from cStringIO import StringIO
 import testlib.config as config
-from testlib.compat import *
+from testlib.compat import set, _function_named, reversed
 
-sql, sqltypes, schema, MetaData, clear_mappers, Session, util = None, None, None, None, None, None, None
+sqltypes, schema, MetaData, clear_mappers, Session, util = (
+    None, None, None, None, None, None)
 sa_exc = None
 
 __all__ = ('TestBase', 'AssertsExecutionResults', 'ComparesTables', 'ORMTest', 'AssertsCompiledSQL')
@@ -360,10 +361,6 @@ class ExecutionContextWrapper(object):
     can be tracked."""
 
     def __init__(self, ctx):
-        global sql
-        if sql is None:
-            from sqlalchemy import sql
-
         self.__dict__['ctx'] = ctx
     def __getattr__(self, key):
         return getattr(self.ctx, key)
@@ -444,6 +441,44 @@ class ExecutionContextWrapper(object):
                 repl = None
             query = re.sub(r':([\w_]+)', repl, query)
         return query
+
+
+def _import_by_name(name):
+    submodule = name.split('.')[-1]
+    return __import__(name, globals(), locals(), [submodule])
+
+class CompositeModule(types.ModuleType):
+    """Merged attribute access for multiple modules."""
+
+    # break the habit
+    __all__ = ()
+
+    def __init__(self, name, *modules, **overrides):
+        """Construct a new lazy composite of modules.
+
+        Modules may be string names or module-like instances.  Individual
+        attribute overrides may be specified as keyword arguments for
+        convenience.
+
+        The constructed module will resolve attribute access in reverse order:
+        overrides, then each member of reversed(modules).  Modules specified
+        by name will be loaded lazily when encountered in attribute
+        resolution.
+
+        """
+        types.ModuleType.__init__(self, name)
+        self.__modules = list(reversed(modules))
+        for key, value in overrides.iteritems():
+            setattr(self, key, value)
+
+    def __getattr__(self, key):
+        for idx, mod in enumerate(self.__modules):
+            if isinstance(mod, basestring):
+                self.__modules[idx] = mod = _import_by_name(mod)
+            if hasattr(mod, key):
+                return getattr(mod, key)
+        raise AttributeError(key)
+
 
 class TestBase(unittest.TestCase):
     # A sequence of dialect names to exclude from the test class.
