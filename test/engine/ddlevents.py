@@ -1,9 +1,9 @@
 import testenv; testenv.configure_for_tests()
-from sqlalchemy import *
-from sqlalchemy import exc
 from sqlalchemy.schema import DDL
-import sqlalchemy
-from testlib import *
+from sqlalchemy import create_engine
+from testlib.sa import MetaData, Table, Column, Integer, String
+import testlib.sa as tsa
+from testlib import TestBase, testing
 
 
 class DDLEventTest(TestBase):
@@ -294,7 +294,7 @@ class DDLExecutionTest(TestBase):
             try:
                 r = eval(py)
                 assert False
-            except exc.UnboundExecutionError:
+            except tsa.exc.UnboundExecutionError:
                 pass
 
         for bind in engine, cx:
@@ -310,7 +310,7 @@ class DDLTest(TestBase):
         engine = create_engine(testing.db.name + '://',
                                strategy='mock', executor=executor)
         engine.dialect.identifier_preparer = \
-           sqlalchemy.sql.compiler.IdentifierPreparer(engine.dialect)
+           tsa.sql.compiler.IdentifierPreparer(engine.dialect)
         return engine
 
     def test_tokens(self):

@@ -2,9 +2,10 @@
 including the deprecated versions of these arguments"""
 
 import testenv; testenv.configure_for_tests()
-from sqlalchemy import *
 from sqlalchemy import engine, exc
-from testlib import *
+from sqlalchemy import MetaData, ThreadLocalMetaData
+from testlib.sa import Table, Column, Integer, String, func, Sequence, text
+from testlib import TestBase, testing
 
 
 class BindTest(TestBase):
@@ -71,6 +72,10 @@ class BindTest(TestBase):
 
     @testing.future
     def test_create_drop_err2(self):
+        metadata = MetaData()
+        table = Table('test_table', metadata,
+            Column('foo', Integer))
+
         for meth in [
             table.exists,
             table.create,

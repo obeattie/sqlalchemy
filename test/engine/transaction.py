@@ -1,11 +1,11 @@
 import testenv; testenv.configure_for_tests()
 import sys, time, threading
+from testlib.sa import create_engine, MetaData, Table, Column, INT, VARCHAR, \
+     Sequence, select, Integer, String, func, text
+from testlib import TestBase, testing
 
-from sqlalchemy import *
-from sqlalchemy.orm import *
-from testlib import *
 
-
+users, metadata = None, None
 class TransactionTest(TestBase):
     def setUpAll(self):
         global users, metadata
@@ -375,6 +375,7 @@ class AutoRollbackTest(TestBase):
         users.drop(conn2)
         conn2.close()
 
+foo = None
 class ExplicitAutoCommitTest(TestBase):
     """test the 'autocommit' flag on select() and text() objects.  
     
@@ -448,8 +449,9 @@ class ExplicitAutoCommitTest(TestBase):
         
         conn1.close()
         conn2.close()
-        
-    
+
+
+tlengine = None
 class TLTransactionTest(TestBase):
     def setUpAll(self):
         global users, metadata, tlengine
@@ -674,21 +676,6 @@ class TLTransactionTest(TestBase):
         finally:
             external_connection.close()
 
-    @testing.exclude('mysql', '<', (5, 0, 3))
-    def testsessionnesting(self):
-        class User(object):
-            pass
-        try:
-            mapper(User, users)
-
-            sess = create_session(bind=tlengine)
-            tlengine.begin()
-            u = User()
-            sess.save(u)
-            sess.flush()
-            tlengine.commit()
-        finally:
-            clear_mappers()
 
 
     def testconnections(self):
@@ -726,6 +713,7 @@ class TLTransactionTest(TestBase):
             [(1,),(2,)]
         )
 
+counters = None
 class ForUpdateTest(TestBase):
     def setUpAll(self):
         global counters, metadata

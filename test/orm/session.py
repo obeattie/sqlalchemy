@@ -1,4 +1,6 @@
 import testenv; testenv.configure_for_tests()
+import gc
+import pickle
 from sqlalchemy import *
 from sqlalchemy import exc as sa_exc, util
 from sqlalchemy.orm import *
@@ -8,8 +10,6 @@ from sqlalchemy.orm.session import Session as SessionCls
 from testlib import *
 from testlib.tables import *
 from testlib import fixtures, tables
-import pickle
-import gc
 
 
 class SessionTest(TestBase, AssertsExecutionResults):
@@ -924,6 +924,39 @@ class SessionTest(TestBase, AssertsExecutionResults):
         assert b in sess
         assert len(list(sess)) == 1
 
+
+class TLTransactionTest(TestBase):
+    def setUpAll(self):
+        global users, metadata, tlengine
+        tlengine = create_engine(testing.db.url, strategy='threadlocal')
+        metadata = MetaData()
+        users = Table('query_users', metadata,
+            Column('user_id', INT, Sequence('query_users_id_seq', optional=True), primary_key=True),
+            Column('user_name', VARCHAR(20)),
+            test_needs_acid=True,
+        )
+        users.create(tlengine)
+    def tearDown(self):
+        tlengine.execute(users.delete())
+    def tearDownAll(self):
+        users.drop(tlengine)
+        tlengine.dispose()
+
+    @testing.exclude('mysql', '<', (5, 0, 3))
+    def testsessionnesting(self):
+        class User(object):
+            pass
+        try:
+            mapper(User, users)
+
+            sess = create_session(bind=tlengine)
+            tlengine.begin()
+            u = User()
+            sess.save(u)
+            sess.flush()
+            tlengine.commit()
+        finally:
+            clear_mappers()
 
 
 if __name__ == "__main__":

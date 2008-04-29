@@ -1,7 +1,7 @@
 import testenv; testenv.configure_for_tests()
-import threading, time, unittest
+import threading, unittest
 from sqlalchemy import util, sql, exc
-from testlib import *
+from testlib import TestBase, set
 from testlib import sorted
 
 class OrderedDictTest(TestBase):

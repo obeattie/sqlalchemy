@@ -1,11 +1,13 @@
 import testenv; testenv.configure_for_tests()
 import re
-from sqlalchemy import *
-from sqlalchemy import exc
-from testlib import *
 from sqlalchemy.interfaces import ConnectionProxy
-from testlib import engines
+from testlib.sa import MetaData, Table, Column, Integer, String, INT, \
+     VARCHAR, func
+import testlib.sa as tsa
+from testlib import TestBase, testing, engines
 
+
+users, metadata = None, None
 class ExecuteTest(TestBase):
     def setUpAll(self):
         global users, metadata
@@ -73,7 +75,7 @@ class ExecuteTest(TestBase):
             try:
                 conn.execute("osdjafioajwoejoasfjdoifjowejfoawejqoijwef")
                 assert False
-            except exc.DBAPIError:
+            except tsa.exc.DBAPIError:
                 assert True
 
 class ProxyConnectionTest(TestBase):
