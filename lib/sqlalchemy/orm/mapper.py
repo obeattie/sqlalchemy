@@ -841,13 +841,20 @@ class Mapper(object):
 
         return self.base_mapper is other.base_mapper
 
-    def isa(self, other):
-        """Return True if the given mapper inherits from this mapper."""
+    def _canload(self, state):
+        s = self.primary_mapper()
+        if s.polymorphic_on:
+            return _state_mapper(state).isa(s)
+        else:
+            return _state_mapper(state) is s
 
-        m = other
-        while m is not self and m.inherits:
+    def isa(self, other):
+        """Return True if the this mapper inherits from the given mapper."""
+
+        m = self
+        while m and m is not other:
             m = m.inherits
-        return m is self
+        return bool(m)
 
     def iterate_to_root(self):
         m = self
@@ -965,11 +972,6 @@ class Mapper(object):
     def _primary_key_from_state(self, state):
         return [self._get_state_attr_by_column(state, column) for column in self.primary_key]
 
-    def _canload(self, state):
-        if self.polymorphic_on:
-            return issubclass(state.class_, self.class_)
-        else:
-            return state.class_ is self.class_
 
     def _get_col_to_prop(self, column):
         try:
@@ -1022,15 +1024,14 @@ class Mapper(object):
         # organize individual states with the connection to use for insert/update
         if 'connection_callable' in uowtransaction.mapper_flush_opts:
             connection_callable = uowtransaction.mapper_flush_opts['connection_callable']
-            tups = [(state, connection_callable(self, state.obj()), _state_has_identity(state)) for state in states]
+            tups = [(state, _state_mapper(state), connection_callable(self, state.obj()), _state_has_identity(state)) for state in states]
         else:
             connection = uowtransaction.transaction.connection(self)
-            tups = [(state, connection, _state_has_identity(state)) for state in states]
+            tups = [(state, _state_mapper(state), connection, _state_has_identity(state)) for state in states]
 
         if not postupdate:
             # call before_XXX extensions
-            for state, connection, has_identity in tups:
-                mapper = _state_mapper(state)
+            for state, mapper, connection, has_identity in tups:
                 if not has_identity:
                     if 'before_insert' in mapper.extension.methods:
                         mapper.extension.before_insert(mapper, connection, state.obj())
@@ -1038,11 +1039,10 @@ class Mapper(object):
                     if 'before_update' in mapper.extension.methods:
                         mapper.extension.before_update(mapper, connection, state.obj())
 
-        for state, connection, has_identity in tups:
+        for state, mapper, connection, has_identity in tups:
             # detect if we have a "pending" instance (i.e. has no instance_key attached to it),
             # and another instance with the same identity key already exists as persistent.  convert to an
             # UPDATE if so.
-            mapper = _state_mapper(state)
             instance_key = mapper._identity_key_from_state(state)
             if not postupdate and not has_identity and instance_key in uowtransaction.session.identity_map:
                 instance = uowtransaction.session.identity_map[instance_key]
@@ -1065,8 +1065,7 @@ class Mapper(object):
             insert = []
             update = []
 
-            for state, connection, has_identity in tups:
-                mapper = _state_mapper(state)
+            for state, mapper, connection, has_identity in tups:
                 if table not in mapper._pks_by_table:
                     continue
                 pks = mapper._pks_by_table[table]
@@ -1200,8 +1199,7 @@ class Mapper(object):
 
         if not postupdate:
             # call after_XXX extensions
-            for state, connection, has_identity in tups:
-                mapper = _state_mapper(state)
+            for state, mapper, connection, has_identity in tups:
                 if not has_identity:
                     if 'after_insert' in mapper.extension.methods:
                         mapper.extension.after_insert(mapper, connection, state.obj())
@@ -1256,17 +1254,15 @@ class Mapper(object):
 
         if 'connection_callable' in uowtransaction.mapper_flush_opts:
             connection_callable = uowtransaction.mapper_flush_opts['connection_callable']
-            tups = [(state, connection_callable(self, state.obj())) for state in states]
+            tups = [(state, _state_mapper(state), connection_callable(self, state.obj())) for state in states]
         else:
             connection = uowtransaction.transaction.connection(self)
-            tups = [(state, connection) for state in states]
+            tups = [(state, _state_mapper(state), connection) for state in states]
 
-        for (state, connection) in tups:
-            mapper = _state_mapper(state)
+        for state, mapper, connection in tups:
             if 'before_delete' in mapper.extension.methods:
                 mapper.extension.before_delete(mapper, connection, state.obj())
 
-        deleted_objects = util.Set()
         table_to_mapper = {}
         for mapper in self.base_mapper.polymorphic_iterator():
             for t in mapper.tables:
@@ -1274,8 +1270,7 @@ class Mapper(object):
 
         for table in sqlutil.sort_tables(table_to_mapper.keys(), reverse=True):
             delete = {}
-            for (state, connection) in tups:
-                mapper = _state_mapper(state)
+            for state, mapper, connection in tups:
                 if table not in mapper._pks_by_table:
                     continue
 
@@ -1288,8 +1283,7 @@ class Mapper(object):
                     params[col.key] = mapper._get_state_attr_by_column(state, col)
                 if mapper.version_id_col and table.c.contains_column(mapper.version_id_col):
                     params[mapper.version_id_col.key] = mapper._get_state_attr_by_column(state, mapper.version_id_col)
-                # testlib.pragma exempt:__hash__
-                deleted_objects.add((state, connection))
+                
             for connection, del_objects in delete.iteritems():
                 mapper = table_to_mapper[table]
                 def comparator(a, b):
@@ -1309,8 +1303,7 @@ class Mapper(object):
                 if c.supports_sane_multi_rowcount() and c.rowcount != len(del_objects):
                     raise exc.ConcurrentModificationError("Deleted rowcount %d does not match number of objects deleted %d" % (c.rowcount, len(del_objects)))
 
-        for state, connection in deleted_objects:
-            mapper = _state_mapper(state)
+        for state, mapper, connection in tups:
             if 'after_delete' in mapper.extension.methods:
                 mapper.extension.after_delete(mapper, connection, state.obj())
 

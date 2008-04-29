@@ -144,11 +144,11 @@ class SessionTransaction(object):
     def connection(self, bindkey, **kwargs):
         self._assert_is_active()
         engine = self.session.get_bind(bindkey, **kwargs)
-        return self.get_or_add(engine)
+        return self._connection_for_bind(engine)
 
-    def _begin(self, **kwargs):
+    def _begin(self, autoflush=True, nested=False):
         self._assert_is_active()
-        return SessionTransaction(self.session, self, **kwargs)
+        return SessionTransaction(self.session, self, autoflush=autoflush, nested=nested)
 
     def _iterate_parents(self, upto=None):
         if self._parent is upto:
@@ -166,6 +166,9 @@ class SessionTransaction(object):
             return
         
         if self.autoflush:
+            # TODO: the "dirty_states" assertion is expensive,
+            # so consider these assertions as temporary
+            # during development
             assert not self.session._new
             assert not self.session._deleted
             assert not self.session._dirty_states
@@ -198,28 +201,22 @@ class SessionTransaction(object):
     def _remove_snapshot(self):
         assert self._is_transaction_boundary
 
-        if self.nested or not self.session.autoexpire:
-            id_ = self._snapshot_id
-            for s in self.session.identity_map.all_states():
+        expire = not self.nested and self.session.autoexpire
+        id_ = self._snapshot_id
+        for s in self.session.identity_map.all_states():
+            if expire:
+                _expire_state(s, None)
+            else:
                 s.remove_savepoint(id_)
             
-    def add(self, bind):
-        self._assert_is_active()
-        if self._parent is not None and not self.nested:
-            return self._parent.add(bind)
-
-        if bind.engine in self._connections:
-            raise sa_exc.InvalidRequestError("Session already has a Connection associated for the given %sEngine" % (isinstance(bind, engine.Connection) and "Connection's " or ""))
-        return self.get_or_add(bind)
-
-    def get_or_add(self, bind):
+    def _connection_for_bind(self, bind):
         self._assert_is_active()
         
         if bind in self._connections:
             return self._connections[bind][0]
         
         if self._parent:
-            conn = self._parent.get_or_add(bind)
+            conn = self._parent._connection_for_bind(bind)
             if not self.nested:
                 return conn
         else:
@@ -244,7 +241,6 @@ class SessionTransaction(object):
         if self._parent is not None or not self.session.twophase:
             raise sa_exc.InvalidRequestError("Only root two phase transactions of can be prepared")
         self._prepare_impl()
-    prepare = util.deprecated()(_prepare)
     
     def _prepare_impl(self):
         self._assert_is_active()
@@ -285,7 +281,6 @@ class SessionTransaction(object):
                 
         self._close()
         return self._parent
-    commit = util.deprecated()(_commit)
     
     def _rollback(self):
         self._assert_is_open()
@@ -306,7 +301,6 @@ class SessionTransaction(object):
                 
         self._close()
         return self._parent
-    rollback = util.deprecated()(_rollback)
     
     def _rollback_impl(self):
         for t in util.Set(self._connections.values()):
@@ -380,9 +374,9 @@ class Session(object):
 
     * *Transient* - an instance that's not in a session, and is not saved to the database;
       i.e. it has no database identity. The only relationship such an object has to the ORM
-      is that its class has a `mapper()` associated with it.
+      is that its class has a ``mapper()`` associated with it.
 
-    * *Pending* - when you `save()` a transient instance, it becomes pending. It still
+    * *Pending* - when you ``add()`` a transient instance, it becomes pending. It still
       wasn't actually flushed to the database yet, but it will be when the next flush
       occurs.
 
@@ -396,19 +390,19 @@ class Session(object):
       they're detached, **except** they will not be able to issue any SQL in order to load
       collections or attributes which are not yet loaded, or were marked as "expired".
 
-    The session methods which control instance state include ``save()``, ``update()``,
-    ``save_or_update()``, ``delete()``, ``merge()``, and ``expunge()``.
+    The session methods which control instance state include ``add()``, ``delete()``, 
+    ``merge()``, and ``expunge()``.
 
-    The Session object is **not** threadsafe, particularly during flush operations.  A session
-    which is only read from (i.e. is never flushed) can be used by concurrent threads if it's
-    acceptable that some object instances may be loaded twice.
+    The Session object is generally **not** threadsafe.  A session which is set to ``autocommit``
+    and is only read from may be used by concurrent threads if it's acceptable that some object 
+    instances may be loaded twice.
 
     The typical pattern to managing Sessions in a multi-threaded environment is either to use
     mutexes to limit concurrent access to one thread at a time, or more commonly to establish
     a unique session for every thread, using a threadlocal variable.  SQLAlchemy provides
     a thread-managed Session adapter, provided by the [sqlalchemy.orm#scoped_session()] function.
+    
     """
-
     def __init__(self, bind=None, autoflush=True, autoexpire=True, autocommit=False, twophase=False, echo_uow=False, weak_identity_map=True, binds=None, extension=None):
         """Construct a new Session.
         
@@ -425,9 +419,9 @@ class Session(object):
             ``Session`` before proceeding. This is a convenience feature so that
             ``flush()`` need not be called repeatedly in order for database queries to
             retrieve results. It's typical that ``autoflush`` is used in conjunction with
-            ``transactional=True``, so that ``flush()`` is never called; you just call
-            ``commit()`` when changes are complete to finalize all changes to the
-            database.
+            ``autocommit=False``.  In this scenario, explicit calls to ``flush()`` are rarely
+            needed; you usually only need to call ``commit()`` (which flushes) to finalize 
+            changes.
 
         bind
             An optional ``Engine`` or ``Connection`` to which this ``Session`` should be
@@ -526,16 +520,40 @@ class Session(object):
             self.begin()
         _sessions[self.hash_key] = self
 
-    def begin(self, **kwargs):
-        """Begin a transaction on this Session."""
-
+    def begin(self, subtransactions=False, nested=False, _autoflush=True):
+        """Begin a transaction on this Session.
+        
+        If this Session is already within a transaction,
+        either a plain transaction or nested transaction,
+        an error is raised, unless ``subtransactions=True``
+        or ``nested=True`` is specified.
+        
+        The ``subtransactions=True`` flag indicates that
+        this ``begin()`` can create a subtransaction if a 
+        transaction is already in progress.  A subtransaction 
+        is a non-transactional, delimiting construct that 
+        allows matching begin()/commit() pairs to be nested 
+        together, with only the outermost begin/commit pair 
+        actually affecting transactional state.  When a rollback
+        is issued, the subtransaction will directly roll back 
+        the innermost real transaction, however each subtransaction 
+        still must be explicitly rolled back to maintain proper 
+        stacking of subtransactions.
+        
+        If no transaction is in progress,
+        then a real transaction is begun.  
+        
+        The ``nested`` flag begins a SAVEPOINT transaction
+        and is equivalent to calling ``begin_nested()``.
+        
+        """
         if self.transaction is not None:
-            self.transaction = self.transaction._begin(**kwargs)
+            if subtransactions:
+                self.transaction = self.transaction._begin(nested=nested, autoflush=_autoflush)
+            else:
+                raise sa_exc.InvalidRequestError("A transaction is already begun.  Use subtransactions=True to allow subtransactions.")
         else:
-            self.transaction = SessionTransaction(self, **kwargs)
-        return self.transaction
-
-    create_transaction = begin
+            self.transaction = SessionTransaction(self, nested=nested, autoflush=_autoflush)
 
 
     def begin_nested(self):
@@ -543,8 +561,14 @@ class Session(object):
 
         This utilizes a ``SAVEPOINT`` transaction for databases
         which support this feature.
-        """
 
+        The nested transaction is a real transation, unlike
+        a "subtransaction" which corresponds to multiple
+        ``begin()`` calls.  The next ``rollback()`` or 
+        ``commit()`` call will operate upon this nested
+        transaction.
+        
+        """
         return self.begin(nested=True)
 
     def rollback(self):
@@ -552,8 +576,14 @@ class Session(object):
 
         If no transaction is in progress, this method is a
         pass-thru.
+        
+        This method rolls back the current transaction
+        or nested transaction regardless of subtransactions
+        being in effect.  All subtrasactions up to the 
+        first real transaction are closed.  Subtransactions 
+        occur when begin() is called mulitple times.
+        
         """
-
         if self.transaction is None:
             pass
         else:
@@ -562,19 +592,24 @@ class Session(object):
             self.begin()
 
     def commit(self):
-        """Commit the current transaction in progress.
+        """Flush any pending changes, and commit the current transaction 
+        in progress, assuming no subtransactions are in effect.
 
         If no transaction is in progress, this method raises
         an InvalidRequestError.
+        
+        If a subtransaction is in effect (which occurs when 
+        begin() is called multiple times), the subtransaction
+        will be closed, and the next call to ``commit()``
+        will operate on the enclosing transaction.
 
-        If the ``begin()`` method was called on this ``Session``
-        additional times subsequent to its first call,
-        ``commit()`` will not actually commit, and instead
-        pops an internal SessionTransaction off its internal stack
-        of transactions.  Only when the "root" SessionTransaction
-        is reached does an actual database-level commit occur.
+        For a session configured with autocommit=False, a new
+        transaction will be begun immediately after the commit,
+        but note that the newly begun transaction does *not* 
+        use any connection resources until the first SQL is 
+        actually emitted.
+
         """
-
         if self.transaction is None:
             if not self.autocommit:
                 self.begin()
@@ -624,7 +659,7 @@ class Session(object):
 
     def __connection(self, engine, **kwargs):
         if self.transaction is not None:
-            return self.transaction.get_or_add(engine)
+            return self.transaction._connection_for_bind(engine)
         else:
             return engine.contextual_connect(**kwargs)
 
@@ -1246,7 +1281,8 @@ class Session(object):
         if len(flush_context.tasks) == 0:
             return
         
-        flush_context.transaction = transaction = self.create_transaction(autoflush=False)
+        self.begin(subtransactions=True, _autoflush=False)
+        flush_context.transaction = transaction = self.transaction
         try:
             flush_context.execute()
 

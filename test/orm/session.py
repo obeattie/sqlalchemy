@@ -240,13 +240,13 @@ class SessionTest(TestBase, AssertsExecutionResults):
 
 
     @engines.close_open_connections
-    def test_external_joined_transaction(self):
+    def test_subtransaction_on_external(self):
         class User(object):pass
         mapper(User, users)
         conn = testing.db.connect()
         trans = conn.begin()
         sess = create_session(bind=conn, autocommit=False, autoflush=True)
-        sess.begin()
+        sess.begin(subtransactions=True)
         u = User()
         sess.save(u)
         sess.flush()
@@ -331,11 +331,11 @@ class SessionTest(TestBase, AssertsExecutionResults):
         assert users.count().scalar() == 1
         assert addresses.count().scalar() == 1
 
-    def test_joined_transaction(self):
+    def test_subtransaction_on_noautocommit(self):
         class User(object):pass
         mapper(User, users)
         sess = create_session(autocommit=False, autoflush=True)
-        sess.begin()
+        sess.begin(subtransactions=True)
         u = User()
         sess.save(u)
         sess.flush()
@@ -510,16 +510,14 @@ class SessionTest(TestBase, AssertsExecutionResults):
         mapper(User, users)
         c = testing.db.connect()
         sess = create_session(bind=c)
-        sess.create_transaction()
+        sess.begin()
         transaction = sess.transaction
         u = User()
         sess.save(u)
         sess.flush()
-        assert transaction.get_or_add(testing.db) is transaction.get_or_add(c) is c
+        assert transaction._connection_for_bind(testing.db) is transaction._connection_for_bind(c) is c
 
-        self.assertRaisesMessage(sa_exc.InvalidRequestError, "Session already has a Connection associated", transaction.add, testing.db.connect())
-        self.assertRaisesMessage(sa_exc.InvalidRequestError, "Session already has a Connection associated", transaction.get_or_add, testing.db.connect())
-        self.assertRaisesMessage(sa_exc.InvalidRequestError, "Session already has a Connection associated", transaction.add, testing.db)
+        self.assertRaisesMessage(sa_exc.InvalidRequestError, "Session already has a Connection associated", transaction._connection_for_bind, testing.db.connect())
 
         transaction._rollback()
         assert len(sess.query(User).all()) == 0

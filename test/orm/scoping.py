@@ -36,6 +36,7 @@ class ScopedSessionTest(ORMTest):
         s.options.append(sso)
         Session.save(s)
         Session.commit()
+        Session.refresh(sso)
         Session.remove()
 
         self.assertEquals(SomeObject(id=1, data="hello", options=[SomeOtherObject(someid=1)]), Session.query(SomeObject).one())

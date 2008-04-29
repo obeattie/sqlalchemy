@@ -15,7 +15,7 @@ from testlib import engines, tables, fixtures
 
 # TODO: convert suite to not use Session.mapper, use fixtures.Base
 # with explicit session.save()
-Session = scoped_session(sessionmaker(autoflush=True, autocommit=False))
+Session = scoped_session(sessionmaker(autoflush=True, autocommit=False, autoexpire=False))
 orm_mapper = mapper
 mapper = Session.mapper
 
