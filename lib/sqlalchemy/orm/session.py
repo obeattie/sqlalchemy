@@ -554,7 +554,7 @@ class Session(object):
                 raise sa_exc.InvalidRequestError("A transaction is already begun.  Use subtransactions=True to allow subtransactions.")
         else:
             self.transaction = SessionTransaction(self, nested=nested, autoflush=_autoflush)
-
+        return self.transaction  # needed for __enter__/__exit__ hook
 
     def begin_nested(self):
         """Begin a `nested` transaction on this Session.
@@ -1281,8 +1281,7 @@ class Session(object):
         if len(flush_context.tasks) == 0:
             return
         
-        self.begin(subtransactions=True, _autoflush=False)
-        flush_context.transaction = transaction = self.transaction
+        flush_context.transaction = transaction = self.begin(subtransactions=True, _autoflush=False)
         try:
             flush_context.execute()
 
