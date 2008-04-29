@@ -121,7 +121,7 @@ class DBAPIError(SQLAlchemyError):
         except Exception, e:
             text = 'Error in str() of DB-API-generated exception: ' + str(e)
         SQLAlchemyError.__init__(
-            self, "(%s) %s" % (orig.__class__.__name__, text))
+            self, '(%s) %s' % (orig.__class__.__name__, text))
         self.statement = statement
         self.params = params
         self.orig = orig
@@ -169,6 +169,7 @@ class NotSupportedError(DatabaseError):
 
 
 # Warnings
+
 class SADeprecationWarning(DeprecationWarning):
     """Issued once per usage of a deprecated API."""
 

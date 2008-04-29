@@ -30,14 +30,11 @@ is equivalent to::
 
 import logging
 import sys
-import warnings
-import sqlalchemy.exc as sa_exc
 
 
 rootlogger = logging.getLogger('sqlalchemy')
 if rootlogger.level == logging.NOTSET:
     rootlogger.setLevel(logging.WARN)
-warnings.filterwarnings("once", category=sa_exc.SADeprecationWarning)
 
 default_enabled = False
 def default_logging(name):
