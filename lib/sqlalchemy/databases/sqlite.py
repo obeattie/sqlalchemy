@@ -67,7 +67,7 @@ class DateTimeMixin(object):
             microsecond = 0
         return time.strptime(value, self.__format__)[0:6] + (microsecond,)
 
-class SLDateTime(DateTimeMixin,sqltypes.DateTime):
+class SLDateTime(DateTimeMixin, sqltypes.DateTime):
     __format__ = "%Y-%m-%d %H:%M:%S"
     __microsecond__ = True
 
@@ -203,7 +203,7 @@ class SQLiteDialect(default.DefaultDialect):
             return tuple([int(x) for x in num.split('.')])
         if self.dbapi is not None:
             sqlite_ver = self.dbapi.version_info
-            if sqlite_ver < (2,1,'3'):
+            if sqlite_ver < (2, 1, '3'):
                 util.warn(
                     ("The installed version of pysqlite2 (%s) is out-dated "
                      "and will cause errors in some cases.  Version 2.1.3 "
@@ -334,7 +334,7 @@ class SQLiteDialect(default.DefaultDialect):
                 args = re.findall(r'(\d+)', args)
                 coltype = coltype(*[int(a) for a in args])
 
-            colargs= []
+            colargs = []
             if has_default:
                 colargs.append(PassiveDefault('?'))
             table.append_column(schema.Column(name, coltype, primary_key = primary_key, nullable = nullable, *colargs))
@@ -355,7 +355,7 @@ class SQLiteDialect(default.DefaultDialect):
             try:
                 fk = fks[constraint_name]
             except KeyError:
-                fk = ([],[])
+                fk = ([], [])
                 fks[constraint_name] = fk
 
             # look up the table based on the given table's engine, not 'self',

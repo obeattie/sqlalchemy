@@ -390,7 +390,8 @@ class Objectstore(ScopedSession):
 
 objectstore = Objectstore(create_session)
 
-class PKNotFoundError(SQLAlchemyError): pass
+class PKNotFoundError(SQLAlchemyError):
+    pass
 
 def _ddl_error(cls):
     msg = 'SQLSoup can only modify mapped Tables (found: %s)' \

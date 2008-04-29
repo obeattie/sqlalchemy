@@ -62,7 +62,7 @@ class ScopedSession(object):
         
         from sqlalchemy.orm import mapper
         
-        extension_args = dict([(arg,kwargs.pop(arg))
+        extension_args = dict([(arg, kwargs.pop(arg))
                                for arg in get_cls_kwargs(_ScopedExt)
                                if arg in kwargs])
         
@@ -119,10 +119,10 @@ for prop in ('bind', 'dirty', 'deleted', 'new', 'identity_map'):
     setattr(ScopedSession, prop, makeprop(prop))
 
 def clslevel(name):
-    def do(cls, *args,**kwargs):
+    def do(cls, *args, **kwargs):
         return getattr(Session, name)(*args, **kwargs)
     return classmethod(do)
-for prop in ('close_all','object_session', 'identity_key'):
+for prop in ('close_all', 'object_session', 'identity_key'):
     setattr(ScopedSession, prop, clslevel(prop))
     
 class _ScopedExt(MapperExtension):

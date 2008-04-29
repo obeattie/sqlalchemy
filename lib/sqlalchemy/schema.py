@@ -781,7 +781,7 @@ class ForeignKey(SchemaItem):
                     (tname, colname) = m.group(1, 2)
                     schema = None
                 else:
-                    (schema,tname,colname) = m.group(1,2,3)
+                    (schema, tname, colname) = m.group(1, 2, 3)
                 if _get_table_key(tname, schema) not in parenttable.metadata:
                     raise exc.InvalidRequestError(
                         "Could not find table '%s' with which to generate a "
@@ -929,7 +929,7 @@ class Sequence(DefaultGenerator):
         self.name = name
         self.start = start
         self.increment = increment
-        self.optional=optional
+        self.optional = optional
         self.quote = quote
         self.schema = schema
         self.kwargs = kwargs
@@ -1110,7 +1110,7 @@ class ForeignKeyConstraint(Constraint):
         if self not in table.constraints:
             table.constraints.add(self)
             for (c, r) in zip(self.__colnames, self.__refcolnames):
-                self.append_element(c,r)
+                self.append_element(c, r)
 
     def append_element(self, col, refcol):
         fk = ForeignKey(refcol, constraint=self, name=self.name, onupdate=self.onupdate, ondelete=self.ondelete, use_alter=self.use_alter)
@@ -1171,14 +1171,14 @@ class PrimaryKeyConstraint(Constraint):
 
     def add(self, col):
         self.columns.add(col)
-        col.primary_key=True
+        col.primary_key = True
     append_column = add
 
     def replace(self, col):
         self.columns.replace(col)
 
     def remove(self, col):
-        col.primary_key=False
+        col.primary_key = False
         del self.columns[col.key]
 
     def copy(self):

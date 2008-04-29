@@ -146,7 +146,7 @@ class PGArray(sqltypes.MutableType, sqltypes.Concatenable, sqltypes.TypeEngine):
             if value is None:
                 return value
             def convert_item(item):
-                if isinstance(item, (list,tuple)):
+                if isinstance(item, (list, tuple)):
                     return [convert_item(child) for child in item]
                 else:
                     if item_proc:
@@ -519,7 +519,7 @@ class PGDialect(default.DefaultDialect):
                             default = domain['default']
                         coltype = ischema_names[domain['attype']]
                 else:
-                    coltype=None
+                    coltype = None
 
             if coltype:
                 coltype = coltype(*args, **kwargs)
@@ -530,7 +530,7 @@ class PGDialect(default.DefaultDialect):
                           (attype, name))
                 coltype = sqltypes.NULLTYPE
 
-            colargs= []
+            colargs = []
             if default is not None:
                 match = re.search(r"""(nextval\(')([^']+)('.*$)""", default)
                 if match is not None:
@@ -560,7 +560,7 @@ class PGDialect(default.DefaultDialect):
             col = table.c[pk]
             table.primary_key.add(col)
             if col.default is None:
-                col.autoincrement=False
+                col.autoincrement = False
 
         # Foreign keys
         FK_SQL = """

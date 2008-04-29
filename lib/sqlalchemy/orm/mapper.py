@@ -679,8 +679,8 @@ class Mapper(object):
         # do a special check for the "discriminiator" column, as it may only be present
         # in the 'with_polymorphic' selectable but we need it for the base mapper
         if self.polymorphic_on and self.polymorphic_on not in self._columntoproperty:
-           col = self.mapped_table.corresponding_column(self.polymorphic_on) or self.polymorphic_on
-           self._compile_property(col.key, ColumnProperty(col), init=False, setparent=True)
+            col = self.mapped_table.corresponding_column(self.polymorphic_on) or self.polymorphic_on
+            self._compile_property(col.key, ColumnProperty(col), init=False, setparent=True)
 
     def _adapt_inherited_property(self, key, prop):
         if not self.concrete:
@@ -1151,7 +1151,7 @@ class Mapper(object):
                 pks = mapper._pks_by_table[table]
                 def comparator(a, b):
                     for col in pks:
-                        x = cmp(a[1][col._label],b[1][col._label])
+                        x = cmp(a[1][col._label], b[1][col._label])
                         if x != 0:
                             return x
                     return 0
@@ -1283,12 +1283,12 @@ class Mapper(object):
                     params[col.key] = mapper._get_state_attr_by_column(state, col)
                 if mapper.version_id_col and table.c.contains_column(mapper.version_id_col):
                     params[mapper.version_id_col.key] = mapper._get_state_attr_by_column(state, mapper.version_id_col)
-                
+
             for connection, del_objects in delete.iteritems():
                 mapper = table_to_mapper[table]
                 def comparator(a, b):
                     for col in mapper._pks_by_table[table]:
-                        x = cmp(a[col.key],b[col.key])
+                        x = cmp(a[col.key], b[col.key])
                         if x != 0:
                             return x
                     return 0
@@ -1340,7 +1340,7 @@ class Mapper(object):
         visitables = [(self.__props.itervalues(), 'property', state)]
 
         while visitables:
-            iterator,item_type,parent_state = visitables[-1]
+            iterator, item_type, parent_state = visitables[-1]
             try:
                 if item_type == 'property':
                     prop = iterator.next()

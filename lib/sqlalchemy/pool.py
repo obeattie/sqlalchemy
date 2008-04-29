@@ -372,7 +372,7 @@ class _ConnectionFairy(object):
     def checkout(self):
         if self.connection is None:
             raise exc.InvalidRequestError("This connection is closed")
-        self.__counter +=1
+        self.__counter += 1
 
         if not self._pool._on_checkout or self.__counter != 1:
             return self
@@ -419,7 +419,7 @@ class _ConnectionFairy(object):
             self._connection_record = None
 
     def close(self):
-        self.__counter -=1
+        self.__counter -= 1
         if self.__counter == 0:
             self._close()
 
@@ -651,10 +651,10 @@ class NullPool(Pool):
         return "NullPool"
 
     def do_return_conn(self, conn):
-       conn.close()
+        conn.close()
 
     def do_return_invalid(self, conn):
-       pass
+        pass
 
     def do_get(self):
         return self.create_connection()

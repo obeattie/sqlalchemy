@@ -161,7 +161,7 @@ class CompositeProperty(ColumnProperty):
 class SynonymProperty(MapperProperty):
     def __init__(self, name, map_column=None, descriptor=None):
         self.name = name
-        self.map_column=map_column
+        self.map_column = map_column
         self.descriptor = descriptor
 
     def setup(self, context, entity, path, adapter, **kwargs):

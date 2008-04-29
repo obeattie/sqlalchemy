@@ -298,7 +298,7 @@ class TypeDecorator(AbstractType):
         return self.impl.copy_value(value)
 
     def compare_values(self, x, y):
-        return self.impl.compare_values(x,y)
+        return self.impl.compare_values(x, y)
 
     def is_mutable(self):
         return self.impl.is_mutable()
@@ -631,7 +631,7 @@ class Interval(TypeDecorator):
             if value is None:
                 return None
             return dt.datetime.utcfromtimestamp(0) + value
-            
+
     def process_result_value(self, value, dialect):
         if dialect.__class__ in self.__supported:
             return value
@@ -640,23 +640,68 @@ class Interval(TypeDecorator):
                 return None
             return value - dt.datetime.utcfromtimestamp(0)
 
-class FLOAT(Float): pass
-TEXT = Text
-class NUMERIC(Numeric): pass
-class DECIMAL(Numeric): pass
-class INT(Integer): pass
+class FLOAT(Float):
+    """The SQL FLOAT type."""
+
+
+class NUMERIC(Numeric):
+    """The SQL NUMERIC type."""
+
+
+class DECIMAL(Numeric):
+    """The SQL DECIMAL type."""
+
+
+class INT(Integer):
+    """The SQL INT or INTEGER type."""
+
+
 INTEGER = INT
-class SMALLINT(Smallinteger): pass
-class TIMESTAMP(DateTime): pass
-class DATETIME(DateTime): pass
-class DATE(Date): pass
-class TIME(Time): pass
-class CLOB(Text): pass
-class VARCHAR(String): pass
-class CHAR(String): pass
-class NCHAR(Unicode): pass
-class BLOB(Binary): pass
-class BOOLEAN(Boolean): pass
+
+class SMALLINT(Smallinteger):
+    """The SQL SMALLINT type."""
+
+
+class TIMESTAMP(DateTime):
+    """The SQL TIMESTAMP type."""
+
+
+class DATETIME(DateTime):
+    """The SQL DATETIME type."""
+
+
+class DATE(Date):
+    """The SQL DATE type."""
+
+
+class TIME(Time):
+    """The SQL TIME type."""
+
+
+TEXT = Text
+
+class CLOB(Text):
+    """The SQL CLOB type."""
+
+
+class VARCHAR(String):
+    """The SQL VARCHAR type."""
+
+
+class CHAR(String):
+    """The SQL CHAR type."""
+
+
+class NCHAR(Unicode):
+    """The SQL NCHAR type."""
+
+
+class BLOB(Binary):
+    """The SQL BLOB type."""
+
+
+class BOOLEAN(Boolean):
+    """The SQL BOOLEAN type."""
 
 NULLTYPE = NullType()
 

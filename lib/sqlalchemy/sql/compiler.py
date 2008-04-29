@@ -414,7 +414,7 @@ class DefaultCompiler(engine.Compiled):
         return truncname
     
     def _process_anon(self, match):
-        (ident, derived) = match.group(1,2)
+        (ident, derived) = match.group(1, 2)
 
         key = ('anonymous', ident)
         if key in self.generated_ids:

@@ -53,7 +53,7 @@ class URL(object):
             self.port = int(port)
         else:
             self.port = None
-        self.database= database
+        self.database = database
         self.query = query or {}
 
     def __str__(self):

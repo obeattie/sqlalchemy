@@ -11,7 +11,7 @@ from sqlalchemy import sql, util, log
 from sqlalchemy.sql import util as sql_util
 from sqlalchemy.sql import visitors, expression, operators
 from sqlalchemy.orm import mapper, attributes
-from sqlalchemy.orm.interfaces import LoaderStrategy, StrategizedOption,\
+from sqlalchemy.orm.interfaces import LoaderStrategy, StrategizedOption, \
      MapperOption, PropertyOption, serialize_path, deserialize_path
 from sqlalchemy.orm import session as sessionlib
 from sqlalchemy.orm import util as mapperutil
@@ -438,7 +438,7 @@ class LoadLazyAttribute(object):
     def __setstate__(self, state):
         self.state = state['state']
         self.key = state['key']
-        self.options= state['options']
+        self.options = state['options']
         self.path = deserialize_path(state['path'])
         
     def __call__(self):

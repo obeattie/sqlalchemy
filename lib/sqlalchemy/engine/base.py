@@ -1113,7 +1113,7 @@ class Engine(Connectable):
     def __init__(self, pool, dialect, url, echo=None, proxy=None):
         self.pool = pool
         self.url = url
-        self.dialect=dialect
+        self.dialect = dialect
         self.echo = echo
         self.engine = self
         self.logger = log.instance_logger(self, echoflag=echo)

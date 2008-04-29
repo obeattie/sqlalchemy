@@ -37,37 +37,35 @@ __all__ = [ 'relation', 'column_property', 'composite', 'backref', 'eagerload',
 
 
 def scoped_session(session_factory, scopefunc=None):
-  """Provides thread-local management of Sessions.
+    """Provides thread-local management of Sessions.
 
-  This is a front-end function to the [sqlalchemy.orm.scoping#ScopedSession]
-  class.
+    This is a front-end function to the [sqlalchemy.orm.scoping#ScopedSession]
+    class.
 
-  Usage::
+    Usage::
 
-    Session = scoped_session(sessionmaker(autoflush=True))
+      Session = scoped_session(sessionmaker(autoflush=True))
 
-  To instantiate a Session object which is part of the scoped
-  context, instantiate normally::
+    To instantiate a Session object which is part of the scoped context,
+    instantiate normally::
 
-    session = Session()
+      session = Session()
 
-  Most session methods are available as classmethods from
-  the scoped session::
+    Most session methods are available as classmethods from the scoped
+    session::
 
-    Session.commit()
-    Session.close()
+      Session.commit()
+      Session.close()
 
-  To map classes so that new instances are saved in the current
-  Session automatically, as well as to provide session-aware
-  class attributes such as "query", use the `mapper` classmethod
-  from the scoped session::
+    To map classes so that new instances are saved in the current Session
+    automatically, as well as to provide session-aware class attributes such
+    as "query", use the `mapper` classmethod from the scoped session::
 
-    mapper = Session.mapper
-    mapper(Class, table, ...)
+      mapper = Session.mapper
+      mapper(Class, table, ...)
 
-  """
-
-  return ScopedSession(session_factory, scopefunc=scopefunc)
+    """
+    return ScopedSession(session_factory, scopefunc=scopefunc)
 
 def create_session(bind=None, **kwargs):
     """create a new [sqlalchemy.orm.session#Session].

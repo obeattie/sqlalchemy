@@ -36,7 +36,7 @@ class DynamicAttributeImpl(attributes.AttributeImpl):
     def __init__(self, class_, key, typecallable, class_manager, target_mapper, order_by, **kwargs):
         super(DynamicAttributeImpl, self).__init__(class_, key, typecallable, class_manager, **kwargs)
         self.target_mapper = target_mapper
-        self.order_by=order_by
+        self.order_by = order_by
         self.query_class = AppenderQuery
 
     def get(self, state, passive=False):

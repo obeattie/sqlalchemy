@@ -1198,7 +1198,10 @@ class Query(object):
 
         if self._lockmode:
             try:
-                for_update = {'read':'read','update':True,'update_nowait':'nowait',None:False}[self._lockmode]
+                for_update = {'read': 'read',
+                              'update': True,
+                              'update_nowait': 'nowait',
+                              None: False}[self._lockmode]
             except KeyError:
                 raise sa_exc.ArgumentError("Unknown lockmode '%s'" % self._lockmode)
         else:

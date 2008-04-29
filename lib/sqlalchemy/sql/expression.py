@@ -1518,7 +1518,7 @@ class ColumnElement(ClauseElement, _CompareMixin):
             co = _ColumnClause(self.anon_label, selectable, type_=getattr(self, 'type', None))
 
         co.proxies = [self]
-        selectable.columns[name]= co
+        selectable.columns[name] = co
         return co
 
     def anon_label(self):
@@ -1648,7 +1648,7 @@ class FromClause(Selectable):
     """Represent an element that can be used within the ``FROM`` clause of a ``SELECT`` statement."""
 
     __visit_name__ = 'fromclause'
-    named_with_column=False
+    named_with_column = False
     _hide_froms = []
     quote = False
 
@@ -1695,12 +1695,12 @@ class FromClause(Selectable):
         return fromclause in util.Set(self._cloned_set)
 
     def replace_selectable(self, old, alias):
-      """replace all occurences of FromClause 'old' with the given Alias object, returning a copy of this ``FromClause``."""
+        """replace all occurences of FromClause 'old' with the given Alias object, returning a copy of this ``FromClause``."""
 
-      global ClauseAdapter
-      if ClauseAdapter is None:
-          from sqlalchemy.sql.util import ClauseAdapter
-      return ClauseAdapter(alias).traverse(self)
+        global ClauseAdapter
+        if ClauseAdapter is None:
+            from sqlalchemy.sql.util import ClauseAdapter
+        return ClauseAdapter(alias).traverse(self)
 
     def correspond_on_equivalents(self, column, equivalents):
         col = self.corresponding_column(column, require_embedded=True)
@@ -1857,7 +1857,7 @@ class _BindParamClause(ClauseElement, _CompareMixin):
 
     def _convert_to_unique(self):
         if not self.unique:
-            self.unique=True
+            self.unique = True
             self.key = "{ANON %d %s}" % (id(self), self._orig_key or 'param')
 
     def _get_from_objects(self, **modifiers):
@@ -2426,12 +2426,12 @@ class Alias(FromClause):
             self._oid_column = self.element.oid_column._make_proxy(self)
 
     def _copy_internals(self, clone=_clone):
-       self._reset_exported()
-       self.element = _clone(self.element)
-       baseselectable = self.element
-       while isinstance(baseselectable, Alias):
-           baseselectable = baseselectable.selectable
-       self.original = baseselectable
+        self._reset_exported()
+        self.element = _clone(self.element)
+        baseselectable = self.element
+        while isinstance(baseselectable, Alias):
+            baseselectable = baseselectable.selectable
+        self.original = baseselectable
 
     def get_children(self, column_collections=True, aliased_selectables=True, **kwargs):
         if column_collections:
@@ -2617,7 +2617,7 @@ class _ColumnClause(_Immutable, ColumnElement):
                     counter = 1
                     while label in self.table.c:
                         label = self.__label + "_" + str(counter)
-                        counter +=1
+                        counter += 1
                     self.__label = label
             else:
                 self.__label = self.name
@@ -3143,7 +3143,7 @@ class Select(_SelectBaseMixin, FromClause):
         
         """
         s = self._generate()
-        s._should_correlate=False
+        s._should_correlate = False
         if fromclauses == (None,):
             s._correlate = util.Set()
         else:
@@ -3153,7 +3153,7 @@ class Select(_SelectBaseMixin, FromClause):
     def append_correlation(self, fromclause):
         """append the given correlation expression to this select() construct."""
         
-        self._should_correlate=False
+        self._should_correlate = False
         self._correlate = self._correlate.union([fromclause])
 
     def append_column(self, column):
@@ -3357,7 +3357,7 @@ class Insert(_ValuesBase):
         self._bind = bind
         self.table = table
         self.select = None
-        self.inline=inline
+        self.inline = inline
         if prefixes:
             self._prefixes = [_literal_as_text(p) for p in prefixes]
         else:
@@ -3453,7 +3453,7 @@ class Delete(_UpdateBase):
 
 class _IdentifiedClause(ClauseElement):
     supports_execution = True
-    quote=False
+    quote = False
     
     def __init__(self, ident):
         self.ident = ident

@@ -184,17 +184,17 @@ except ImportError:
     class deque(list):
         def appendleft(self, x):
             self.insert(0, x)
-        
+
         def extendleft(self, iterable):
             self[0:0] = list(iterable)
 
         def popleft(self):
             return self.pop(0)
-            
+
         def rotate(self, n):
             for i in xrange(n):
                 self.appendleft(self.pop())
-                
+
 def to_list(x, default=None):
     if x is None:
         return default
@@ -206,7 +206,7 @@ def to_list(x, default=None):
 def array_as_starargs_decorator(fn):
     """Interpret a single positional array argument as
     *args for the decorated method.
-    
+
     """
 
     def starargs_as_list(self, *args, **kwargs):
@@ -216,7 +216,7 @@ def array_as_starargs_decorator(fn):
             return fn(self, *args, **kwargs)
     starargs_as_list.__doc__ = fn.__doc__
     return function_named(starargs_as_list, fn.__name__)
-    
+
 def to_set(x):
     if x is None:
         return Set()
@@ -383,7 +383,7 @@ def getargspec_init(method):
 
 def unbound_method_to_callable(func_or_cls):
     """Adjust the incoming callable such that a 'self' argument is not required."""
-    
+
     if isinstance(func_or_cls, types.MethodType) and not func_or_cls.im_self:
         return func_or_cls.im_func
     else:
@@ -452,9 +452,12 @@ def duck_type_collection(specimen, default=None):
             return specimen.__emulates__
 
     isa = isinstance(specimen, type) and issubclass or isinstance
-    if isa(specimen, list): return list
-    if isa(specimen, set_types): return Set
-    if isa(specimen, dict): return dict
+    if isa(specimen, list):
+        return list
+    elif isa(specimen, set_types):
+        return Set
+    elif isa(specimen, dict):
+        return dict
 
     if hasattr(specimen, 'append'):
         return list
@@ -554,22 +557,22 @@ class SimpleProperty(object):
 
 
 class NotImplProperty(object):
-  """a property that raises ``NotImplementedError``."""
+    """a property that raises ``NotImplementedError``."""
 
-  def __init__(self, doc):
-      self.__doc__ = doc
+    def __init__(self, doc):
+        self.__doc__ = doc
 
-  def __set__(self, obj, value):
-      raise NotImplementedError()
+    def __set__(self, obj, value):
+        raise NotImplementedError()
 
-  def __delete__(self, obj):
-      raise NotImplementedError()
+    def __delete__(self, obj):
+        raise NotImplementedError()
 
-  def __get__(self, obj, owner):
-      if obj is None:
-          return self
-      else:
-          raise NotImplementedError()
+    def __get__(self, obj, owner):
+        if obj is None:
+            return self
+        else:
+            raise NotImplementedError()
 
 class OrderedProperties(object):
     """An object that maintains the order in which attributes are set upon it.
@@ -620,10 +623,10 @@ class OrderedProperties(object):
 
     def __contains__(self, key):
         return key in self._data
-    
+
     def update(self, value):
         self._data.update(value)
-        
+
     def get(self, key, default=None):
         if key in self:
             return self[key]
@@ -754,12 +757,12 @@ class OrderedSet(Set):
     def remove(self, element):
         Set.remove(self, element)
         self._list.remove(element)
-    
+
     def insert(self, pos, element):
         if element not in self:
             self._list.insert(pos, element)
         Set.add(self, element)
-        
+
     def discard(self, element):
         if element in self:
             self._list.remove(element)
@@ -776,22 +779,22 @@ class OrderedSet(Set):
         return iter(self._list)
 
     def __repr__(self):
-      return '%s(%r)' % (self.__class__.__name__, self._list)
+        return '%s(%r)' % (self.__class__.__name__, self._list)
 
     __str__ = __repr__
 
     def update(self, iterable):
-      add = self.add
-      for i in iterable:
-          add(i)
-      return self
+        add = self.add
+        for i in iterable:
+            add(i)
+        return self
 
     __ior__ = update
 
     def union(self, other):
-      result = self.__class__(self)
-      result.update(other)
-      return result
+        result = self.__class__(self)
+        result.update(other)
+        return result
 
     __or__ = union
 
@@ -824,10 +827,10 @@ class OrderedSet(Set):
     __iand__ = intersection_update
 
     def symmetric_difference_update(self, other):
-      Set.symmetric_difference_update(self, other)
-      self._list =  [ a for a in self._list if a in self]
-      self._list += [ a for a in other._list if a in self]
-      return self
+        Set.symmetric_difference_update(self, other)
+        self._list =  [ a for a in self._list if a in self]
+        self._list += [ a for a in other._list if a in self]
+        return self
 
     __ixor__ = symmetric_difference_update
 
@@ -1150,32 +1153,32 @@ class ScopedRegistry(object):
 class WeakCompositeKey(object):
     """an weak-referencable, hashable collection which is strongly referenced
     until any one of its members is garbage collected.
-    
+
     """
     keys = Set()
-    
+
     def __init__(self, *args):
         self.args = [self.__ref(arg) for arg in args]
         WeakCompositeKey.keys.add(self)
-    
+
     def __ref(self, arg):
         if isinstance(arg, type):
             return weakref.ref(arg, self.__remover)
         else:
             return lambda: arg
-            
+
     def __remover(self, wr):
         WeakCompositeKey.keys.discard(self)
-        
+
     def __hash__(self):
         return hash(tuple(self))
-        
+
     def __cmp__(self, other):
         return cmp(tuple(self), tuple(other))
-    
+
     def __iter__(self):
         return iter([arg() for arg in self.args])
-        
+
 class _symbol(object):
     def __init__(self, name):
         """Construct a new named symbol."""
@@ -1394,7 +1397,7 @@ class WeakIdentityMapping(weakref.WeakKeyDictionary):
 
     def _cleanup(self, wr, key=None):
         if key is None:
-            key=wr.key
+            key = wr.key
         try:
             del self._weakrefs[key]
         except (KeyError, AttributeError):  # pragma: no cover

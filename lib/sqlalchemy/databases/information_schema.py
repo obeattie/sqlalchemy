@@ -124,7 +124,7 @@ def reflecttable(connection, table, include_columns, ischema_names):
         coltype = ischema_names[type]
         #print "coltype " + repr(coltype) + " args " +  repr(args)
         coltype = coltype(*args)
-        colargs= []
+        colargs = []
         if default is not None:
             colargs.append(PassiveDefault(sql.text(default)))
         table.append_column(Column(name, coltype, nullable=nullable, *colargs))
@@ -157,13 +157,13 @@ def reflecttable(connection, table, include_columns, ischema_names):
             row[colmap[6]]
         )
         #print "type %s on column %s to remote %s.%s.%s" % (type, constrained_column, referred_schema, referred_table, referred_column) 
-        if type=='PRIMARY KEY':
+        if type == 'PRIMARY KEY':
             table.primary_key.add(table.c[constrained_column])
-        elif type=='FOREIGN KEY':
+        elif type == 'FOREIGN KEY':
             try:
                 fk = fks[constraint_name]
             except KeyError:
-                fk = ([],[])
+                fk = ([], [])
                 fks[constraint_name] = fk
             if current_schema == referred_schema:
                 referred_schema = table.schema

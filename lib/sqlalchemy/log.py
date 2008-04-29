@@ -40,7 +40,7 @@ default_enabled = False
 def default_logging(name):
     global default_enabled
     if logging.getLogger(name).getEffectiveLevel() < logging.WARN:
-        default_enabled=True
+        default_enabled = True
     if not default_enabled:
         default_enabled = True
         handler = logging.StreamHandler(sys.stdout)

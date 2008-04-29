@@ -1966,7 +1966,7 @@ class MySQLCompiler(compiler.DefaultCompiler):
 
     def for_update_clause(self, select):
         if select.for_update == 'read':
-             return ' LOCK IN SHARE MODE'
+            return ' LOCK IN SHARE MODE'
         else:
             return super(MySQLCompiler, self).for_update_clause(select)
 

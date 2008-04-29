@@ -602,7 +602,7 @@ class MSSQLDialect(default.DefaultDialect):
                 elif coltype in (MSNVarchar, AdoMSNVarchar) and charlen == -1:
                     args[0] = None
                 coltype = coltype(*args)
-            colargs= []
+            colargs = []
             if default is not None:
                 colargs.append(schema.PassiveDefault(sql.text(default)))
 
@@ -633,8 +633,8 @@ class MSSQLDialect(default.DefaultDialect):
                 row = cursor.fetchone()
                 cursor.close()
                 if not row is None:
-                    ic.sequence.start=int(row[0])
-                    ic.sequence.increment=int(row[1])
+                    ic.sequence.start = int(row[0])
+                    ic.sequence.increment = int(row[1])
             except:
                 # ignoring it, works just like before
                 pass
@@ -684,13 +684,15 @@ class MSSQLDialect(default.DefaultDialect):
                 
             if rfknm != fknm:
                 if fknm:
-                    table.append_constraint(schema.ForeignKeyConstraint(scols, [_gen_fkref(table,s,t,c) for s,t,c in rcols], fknm))
+                    table.append_constraint(schema.ForeignKeyConstraint(scols, [_gen_fkref(table, s, t, c) for s, t, c in rcols], fknm))
                 fknm, scols, rcols = (rfknm, [], [])
-            if (not scol in scols): scols.append(scol)
-            if (not (rschema, rtbl, rcol) in rcols): rcols.append((rschema, rtbl, rcol))
+            if not scol in scols:
+                scols.append(scol)
+            if not (rschema, rtbl, rcol) in rcols:
+                rcols.append((rschema, rtbl, rcol))
 
         if fknm and scols:
-            table.append_constraint(schema.ForeignKeyConstraint(scols, [_gen_fkref(table,s,t,c) for s,t,c in rcols], fknm))
+            table.append_constraint(schema.ForeignKeyConstraint(scols, [_gen_fkref(table, s, t, c) for s, t, c in rcols], fknm))
 
 
 class MSSQLDialect_pymssql(MSSQLDialect):

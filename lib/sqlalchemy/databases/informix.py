@@ -197,7 +197,7 @@ class InfoExecutionContext(default.DefaultExecutionContext):
     # 5 - rowid after insert
     def post_exec(self):
         if getattr(self.compiled, "isinsert", False) and self.last_inserted_ids() is None:
-            self._last_inserted_ids = [self.cursor.sqlerrd[1],]
+            self._last_inserted_ids = [self.cursor.sqlerrd[1]]
         elif hasattr( self.compiled , 'offset' ):
             self.cursor.offset( self.compiled.offset )
         super(InfoExecutionContext, self).post_exec()
@@ -210,7 +210,7 @@ class InfoDialect(default.DefaultDialect):
     # for informix 7.31
     max_identifier_length = 18
 
-    def __init__(self, use_ansi=True,**kwargs):
+    def __init__(self, use_ansi=True, **kwargs):
         self.use_ansi = use_ansi
         default.DefaultDialect.__init__(self, **kwargs)
 
@@ -244,19 +244,19 @@ class InfoDialect(default.DefaultDialect):
         else:
             opt = {}
 
-        return ([dsn,], opt )
+        return ([dsn], opt)
 
     def create_execution_context(self , *args, **kwargs):
         return InfoExecutionContext(self, *args, **kwargs)
 
-    def oid_column_name(self,column):
+    def oid_column_name(self, column):
         return "rowid"
 
     def table_names(self, connection, schema):
         s = "select tabname from systables"
         return [row[0] for row in connection.execute(s)]
 
-    def has_table(self, connection, table_name,schema=None):
+    def has_table(self, connection, table_name, schema=None):
         cursor = connection.execute("""select tabname from systables where tabname=?""", table_name.lower() )
         return bool( cursor.fetchone() is not None )
 
@@ -341,8 +341,8 @@ class InfoDialect(default.DefaultDialect):
             try:
                 fk = fks[cons_name]
             except KeyError:
-               fk = ([], [])
-               fks[cons_name] = fk
+                fk = ([], [])
+                fks[cons_name] = fk
             refspec = ".".join([remote_table, remote_column])
             schema.Table(remote_table, table.metadata, autoload=True, autoload_with=connection)
             if local_column not in fk[0]:

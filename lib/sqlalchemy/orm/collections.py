@@ -1042,7 +1042,7 @@ def _dict_decorators():
         setattr(fn, '_sa_instrumented', True)
         fn.__doc__ = getattr(getattr(dict, fn.__name__), '__doc__')
 
-    Unspecified=sautil.symbol('Unspecified')
+    Unspecified = sautil.symbol('Unspecified')
 
     def __setitem__(fn):
         def __setitem__(self, key, value, _sa_initiator=None):
@@ -1137,7 +1137,7 @@ def _set_decorators():
         setattr(fn, '_sa_instrumented', True)
         fn.__doc__ = getattr(getattr(Set, fn.__name__), '__doc__')
 
-    Unspecified=sautil.symbol('Unspecified')
+    Unspecified = sautil.symbol('Unspecified')
 
     def add(fn):
         def add(self, value, _sa_initiator=None):

@@ -597,7 +597,7 @@ class SybaseSQLDialect(default.DefaultDialect):
                               (type, name))
                     coltype = sqltypes.NULLTYPE
                 coltype = coltype(*args)
-            colargs= []
+            colargs = []
             if default is not None:
                 colargs.append(schema.PassiveDefault(sql.text(default)))
 
@@ -624,10 +624,10 @@ class SybaseSQLDialect(default.DefaultDialect):
                 row[0], row[1], row[2], row[3],
             )
             if not primary_table in foreignKeys.keys():
-                foreignKeys[primary_table] = [['%s'%(foreign_column)], ['%s.%s'%(primary_table,primary_column)]]
+                foreignKeys[primary_table] = [['%s' % (foreign_column)], ['%s.%s'%(primary_table, primary_column)]]
             else:
                 foreignKeys[primary_table][0].append('%s'%(foreign_column))
-                foreignKeys[primary_table][1].append('%s.%s'%(primary_table,primary_column))
+                foreignKeys[primary_table][1].append('%s.%s'%(primary_table, primary_column))
         for primary_table in foreignKeys.keys():
             #table.append_constraint(schema.ForeignKeyConstraint(['%s.%s'%(foreign_table, foreign_column)], ['%s.%s'%(primary_table,primary_column)]))
             table.append_constraint(schema.ForeignKeyConstraint(foreignKeys[primary_table][0], foreignKeys[primary_table][1]))
@@ -749,7 +749,7 @@ class SybaseSQLCompiler(compiler.DefaultCompiler):
     def bindparam_string(self, name):
         res = super(SybaseSQLCompiler, self).bindparam_string(name)
         if name.lower().startswith('literal'):
-            res = 'STRING(%s)'%res
+            res = 'STRING(%s)' % res
         return res
 
     def get_select_precolumns(self, select):

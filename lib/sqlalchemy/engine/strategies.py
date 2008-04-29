@@ -200,7 +200,7 @@ class MockEngineStrategy(EngineStrategy):
 
         def create(self, entity, **kwargs):
             kwargs['checkfirst'] = False
-            self.dialect.schemagenerator(self.dialect ,self, **kwargs).traverse(entity)
+            self.dialect.schemagenerator(self.dialect, self, **kwargs).traverse(entity)
 
         def drop(self, entity, **kwargs):
             kwargs['checkfirst'] = False
