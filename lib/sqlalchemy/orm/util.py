@@ -195,6 +195,7 @@ class ExtensionCarrier(object):
 
     def _create_do(self, method):
         """Return a closure that loops over impls of the named method."""
+
         def _do(*args, **kwargs):
             for ext in self._extensions:
                 ret = getattr(ext, method)(*args, **kwargs)
@@ -227,7 +228,6 @@ class ORMAdapter(sql_util.ColumnAdapter):
             self.aliased_class = None
         sql_util.ColumnAdapter.__init__(self, selectable, equivalents, chain_to)
 
-
 class AliasedClass(object):
     def __init__(self, cls, alias=None):
         self.__mapper = _class_to_mapper(cls)
@@ -236,7 +236,7 @@ class AliasedClass(object):
         self.__adapter = sql_util.ClauseAdapter(alias, equivalents=self.__mapper._equivalent_columns)
         self.__alias = alias
         self.__name__ = 'AliasedClass_' + str(self.__target)
-    
+
     def __adapt_prop(self, prop):
         existing = getattr(self.__target, prop.key)
         comparator = AliasedComparator(self, self.__adapter, existing.comparator)
@@ -244,12 +244,12 @@ class AliasedClass(object):
             existing.impl, parententity=self, comparator=comparator)
         setattr(self, prop.key, queryattr)
         return queryattr
-        
+
     def __getattr__(self, key):
         prop = self.__mapper._get_property(key, raiseerr=False)
         if prop:
             return self.__adapt_prop(prop)
-            
+
         for base in self.__target.__mro__:
             try:
                 attr = object.__getattribute__(base, key)
@@ -284,7 +284,7 @@ class AliasedComparator(PropComparator):
 
     def __clause_element__(self):
         return self.__clause_element
-    
+
     def operate(self, op, *other, **kwargs):
         return self.adapter.traverse(self.comparator.operate(op, *other, **kwargs))
 
@@ -305,12 +305,12 @@ def _orm_annotate(element):
 class _ORMJoin(expression.Join):
 
     __visit_name__ = expression.Join.__visit_name__
-    
+
     def __init__(self, left, right, onclause=None, isouter=False):
         if hasattr(left, '_orm_mappers'):
             left_mapper = left._orm_mappers[1]
             adapt_from = left.right
-        
+
         else:
             left_mapper, left, left_is_aliased = _entity_info(left)
             if left_is_aliased or not left_mapper:
@@ -323,10 +323,10 @@ class _ORMJoin(expression.Join):
             adapt_to = right
         else:
             adapt_to = None
-            
+
         if left_mapper or right_mapper:
             self._orm_mappers = (left_mapper, right_mapper)
-            
+
             if isinstance(onclause, basestring):
                 prop = left_mapper.get_property(onclause)
             elif isinstance(onclause, attributes.QueryableAttribute):
@@ -346,7 +346,7 @@ class _ORMJoin(expression.Join):
                 else:
                     onclause = pj
                 self._target_adapter = target_adapter
-                
+
         expression.Join.__init__(self, left, right, onclause, isouter)
 
     def join(self, right, onclause=None, isouter=False):
@@ -363,13 +363,13 @@ def outerjoin(left, right, onclause=None):
 
 def with_parent(instance, prop):
     """Return criterion which selects instances with a given parent.
-    
+
     instance
       a parent instance, which should be persistent or detached.
 
      property
        a class-attached descriptor, MapperProperty or string property name
-       attached to the parent instance.  
+       attached to the parent instance.
 
      \**kwargs
        all extra keyword arguments are propagated to the constructor of
@@ -410,7 +410,7 @@ def _entity_descriptor(entity, key):
     else:
         desc = entity.class_manager[key]
         return desc, desc.property
-    
+
 def _orm_columns(entity):
     mapper, selectable, is_aliased_class = _entity_info(entity)
     if isinstance(selectable, expression.Selectable):
@@ -421,10 +421,10 @@ def _orm_columns(entity):
 def _orm_selectable(entity):
     mapper, selectable, is_aliased_class = _entity_info(entity)
     return selectable
-    
+
 def _is_aliased_class(entity):
     return isinstance(entity, AliasedClass)
-    
+
 def _state_mapper(state, entity_name=None):
     if state.entity_name is not attributes.NO_ENTITY_NAME:
         # Override the given entity name if the object is not transient.

@@ -40,6 +40,8 @@ def suite():
         'orm.manytomany',
         'orm.onetoone',
         'orm.dynamic',
+
+        'orm.deprecations',
         )
     alltests = unittest.TestSuite()
     for name in modules_to_test:
