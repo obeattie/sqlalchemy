@@ -23,7 +23,7 @@ from sqlalchemy.sql import util as sql_util
 from sqlalchemy.orm.session import Session as _Session
 from sqlalchemy.orm.session import object_session, sessionmaker
 from sqlalchemy.orm.scoping import ScopedSession
-
+from sqlalchemy import util as __util
 
 __all__ = [ 'relation', 'column_property', 'composite', 'backref', 'eagerload',
             'eagerload_all', 'lazyload', 'noload', 'deferred', 'defer',
@@ -78,8 +78,14 @@ def create_session(bind=None, **kwargs):
     It is recommended to use the [sqlalchemy.orm#sessionmaker()] function
     instead of create_session().
     """
+
+    if 'transactional' in kwargs:
+        __util.warn_deprecated("The 'transactional' argument to sessionmaker() is deprecated; use autocommit=True|False instead.")
+        autocommit = not kwargs.pop('transactional')
+    
     kwargs.setdefault('autoflush', False)
-    kwargs.setdefault('transactional', False)
+    kwargs.setdefault('autocommit', True)
+    kwargs.setdefault('autoexpire', False)
     return _Session(bind=bind, **kwargs)
 
 def relation(argument, secondary=None, **kwargs):

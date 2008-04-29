@@ -80,6 +80,18 @@ class ExpireTest(FixtureTest):
         
         # object is gone, get() raises
         self.assertRaises(orm_exc.ObjectDeletedError, s.get, User, 10)
+    
+    def test_refresh_cancels_expire(self):
+        mapper(User, users)
+        s = create_session()
+        u = s.get(User, 7)
+        s.expire(u)
+        s.refresh(u)
+        
+        def go():
+            u = s.get(User, 7)
+            self.assertEquals(u.name, 'jack')
+        self.assert_sql_count(testing.db, go, 0)
         
     def test_expire_doesntload_on_set(self):
         mapper(User, users)

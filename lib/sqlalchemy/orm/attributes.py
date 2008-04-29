@@ -931,7 +931,7 @@ class InstanceState(object):
             ])
         for k in self.expired_attributes:
             self.callables.pop(k, None)
-        self.expired_attributes.clear()
+        del self.expired_attributes
         return ATTR_WAS_SET
 
     def unmodified(self):
@@ -950,6 +950,7 @@ class InstanceState(object):
         if attribute_names is None:
             attribute_names = self.manager.keys()
             self.expired = True
+            self.modified = False
         for key in attribute_names:
             self.dict.pop(key, None)
             self.committed_state.pop(key, None)
@@ -988,18 +989,29 @@ class InstanceState(object):
                 self.savepoints[-1][0][attr.key] = previous
                 
         self.modified = True
+    
+    # TODO: reorganize savepoints so that the savepoint record is managed externally to the InstanceState.
+    # InstanceState only references the most recent savepoint so that its available in modified_event().
+    
+    def set_savepoint(self, id_=None):
+        self.savepoints.append(({}, self.parents.copy(), self.pending.copy(), self.committed_state.copy(), self.modified, id_))
 
-    def set_savepoint(self):
-        self.savepoints.append(({}, self.parents.copy(), self.pending.copy(), self.committed_state.copy()))
+    def remove_savepoint(self, id_=None):
+        if not self.savepoints:
+            raise sa_exc.AssertionError("Savepoint id %s does not exist"  % (id_))
+            
+        sp = self.savepoints.pop()
+        spid = sp[5]
+        if spid != id_:
+            raise sa_exc.AssertionError("Savepoint id %s does not match %s"  % (spid, id_))
 
-    def remove_savepoint(self):
-        self.savepoints.pop()
-
-    def rollback(self):
+    def rollback(self, id_=None):
         if not self.savepoints:
             raise sa_exc.InvalidRequestError("No savepoints are set; can't rollback.")
         
-        (savepoint, self.parents, self.pending, self.committed_state) = self.savepoints.pop()
+        (savepoint, self.parents, self.pending, self.committed_state, self.modified, spid) = self.savepoints.pop()
+        if spid != id_:
+            raise sa_exc.AssertionError("Savepoint id %s does not match %s"  % (spid, id_))
         
         for attr in self.manager.attributes:
             if attr.impl.key in savepoint:

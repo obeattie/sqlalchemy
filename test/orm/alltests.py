@@ -23,6 +23,7 @@ def suite():
         'orm.naturalpks',
         'orm.unitofwork',
         'orm.session',
+        'orm.transaction',
         'orm.scoping',
         'orm.cascade',
         'orm.relationships',

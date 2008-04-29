@@ -15,7 +15,7 @@ from testlib import engines, tables, fixtures
 
 # TODO: convert suite to not use Session.mapper, use fixtures.Base
 # with explicit session.save()
-Session = scoped_session(sessionmaker(autoflush=True, transactional=True))
+Session = scoped_session(sessionmaker(autoflush=True, autocommit=False))
 orm_mapper = mapper
 mapper = Session.mapper
 
@@ -79,20 +79,15 @@ class VersioningTest(ORMTest):
         s2.commit()
 
         f1.value='f1rev3mine'
-        success = False
-        try:
-            # a concurrent session has modified this, should throw
-            # an exception
-            s.commit()
-        except orm_exc.ConcurrentModificationError, e:
-            #print e
-            success = True
 
         # Only dialects with a sane rowcount can detect the ConcurrentModificationError
         if testing.db.dialect.supports_sane_rowcount:
-            assert success
-
-        s.close()
+            self.assertRaises(orm_exc.ConcurrentModificationError, s.commit)
+            s.rollback()
+        else:
+            s.commit()
+        
+        # new in 0.5 !  dont need to close the session
         f1 = s.query(Foo).get(f1.id)
         f2 = s.query(Foo).get(f2.id)
 
@@ -101,14 +96,11 @@ class VersioningTest(ORMTest):
 
         s.delete(f1)
         s.delete(f2)
-        success = False
-        try:
-            s.commit()
-        except orm_exc.ConcurrentModificationError, e:
-            #print e
-            success = True
+
         if testing.db.dialect.supports_sane_multi_rowcount:
-            assert success
+            self.assertRaises(orm_exc.ConcurrentModificationError, s.commit)
+        else:
+            s.commit()
 
     @engines.close_open_connections
     def test_versioncheck(self):
@@ -124,12 +116,9 @@ class VersioningTest(ORMTest):
         f1s2 = s2.query(Foo).get(f1s1.id)
         f1s2.value='f1 new value'
         s2.commit()
-        try:
-            # load, version is wrong
-            s1.query(Foo).with_lockmode('read').get(f1s1.id)
-            assert False
-        except orm_exc.ConcurrentModificationError, e:
-            assert True
+        # load, version is wrong
+        self.assertRaises(orm_exc.ConcurrentModificationError, s1.query(Foo).with_lockmode('read').get, f1s1.id)
+
         # reload it
         s1.query(Foo).load(f1s1.id)
         # now assert version OK
@@ -2044,7 +2033,7 @@ class TransactionTest(ORMTest):
         orm_mapper(T2, t2)
 
     def test_close_transaction_on_commit_fail(self):
-        Session = sessionmaker(autoflush=False, transactional=False)
+        Session = sessionmaker(autoflush=False, autocommit=True)
         sess = Session()
 
         # with a deferred constraint, this fails at COMMIT time instead

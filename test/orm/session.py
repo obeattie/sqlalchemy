@@ -130,7 +130,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
         conn1 = testing.db.connect()
         conn2 = testing.db.connect()
 
-        sess = create_session(transactional=True, bind=conn1)
+        sess = create_session(autocommit=False, bind=conn1)
         u = User()
         sess.save(u)
         sess.flush()
@@ -149,7 +149,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
         conn1 = testing.db.connect()
         conn2 = testing.db.connect()
 
-        sess = create_session(bind=conn1, transactional=True, autoflush=True)
+        sess = create_session(bind=conn1, autocommit=False, autoflush=True)
         u = User()
         u.user_name='ed'
         sess.save(u)
@@ -172,7 +172,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
         })
         mapper(Address, addresses)
 
-        sess = create_session(autoflush=True, transactional=True)
+        sess = create_session(autoflush=True, autocommit=False)
         u = User(user_name='ed', addresses=[Address(email_address='foo')])
         sess.save(u)
         self.assertEquals(sess.query(Address).filter(Address.user==u).one(), Address(email_address='foo'))
@@ -184,7 +184,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
         mapper(User, users)
 
         try:
-            sess = create_session(transactional=True, autoflush=True)
+            sess = create_session(autocommit=False, autoflush=True)
             u = User()
             u.user_name='ed'
             sess.save(u)
@@ -207,7 +207,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
         conn1 = testing.db.connect()
         conn2 = testing.db.connect()
 
-        sess = create_session(bind=conn1, transactional=True, autoflush=True)
+        sess = create_session(bind=conn1, autocommit=False, autoflush=True)
         u = User()
         u.user_name='ed'
         sess.save(u)
@@ -224,7 +224,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
             'addresses':relation(Address)
         })
 
-        sess = create_session(transactional=True, autoflush=True)
+        sess = create_session(autocommit=False, autoflush=True)
         u = sess.query(User).get(8)
         newad = Address()
         newad.email_address == 'something new'
@@ -245,7 +245,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
         mapper(User, users)
         conn = testing.db.connect()
         trans = conn.begin()
-        sess = create_session(bind=conn, transactional=True, autoflush=True)
+        sess = create_session(bind=conn, autocommit=False, autoflush=True)
         sess.begin()
         u = User()
         sess.save(u)
@@ -264,7 +264,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
         try:
             conn = testing.db.connect()
             trans = conn.begin()
-            sess = create_session(bind=conn, transactional=True, autoflush=True)
+            sess = create_session(bind=conn, autocommit=False, autoflush=True)
             u1 = User()
             sess.save(u1)
             sess.flush()
@@ -334,7 +334,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
     def test_joined_transaction(self):
         class User(object):pass
         mapper(User, users)
-        sess = create_session(transactional=True, autoflush=True)
+        sess = create_session(autocommit=False, autoflush=True)
         sess.begin()
         u = User()
         sess.save(u)
@@ -375,7 +375,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
     def test_nested_autotrans(self):
         class User(object):pass
         mapper(User, users)
-        sess = create_session(transactional=True)
+        sess = create_session(autocommit=False)
         u = User()
         sess.save(u)
         sess.flush()
@@ -469,7 +469,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
         class User(object): pass
         mapper(User, users)
 
-        sess = create_session(transactional=True)
+        sess = create_session(autocommit=False)
 
         sess.begin_nested()
 
@@ -530,7 +530,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
         mapper(User, users)
         c = testing.db.connect()
 
-        sess = create_session(bind=c, transactional=True)
+        sess = create_session(bind=c, autocommit=False)
         u = User()
         sess.save(u)
         sess.flush()
@@ -538,7 +538,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
         assert not c.in_transaction()
         assert c.scalar("select count(1) from users") == 0
 
-        sess = create_session(bind=c, transactional=True)
+        sess = create_session(bind=c, autocommit=False)
         u = User()
         sess.save(u)
         sess.flush()
@@ -551,7 +551,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
         c = testing.db.connect()
 
         trans = c.begin()
-        sess = create_session(bind=c, transactional=False)
+        sess = create_session(bind=c, autocommit=True)
         u = User()
         sess.save(u)
         sess.flush()
@@ -840,7 +840,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
         assert log == ['before_flush', 'after_flush', 'before_commit', 'after_commit', 'after_flush_postexec']
 
         log = []
-        sess = create_session(transactional=True, extension=MyExt())
+        sess = create_session(autocommit=False, extension=MyExt())
         u = User()
         sess.save(u)
         sess.flush()

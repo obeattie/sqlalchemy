@@ -93,7 +93,7 @@ class ShardTest(TestBase):
             else:
                 return ids
 
-        create_session = sessionmaker(class_=ShardedSession, autoflush=True, transactional=True)
+        create_session = sessionmaker(class_=ShardedSession, autoflush=True, autocommit=False)
 
         create_session.configure(shards={
             'north_america':db1,

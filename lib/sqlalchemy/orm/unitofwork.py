@@ -159,7 +159,7 @@ class UOWTransaction(object):
         if postupdate:
             task.append_postupdate(state, post_update_cols)
         else:
-            task.append(state, listonly=listonly, apply_savepoint=True, isdelete=isdelete)
+            task.append(state, listonly=listonly, isdelete=isdelete)
 
     def set_row_switch(self, state):
         """mark a deleted object as a 'row switch'.
@@ -282,10 +282,6 @@ class UOWTransaction(object):
                 yield elem
     elements = property(elements)
     
-    def remove_flush_changes(self):
-        for elem in self.elements:
-            elem.state.rollback()
-            
     def finalize_flush_changes(self):
         """mark processed objects as clean / deleted after a successful flush().
         
@@ -294,9 +290,8 @@ class UOWTransaction(object):
         """
 
         for elem in self.elements:
-            elem.state.remove_savepoint()
             if elem.isdelete:
-                self.session._remove_persistent(elem.state)
+                self.session._remove_newly_deleted(elem.state)
             else:
                 self.session._register_newly_persistent(elem.state)
 
@@ -388,11 +383,9 @@ class UOWTask(object):
 
         return not self._objects and not self.dependencies
             
-    def append(self, state, apply_savepoint=False, listonly=False, isdelete=False):
+    def append(self, state, listonly=False, isdelete=False):
         if state not in self._objects:
             self._objects[state] = rec = UOWTaskElement(state)
-            if apply_savepoint:
-                state.set_savepoint()
         else:
             rec = self._objects[state]
         

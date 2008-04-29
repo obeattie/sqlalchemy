@@ -58,7 +58,7 @@ class Query(object):
     """Encapsulates the object-fetching operations provided by Mappers."""
 
     def __init__(self, entities, session=None, entity_name=None):
-        self._session = session
+        self.session = session
         
         self._with_options = []
         self._lockmode = None
@@ -304,13 +304,6 @@ class Query(object):
         q = Query.__new__(Query)
         q.__dict__ = self.__dict__.copy()
         return q
-
-    def session(self):
-        if self._session is None:
-            return self._mapper_zero().get_session()
-        else:
-            return self._session
-    session = property(session)
 
     def statement(self):
         """return the full SELECT statement represented by this Query."""
@@ -1096,8 +1089,7 @@ class Query(object):
                 context.refresh_instance.commit(self._only_load_props)
                 context.progress.remove(context.refresh_instance)
 
-            for ii in context.progress:
-                ii.commit_all()
+            session._finalize_loaded(context.progress)
                 
             for ii, attrs in context.partials.items():
                 ii.commit(attrs)

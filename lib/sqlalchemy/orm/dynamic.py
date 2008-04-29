@@ -124,7 +124,7 @@ class AppenderQuery(Query):
     
     def session(self):
         return self.__session()
-    session = property(session)
+    session = property(session, lambda s, x:None)
     
     def __iter__(self):
         sess = self.__session()

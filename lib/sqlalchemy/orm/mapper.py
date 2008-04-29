@@ -1493,6 +1493,8 @@ class Mapper(object):
                 state = attributes.instance_state(instance)
                 state.entity_name = self.entity_name
                 state.key = identitykey
+                # manually adding instance to session.  for a complete add,
+                # session._finalize_loaded() must be called.
                 state.session_id = context.session.hash_key
                 session_identity_map.add(state)
 
@@ -1706,10 +1708,7 @@ def _load_scalar_attributes(state, attribute_names):
     mapper = _state_mapper(state)
     session = _state_session(state)
     if not session:
-        try:
-            session = mapper.get_session()
-        except sa_exc.InvalidRequestError:
-            raise sa_exc.UnboundExecutionError("Instance %s is not bound to a Session, and no contextual session is established; attribute refresh operation cannot proceed" % (state_str(state)))
+        raise sa_exc.UnboundExecutionError("Instance %s is not bound to a Session; attribute refresh operation cannot proceed" % (state_str(state)))
 
     has_key = _state_has_identity(state)
 

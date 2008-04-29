@@ -260,7 +260,7 @@ class MapperTest(MapperSuperTest):
         m.add_property('uc_user_name2', comparable_property(
                 UCComparator, User.uc_user_name2))
 
-        sess = create_session(transactional=True)
+        sess = create_session(autocommit=False)
         assert sess.query(User).get(7)
 
         u = sess.query(User).filter_by(user_name='jack').one()
