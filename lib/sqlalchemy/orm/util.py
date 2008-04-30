@@ -229,12 +229,13 @@ class ORMAdapter(sql_util.ColumnAdapter):
         sql_util.ColumnAdapter.__init__(self, selectable, equivalents, chain_to)
 
 class AliasedClass(object):
-    def __init__(self, cls, alias=None):
+    def __init__(self, cls, alias=None, name=None):
         self.__mapper = _class_to_mapper(cls)
         self.__target = self.__mapper.class_
         alias = alias or self.__mapper._with_polymorphic_selectable.alias()
         self.__adapter = sql_util.ClauseAdapter(alias, equivalents=self.__mapper._equivalent_columns)
         self.__alias = alias
+        self._sa_label_name = name
         self.__name__ = 'AliasedClass_' + str(self.__target)
 
     def __adapt_prop(self, prop):

@@ -1059,9 +1059,14 @@ class Query(object):
             filter = None
 
         custom_rows = single_entity and 'append_result' in self._entities[0].extension.methods
-        
-        process = [query_entity.row_processor(self, context, custom_rows) for query_entity in self._entities]
 
+        (process, labels) = zip(*[query_entity.row_processor(self, context, custom_rows) for query_entity in self._entities])
+
+        if not single_entity:
+            labels = dict([(label, property(util.itemgetter(i))) for i, label in enumerate(labels) if label])
+            rowtuple = type.__new__(type, "RowTuple", (tuple,), labels)
+            rowtuple.keys = labels.keys
+            
         while True:
             context.progress = util.Set()
             context.partials = {}
@@ -1080,7 +1085,7 @@ class Query(object):
             elif single_entity:
                 rows = [process[0](context, row) for row in fetch]
             else:
-                rows = [tuple([proc(context, row) for proc in process]) for row in fetch]
+                rows = [rowtuple([proc(context, row) for proc in process]) for row in fetch]
 
             if filter:
                 rows = filter(rows)
@@ -1388,7 +1393,12 @@ class _MapperEntity(_QueryEntity):
             def main(context, row):
                 return _instance(row, None)
         
-        return main
+        if self.is_aliased_class:
+            entname = self.entity._sa_label_name
+        else:
+            entname = self.mapper.class_.__name__
+            
+        return main, entname
 
     def setup_context(self, query, context):
         # if single-table inheritance mapper, add "typecol IN (polymorphic)" criterion so
@@ -1462,7 +1472,8 @@ class _ColumnEntity(_QueryEntity):
 
         def proc(context, row):
             return row[column]
-        return proc
+            
+        return (proc, getattr(column, 'name', None))
 
     def setup_context(self, query, context):
         column = self.__resolve_expr_against_query_aliases(query, self.column, context)

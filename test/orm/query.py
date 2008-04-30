@@ -1058,6 +1058,34 @@ class MixedEntitiesTest(QueryTest):
         # whereas this uses users.c.xxx, is not aliased and creates a new join
         q2 = q.select_from(sel).filter(users.c.id==8).filter(users.c.id>sel.c.id).values(users.c.name, sel.c.name, User.name)
         self.assertEquals(list(q2), [(u'ed', u'jack', u'jack')])
+    
+    def test_tuple_labeling(self):
+        sess = create_session()
+        for row in sess.query(User, Address).join(User.addresses).all():
+            self.assertEquals(set(row.keys()), set(['User', 'Address']))
+            self.assertEquals(row.User, row[0])
+            self.assertEquals(row.Address, row[1])
+            
+        for row in sess.query(User.name, User.id.label('foobar')):
+            self.assertEquals(set(row.keys()), set(['name', 'foobar']))
+            self.assertEquals(row.name, row[0])
+            self.assertEquals(row.foobar, row[1])
+
+        for row in sess.query(User).values(User.name, User.id.label('foobar')):
+            self.assertEquals(set(row.keys()), set(['name', 'foobar']))
+            self.assertEquals(row.name, row[0])
+            self.assertEquals(row.foobar, row[1])
+
+        oalias = aliased(Order)
+        for row in sess.query(User, oalias).join(User.orders).all():
+            self.assertEquals(set(row.keys()), set(['User']))
+            self.assertEquals(row.User, row[0])
+
+        oalias = aliased(Order, name='orders')
+        for row in sess.query(User, oalias).join(User.orders).all():
+            self.assertEquals(set(row.keys()), set(['User', 'orders']))
+            self.assertEquals(row.User, row[0])
+            self.assertEquals(row.orders, row[1])
 
     def test_column_queries(self):
         sess = create_session()

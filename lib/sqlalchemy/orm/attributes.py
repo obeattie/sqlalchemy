@@ -91,6 +91,9 @@ class QueryableAttribute(interfaces.PropComparator):
     def __clause_element__(self):
         return self.comparator.__clause_element__()
     
+    def label(self, name):
+        return self.__clause_element__().label(name)
+        
     def operate(self, op, *other, **kwargs):
         return op(self.comparator, *other, **kwargs)
 
