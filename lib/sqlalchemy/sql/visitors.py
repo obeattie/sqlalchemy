@@ -1,30 +1,6 @@
 from sqlalchemy import util
 
-class _VisitorMeta(type):
-    def __init__(cls, classname, bases, dict_):
-        cls._name_registry = [name for name in dict_ if name.startswith('visit_')]
-        for b in bases:
-            if isinstance(b, _VisitorMeta):
-                cls._name_registry += b._name_registry
-        return type.__init__(cls, classname, bases, dict_)
-    
-    def __call__(cls, *args, **kwargs):
-        obj = type.__call__(cls, *args, **kwargs)
-        obj._registry = dict([(name[6:], getattr(obj, name)) for name in cls._name_registry])
-        return obj
-        
-    def __setattr__(cls, key, value):
-        if key.startswith('visit_'):
-            cls._name_registry.append(key)
-        type.__setattr__(cls, key, value)
-
 class ClauseVisitor(object):
-    # for some reason, when VisitorMeta is uncommented here, specifically the "obj._registry[x] = <somemethod>"
-    # causes test/sql/testtypes.py UnicodeTest to hang in a heisenberg-like fashion (i.e. error
-    # disappears when SQL logging is turned on) for Postgres on OSX.  has to do with the dict
-    # being attached to the instance *and* having methods from the instance inside of it.
-    
-#    __metaclass__ = _VisitorMeta
     __traverse_options__ = {}
     
     def traverse_single(self, obj):
@@ -43,8 +19,6 @@ class ClauseVisitor(object):
         """traverse and visit the given expression structure."""
 
         visitors = {}
-#        for v in reversed(list(self._iterate_visitors)):
-#            visitors.update(v._registry)
 
         for name in dir(self):
             if name.startswith('visit_'):
@@ -80,8 +54,6 @@ class CloningVisitor(ClauseVisitor):
         """traverse and visit the given expression structure."""
 
         visitors = {}
-#        for v in reversed(list(self._iterate_visitors)):
-#            visitors.update(v._registry)
 
         for name in dir(self):
             if name.startswith('visit_'):
@@ -113,7 +85,6 @@ def iterate(obj, opts):
     """traverse the given expression structure, returning an iterator."""
 
     stack = [obj]
-    traversal = util.deque()
     while stack:
         t = stack.pop()
         yield t
@@ -139,6 +110,15 @@ def traverse(obj, opts, visitors):
     """traverse and visit the given expression structure."""
 
     for target in iterate(obj, opts):
+        meth = visitors.get(target.__visit_name__, None)
+        if meth:
+            meth(target)
+    return obj
+
+def traverse_depthfirst(obj, opts, visitors):
+    """traverse and visit the given expression structure."""
+
+    for target in iterate_depthfirst(obj, opts):
         meth = visitors.get(target.__visit_name__, None)
         if meth:
             meth(target)
