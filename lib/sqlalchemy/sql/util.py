@@ -335,29 +335,35 @@ class ColumnAdapter(ClauseAdapter):
         ClauseAdapter.__init__(self, selectable, equivalents, include, exclude)
         if chain_to:
             self.chain(chain_to)
-        self.columns = util.PopulateDict(self.__locate_col)
+        self.columns = util.PopulateDict(self._locate_col)
 
     def wrap(self, adapter):
         ac = self.__class__.__new__(self.__class__)
         ac.__dict__ = self.__dict__.copy()
-        ac.__locate_col = ac.__wrap(ac.__locate_col, adapter.__locate_col)
-        ac.adapt_clause = ac.__wrap(ac.adapt_clause, adapter.adapt_clause)
-        ac.adapt_list = ac.__wrap(ac.adapt_list, adapter.adapt_list)
-        ac.columns = util.PopulateDict(ac.__locate_col)
+        ac._locate_col = ac._wrap(ac._locate_col, adapter._locate_col)
+        ac.adapt_clause = ac._wrap(ac.adapt_clause, adapter.adapt_clause)
+        ac.adapt_list = ac._wrap(ac.adapt_list, adapter.adapt_list)
+        ac.columns = util.PopulateDict(ac._locate_col)
         return ac
 
     adapt_clause = ClauseAdapter.traverse
     adapt_list = ClauseAdapter.copy_and_process
 
-    def __wrap(self, local, wrapped):
+    def _wrap(self, local, wrapped):
         def locate(col):
             col = local(col)
             return wrapped(col)
         return locate
 
-    def __locate_col(self, col):
-        return self._corresponding_column(col, False) or \
-            self.adapt_clause(col)
+    def _locate_col(self, col):
+        c = self._corresponding_column(col, False)
+        if not c:
+            c = self.adapt_clause(col)
+            
+            # anonymize labels in case they have a hardcoded name
+            if isinstance(c, expression._Label):
+                c = c.label(None)
+        return c    
 
     def adapted_row(self, row):
         return AliasedRow(row, self.columns)
