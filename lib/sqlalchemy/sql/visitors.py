@@ -81,8 +81,11 @@ class ReplacingCloningVisitor(CloningVisitor):
         return replacement_traverse(obj, self.__traverse_options__, replace)
 
 def iterate(obj, opts):
-    """traverse the given expression structure, returning an iterator."""
-
+    """traverse the given expression structure, returning an iterator.
+    
+    traversal is configured to be breadth-first.
+    
+    """
     stack = util.deque([obj])
     while stack:
         t = stack.popleft()
@@ -105,23 +108,24 @@ def iterate_depthfirst(obj, opts):
             stack.append(c)
     return iter(traversal)
 
-def traverse(obj, opts, visitors):
-    """traverse and visit the given expression structure."""
+def traverse_using(iterator, obj, visitors):
+    """visit the given expression structure using the given iterator of objects."""
 
-    for target in iterate(obj, opts):
+    for target in iterator:
         meth = visitors.get(target.__visit_name__, None)
         if meth:
             meth(target)
     return obj
+    
+def traverse(obj, opts, visitors):
+    """traverse and visit the given expression structure using the default iterator."""
+
+    return traverse_using(iterate(obj, opts), obj, visitors)
 
 def traverse_depthfirst(obj, opts, visitors):
-    """traverse and visit the given expression structure."""
+    """traverse and visit the given expression structure using the depth-first iterator."""
 
-    for target in iterate_depthfirst(obj, opts):
-        meth = visitors.get(target.__visit_name__, None)
-        if meth:
-            meth(target)
-    return obj
+    return traverse_using(iterate_depthfirst(obj, opts), obj, visitors)
 
 def cloned_traverse(obj, opts, visitors):
     cloned = {}
