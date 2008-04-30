@@ -1641,6 +1641,9 @@ class ColumnSet(util.OrderedSet):
                     l.append(c==local)
         return and_(*l)
 
+    def __hash__(self):
+        return hash(tuple(self._list))
+
 class Selectable(ClauseElement):
     """mark a class as being selectable"""
 
