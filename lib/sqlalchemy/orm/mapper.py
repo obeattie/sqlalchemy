@@ -909,21 +909,6 @@ class Mapper(object):
         """Return the primary mapper corresponding to this mapper's class key (class + entity_name)."""
         return self.class_manager.mappers[self.entity_name]
 
-    def get_session(self):
-        """Return the contextual session provided by the mapper
-        extension chain, if any.
-
-        Raise ``InvalidRequestError`` if a session cannot be retrieved
-        from the extension chain.
-        """
-
-        if 'get_session' in self.extension.methods:
-            s = self.extension.get_session()
-            if s is not EXT_CONTINUE:
-                return s
-
-        raise sa_exc.InvalidRequestError("No contextual Session is established.")
-
     def identity_key_from_row(self, row, adapter=None):
         """Return an identity-map key for use in storing/retrieving an
         item from the identity map.

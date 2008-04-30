@@ -64,16 +64,6 @@ class MapperExtension(object):
     def init_failed(self, mapper, class_, oldinit, instance, args, kwargs):
         return EXT_CONTINUE
 
-    def get_session(self):
-        """Retrieve a contextual Session instance with which to
-        register a new object.
-
-        Note: this is not called if a session is provided with the
-        `__init__` params (i.e. `_sa_session`).
-        """
-
-        return EXT_CONTINUE
-
     def load(self, query, *args, **kwargs):
         """Override the `load` method of the Query object.
 
@@ -91,43 +81,6 @@ class MapperExtension(object):
         """
 
         return EXT_CONTINUE
-
-    def get_by(self, query, *args, **kwargs):
-        """Override the `get_by` method of the Query object.
-
-        The return value of this method is used as the result of
-        ``query.get_by()`` if the value is anything other than
-        EXT_CONTINUE.
-
-        DEPRECATED.
-        """
-
-        return EXT_CONTINUE
-
-    def select_by(self, query, *args, **kwargs):
-        """Override the `select_by` method of the Query object.
-
-        The return value of this method is used as the result of
-        ``query.select_by()`` if the value is anything other than
-        EXT_CONTINUE.
-
-        DEPRECATED.
-        """
-
-        return EXT_CONTINUE
-
-    def select(self, query, *args, **kwargs):
-        """Override the `select` method of the Query object.
-
-        The return value of this method is used as the result of
-        ``query.select()`` if the value is anything other than
-        EXT_CONTINUE.
-
-        DEPRECATED.
-        """
-
-        return EXT_CONTINUE
-
 
     def translate_row(self, mapper, context, row):
         """Perform pre-processing on the given result row and return a

@@ -14,24 +14,24 @@ class ExtensionCarrierTest(TestBase):
     def test_basic(self):
         carrier = util.ExtensionCarrier()
 
-        assert 'get_session' not in carrier.methods
-        assert carrier.get_session() is interfaces.EXT_CONTINUE
-        assert 'get_session' not in carrier.methods
+        assert 'translate_row' not in carrier.methods
+        assert carrier.translate_row() is interfaces.EXT_CONTINUE
+        assert 'translate_row' not in carrier.methods
 
         self.assertRaises(AttributeError, lambda: carrier.snickysnack)
 
         class Partial(object):
             def __init__(self, marker):
                 self.marker = marker
-            def get_session(self):
+            def translate_row(self, row):
                 return self.marker
 
         carrier.append(Partial('end'))
-        assert 'get_session' in carrier.methods
-        assert carrier.get_session() == 'end'
+        assert 'translate_row' in carrier.methods
+        assert carrier.translate_row(None) == 'end'
 
         carrier.push(Partial('front'))
-        assert carrier.get_session() == 'front'
+        assert carrier.translate_row(None) == 'front'
 
         assert 'populate_instance' not in carrier.methods
         carrier.append(interfaces.MapperExtension)

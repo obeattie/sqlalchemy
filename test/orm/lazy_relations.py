@@ -22,20 +22,8 @@ class LazyTest(FixtureTest):
         q = sess.query(User)
         assert [User(id=7, addresses=[Address(id=1, email_address='jack@bean.com')])] == q.filter(users.c.id == 7).all()
 
-    def test_bindstosession(self):
-        """test that lazy loaders use the mapper's contextual session if the parent instance
-        is not in a session, and that an error is raised if no contextual session"""
-
-        ctx = scoped_session(create_session)
-        m = mapper(User, users, properties = dict(
-            addresses = relation(mapper(Address, addresses, extension=ctx.extension), lazy=True)
-        ), extension=ctx.extension)
-        q = ctx.query(m)
-        u = q.filter(users.c.id == 7).first()
-        ctx.expunge(u)
-        assert User(id=7, addresses=[Address(id=1, email_address='jack@bean.com')]) == u
-
-        clear_mappers()
+    def test_needs_parent(self):
+        """test the error raised when parent object is not bound."""
 
         mapper(User, users, properties={
             'addresses':relation(mapper(Address, addresses), lazy=True)

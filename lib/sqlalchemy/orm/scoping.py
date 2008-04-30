@@ -138,9 +138,6 @@ class _ScopedExt(MapperExtension):
     def configure(self, **kwargs):
         return _ScopedExt(self.context, **kwargs)
     
-    def get_session(self):
-        return self.context.registry()
-
     def instrument_class(self, mapper, class_):
         class query(object):
             def __getattr__(s, key):

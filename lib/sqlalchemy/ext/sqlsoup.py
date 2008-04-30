@@ -461,7 +461,7 @@ def class_for_table(selectable, **mapper_kwargs):
         klass = TableClassType(mapname, (object,), {})
     else:
         klass = SelectableClassType(mapname, (object,), {})
-
+    
     def __cmp__(self, o):
         L = self.__class__.c.keys()
         L.sort()
@@ -486,12 +486,17 @@ def class_for_table(selectable, **mapper_kwargs):
     for m in ['__cmp__', '__repr__']:
         setattr(klass, m, eval(m))
     klass._table = selectable
+    klass.c = expression.ColumnCollection()
     mappr = mapper(klass,
                    selectable,
                    extension=objectstore.extension,
                    allow_null_pks=_is_outer_join(selectable),
                    **mapper_kwargs)
-    klass._query = Query(mappr)
+                   
+    for k in mappr.iterate_properties:
+        klass.c[k.key] = k.columns[0]
+
+    klass._query = objectstore.query_property()
     return klass
 
 class SqlSoup:
