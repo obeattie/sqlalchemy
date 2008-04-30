@@ -6,7 +6,6 @@ class ClauseVisitor(object):
     def traverse_single(self, obj):
         for v in self._iterate_visitors:
             meth = getattr(v, "visit_%s" % obj.__visit_name__, None)
-            #meth = v._registry.get(obj.__visit_name__, None)
             if meth:
                 return meth(obj)
     
@@ -84,9 +83,9 @@ class ReplacingCloningVisitor(CloningVisitor):
 def iterate(obj, opts):
     """traverse the given expression structure, returning an iterator."""
 
-    stack = [obj]
+    stack = util.deque([obj])
     while stack:
-        t = stack.pop()
+        t = stack.popleft()
         yield t
         for c in t.get_children(**opts):
             stack.append(c)
@@ -97,7 +96,7 @@ def iterate_depthfirst(obj, opts):
     traversal is configured to be depth-first.
     
     """
-    stack = [obj]
+    stack = util.deque([obj])
     traversal = util.deque()
     while stack:
         t = stack.pop()
