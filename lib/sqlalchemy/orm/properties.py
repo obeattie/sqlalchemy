@@ -332,7 +332,7 @@ class PropertyLoader(StrategizedProperty):
             else:
                 return self.prop._optimized_compare(other)
 
-        def __join_and_criterion(self, criterion=None, **kwargs):
+        def __criterion_exists(self, criterion=None, **kwargs):
             if getattr(self, '_of_type', None):
                 target_mapper = self._of_type
                 to_selectable = target_mapper._with_polymorphic_selectable
@@ -349,30 +349,31 @@ class PropertyLoader(StrategizedProperty):
                     criterion = criterion & crit
             
             if sj:
-                j = pj & sj
+                j = _orm_annotate(pj) & sj
             else:
-                j = pj
+                j = _orm_annotate(pj, exclude=self.prop.remote_side)
                 
             if criterion and target_adapter:
                 # limit this adapter to annotated only?
                 criterion = target_adapter.traverse(criterion)
             
-            return _orm_annotate(j), criterion, _orm_annotate(dest)
+            # only have the "joined left side" of what we return be subject to Query adaption.  The right
+            # side of it is used for an exists() subquery and should not correlate or otherwise reach out
+            # to anything in the enclosing query.
+            if criterion:
+                criterion = criterion._annotate({'_halt_adapt': True})
+            return sql.exists([1], j & criterion, from_obj=dest).correlate(source)
             
         def any(self, criterion=None, **kwargs):
             if not self.prop.uselist:
                 raise sa_exc.InvalidRequestError("'any()' not implemented for scalar attributes. Use has().")
 
-            j, criterion, from_obj = self.__join_and_criterion(criterion, **kwargs)
-
-            return sql.exists([1], j & criterion, from_obj=from_obj)
+            return self.__criterion_exists(criterion, **kwargs)
 
         def has(self, criterion=None, **kwargs):
             if self.prop.uselist:
                 raise sa_exc.InvalidRequestError("'has()' not implemented for collections.  Use any().")
-            j, criterion, from_obj = self.__join_and_criterion(criterion, **kwargs)
-
-            return sql.exists([1], j & criterion, from_obj=from_obj)
+            return self.__criterion_exists(criterion, **kwargs)
 
         def contains(self, other):
             if not self.prop.uselist:
@@ -386,8 +387,7 @@ class PropertyLoader(StrategizedProperty):
 
         def __negated_contains_or_equals(self, other):
             criterion = sql.and_(*[x==y for (x, y) in zip(self.prop.mapper.primary_key, self.prop.mapper.primary_key_from_instance(other))])
-            j, criterion, from_obj = self.__join_and_criterion(criterion)
-            return ~sql.exists([1], j & criterion, from_obj=from_obj)
+            return ~self.__criterion_exists(criterion)
             
         def __ne__(self, other):
             if other is None:

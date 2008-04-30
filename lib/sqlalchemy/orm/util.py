@@ -292,17 +292,20 @@ class AliasedComparator(PropComparator):
     def reverse_operate(self, op, other, **kwargs):
         return self.adapter.traverse(self.comparator.reverse_operate(op, *other, **kwargs))
 
-def _orm_annotate(element):
+def _orm_annotate(element, exclude=None):
     def clone(elem):
-        if '_orm_adapt' not in elem._annotations:
+        if exclude and elem in exclude:
+            elem = elem._clone()
+        elif '_orm_adapt' not in elem._annotations:
             elem = elem._annotate({'_orm_adapt':True})
-            elem._copy_internals(clone=clone)
+        elem._copy_internals(clone=clone)
         return elem
     
     if element is not None:
         element = clone(element)
     return element
-    
+
+
 class _ORMJoin(expression.Join):
 
     __visit_name__ = expression.Join.__visit_name__

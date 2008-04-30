@@ -400,7 +400,15 @@ class FilterTest(QueryTest):
             filter(User.addresses.any(id=4)).all()
 
         assert [User(id=9)] == sess.query(User).filter(User.addresses.any(email_address='fred@fred.com')).all()
+        
+        # test that any() doesn't overcorrelate
+        assert [User(id=7), User(id=8)] == sess.query(User).join("addresses").filter(~User.addresses.any(Address.email_address=='fred@fred.com')).all()
+        
+        # test that the contents are not adapted by the aliased join
+        assert [User(id=7), User(id=8)] == sess.query(User).join("addresses", aliased=True).filter(~User.addresses.any(Address.email_address=='fred@fred.com')).all()
 
+        assert [User(id=10)] == sess.query(User).outerjoin("addresses", aliased=True).filter(~User.addresses.any()).all()
+        
     @testing.unsupported('maxdb') # can core
     def test_has(self):
         sess = create_session()
@@ -410,6 +418,12 @@ class FilterTest(QueryTest):
 
         assert [Address(id=2), Address(id=3), Address(id=4)] == sess.query(Address).filter(Address.user.has(User.name.like('%ed%'), id=8)).all()
 
+        # test has() doesn't overcorrelate
+        assert [Address(id=2), Address(id=3), Address(id=4)] == sess.query(Address).join("user").filter(Address.user.has(User.name.like('%ed%'), id=8)).all()
+
+        # test has() doesnt' get subquery contents adapted by aliased join
+        assert [Address(id=2), Address(id=3), Address(id=4)] == sess.query(Address).join("user", aliased=True).filter(Address.user.has(User.name.like('%ed%'), id=8)).all()
+        
         dingaling = sess.query(Dingaling).get(2)
         assert [User(id=9)] == sess.query(User).filter(User.addresses.any(Address.dingaling==dingaling)).all()
         

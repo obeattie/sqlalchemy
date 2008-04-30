@@ -2236,7 +2236,6 @@ class _Exists(_UnaryExpression):
     __visit_name__ = _UnaryExpression.__visit_name__
 
     def __init__(self, *args, **kwargs):
-        kwargs['correlate'] = True
         s = select(*args, **kwargs).as_scalar().self_group()
         _UnaryExpression.__init__(self, s, operator=operators.exists)
 

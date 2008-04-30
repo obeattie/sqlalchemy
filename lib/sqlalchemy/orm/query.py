@@ -158,7 +158,7 @@ class Query(object):
     
     def __replace_element(self, adapters):
         def replace(elem):
-            if '_Query__no_adapt' in elem._annotations:
+            if '_halt_adapt' in elem._annotations:
                 return elem
 
             for adapter in adapters:
@@ -169,7 +169,7 @@ class Query(object):
     
     def __replace_orm_element(self, adapters):
         def replace(elem):
-            if '_Query__no_adapt' in elem._annotations:
+            if '_halt_adapt' in elem._annotations:
                 return elem
 
             if "_orm_adapt" in elem._annotations or "parententity" in elem._annotations:
@@ -1273,7 +1273,7 @@ class Query(object):
             if context.eager_order_by:
                 statement.append_order_by(*context.eager_order_by)
 
-        context.statement = statement._annotate({'_Query__no_adapt': True})
+        context.statement = statement._annotate({'_halt_adapt': True})
 
         return context
 
