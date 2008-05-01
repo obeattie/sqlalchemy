@@ -565,7 +565,7 @@ class BackrefTest(TestBase):
         j.port = None
         self.assert_(p.jack is None)
 
-class DeferredBackrefTest(TestBase):
+class PendingBackrefTest(TestBase):
     def setUp(self):
         global Post, Blog, called, lazy_load
 

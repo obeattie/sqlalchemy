@@ -75,8 +75,9 @@ class QueryableAttribute(interfaces.PropComparator):
         self.impl = impl
         self.comparator = comparator
         self.parententity = parententity
-        mapper, selectable, is_aliased_class = _entity_info(parententity, compile=False)
-        if mapper:
+
+        if parententity:
+            mapper, selectable, is_aliased_class = _entity_info(parententity, compile=False)
             self.property = mapper._get_property(self.impl.key)
         else:
             self.property = None
@@ -129,6 +130,7 @@ def proxied_attribute_factory(descriptor):
 
     class ProxyImpl(object):
         accepts_scalar_loader = False
+        
         def __init__(self, key):
             self.key = key
         
@@ -238,16 +240,16 @@ class AttributeImpl(object):
 
         An instance attribute that is loaded by a callable function
         will also not have a `hasparent` flag.
-        """
 
+        """
         return state.parents.get(id(self), optimistic)
 
     def sethasparent(self, state, value):
         """Set a boolean flag on the given item corresponding to
         whether or not it is attached to a parent object via the
         attribute represented by this ``InstrumentedAttribute``.
-        """
 
+        """
         state.parents[id(self)] = value
 
     def set_callable(self, state, callable_):
@@ -263,8 +265,8 @@ class AttributeImpl(object):
 
         The callable overrides the class level callable set in the
         ``InstrumentedAttribute` constructor.
-        """
 
+        """
         if callable_ is None:
             self.initialize(state)
         else:
@@ -324,6 +326,9 @@ class AttributeImpl(object):
     def set(self, state, value, initiator):
         raise NotImplementedError()
 
+    def rollback_to_savepoint(self, state, savepoint):
+        raise NotImplementedError()
+        
     def get_committed_value(self, state):
         """return the unchanged value of this attribute"""
 
@@ -340,8 +345,6 @@ class AttributeImpl(object):
 
         state.commit([self.key])
         
-        # ????? removed in merge ?
-        # remove per-instance callable, if any
         state.callables.pop(self.key, None)
         state.dict[self.key] = value
         
@@ -499,13 +502,7 @@ class ScalarObjectAttributeImpl(ScalarAttributeImpl):
         if initiator is self:
             return
         
-        # ???? MERGE ?
-        #if value is not None and not hasattr(value, '_state'):
-        #    raise TypeError("Can not assign %s instance to %s's %r attribute, "
-        #                    "a mapped instance was expected." % (
-        #        type(value).__name__, type(state.obj()).__name__, self.key))
-
-        # TODO: add options to allow the get() to be passive
+        # may want to add options to allow the get() here to be passive
         old = self.get(state)
         state.dict[self.key] = value
         self.fire_replace_event(state, value, old, initiator)
@@ -541,6 +538,7 @@ class CollectionAttributeImpl(AttributeImpl):
     container object (defaulting to a list) and brokers access to the
     CollectionAdapter, a "view" onto that object that presents consistent
     bag semantics to the orm layer independent of the user data implementation.
+    
     """
     accepts_scalar_loader = False
     uses_objects = True
@@ -601,7 +599,6 @@ class CollectionAttributeImpl(AttributeImpl):
                 for item in new_values:
                     new_collection.append_without_event(item)
                 state.dict[self.key] = user_data
-
 
     def delete(self, state):
         if self.key not in state.dict:
@@ -709,18 +706,19 @@ class CollectionAttributeImpl(AttributeImpl):
         state.callables.pop(self.key, None)
         state.dict[self.key] = user_data
 
+        state.commit([self.key])
         if self.key in state.pending:
-            # pending items.  commit loaded data, add/remove new data
-            state.committed_state[self.key] = list(value or [])
-            added = state.pending[self.key].added_items
-            removed = state.pending[self.key].deleted_items
+            # pending items exist.  issue a modified event,
+            # add/remove new items.
+            state.modified_event(self, True, user_data)
+
+            pending = state.pending.pop(self.key)
+            added = pending.added_items
+            removed = pending.deleted_items
             for item in added:
                 collection.append_without_event(item)
             for item in removed:
                 collection.remove_without_event(item)
-            del state.pending[self.key]
-        else:
-            state.commit([self.key])
 
         return user_data
 
@@ -1426,8 +1424,8 @@ class PendingCollection(object):
 
     When the collection is loaded, the changes present in PendingCollection are applied
     to produce the final result.
+    
     """
-
     def __init__(self):
         self.deleted_items = util.IdentitySet()
         self.added_items = util.OrderedIdentitySet()

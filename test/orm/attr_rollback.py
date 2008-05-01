@@ -458,6 +458,58 @@ class CollectionTestBase(AttrTestBase):
         assert attributes.has_parent(Foo, b2, 'x', optimistic=False)
         assert not attributes.has_parent(Foo, b3, 'x', optimistic=False)
 
+    def test_pending(self):
+        class CompareByName(object):
+            def __init__(self, name):
+                self.name = name
+            def __eq__(self, other):
+                return other.name == self.name
+            def __hash__(self):
+                return hash(self.name)
+                
+        class Post(CompareByName):
+            pass
+
+        class Blog(CompareByName):
+            pass
+
+        called = [0]
+
+        lazy_load = []
+        def lazy_posts(instance):
+            def load():
+                called[0] += 1
+                return lazy_load
+            return load
+
+        attributes.register_class(Post)
+        attributes.register_class(Blog)
+        attributes.register_attribute(Post, 'blog', uselist=False, extension=attributes.GenericBackrefExtension('posts'), trackparent=True, useobject=True)
+        attributes.register_attribute(Blog, 'posts', uselist=True, extension=attributes.GenericBackrefExtension('blog'), callable_=lazy_posts, trackparent=True, useobject=True, typecallable=make_collection)
+        
+        (p1, p2, p3) = (Post(name='p1'), Post(name='p2'), Post(name='p3'))
+        lazy_load += [p1, p2, p3]
+        
+        b1 = Blog(name='b1')
+        
+        for x in [b1, p1, p2, p3]:
+            attributes.instance_state(x).commit_all(savepoint_id=1)
+        
+        p4 = Post(name='p4')
+        p5 = Post(name='p5')
+        p4.blog = b1
+        p5.blog = b1
+
+        assert b1.posts ==  make_collection([Post(name='p1'), Post(name='p2'), Post(name='p3'), Post(name='p4'), Post(name='p5')])
+        assert attributes.get_history(attributes.instance_state(b1), 'posts') == ([p4, p5], [p1, p2, p3], [])
+
+        for x in [b1, p1, p2, p3]:
+            attributes.instance_state(x).rollback(1)
+        assert attributes.get_history(attributes.instance_state(b1), 'posts') == ([], [p1, p2, p3], [])
+        assert b1.posts == make_collection([p1, p2, p3])
+        
+        # TODO: more tests needed
+
 class ScalarTest(AttrTestBase, TestBase):
     def setUpAll(self):
         global Foo, data1, data2, data3, hist1, hist2, hist3, empty, emptyhist
@@ -593,6 +645,7 @@ class SetTest(CollectionTestBase, TestBase):
         empty = make_collection([])
         emptyhist = []
 
+#class DictTest(CollectionTestBase, TestBase):  # TODO
     
 if __name__ == "__main__":
     testenv.main()
