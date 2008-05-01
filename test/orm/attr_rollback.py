@@ -400,6 +400,40 @@ class ScalarTest(AttrTestBase, TestBase):
         attributes.register_class(Foo)
         attributes.register_attribute(Foo, 'x', uselist=False, useobject=False)
 
+class MutableScalarTest(AttrTestBase, TestBase):
+    def setUpAll(self):
+        global Foo, data1, data2, data3, hist1, hist2, hist3, empty, emptyhist
+        data1 = {'data':5}
+        data2 = {'data':9}
+        data3 = {'data':12}
+
+        hist1 = [{'data':5}]
+        hist2 = [{'data':9}]
+        hist3 = [{'data':12}]
+
+        empty = None
+        emptyhist = []
+
+        class Foo(object):pass
+        attributes.register_class(Foo)
+        attributes.register_attribute(Foo, 'x', uselist=False, useobject=False, mutable_scalars=True, copy_function=dict)
+
+    def test_mutable1(self):
+        f = Foo()
+
+        f.x = {'data':5}
+        attributes.instance_state(f).commit_all()
+        attributes.instance_state(f).set_savepoint()
+        assert attributes.get_history(attributes.instance_state(f), 'x') == ([], hist1, [])
+
+        f.x['foo'] = 9
+        assert attributes.get_history(attributes.instance_state(f), 'x') == ([{'data':5, 'foo':9}], [], [{'data':5}])
+        
+        attributes.instance_state(f).rollback()
+        
+        assert attributes.get_history(attributes.instance_state(f), 'x') == ([], hist1, [])
+        
+        
 class ScalarObjectTest(AttrTestBase, TestBase):
     def setUpAll(self):
         global Foo, data1, data2, data3, hist1, hist2, hist3, empty, emptyhist, Bar
