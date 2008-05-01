@@ -39,6 +39,9 @@ class DynamicAttributeImpl(attributes.AttributeImpl):
         self.order_by = order_by
         self.query_class = AppenderQuery
 
+    def rollback_to_savepoint(self, state, savepoint):
+        pass
+        
     def get(self, state, passive=False):
         if passive:
             return self._get_collection_history(state, passive=True).added_items

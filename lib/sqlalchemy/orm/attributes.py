@@ -120,45 +120,6 @@ class InstrumentedAttribute(QueryableAttribute):
             return self
         return self.impl.get(instance_state(instance))
 
-class ProxiedAttribute(InstrumentedAttribute):
-    """Adds InstrumentedAttribute class-level behavior to a regular descriptor.
-
-    Obsoleted by proxied_attribute_factory.
-    """
-
-    class ProxyImpl(object):
-        accepts_scalar_loader = False
-
-        def __init__(self, key):
-            self.key = key
-        
-        def rollback_to_savepoint(self, state, savepoint):
-            pass
-            
-    def __init__(self, key, user_prop, comparator=None):
-        self.key = key
-        self.user_prop = user_prop
-        self._comparator = comparator
-        self.impl = ProxiedAttribute.ProxyImpl(key)
-
-    def comparator(self):
-        if callable(self._comparator):
-            self._comparator = self._comparator()
-        return self._comparator
-    comparator = property(comparator)
-
-    def __get__(self, instance, owner):
-        if instance is None:
-            self.user_prop.__get__(instance, owner)
-            return self
-        return self.user_prop.__get__(instance, owner)
-
-    def __set__(self, instance, value):
-        return self.user_prop.__set__(instance, value)
-
-    def __delete__(self, instance):
-        return self.user_prop.__delete__(instance)
-
 def proxied_attribute_factory(descriptor):
     """Create an InstrumentedAttribute / user descriptor hybrid.
 
@@ -1060,9 +1021,9 @@ class InstanceState(object):
         if a value was not populated in state.dict.
         """
 
-        class_manager = manager_of_class(self.class_)
+        class_manager = self.manager
         for key in keys:
-            if key in self.dict and hasattr(class_manager[key].impl, 'commit_to_state'):
+            if key in self.dict and key in class_manager.mutable_attributes:
                 class_manager[key].impl.commit_to_state(self, self.committed_state)
             else:
                 self.committed_state.pop(key, None)
@@ -1214,11 +1175,7 @@ class ClassManager(dict):
         for cls in self.class_.__subclasses__():
             manager = manager_of_class(cls)
             if manager is None:
-                try:
-                    manager = create_manager_for_cls(cls, instance_state_factory=self.instance_state_factory)
-                except TypeError:
-                    import pdb
-                    pdb.set_trace()
+                manager = create_manager_for_cls(cls, instance_state_factory=self.instance_state_factory)
             manager.uninstrument_attribute(key, True)
 
     def unregister(self):

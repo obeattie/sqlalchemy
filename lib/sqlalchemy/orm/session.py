@@ -942,9 +942,6 @@ class Session(object):
             del state.session_id
 
     def _register_newly_persistent(self, state):
-        if self.transaction:
-            self.transaction._new[state] = True
-            
         mapper = _state_mapper(state)
         instance_key = mapper._identity_key_from_state(state)
 
@@ -968,7 +965,10 @@ class Session(object):
             state.commit_all()
 
         # remove from new last, might be the last strong ref
-        self._new.pop(state, None)
+        if state in self._new:
+            if self.transaction:
+                self.transaction._new[state] = True
+            self._new.pop(state)
         
     def _remove_newly_deleted(self, state):
         if self.transaction:
