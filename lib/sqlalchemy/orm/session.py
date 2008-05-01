@@ -814,9 +814,7 @@ class Session(object):
         else:
             snapshot_id = None    
         for state in states:
-            state.commit_all()
-            if snapshot_id:
-                state.set_savepoint(snapshot_id)
+            state.commit_all(savepoint_id=snapshot_id)
 
     def get(self, class_, ident, entity_name=None):
         """Return an instance of the object based on the given

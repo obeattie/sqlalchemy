@@ -1015,31 +1015,35 @@ class InstanceState(object):
                 
         self.modified = True
     
-    # TODO: reorganize savepoints so that the savepoint record is managed externally to the InstanceState.
-    # InstanceState only references the most recent savepoint so that its available in modified_event().
-    
-    def set_savepoint(self, id_=None):
+    def set_savepoint(self, id_):
+        """set a savepoint with the given id."""
+        
         savepoint = {}
         for key in self.manager.mutable_attributes:
             if key in self.dict:
                 savepoint[key] = self.manager[key].impl.copy(self.dict[key])
-                
+        
         self.savepoints.append((savepoint, self.parents.copy(), self.pending.copy(), self.committed_state.copy(), self.modified, id_))
 
-    def remove_savepoint(self, id_=None):
-        if not self.savepoints:
-            raise sa_exc.AssertionError("Savepoint id %s does not exist"  % (id_))
-            
-        sp = self.savepoints.pop()
-        spid = sp[5]
-        if spid != id_:
-            raise sa_exc.AssertionError("Savepoint id %s does not match %s"  % (spid, id_))
-
-    def rollback(self, id_=None):
-        if not self.savepoints:
-            raise sa_exc.InvalidRequestError("No savepoints are set; can't rollback.")
+    def remove_savepoint(self, id_):
+        """remove a given savepoint"""
         
-        (savepoint, self.parents, self.pending, self.committed_state, self.modified, spid) = self.savepoints.pop()
+        try:
+            sp = self.savepoints.pop()
+        except IndexError:
+            raise sa_exc.InvalidRequestError("No savepoints are set; can't remove savepoint.")
+            
+        if sp[5] != id_:
+            raise sa_exc.AssertionError("Savepoint id %s does not match %s"  % (sp[5], id_))
+
+    def rollback(self, id_):
+        """roll back to a given savepoint"""
+        
+        try:
+            (savepoint, self.parents, self.pending, self.committed_state, self.modified, spid) = self.savepoints.pop()
+        except IndexError:
+            raise sa_exc.InvalidRequestError("No savepoints are set; can't rollback.")
+            
         if spid != id_:
             raise sa_exc.AssertionError("Savepoint id %s does not match %s"  % (spid, id_))
         
@@ -1070,8 +1074,7 @@ class InstanceState(object):
                 self.expired_attributes.remove(key)
                 self.callables.pop(key, None)
 
-
-    def commit_all(self):
+    def commit_all(self, savepoint_id=None):
         """commit all attributes unconditionally.
 
         This is used after a flush() or a full load/refresh
@@ -1082,21 +1085,30 @@ class InstanceState(object):
          - the "modified" flag is set to False
          - any "expired" markers/callables are removed.
 
-
         Attributes marked as "expired" can potentially remain "expired" after this step
         if a value was not populated in state.dict.
+        
+        The argument "savepoint_id" indicates that a savepoint should be 
+        set up along with the commit.  When present, the functionality of 
+        "set_savepoint()" is inlined here for better performance than a 
+        separate call.
+        
         """
         self.committed_state = {}
-
+        
         # unexpire attributes which have loaded
-        for key in list(self.expired_attributes):
-            if key in self.dict:
-                self.expired_attributes.remove(key)
+        if self.expired_attributes:
+            for key in self.expired_attributes.intersection(self.dict):
                 self.callables.pop(key, None)
+            self.expired_attributes.difference_update(self.dict)
         
         for key in self.manager.mutable_attributes:
             if key in self.dict:
                 self.manager[key].impl.commit_to_state(self, self.committed_state)
+
+        if savepoint_id:
+            cstate = self.committed_state.copy()
+            self.savepoints.append((cstate, self.parents.copy(), self.pending.copy(), cstate, False, savepoint_id))
                     
         self.modified = self.expired = False
         self._strong_obj = None
