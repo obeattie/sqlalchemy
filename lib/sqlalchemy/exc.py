@@ -52,10 +52,6 @@ class DisconnectionError(SQLAlchemyError):
 # Moved to orm.exc; compatability definition installed by orm import until 0.6
 FlushError = None
 
-class NoSuchColumnError(KeyError, SQLAlchemyError):
-    """A nonexistent column is requested from a ``RowProxy``."""
-
-
 class TimeoutError(SQLAlchemyError):
     """Raised when a connection pool times out on getting a connection."""
 
@@ -67,6 +63,11 @@ class InvalidRequestError(SQLAlchemyError):
 
     """
 
+class NoSuchColumnError(KeyError, InvalidRequestError):
+    """A nonexistent column is requested from a ``RowProxy``."""
+
+class NoReferencedTableError(InvalidRequestError):
+    """Raised by ``ForeignKey`` when the referred ``Table`` cannot be located."""
 
 class NoSuchTableError(InvalidRequestError):
     """Table does not exist or is not visible to a connection."""
