@@ -162,9 +162,11 @@ class SessionTransaction(object):
         if not self._is_transaction_boundary:
             self._new = self._parent._new
             self._deleted = self._parent._deleted
-            self._snapshot_id = self._parent._snapshot_id
             return
         
+        if self.nested:
+            self.session.flush()
+            
         if self.autoflush:
             # TODO: the "dirty_states" assertion is expensive,
             # so consider these assertions as temporary
@@ -175,11 +177,6 @@ class SessionTransaction(object):
         
         self._new = weakref.WeakKeyDictionary()
         self._deleted = weakref.WeakKeyDictionary()
-        self._snapshot_id = id_ = id(self)
-        
-        if self.nested or not self.session.autoexpire:
-            for state in self.session.identity_map.all_states():
-                state.set_savepoint(id_)
     
     def _restore_snapshot(self):
         assert self._is_transaction_boundary
@@ -190,24 +187,15 @@ class SessionTransaction(object):
         for s in util.Set(self._new).union(self.session._new):
             self.session._expunge_state(s)
         
-        expire = not self.nested and self.session.autoexpire
-        id_ = self._snapshot_id
         for s in self.session.identity_map.all_states():
-            if expire:
-                _expire_state(s, None)
-            else:
-                s.rollback(id_)
+            _expire_state(s, None)
     
     def _remove_snapshot(self):
         assert self._is_transaction_boundary
 
-        expire = not self.nested and self.session.autoexpire
-        id_ = self._snapshot_id
-        for s in self.session.identity_map.all_states():
-            if expire:
+        if not self.nested and self.session.autoexpire:
+            for s in self.session.identity_map.all_states():
                 _expire_state(s, None)
-            else:
-                s.remove_savepoint(id_)
             
     def _connection_for_bind(self, bind):
         self._assert_is_active()
@@ -548,7 +536,7 @@ class Session(object):
         
         """
         if self.transaction is not None:
-            if subtransactions:
+            if subtransactions or nested:
                 self.transaction = self.transaction._begin(nested=nested, autoflush=_autoflush)
             else:
                 raise sa_exc.InvalidRequestError("A transaction is already begun.  Use subtransactions=True to allow subtransactions.")
@@ -809,12 +797,8 @@ class Session(object):
             self.flush()
     
     def _finalize_loaded(self, states):
-        if not self.autoexpire and self.transaction:
-            snapshot_id = self.transaction._snapshot_id
-        else:
-            snapshot_id = None    
         for state in states:
-            state.commit_all(savepoint_id=snapshot_id)
+            state.commit_all()
 
     def get(self, class_, ident, entity_name=None):
         """Return an instance of the object based on the given
@@ -1123,7 +1107,6 @@ class Session(object):
             prop.merge(self, instance, merged, dont_load, _recursive)
 
         if dont_load:
-            # needs savepoint ?
             attributes.instance_state(merged).commit_all()  # remove any history
 
         if new_instance:
@@ -1203,8 +1186,6 @@ class Session(object):
                                     state.session_id, self.hash_key))
         if state.session_id != self.hash_key:
             state.session_id = self.hash_key
-            if not self.autoexpire and self.transaction:
-                state.set_savepoint(self.transaction._snapshot_id)
 
     def __contains__(self, instance):
         """Return True if the given instance is associated with this session.

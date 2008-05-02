@@ -133,6 +133,23 @@ def fails_on_everything_except(*dbs):
         return _function_named(maybe, fn_name)
     return decorate
 
+def uses_savepoints():
+    """mark a test as using savepoints.
+    
+    Shorthand for the actual DBs that support/unsupport this operation.
+    
+    """
+    def decorate(fn):
+        return \
+            unsupported('sqlite', 'mssql', 'firebird', 'sybase', 'access',
+                             'oracle', 'maxdb')(
+                             exclude('mysql', '<', (5, 0, 3))(fn)                 
+                             )
+    return decorate
+    
+uses_twophase = uses_savepoints
+
+    
 def unsupported(*dbs):
     """Mark a test as unsupported by one or more database implementations.
 

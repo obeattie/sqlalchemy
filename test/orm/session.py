@@ -281,16 +281,14 @@ class SessionTest(TestBase, AssertsExecutionResults):
             conn.close()
             raise
 
-    @testing.unsupported('sqlite', 'mssql', 'firebird', 'sybase', 'access',
-                         'oracle', 'maxdb')
-    @engines.close_open_connections
+    @testing.uses_savepoints()
     def test_heavy_nesting(self):
         session = create_session(bind=testing.db)
 
         session.begin()
         session.connection().execute("insert into users (user_name) values ('user1')")
 
-        session.begin()
+        session.begin(subtransactions=True)
 
         session.begin_nested()
 
@@ -305,9 +303,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
         assert session.connection().execute("select count(1) from users").scalar() == 2
 
 
-    @testing.unsupported('sqlite', 'mssql', 'firebird', 'sybase', 'access',
-                         'oracle', 'maxdb')
-    @testing.exclude('mysql', '<', (5, 0, 3))
+    @testing.uses_twophase()
     def test_twophase(self):
         # TODO: mock up a failure condition here
         # to ensure a rollback succeeds
@@ -317,7 +313,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
         mapper(Address, addresses)
 
         engine2 = create_engine(testing.db.url)
-        sess = create_session(transactional=False, autoflush=False, twophase=True)
+        sess = create_session(autocommit=True, autoflush=False, twophase=True)
         sess.bind_mapper(User, testing.db)
         sess.bind_mapper(Address, engine2)
         sess.begin()
@@ -344,9 +340,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
         assert len(sess.query(User).all()) == 0
         sess.close()
 
-    @testing.unsupported('sqlite', 'mssql', 'firebird', 'sybase', 'access',
-                         'oracle', 'maxdb')
-    @testing.exclude('mysql', '<', (5, 0, 3))
+    @testing.uses_savepoints()
     def test_nested_transaction(self):
         class User(object):pass
         mapper(User, users)
@@ -369,9 +363,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
         assert len(sess.query(User).all()) == 1
         sess.close()
 
-    @testing.unsupported('sqlite', 'mssql', 'firebird', 'sybase', 'access',
-                         'oracle', 'maxdb')
-    @testing.exclude('mysql', '<', (5, 0, 3))
+    @testing.uses_savepoints()
     def test_nested_autotrans(self):
         class User(object):pass
         mapper(User, users)
@@ -392,14 +384,12 @@ class SessionTest(TestBase, AssertsExecutionResults):
         assert len(sess.query(User).all()) == 1
         sess.close()
 
-    @testing.unsupported('sqlite', 'mssql', 'firebird', 'sybase', 'access',
-                         'oracle', 'maxdb')
-    @testing.exclude('mysql', '<', (5, 0, 3))
+    @testing.uses_savepoints()
     def test_nested_transaction_connection_add(self):
         class User(object): pass
         mapper(User, users)
 
-        sess = create_session(transactional=False)
+        sess = create_session(autocommit=True)
 
         sess.begin()
         sess.begin_nested()
@@ -429,18 +419,16 @@ class SessionTest(TestBase, AssertsExecutionResults):
 
         sess.close()
 
-    @testing.unsupported('sqlite', 'mssql', 'firebird', 'sybase', 'access',
-                         'oracle', 'maxdb')
-    @testing.exclude('mysql', '<', (5, 0, 3))
+    @testing.uses_savepoints()
     def test_mixed_transaction_control(self):
         class User(object): pass
         mapper(User, users)
 
-        sess = create_session(transactional=False)
+        sess = create_session(autocommit=True)
 
         sess.begin()
         sess.begin_nested()
-        transaction = sess.begin()
+        transaction = sess.begin(subtransactions=True)
 
         sess.save(User())
 
@@ -462,9 +450,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
 
         sess.close()
 
-    @testing.unsupported('sqlite', 'mssql', 'firebird', 'sybase', 'access',
-                         'oracle', 'maxdb')
-    @testing.exclude('mysql', '<', (5, 0, 3))
+    @testing.uses_savepoints()
     def test_mixed_transaction_close(self):
         class User(object): pass
         mapper(User, users)
@@ -485,23 +471,20 @@ class SessionTest(TestBase, AssertsExecutionResults):
 
         self.assertEquals(len(sess.query(User).all()), 1)
 
-    @testing.unsupported('sqlite', 'mssql', 'firebird', 'sybase', 'access',
-                         'oracle', 'maxdb')
-    @testing.exclude('mysql', '<', (5, 0, 3))
     def test_error_on_using_inactive_session(self):
         class User(object): pass
         mapper(User, users)
 
-        sess = create_session(transactional=False)
+        sess = create_session(autocommit=True)
 
         sess.begin()
-        sess.begin()
+        sess.begin(subtransactions=True)
 
         sess.save(User())
         sess.flush()
 
         sess.rollback()
-        self.assertRaisesMessage(sa_exc.InvalidRequestError, "inactive due to a rollback in a subtransaction", sess.begin)
+        self.assertRaisesMessage(sa_exc.InvalidRequestError, "inactive due to a rollback in a subtransaction", sess.begin, subtransactions=True)
         sess.close()
 
     @engines.close_open_connections

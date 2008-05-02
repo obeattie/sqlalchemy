@@ -211,14 +211,15 @@ def install_fixture_data():
 
 class FixtureTest(ORMTest):
     refresh_data = False
-
+    only_tables = False
+    
     def setUpAll(self):
         super(FixtureTest, self).setUpAll()
-        if self.keep_data:
+        if not self.only_tables and self.keep_data:
             install_fixture_data()
 
     def setUp(self):
-        if self.refresh_data:
+        if not self.only_tables and self.refresh_data:
             install_fixture_data()
 
     def define_tables(self, meta):

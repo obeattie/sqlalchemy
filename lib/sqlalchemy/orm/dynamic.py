@@ -32,6 +32,7 @@ DynaLoader.logger = log.class_logger(DynaLoader)
 
 class DynamicAttributeImpl(attributes.AttributeImpl):
     uses_objects = True
+    accepts_scalar_loader = False
     
     def __init__(self, class_, key, typecallable, class_manager, target_mapper, order_by, **kwargs):
         super(DynamicAttributeImpl, self).__init__(class_, key, typecallable, class_manager, **kwargs)
@@ -39,9 +40,6 @@ class DynamicAttributeImpl(attributes.AttributeImpl):
         self.order_by = order_by
         self.query_class = AppenderQuery
 
-    def rollback_to_savepoint(self, state, savepoint):
-        pass
-        
     def get(self, state, passive=False):
         if passive:
             return self._get_collection_history(state, passive=True).added_items

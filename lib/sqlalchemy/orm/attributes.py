@@ -134,9 +134,6 @@ def proxied_attribute_factory(descriptor):
         def __init__(self, key):
             self.key = key
         
-        def rollback_to_savepoint(self, state, savepoint):
-            pass
-            
     class Proxy(InstrumentedAttribute):
         """A combination of InsturmentedAttribute and a regular descriptor."""
 
@@ -326,9 +323,6 @@ class AttributeImpl(object):
     def set(self, state, value, initiator):
         raise NotImplementedError()
 
-    def rollback_to_savepoint(self, state, savepoint):
-        raise NotImplementedError()
-        
     def get_committed_value(self, state):
         """return the unchanged value of this attribute"""
 
@@ -366,13 +360,6 @@ class ScalarAttributeImpl(AttributeImpl):
             self.fire_remove_event(state, old, None)
         else:
             del state.dict[self.key]
-
-    def rollback_to_savepoint(self, state, savepoint):
-        if self.key in savepoint:
-            if savepoint[self.key] in (NO_VALUE, NEVER_SET):
-                state.dict.pop(self.key)
-            else:
-                state.dict[self.key] = savepoint[self.key]
 
     def get_history(self, state, passive=False):
         return History.from_attribute(
@@ -424,16 +411,6 @@ class MutableScalarAttributeImpl(ScalarAttributeImpl):
     def commit_to_state(self, state, dest):
         dest[self.key] = self.copy(state.dict[self.key])
 
-    def rollback_to_savepoint(self, state, savepoint):
-        if self.key not in savepoint:
-            state.dict.pop(self.key, None)
-        else:
-            data = savepoint[self.key]
-            if data is None:
-                state.dict[self.key] = data
-            else:
-                state.dict[self.key] = self.copy(data)
-        
     def check_mutable_modified(self, state):
         (added, unchanged, deleted) = self.get_history(state, passive=True)
         return bool(added or deleted)
@@ -483,13 +460,6 @@ class ScalarObjectAttributeImpl(ScalarAttributeImpl):
                 return (None, None, None)
             else:
                 return History.from_attribute(self, state, current)
-
-    def rollback_to_savepoint(self, state, savepoint):
-        if self.key in savepoint:
-            if savepoint[self.key] in (NO_VALUE, NEVER_SET):
-                state.dict.pop(self.key)
-            else:
-                state.dict[self.key] = savepoint[self.key]
 
     def set(self, state, value, initiator):
         """Set a value on the given InstanceState.
@@ -587,18 +557,6 @@ class CollectionAttributeImpl(AttributeImpl):
 
         for ext in self.extensions:
             ext.remove(state, value, initiator or self)
-
-    def rollback_to_savepoint(self, state, savepoint):
-        if self.key in savepoint:
-            if savepoint[self.key] in (NO_VALUE, NEVER_SET):
-                state.dict.pop(self.key)
-            else:
-                new_values = savepoint[self.key]
-
-                new_collection, user_data = self._initialize_collection(state)
-                for item in new_values:
-                    new_collection.append_without_event(item)
-                state.dict[self.key] = user_data
 
     def delete(self, state):
         if self.key not in state.dict:
@@ -795,7 +753,6 @@ class InstanceState(object):
         self.callables = {}
         self.parents = {}
         self.pending = {}
-        self.savepoints = []
         self.expired = False
     
     def dispose(self):
@@ -888,7 +845,6 @@ class InstanceState(object):
         self.manager = manager_of_class(self.class_)
         self.dict = self.obj().__dict__
         self.callables = state['callables']
-        self.savepoints = []
         self.runid = None
         self.expired = state['expired']
         self.expired_attributes = state['expired_attributes']
@@ -949,15 +905,10 @@ class InstanceState(object):
         self.dict.pop(key, None)
         self.callables.pop(key, None)
     
-    def debug(self):
-        return dict([(k, self.dict[k]) for k in self.manager if k in self.dict]), self.committed_state, self.savepoints
-    debug = property(debug)
-    
     def modified_event(self, attr, should_copy, previous, passive=False):
         needs_committed = attr.key not in self.committed_state
-        needs_savepoint = self.savepoints and attr.key not in self.manager.mutable_attributes and attr.key not in self.savepoints[-1][0]
     
-        if needs_committed or needs_savepoint:
+        if needs_committed:
             if previous is NEVER_SET:
                 if passive:
                     if attr.key in self.dict:
@@ -970,46 +921,9 @@ class InstanceState(object):
             
             if needs_committed:
                 self.committed_state[attr.key] = previous
-            if needs_savepoint:
-                self.savepoints[-1][0][attr.key] = previous
                 
         self.modified = True
     
-    def set_savepoint(self, id_):
-        """set a savepoint with the given id."""
-        
-        savepoint = {}
-        for key in self.manager.mutable_attributes:
-            if key in self.dict:
-                savepoint[key] = self.manager[key].impl.copy(self.dict[key])
-        
-        self.savepoints.append((savepoint, self.parents.copy(), self.pending.copy(), self.committed_state.copy(), self.modified, id_))
-
-    def remove_savepoint(self, id_):
-        """remove a given savepoint"""
-        
-        try:
-            sp = self.savepoints.pop()
-        except IndexError:
-            raise sa_exc.InvalidRequestError("No savepoints are set; can't remove savepoint.")
-            
-        if sp[5] != id_:
-            raise sa_exc.AssertionError("Savepoint id %s does not match %s"  % (sp[5], id_))
-
-    def rollback(self, id_):
-        """roll back to a given savepoint"""
-        
-        try:
-            (savepoint, self.parents, self.pending, self.committed_state, self.modified, spid) = self.savepoints.pop()
-        except IndexError:
-            raise sa_exc.InvalidRequestError("No savepoints are set; can't rollback.")
-            
-        if spid != id_:
-            raise sa_exc.AssertionError("Savepoint id %s does not match %s"  % (spid, id_))
-        
-        for attr in self.manager.attributes:
-            attr.impl.rollback_to_savepoint(self, savepoint)
-
     def commit(self, keys):
         """commit all attributes named in the given list of key names.
 
@@ -1021,17 +935,11 @@ class InstanceState(object):
         """
 
         class_manager = self.manager
-        savepoint = self.savepoints and self.savepoints[-1][0] or None
         for key in keys:
             if key in self.dict and key in class_manager.mutable_attributes:
                 class_manager[key].impl.commit_to_state(self, self.committed_state)
-                if savepoint is not None:
-                    # ugh  - TODO: do we have to commit up the chain of all savepoints ??
-                    class_manager[key].impl.commit_to_state(self, savepoint)
             else:
                 self.committed_state.pop(key, None)
-             #   if savepoint:  # what about this?  
-             #       savepoint.pop(key, None)
 
         self.expired = False
         # unexpire attributes which have loaded
@@ -1040,7 +948,7 @@ class InstanceState(object):
                 self.expired_attributes.remove(key)
                 self.callables.pop(key, None)
 
-    def commit_all(self, savepoint_id=None):
+    def commit_all(self):
         """commit all attributes unconditionally.
 
         This is used after a flush() or a full load/refresh
@@ -1053,11 +961,6 @@ class InstanceState(object):
 
         Attributes marked as "expired" can potentially remain "expired" after this step
         if a value was not populated in state.dict.
-        
-        The argument "savepoint_id" indicates that a savepoint should be 
-        set up along with the commit.  When present, the functionality of 
-        "set_savepoint()" is inlined here for better performance than a 
-        separate call.
         
         """
         self.committed_state = {}
@@ -1072,10 +975,6 @@ class InstanceState(object):
             if key in self.dict:
                 self.manager[key].impl.commit_to_state(self, self.committed_state)
 
-        if savepoint_id:
-            cstate = self.committed_state.copy()
-            self.savepoints.append((cstate, self.parents.copy(), self.pending.copy(), cstate, False, savepoint_id))
-                    
         self.modified = self.expired = False
         self._strong_obj = None
 
