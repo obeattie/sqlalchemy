@@ -213,7 +213,7 @@ class TypeDecorator(AbstractType):
     
     def __init__(self, *args, **kwargs):
         if not hasattr(self.__class__, 'impl'):
-            raise exc.AssertionError("TypeDecorator implementations require a class-level variable 'impl' which refers to the class of type being decorated")
+            raise AssertionError("TypeDecorator implementations require a class-level variable 'impl' which refers to the class of type being decorated")
         self.impl = self.__class__.impl(*args, **kwargs)
 
     def dialect_impl(self, dialect, **kwargs):
@@ -230,7 +230,7 @@ class TypeDecorator(AbstractType):
             typedesc = self.load_dialect_impl(dialect)
         tt = self.copy()
         if not isinstance(tt, self.__class__):
-            raise exc.AssertionError("Type object %s does not properly implement the copy() method, it must return an object of type %s" % (self, self.__class__))
+            raise AssertionError("Type object %s does not properly implement the copy() method, it must return an object of type %s" % (self, self.__class__))
         tt.impl = typedesc
         self._impl_dict[dialect] = tt
         return tt

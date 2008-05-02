@@ -11,11 +11,11 @@ attributes.
 
 """
 
-from sqlalchemy import sql, schema, util, log
+from sqlalchemy import sql, util, log
 import sqlalchemy.exceptions as sa_exc
-from sqlalchemy.sql.util import ClauseAdapter, criterion_as_pairs, find_columns
-from sqlalchemy.sql import visitors, operators, ColumnElement, expression
-from sqlalchemy.orm import mapper, sync, strategies, attributes, dependency, \
+from sqlalchemy.sql.util import ClauseAdapter, criterion_as_pairs
+from sqlalchemy.sql import operators, ColumnElement, expression
+from sqlalchemy.orm import mapper, strategies, attributes, dependency, \
      object_mapper, session as sessionlib
 from sqlalchemy.orm.util import CascadeOptions, _class_to_mapper, _orm_annotate
 from sqlalchemy.orm.interfaces import StrategizedProperty, PropComparator, \
@@ -473,7 +473,7 @@ class PropertyLoader(StrategizedProperty):
             for c in instances:
                 if c is not None and c not in visited_instances and (halt_on is None or not halt_on(c)):
                     if not isinstance(c, self.mapper.class_):
-                        raise sa_exc.AssertionError("Attribute '%s' on class '%s' doesn't handle objects of type '%s'" % (self.key, str(self.parent.class_), str(c.__class__)))
+                        raise AssertionError("Attribute '%s' on class '%s' doesn't handle objects of type '%s'" % (self.key, str(self.parent.class_), str(c.__class__)))
                     visited_instances.add(c)
 
                     # cascade using the mapper local to this object, so that its individual properties are located

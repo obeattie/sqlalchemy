@@ -55,6 +55,9 @@ user_defined_state
     - The transitional sqlalchemy.log.SADeprecationWarning alias for
       the warning's definition in sqlalchemy.exc has been removed.
 
+    - exc.AssertionError has been removed and usage replaced with
+      Python's built-in AssertionError.
+
 0.4.6
 =====
 - orm

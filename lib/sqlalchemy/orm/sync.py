@@ -8,7 +8,6 @@
 based on join conditions.
 """
 
-import sqlalchemy.exceptions as sa_exc
 from sqlalchemy.orm import exc, util as mapperutil
 
 def populate(source, source_mapper, dest, dest_mapper, synchronize_pairs):
@@ -26,7 +25,7 @@ def populate(source, source_mapper, dest, dest_mapper, synchronize_pairs):
 def clear(dest, dest_mapper, synchronize_pairs):
     for l, r in synchronize_pairs:
         if r.primary_key:
-            raise sa_exc.AssertionError("Dependency rule tried to blank-out primary key column '%s' on instance '%s'" % (r, mapperutil.state_str(dest)))
+            raise AssertionError("Dependency rule tried to blank-out primary key column '%s' on instance '%s'" % (r, mapperutil.state_str(dest)))
         try:
             dest_mapper._set_state_attr_by_column(dest, r, None)
         except exc.UnmappedColumnError:

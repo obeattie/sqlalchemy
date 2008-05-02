@@ -4,17 +4,17 @@
 # This module is part of SQLAlchemy and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
-import inspect
 import operator
-import new
 import weakref
-from itertools import chain
 
 from sqlalchemy import util
 from sqlalchemy.util import attrgetter, itemgetter, EMPTY_SET
 from sqlalchemy.orm import interfaces, collections
 import sqlalchemy.exceptions as sa_exc
 
+# lazy imports
+_entity_info = None
+identity_equal = None
 
 PASSIVE_NORESULT = util.symbol('PASSIVE_NORESULT')
 ATTR_WAS_SET = util.symbol('ATTR_WAS_SET')

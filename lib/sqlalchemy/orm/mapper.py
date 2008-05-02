@@ -1523,7 +1523,7 @@ class Mapper(object):
             try:
                 mapper = self.polymorphic_map[discriminator]
             except KeyError:
-                raise sa_exc.AssertionError("No such polymorphic_identity %r is defined" % discriminator)
+                raise AssertionError("No such polymorphic_identity %r is defined" % discriminator)
             if mapper is self:
                 return None
             return mapper._instance_processor(context, path, adapter, polymorphic_from=self)

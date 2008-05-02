@@ -6,7 +6,6 @@
 
 import weakref
 
-import sqlalchemy.exceptions as sa_exc
 from sqlalchemy import util as base_util
 from sqlalchemy.orm import attributes
 
@@ -105,7 +104,7 @@ class WeakInstanceDict(IdentityMap):
     def add(self, state):
         if state.key in self:
             if dict.__getitem__(self, state.key) is not state:
-                raise sa_exc.AssertionError("A conflicting state is already present in the identity map for key %r" % state.key)
+                raise AssertionError("A conflicting state is already present in the identity map for key %r" % state.key)
         else:
             dict.__setitem__(self, state.key, state)
             state._instance_dict = self._wr
@@ -117,7 +116,7 @@ class WeakInstanceDict(IdentityMap):
         
     def remove(self, state):
         if not self.contains_state(state):
-            raise sa_exc.AssertionError("State %s is not present in this identity map" % state)
+            raise AssertionError("State %s is not present in this identity map" % state)
         dict.__delitem__(self, state.key)
         del state._instance_dict
         self._manage_removed_state(state)
@@ -171,7 +170,7 @@ class StrongInstanceDict(IdentityMap):
     
     def remove(self, state):
         if not self.contains_state(state):
-            raise sa_exc.AssertionError("State %s is not present in this identity map" % state)
+            raise AssertionError("State %s is not present in this identity map" % state)
         dict.__delitem__(self, state.key)
         self._manage_removed_state(state)
     

@@ -320,7 +320,7 @@ class FBDialect(default.DefaultDialect):
         version = fbconn.server_version
         m = match('\w+-V(\d+)\.(\d+)\.(\d+)\.(\d+) \w+ (\d+)\.(\d+)', version)
         if not m:
-            raise exc.AssertionError("Could not determine version from string '%s'" % version)
+            raise AssertionError("Could not determine version from string '%s'" % version)
         return tuple([int(x) for x in m.group(5, 6, 4)])
 
     def _normalize_name(self, name):

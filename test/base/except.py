@@ -47,10 +47,10 @@ class WrapTest(unittest.TestCase):
         # subclasses of sqlalchemy.exceptions.DBAPIError
         try:
             raise sa_exceptions.DBAPIError.instance(
-                '', [], sa_exceptions.AssertionError())
+                '', [], sa_exceptions.ArgumentError())
         except sa_exceptions.DBAPIError, e:
             self.assert_(e.__class__ is sa_exceptions.DBAPIError)
-        except sa_exceptions.AssertionError:
+        except sa_exceptions.ArgumentError:
             self.assert_(False)
 
     def test_db_error_keyboard_interrupt(self):

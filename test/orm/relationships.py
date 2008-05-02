@@ -399,7 +399,7 @@ class RelationTest4(ORMTest):
         try:
             sess.flush()
             assert False
-        except sa_exc.AssertionError, e:
+        except AssertionError, e:
             assert str(e).startswith("Dependency rule tried to blank-out primary key column 'B.id' on instance ")
 
     def test_no_delete_PK_BtoA(self):
@@ -419,7 +419,7 @@ class RelationTest4(ORMTest):
         try:
             sess.flush()
             assert False
-        except sa_exc.AssertionError, e:
+        except AssertionError, e:
             assert str(e).startswith("Dependency rule tried to blank-out primary key column 'B.id' on instance ")
 
     @testing.fails_on_everything_except('sqlite', 'mysql')
@@ -633,7 +633,7 @@ class TypeMatchTest(ORMTest):
         try:
             sess.save(a1)
             assert False
-        except sa_exc.AssertionError, err:
+        except AssertionError, err:
             assert str(err) == "Attribute 'bs' on class '%s' doesn't handle objects of type '%s'" % (A, C)
     def test_o2m_onflush(self):
         class A(object):pass
@@ -699,7 +699,7 @@ class TypeMatchTest(ORMTest):
         d1 = D()
         d1.a = b1
         sess = create_session()
-        self.assertRaisesMessage(sa_exc.AssertionError, "doesn't handle objects of type", sess.save, d1)
+        self.assertRaisesMessage(AssertionError, "doesn't handle objects of type", sess.save, d1)
 
 class TypedAssociationTable(ORMTest):
     def define_tables(self, metadata):

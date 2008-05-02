@@ -419,7 +419,7 @@ class PGDialect(default.DefaultDialect):
         v = connection.execute("select version()").scalar()
         m = re.match('PostgreSQL (\d+)\.(\d+)\.(\d+)', v)
         if not m:
-            raise exc.AssertionError("Could not determine version from string '%s'" % v)
+            raise AssertionError("Could not determine version from string '%s'" % v)
         return tuple([int(x) for x in m.group(1, 2, 3)])
 
     def reflecttable(self, connection, table, include_columns):

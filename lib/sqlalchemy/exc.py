@@ -25,10 +25,6 @@ class ArgumentError(SQLAlchemyError):
     """
 
 
-class AssertionError(SQLAlchemyError):
-    """Corresponds to internal state being detected in an invalid state."""
-
-
 class CircularDependencyError(SQLAlchemyError):
     """Raised by topological sorts when a circular dependency is detected"""
 
