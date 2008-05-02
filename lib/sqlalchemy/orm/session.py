@@ -131,7 +131,7 @@ class SessionTransaction(object):
     def _assert_is_active(self):
         self._assert_is_open()
         if not self._active:
-            raise sa_exc.InvalidRequestError("The transaction is inactive due to a rollback in a subtransaction and should be closed")
+            raise sa_exc.InvalidRequestError("The transaction is inactive due to a rollback in a subtransaction.  Issue rollback() to cancel the transaction.")
 
     def _assert_is_open(self):
         if self.session is None:
@@ -183,6 +183,8 @@ class SessionTransaction(object):
         
         for s in util.Set(self._deleted).union(self.session._deleted):
             self.session._update_impl(s)
+        
+        assert not self.session._deleted
             
         for s in util.Set(self._new).union(self.session._new):
             self.session._expunge_state(s)
@@ -1151,7 +1153,9 @@ class Session(object):
                 "Could not update instance '%s', identity key %s; a different "
                 "instance with the same identity key already exists in this "
                 "session." % (mapperutil.state_str(state), state.key))
+                
         self._attach(state)
+        self._deleted.pop(state, None)
         self.identity_map.add(state)
         
     def _save_or_update_impl(self, state):
