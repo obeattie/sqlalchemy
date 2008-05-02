@@ -755,15 +755,14 @@ class PropertyLoader(StrategizedProperty):
                 source_selectable = self.parent._with_polymorphic_selectable
                 
         if dest_selectable is None:
+            
             if dest_polymorphic and self.mapper.with_polymorphic:
                 dest_selectable = self.mapper._with_polymorphic_selectable
-
-            if self._is_self_referential():
-                if source_selectable is dest_selectable:
-                    if dest_selectable:
-                        dest_selectable = dest_selectable.alias()
-                    else:
-                        dest_selectable = self.mapper.local_table.alias()
+            else:
+                dest_selectable = self.mapper.mapped_table
+                
+            if self._is_self_referential() and source_selectable is None:
+                dest_selectable = dest_selectable.alias()
 
         primaryjoin, secondaryjoin, secondary = self.primaryjoin, self.secondaryjoin, self.secondary
         if source_selectable or dest_selectable:
