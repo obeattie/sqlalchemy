@@ -1123,6 +1123,7 @@ class Session(object):
             prop.merge(self, instance, merged, dont_load, _recursive)
 
         if dont_load:
+            # needs savepoint ?
             attributes.instance_state(merged).commit_all()  # remove any history
 
         if new_instance:

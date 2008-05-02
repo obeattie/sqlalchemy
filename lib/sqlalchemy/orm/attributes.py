@@ -707,6 +707,7 @@ class CollectionAttributeImpl(AttributeImpl):
         state.dict[self.key] = user_data
 
         state.commit([self.key])
+
         if self.key in state.pending:
             # pending items exist.  issue a modified event,
             # add/remove new items.
@@ -1020,11 +1021,17 @@ class InstanceState(object):
         """
 
         class_manager = self.manager
+        savepoint = self.savepoints and self.savepoints[-1][0] or None
         for key in keys:
             if key in self.dict and key in class_manager.mutable_attributes:
                 class_manager[key].impl.commit_to_state(self, self.committed_state)
+                if savepoint is not None:
+                    # ugh  - TODO: do we have to commit up the chain of all savepoints ??
+                    class_manager[key].impl.commit_to_state(self, savepoint)
             else:
                 self.committed_state.pop(key, None)
+             #   if savepoint:  # what about this?  
+             #       savepoint.pop(key, None)
 
         self.expired = False
         # unexpire attributes which have loaded

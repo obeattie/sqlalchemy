@@ -375,10 +375,72 @@ class AttrTestBase(object):
         attributes.instance_state(f).commit_all()
 
         assert attributes.get_history(attributes.instance_state(f), 'x') == ([], hist2, [])
-        
     
+    def test_expire(self):
+        
+        class Test(object):
+            pass
+
+        called = [0]
+
+        attributes.register_class(Test)
+        self.register_attribute(Test, 'x')
+        if Test.x.impl.accepts_scalar_loader:
+            uses_scalar_loader = True
+            def load(state, keys):
+                called[0] += 1
+                state.dict['x'] = data2
+                state.commit(['x'])
+        
+            manager = attributes.manager_of_class(Test).deferred_scalar_loader = load
+        else:
+            # expiry uses the "lazy loaders" for object based attributes
+            uses_scalar_loader = False
+            def foo(state):
+                def load():
+                    called[0] += 1
+                    return data2
+                return load
+            Test.x.impl.callable_ = foo
+        
+        f = Test()
+
+        f.x = data1
+        if uses_scalar_loader:
+            assert called == [0]
+        else:
+            assert called == [1]
+
+#        import pdb
+#        pdb.set_trace()
+
+        attributes.instance_state(f).commit_all(savepoint_id=1)
+        assert attributes.get_history(attributes.instance_state(f), 'x') == ([], hist1, [])
+        
+        attributes.instance_state(f).expire_attributes(['x'])
+        if uses_scalar_loader:
+            assert attributes.get_history(attributes.instance_state(f), 'x') == ([], emptyhist, [])
+            assert called == [0]
+        else:
+            assert attributes.get_history(attributes.instance_state(f), 'x') == ([], hist2, [])
+            assert called == [2]
+        
+        assert f.x == data2
+        assert attributes.get_history(attributes.instance_state(f), 'x') == ([], hist2, [])
+        
+        f.x = data3
+        
+        attributes.instance_state(f).rollback(1)
+        assert attributes.get_history(attributes.instance_state(f), 'x') == ([], hist2, [])
+        if uses_scalar_loader:
+            assert called == [1]
+        else:
+            assert called == [2]
         
 class CollectionTestBase(AttrTestBase):
+
+    def register_attribute(self, cls, name, **kwargs):
+        attributes.register_attribute(cls, name, uselist=True, useobject=True, trackparent=True, typecallable=make_collection, **kwargs)
 
     def test_collection_rback_savepoint_rback_to_empty(self):
         b1, b2, b3, b4, b5 = Bar(), Bar(), Bar(), Bar(), Bar()
@@ -494,13 +556,15 @@ class CollectionTestBase(AttrTestBase):
         
         for x in [b1, p1, p2, p3]:
             attributes.instance_state(x).commit_all(savepoint_id=1)
-        
+
         p4 = Post(name='p4')
         p5 = Post(name='p5')
         p4.blog = b1
         p5.blog = b1
-
+#        import pdb
+#        pdb.set_trace()
         assert b1.posts ==  make_collection([Post(name='p1'), Post(name='p2'), Post(name='p3'), Post(name='p4'), Post(name='p5')])
+        assert called == [1]
         assert attributes.get_history(attributes.instance_state(b1), 'posts') == ([p4, p5], [p1, p2, p3], [])
 
         for x in [b1, p1, p2, p3]:
@@ -508,7 +572,8 @@ class CollectionTestBase(AttrTestBase):
         assert attributes.get_history(attributes.instance_state(b1), 'posts') == ([], [p1, p2, p3], [])
         assert b1.posts == make_collection([p1, p2, p3])
         
-        # TODO: more tests needed
+        # not sure how if we want lazy load to re-fire or not here
+#        assert called == [1]
 
 class ScalarTest(AttrTestBase, TestBase):
     def setUpAll(self):
@@ -527,7 +592,10 @@ class ScalarTest(AttrTestBase, TestBase):
         class Foo(object):pass
         attributes.register_class(Foo)
         attributes.register_attribute(Foo, 'x', uselist=False, useobject=False)
-
+    
+    def register_attribute(self, cls, name, **kwargs):
+        attributes.register_attribute(cls, name, uselist=False, useobject=False, **kwargs)
+        
 class MutableScalarTest(AttrTestBase, TestBase):
     def setUpAll(self):
         global Foo, data1, data2, data3, hist1, hist2, hist3, empty, emptyhist
@@ -545,6 +613,9 @@ class MutableScalarTest(AttrTestBase, TestBase):
         class Foo(object):pass
         attributes.register_class(Foo)
         attributes.register_attribute(Foo, 'x', uselist=False, useobject=False, mutable_scalars=True, copy_function=dict)
+
+    def register_attribute(self, cls, name, **kwargs):
+        attributes.register_attribute(cls, name, uselist=False, useobject=False, mutable_scalars=True, copy_function=dict, **kwargs)
 
     def test_mutable1(self):
         f = Foo()
@@ -582,6 +653,9 @@ class ScalarObjectTest(AttrTestBase, TestBase):
 
         empty = None
         emptyhist = [None]
+
+    def register_attribute(self, cls, name, **kwargs):
+        attributes.register_attribute(cls, name, uselist=False, useobject=True, trackparent=True, **kwargs)
 
     def test_hasparent(self):
         f = Foo()
