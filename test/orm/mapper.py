@@ -36,36 +36,36 @@ class MapperTest(MapperSuperTest):
     def test_prop_accessor(self):
         mapper(User, users)
         self.assertRaises(NotImplementedError, getattr, class_mapper(User), 'properties')
-    
+
     @testing.uses_deprecated(
-        'Call to deprecated function _instance_key', 
-        'Call to deprecated function _sa_session_id', 
+        'Call to deprecated function _instance_key',
+        'Call to deprecated function _sa_session_id',
         'Call to deprecated function _entity_name')
     def test_legacy_accesors(self):
         u1 = User()
         assert not hasattr(u1, '_instance_key')
         assert not hasattr(u1, '_sa_session_id')
         assert not hasattr(u1, '_entity_name')
-        
+
         mapper(User, users)
         u1 = User()
         assert not hasattr(u1, '_instance_key')
         assert not hasattr(u1, '_sa_session_id')
         assert u1._entity_name is None
-        
+
         sess = create_session()
         sess.save(u1)
         assert not hasattr(u1, '_instance_key')
         assert u1._sa_session_id == sess.hash_key
         assert u1._entity_name is None
-        
+
         sess.flush()
         assert u1._instance_key == class_mapper(u1).identity_key_from_instance(u1)
         assert u1._sa_session_id == sess.hash_key
         assert u1._entity_name is None
         sess.delete(u1)
         sess.flush()
-        
+
     def test_badcascade(self):
         mapper(Address, addresses)
         self.assertRaises(sa_exc.ArgumentError, relation, Address, cascade="fake, all, delete-orphan")
@@ -85,26 +85,26 @@ class MapperTest(MapperSuperTest):
     def test_no_pks(self):
         s = select([users.c.user_name]).alias('foo')
         self.assertRaises(sa_exc.ArgumentError, mapper, User, s)
-    
+
     def test_recompile_on_othermapper(self):
-        """test the global '_new_mappers' flag such that a compile 
+        """test the global '_new_mappers' flag such that a compile
         trigger on an already-compiled mapper still triggers a check against all mappers."""
 
         from sqlalchemy.orm import mapperlib
-        
+
         mapper(User, users)
         compile_mappers()
         assert mapperlib._new_mappers is False
-        
+
         m = mapper(Address, addresses, properties={
                 'user': relation(User, backref="addresses")})
-        
+
         assert m.compiled is False
         assert mapperlib._new_mappers is True
         u = User()
         assert User.addresses
         assert mapperlib._new_mappers is False
-    
+
     def test_compileonsession(self):
         m = mapper(User, users)
         session = create_session()
@@ -895,8 +895,8 @@ class OptionsTest(MapperSuperTest):
 
         sess.clear()
 
-        self.assertRaisesMessage(sa_exc.ArgumentError, 
-            r"Can't find entity Mapper\|Order\|orders in Query.  Current list: \['Mapper\|User\|users'\]", 
+        self.assertRaisesMessage(sa_exc.ArgumentError,
+            r"Can't find entity Mapper\|Order\|orders in Query.  Current list: \['Mapper\|User\|users'\]",
             sess.query(User).options, eagerload('items', Order)
         )
 
@@ -1301,11 +1301,29 @@ class MapperExtensionTest(TestBase):
     def setUpAll(self):
         tables.create()
 
-        global methods, Ext
+    def tearDown(self):
+        clear_mappers()
+        tables.delete()
 
+    def tearDownAll(self):
+        tables.drop()
+
+    def extension(self):
         methods = []
 
         class Ext(MapperExtension):
+            def instrument_class(self, mapper, cls):
+                methods.append('instrument_class')
+                return EXT_CONTINUE
+
+            def init_instance(self, mapper, class_, oldinit, instance, args, kwargs):
+                methods.append('init_instance')
+                return EXT_CONTINUE
+
+            def init_failed(self, mapper, class_, oldinit, instance, args, kwargs):
+                methods.append('init_failed')
+                return EXT_CONTINUE
+
             def load(self, query, *args, **kwargs):
                 methods.append('load')
                 return EXT_CONTINUE
@@ -1354,16 +1372,12 @@ class MapperExtensionTest(TestBase):
                 methods.append('after_delete')
                 return EXT_CONTINUE
 
-    def tearDown(self):
-        clear_mappers()
-        methods[:] = []
-        tables.delete()
-
-    def tearDownAll(self):
-        tables.drop()
+        return Ext, methods
 
     def test_basic(self):
         """test that common user-defined methods get called."""
+        Ext, methods = self.extension()
+
         mapper(User, users, extension=Ext())
         sess = create_session()
         u = User()
@@ -1376,13 +1390,17 @@ class MapperExtensionTest(TestBase):
         sess.flush()
         sess.delete(u)
         sess.flush()
-        self.assertEquals(methods, 
-            ['before_insert', 'after_insert', 'load', 'translate_row', 'populate_instance', 'append_result', 'get', 'translate_row', 
-            'create_instance', 'populate_instance', 'append_result', 'before_update', 'after_update', 'before_delete', 'after_delete']        
-        )
+        self.assertEquals(methods,
+            ['instrument_class', 'init_instance', 'before_insert',
+             'after_insert', 'load', 'translate_row', 'populate_instance',
+             'append_result', 'get', 'translate_row', 'create_instance',
+             'populate_instance', 'append_result', 'before_update',
+             'after_update', 'before_delete', 'after_delete'])
+
 
     def test_inheritance(self):
-        # test using inheritance
+        Ext, methods = self.extension()
+
         class AdminUser(User):
             pass
 
@@ -1400,12 +1418,17 @@ class MapperExtensionTest(TestBase):
         sess.flush()
         sess.delete(am)
         sess.flush()
-        self.assertEquals(methods, 
-        ['before_insert', 'after_insert', 'load', 'translate_row', 'populate_instance', 'append_result', 'get', 
-        'translate_row', 'create_instance', 'populate_instance', 'append_result', 'before_update', 'after_update', 'before_delete', 'after_delete'])
+        self.assertEquals(methods,
+            ['instrument_class', 'instrument_class', 'init_instance',
+             'before_insert', 'after_insert', 'load', 'translate_row',
+             'populate_instance', 'append_result', 'get', 'translate_row',
+             'create_instance', 'populate_instance', 'append_result',
+             'before_update', 'after_update', 'before_delete', 'after_delete'])
 
     def test_after_with_no_changes(self):
         # test that after_update is called even if no cols were updated
+
+        Ext, methods = self.extension()
 
         mapper(Item, orderitems, extension=Ext() , properties={
             'keywords':relation(Keyword, secondary=itemkeywords)
@@ -1418,15 +1441,20 @@ class MapperExtensionTest(TestBase):
         sess.save(i1)
         sess.save(k1)
         sess.flush()
-        self.assertEquals(methods, ['before_insert', 'after_insert', 'before_insert', 'after_insert'])
+        self.assertEquals(methods,
+            ['instrument_class', 'instrument_class', 'init_instance',
+             'init_instance', 'before_insert', 'after_insert',
+             'before_insert', 'after_insert'])
 
-        methods[:] = []
+        del methods[:]
         i1.keywords.append(k1)
         sess.flush()
         self.assertEquals(methods, ['before_update', 'after_update'])
 
 
     def test_inheritance_with_dupes(self):
+        Ext, methods = self.extension()
+
         # test using inheritance, same extension on both mappers
         class AdminUser(User):
             pass
@@ -1446,10 +1474,58 @@ class MapperExtensionTest(TestBase):
         sess.flush()
         sess.delete(am)
         sess.flush()
-        self.assertEquals(methods, 
-            ['before_insert', 'after_insert', 'load', 'translate_row', 'populate_instance', 'append_result', 'get', 'translate_row', 
-            'create_instance', 'populate_instance', 'append_result', 'before_update', 'after_update', 'before_delete', 'after_delete']
-            )
+        self.assertEquals(methods,
+            ['instrument_class', 'instrument_class', 'init_instance',
+             'before_insert', 'after_insert', 'load', 'translate_row',
+             'populate_instance', 'append_result', 'get', 'translate_row',
+             'create_instance', 'populate_instance', 'append_result',
+             'before_update', 'after_update', 'before_delete', 'after_delete'])
+
+    def test_single_instrumentor(self):
+        ext_None, methods_None = self.extension()
+        ext_x, methods_x = self.extension()
+
+        def reset():
+            clear_mappers()
+            del methods_None[:]
+            del methods_x[:]
+
+        mapper(User, users, extension=ext_None())
+        mapper(User, users, extension=ext_x(), entity_name='x')
+
+        self.assertEquals(methods_None, ['instrument_class'])
+        self.assertEquals(methods_x, [])
+
+        reset()
+
+        mapper(User, users, extension=ext_x(), entity_name='x')
+        mapper(User, users, extension=ext_None())
+
+        self.assertEquals(methods_x, ['instrument_class'])
+        self.assertEquals(methods_None, [])
+
+        reset()
+
+        ext_y, methods_y = self.extension()
+
+        mapper(User, users, extension=ext_x(), entity_name='x')
+        mapper(User, users, extension=ext_y(), entity_name='y')
+
+        self.assertEquals(methods_x, ['instrument_class'])
+        self.assertEquals(methods_y, [])
+
+    @testing.future
+    def test_single_instrumentor_todo(self):
+        ext_None, methods_None = self.extension()
+        ext_x, methods_x = self.extension()
+
+        mapper(User, users, extension=ext_None())
+        mapper(User, users, extension=ext_x(), entity_name='x')
+
+        u = User()
+        self.assertEquals(methods_None, ['instrument_class', 'init_instance'])
+        self.assertEquals(methods_x, [])
+
 
 class RequirementsTest(ORMTest):
     """Tests the contract for user classes."""
@@ -1552,7 +1628,7 @@ class RequirementsTest(ORMTest):
                     return self.value == other.value
                 return False
 
-                
+
         mapper(H1, t1, properties={
             'h2s': relation(H2, backref='h1'),
             'h3s': relation(H3, secondary=t4, backref='h1s'),
@@ -1715,14 +1791,14 @@ class ScalarRequirementsTest(ORMTest):
         t1 = Table('t1', metadata, Column('id', Integer, primary_key=True),
             Column('data', PickleType(pickler=pickle))  # dont use cPickle due to import weirdness
         )
-        
+
     def test_correct_comparison(self):
-                
+
         class H1(fixtures.Base):
             pass
-            
+
         mapper(H1, t1)
-        
+
         h1 = H1(data=NoEqFoo('12345'))
         s = create_session()
         s.save(h1)
@@ -1730,7 +1806,7 @@ class ScalarRequirementsTest(ORMTest):
         s.clear()
         h1 = s.get(H1, h1.id)
         assert h1.data.data == '12345'
-        
+
 
 if __name__ == "__main__":
     testenv.main()

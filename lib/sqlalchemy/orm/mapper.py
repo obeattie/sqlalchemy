@@ -398,20 +398,17 @@ class Mapper(object):
             for ext_obj in util.to_list(extension):
                 # local MapperExtensions have already instrumented the class
                 extlist.add(ext_obj)
-                ext_obj.instrument_class(self, self.class_)
 
         if self.inherits:
             for ext in self.inherits.extension:
                 if ext not in extlist:
                     extlist.add(ext)
-                    ext.instrument_class(self, self.class_)
         else:
             for ext in global_extensions:
                 if isinstance(ext, type):
                     ext = ext()
                 if ext not in extlist:
                     extlist.add(ext)
-                    ext.instrument_class(self, self.class_)
 
         self.extension = ExtensionCarrier()
         for ext in extlist:
@@ -828,8 +825,11 @@ class Mapper(object):
         if has_been_initialized:
             return
 
-        attributes.register_class(self.class_)  # TODO: why do we need to call this ?  we've already called
-                                                # two separate "setup class management" functions from attributes.py
+        self.extension.instrument_class(self, self.class_)
+
+        # TODO: why do we need to call this ?  we've already called
+        # two separate "setup class management" functions from attributes.py
+        attributes.register_class(self.class_)
 
         manager.deferred_scalar_loader = _load_scalar_attributes
 
