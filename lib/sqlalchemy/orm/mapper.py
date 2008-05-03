@@ -318,10 +318,8 @@ class Mapper(object):
         self.compiled = True
 
         manager = self.class_manager
-        if hasattr(self.class_, 'c') and self.class_.c is self.c:
-            manager.uninstall_member('c')
-
         mappers = manager.mappers
+
         if not self.non_primary and self.entity_name in mappers:
             del mappers[self.entity_name]
         if self in manager.info[_PRIMARIES]:
