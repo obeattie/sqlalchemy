@@ -58,6 +58,15 @@ user_defined_state
     - exc.AssertionError has been removed and usage replaced with
       Python's built-in AssertionError.
 
+    - The behavior of MapperExtensions attached to multiple,
+      entity_name= primary mappers for a single class has been
+      altered.  The first mapper() defined for a class is the only
+      mapper eligible for the MapperExtension 'instrument_class',
+      'init_instance' and 'init_failed' events.  This is backwards
+      incompatible; previously the extensions of last mapper defined
+      would receive these events.
+
+
 0.4.6
 =====
 - orm

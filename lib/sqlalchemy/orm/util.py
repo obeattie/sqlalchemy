@@ -15,6 +15,8 @@ from sqlalchemy.orm import attributes
 all_cascades = util.FrozenSet(["delete", "delete-orphan", "all", "merge",
                          "expunge", "save-update", "refresh-expire", "none"])
 
+_INSTRUMENTOR = ('mapper', 'instrumentor')
+
 class CascadeOptions(object):
     """Keeps track of the options sent to relation().cascade"""
 
@@ -510,9 +512,9 @@ def _is_mapped_class(cls):
     from sqlalchemy.orm import mapperlib as mapper
     if isinstance(cls, (AliasedClass, mapper.Mapper)):
         return True
-        
+
     manager = attributes.manager_of_class(cls)
-    return manager and mapper._INITIALIZED in manager.info
+    return manager and _INSTRUMENTOR in manager.info
 
 def instance_str(instance):
     """Return a string describing an instance."""

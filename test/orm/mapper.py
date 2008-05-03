@@ -1492,16 +1492,18 @@ class MapperExtensionTest(TestBase):
 
         mapper(User, users, extension=ext_None())
         mapper(User, users, extension=ext_x(), entity_name='x')
+        User()
 
-        self.assertEquals(methods_None, ['instrument_class'])
+        self.assertEquals(methods_None, ['instrument_class', 'init_instance'])
         self.assertEquals(methods_x, [])
 
         reset()
 
         mapper(User, users, extension=ext_x(), entity_name='x')
         mapper(User, users, extension=ext_None())
+        User()
 
-        self.assertEquals(methods_x, ['instrument_class'])
+        self.assertEquals(methods_x, ['instrument_class', 'init_instance'])
         self.assertEquals(methods_None, [])
 
         reset()
@@ -1510,21 +1512,10 @@ class MapperExtensionTest(TestBase):
 
         mapper(User, users, extension=ext_x(), entity_name='x')
         mapper(User, users, extension=ext_y(), entity_name='y')
+        User()
 
-        self.assertEquals(methods_x, ['instrument_class'])
+        self.assertEquals(methods_x, ['instrument_class', 'init_instance'])
         self.assertEquals(methods_y, [])
-
-    @testing.future
-    def test_single_instrumentor_todo(self):
-        ext_None, methods_None = self.extension()
-        ext_x, methods_x = self.extension()
-
-        mapper(User, users, extension=ext_None())
-        mapper(User, users, extension=ext_x(), entity_name='x')
-
-        u = User()
-        self.assertEquals(methods_None, ['instrument_class', 'init_instance'])
-        self.assertEquals(methods_x, [])
 
 
 class RequirementsTest(ORMTest):

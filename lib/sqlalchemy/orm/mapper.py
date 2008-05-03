@@ -27,13 +27,18 @@ from sqlalchemy.orm import sync
 from sqlalchemy.orm.identity import IdentityManagedState
 from sqlalchemy.orm.interfaces import MapperProperty, EXT_CONTINUE, \
      PropComparator
-from sqlalchemy.orm.util import has_identity, _state_has_identity, \
-     _is_mapped_class, has_mapper, \
-     _state_mapper, class_mapper, object_mapper, _class_to_mapper,\
-     ExtensionCarrier, state_str, instance_str
+from sqlalchemy.orm.util import \
+     ExtensionCarrier, _INSTRUMENTOR, _class_to_mapper, _is_mapped_class, \
+     _state_has_identity, _state_mapper, class_mapper, has_identity, \
+     has_mapper, instance_str, object_mapper, state_str
 
 
-__all__ = ['Mapper', 'class_mapper', 'object_mapper', '_mapper_registry']
+__all__ = (
+    'Mapper',
+    '_mapper_registry',
+    'class_mapper',
+    'object_mapper',
+    )
 
 _mapper_registry = weakref.WeakKeyDictionary()
 _new_mappers = False
@@ -56,10 +61,6 @@ SynonymProperty = None
 ComparableProperty = None
 _expire_state = None
 _state_session = None
-
-
-_INITIALIZED = ('mapper', 'initialized')
-_PRIMARIES = ('mapper', 'primaries')
 
 
 class Mapper(object):
@@ -322,16 +323,14 @@ class Mapper(object):
 
         if not self.non_primary and self.entity_name in mappers:
             del mappers[self.entity_name]
-        if self in manager.info[_PRIMARIES]:
-            manager.info[_PRIMARIES].remove(self)
-        if not mappers and manager.info.get(_INITIALIZED, False):
+        if not mappers and manager.info.get(_INSTRUMENTOR, False):
             for legacy in _legacy_descriptors.keys():
                 manager.uninstall_member(legacy)
             manager.events.remove_listener('on_init', _event_on_init)
             manager.events.remove_listener('on_init_failure',
                                            _event_on_init_failure)
             manager.uninstall_member('__init__')
-            del manager.info[_INITIALIZED]
+            del manager.info[_INSTRUMENTOR]
             attributes.unregister_class(self.class_)
 
     def compile(self):
@@ -816,9 +815,7 @@ class Mapper(object):
             manager = attributes.create_manager_for_cls(self.class_, instance_state_factory=IdentityManagedState)
         self.class_manager = manager
 
-        has_been_initialized = manager.info.get(_INITIALIZED, False)
-        primaries = manager.info.setdefault(_PRIMARIES, [])
-        primaries.append(self)
+        has_been_initialized = bool(manager.info.get(_INSTRUMENTOR, False))
         manager.mappers[self.entity_name] = self
 
         # The remaining members can be added by any mapper, e_name None or not.
@@ -840,7 +837,7 @@ class Mapper(object):
         for key, impl in _legacy_descriptors.items():
             manager.install_member(key, impl)
 
-        manager.info[_INITIALIZED] = True
+        manager.info[_INSTRUMENTOR] = self
 
     def common_parent(self, other):
         """Return true if the given mapper shares a common inherited parent as this mapper."""
@@ -1566,87 +1563,28 @@ class Mapper(object):
 
 Mapper.logger = log.class_logger(Mapper)
 
-def create_instance(*mixed, **kwargs):
-    """Generically create a new instance of a mapped class.
-
-    cls
-      A mapped Python class
-    options
-      A dictionary, may contain any of:
-        entity_name: instance will have this entity_name
-        session: instance will be added to this Session
-    \*args
-    \**kwargs
-      Will be passed along to cls.__init__
-
-    """
-
-    # TODO: is this a core function ?  a util ?  an extension ?
-    # a recipe ?  doesn't (yet) seem like core to me.....
-
-    try:
-        cls, options, args = mixed[0], mixed[1], mixed[1:]
-    except IndexError:
-        raise TypeError("create_instance() takes at least 2 arguments, "
-                        "(%s given)" % len(mixed))
-    manager = attributes.manager_of_class(cls)
-    if manager is None or manager.class_ is not cls or not manager.mappers:
-        raise TypeError("%s is not a mapped class." % cls.__name__)
-
-    # fixme: new_instance should not install state
-    # should always be a 2 shot process
-    instance = manager.new_instance()
-    state = manager.state_of(instance)
-
-    if 'entity_name' in options:
-        state.entity_name = options['entity_name']
-    session = options.get('session')
-    try:
-        if session:
-            session.save(instance)
-        state.initialize_instance(*((instance,) + args), **kwargs)
-    except:
-        if session:
-            session.expunge(instance)
-        raise
-    return instance
-
-def _initializable_mappers_for_state(state):
-    """Return a sequence of mappers eligible to run init events.
-
-    If a state has an entity name, that mapper is eligible.  Otherwise the
-    classic behavior kicks in- the last mapper defined is returned.  Running
-    -all- primary mappers is an option that can be explored in the future,
-    but may require changes in mapper extensions to cope.
-
-    """
-    if state.entity_name is attributes.NO_ENTITY_NAME:
-        return state.manager.info.get(_PRIMARIES, ())[-1:]
-    elif state.entity_name in state.manager.mappers:
-        return (state.manager.mappers[state.entity_name],)
-    else:
-        return ()
 
 def _event_on_init(state, instance, args, kwargs):
     """Trigger mapper compilation and run init_instance hooks."""
 
-    list(state.manager.mappers.values())[0].compile()   # compile() always compiles all mappers
-    for mapper in _initializable_mappers_for_state(state):
-        if 'init_instance' in mapper.extension.methods:
-            mapper.extension.init_instance(
-                mapper, mapper.class_, state.manager.events.original_init,
-                instance, args, kwargs)
+    instrumenting_mapper = state.manager.info[_INSTRUMENTOR]
+    # compile() always compiles all mappers
+    instrumenting_mapper.compile()
+    if 'init_instance' in instrumenting_mapper.extension.methods:
+        instrumenting_mapper.extension.init_instance(
+            instrumenting_mapper, instrumenting_mapper.class_,
+            state.manager.events.original_init,
+            instance, args, kwargs)
 
 def _event_on_init_failure(state, instance, args, kwargs):
     """Run init_failed hooks."""
 
-    mapper = state.manager.mappers.get(state.entity_name, None)
-    for mapper in _initializable_mappers_for_state(state):
-        if 'init_failed' in mapper.extension.methods:
-            util.warn_exception(
-                mapper.extension.init_failed,
-                mapper, mapper.class_, state.manager.events.original_init,
-                instance, args, kwargs)
+    instrumenting_mapper = state.manager.info[_INSTRUMENTOR]
+    if 'init_failed' in instrumenting_mapper.extension.methods:
+        util.warn_exception(
+            instrumenting_mapper.extension.init_failed,
+            instrumenting_mapper, instrumenting_mapper.class_,
+            state.manager.events.original_init, instance, args, kwargs)
 
 def _legacy_descriptors():
     """Build compatibility descriptors mapping legacy to InstanceState.
@@ -1663,7 +1601,7 @@ def _legacy_descriptors():
         if state.key is not None:
             return state.key
         else:
-            raise AttributeEror("_instance_key")
+            raise AttributeError("_instance_key")
     _instance_key = util.deprecated(None, False)(_instance_key)
     _instance_key = property(_instance_key)
 
