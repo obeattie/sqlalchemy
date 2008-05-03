@@ -30,7 +30,7 @@ from sqlalchemy.sql import util as sql_util
 from sqlalchemy.orm.session import Session as _Session
 from sqlalchemy.orm.session import object_session, sessionmaker
 from sqlalchemy.orm.scoping import ScopedSession
-from sqlalchemy import util as __util
+from sqlalchemy import util as sa_util
 
 __all__ = (
     'EXT_CONTINUE',
@@ -113,8 +113,12 @@ def create_session(bind=None, **kwargs):
     """
 
     if 'transactional' in kwargs:
-        __util.warn_deprecated("The 'transactional' argument to sessionmaker() is deprecated; use autocommit=True|False instead.")
-        autocommit = not kwargs.pop('transactional')
+        sa_util.warn_deprecated(
+            "The 'transactional' argument to sessionmaker() is deprecated; "
+            "use autocommit=True|False instead.")
+        if 'autocommit' in kwargs:
+            raise TypeError('Specify autocommit *or* transactional, not both.')
+        kwargs['autocommit'] = not kwargs.pop('transactional')
 
     kwargs.setdefault('autoflush', False)
     kwargs.setdefault('autocommit', True)
@@ -124,19 +128,19 @@ def create_session(bind=None, **kwargs):
 def relation(argument, secondary=None, **kwargs):
     """Provide a relationship of a primary Mapper to a secondary Mapper.
 
-    This corresponds to a parent-child or associative table relationship.
-    The constructed class is an instance of [sqlalchemy.orm.properties#PropertyLoader].
+    This corresponds to a parent-child or associative table relationship.  The
+    constructed class is an instance of
+    [sqlalchemy.orm.properties#PropertyLoader].
 
       argument
           a class or Mapper instance, representing the target of the relation.
 
       secondary
         for a many-to-many relationship, specifies the intermediary table. The
-        ``secondary`` keyword argument should generally only be used for a table
-        that is not otherwise expressed in any class mapping. In particular,
-        using the Association Object Pattern is
-        generally mutually exclusive against using the ``secondary`` keyword
-        argument.
+        ``secondary`` keyword argument should generally only be used for a
+        table that is not otherwise expressed in any class mapping. In
+        particular, using the Association Object Pattern is generally mutually
+        exclusive against using the ``secondary`` keyword argument.
 
       \**kwargs follow:
 
