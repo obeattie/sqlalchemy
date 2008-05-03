@@ -1008,9 +1008,11 @@ class ClassManager(dict):
 
     MANAGER_ATTR = '_fooclass_manager'
     STATE_ATTR = '_foostate'
-    event_registry_factory = Events
 
-    def __init__(self, class_, instance_state_factory=None):
+    event_registry_factory = Events
+    instance_state_factory = InstanceState
+
+    def __init__(self, class_):
         self.class_ = class_
         self.factory = None  # where we came from, for inheritance bookkeeping
         self.info = {}
@@ -1025,7 +1027,6 @@ class ClassManager(dict):
         self.registered = False
         self._instantiable = False
         self.events = self.event_registry_factory()
-        self.instance_state_factory = instance_state_factory or InstanceState
 
     def instantiable(self, boolean):
         # experiment, probably won't stay in this form
@@ -1061,7 +1062,7 @@ class ClassManager(dict):
         for cls in self.class_.__subclasses__():
             manager = manager_of_class(cls)
             if manager is None:
-                manager = create_manager_for_cls(cls, instance_state_factory=self.instance_state_factory)
+                manager = create_manager_for_cls(cls)
             manager.instrument_attribute(key, inst, True)
 
     def uninstrument_attribute(self, key, propagated=False):
@@ -1079,7 +1080,7 @@ class ClassManager(dict):
         for cls in self.class_.__subclasses__():
             manager = manager_of_class(cls)
             if manager is None:
-                manager = create_manager_for_cls(cls, instance_state_factory=self.instance_state_factory)
+                manager = create_manager_for_cls(cls)
             manager.uninstrument_attribute(key, True)
 
     def unregister(self):
@@ -1444,7 +1445,7 @@ class InstrumentationRegistry(object):
     state_finders = util.WeakIdentityMapping()
     extended = False
 
-    def create_manager_for_cls(self, class_, **kwargs):
+    def create_manager_for_cls(self, class_):
         assert class_ is not None
         assert manager_of_class(class_) is None
 
@@ -1463,7 +1464,7 @@ class InstrumentationRegistry(object):
                 "in %s inheritance hierarchy: %r" % (
                     class_.__name__, list(existing_factories)))
 
-        manager = factory(class_, **kwargs)
+        manager = factory(class_)
         if not isinstance(manager, ClassManager):
             manager = _ClassInstrumentationAdapter(class_, manager)
         if factory != ClassManager and not self.extended:

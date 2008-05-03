@@ -414,6 +414,41 @@ class InitTest(TestBase):
         eq(inits, [(C, 'on_init', C)])
 
 
+class MapperInitTest(TestBase):
+
+    def fixture(self):
+        return Table('t', MetaData(),
+                     Column('id', Integer, primary_key=True),
+                     Column('type', Integer),
+                     Column('x', Integer),
+                     Column('y', Integer))
+
+    def test_partially_mapped_inheritance(self):
+        class A(object):
+            pass
+
+        class B(A):
+            pass
+
+        class C(B):
+            def __init__(self):
+                pass
+
+        mapper(A, self.fixture())
+
+        a = attributes.instance_state(A())
+        assert isinstance(a, attributes.InstanceState)
+        assert type(a) is not attributes.InstanceState
+
+        b = attributes.instance_state(B())
+        assert isinstance(b, attributes.InstanceState)
+        assert type(b) is not attributes.InstanceState
+
+        # C is unmanaged
+        cobj = C()
+        self.assertRaises((AttributeError, TypeError),
+                          attributes.instance_state, cobj)
+
 class InstrumentationCollisionTest(TestBase):
     def test_none(self):
         class A(object): pass

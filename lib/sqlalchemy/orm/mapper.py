@@ -801,18 +801,11 @@ class Mapper(object):
                     "remove *all* current mappers from all classes." %
                     (self.class_, self.entity_name))
 
-        #attributes.register_class(
-        #    self.class_,
-        #    deferred_scalar_loader=_load_scalar_attributes)
-
         _mapper_registry[self] = True
 
         if manager is None:
-            # TODO: need ClassState to be configured specifically to the ORM (i.e. uses custom InstanceState).
-            # Don't want to do it via the "custom managers" system though since this needs to happen
-            # even if user-defined custom manager is already present.  more args to create_manager_for_cls
-            # OK here ?
-            manager = attributes.create_manager_for_cls(self.class_, instance_state_factory=IdentityManagedState)
+            manager = attributes.create_manager_for_cls(self.class_)
+
         self.class_manager = manager
 
         has_been_initialized = bool(manager.info.get(_INSTRUMENTOR, False))
@@ -824,10 +817,8 @@ class Mapper(object):
 
         self.extension.instrument_class(self, self.class_)
 
-        # TODO: why do we need to call this ?  we've already called
-        # two separate "setup class management" functions from attributes.py
-        attributes.register_class(self.class_)
-
+        manager.instantiable = True
+        manager.instance_state_factory = IdentityManagedState
         manager.deferred_scalar_loader = _load_scalar_attributes
 
         event_registry = manager.events
