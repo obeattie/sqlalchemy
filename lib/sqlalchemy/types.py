@@ -362,12 +362,14 @@ class Concatenable(object):
 class String(Concatenable, TypeEngine):
     """A sized string type.
 
-    Usually corresponds to VARCHAR.  Can also take Python unicode objects
+    In SQL, corresponds to VARCHAR.  Can also take Python unicode objects
     and encode to the database's encoding in bind params (and the reverse for
     result sets.)
 
-    a String with no length will adapt itself automatically to a Text
-    object at the dialect level (this behavior is deprecated in 0.4).
+    The `length` field is usually required when the `String` type is used within a 
+    CREATE TABLE statement, since VARCHAR requires a length on most databases.
+    Currently SQLite is an exception to this.
+    
     """
     def __init__(self, length=None, convert_unicode=False, assert_unicode=None):
         self.length = length
@@ -409,26 +411,6 @@ class String(Concatenable, TypeEngine):
             return process
         else:
             return None
-
-    def dialect_impl(self, dialect, **kwargs):
-        _for_ddl = kwargs.pop('_for_ddl', False)
-        if _for_ddl and self.length is None:
-            label = util.to_ascii(_for_ddl is True and
-                                  '' or (' for column "%s"' % str(_for_ddl)))
-            util.warn_deprecated(
-                "Using String type with no length for CREATE TABLE "
-                "is deprecated; use the Text type explicitly" + label)
-        return TypeEngine.dialect_impl(self, dialect, **kwargs)
-
-    def get_search_list(self):
-        l = super(String, self).get_search_list()
-        # if we are String or Unicode with no length,
-        # return Text as the highest-priority type
-        # to be adapted by the dialect
-        if self.length is None and l[0] in (String, Unicode):
-            return (Text,) + l
-        else:
-            return l
 
     def get_dbapi_type(self, dbapi):
         return dbapi.STRING

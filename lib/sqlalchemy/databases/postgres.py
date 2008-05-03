@@ -99,11 +99,11 @@ class PGText(sqltypes.Text):
 
 class PGString(sqltypes.String):
     def get_col_spec(self):
-        return "VARCHAR(%(length)s)" % {'length' : self.length}
+        return "VARCHAR(%(length)d)" % {'length' : self.length}
 
 class PGChar(sqltypes.CHAR):
     def get_col_spec(self):
-        return "CHAR(%(length)s)" % {'length' : self.length}
+        return "CHAR(%(length)d)" % {'length' : self.length}
 
 class PGBinary(sqltypes.Binary):
     def get_col_spec(self):
@@ -724,7 +724,7 @@ class PGSchemaGenerator(compiler.SchemaGenerator):
             else:
                 colspec += " SERIAL"
         else:
-            colspec += " " + column.type.dialect_impl(self.dialect, _for_ddl=column).get_col_spec()
+            colspec += " " + column.type.dialect_impl(self.dialect).get_col_spec()
             default = self.get_column_default_string(column)
             if default is not None:
                 colspec += " DEFAULT " + default

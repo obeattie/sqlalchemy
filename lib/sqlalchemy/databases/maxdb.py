@@ -952,7 +952,7 @@ class MaxDBIdentifierPreparer(compiler.IdentifierPreparer):
 class MaxDBSchemaGenerator(compiler.SchemaGenerator):
     def get_column_specification(self, column, **kw):
         colspec = [self.preparer.format_column(column),
-                   column.type.dialect_impl(self.dialect, _for_ddl=column).get_col_spec()]
+                   column.type.dialect_impl(self.dialect).get_col_spec()]
 
         if not column.nullable:
             colspec.append('NOT NULL')
