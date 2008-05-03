@@ -9,31 +9,66 @@ Functional constructs for ORM configuration.
 
 See the SQLAlchemy object relational tutorial and mapper configuration
 documentation for an overview of how this module is used.
+
 """
 
 from sqlalchemy.orm import exc
-from sqlalchemy.orm.mapper import Mapper, object_mapper, class_mapper, _mapper_registry
-from sqlalchemy.orm.interfaces import MapperExtension, SessionExtension, EXT_CONTINUE, EXT_STOP, EXT_PASS, ExtensionOption, PropComparator, InstrumentationManager
-from sqlalchemy.orm.properties import SynonymProperty, ComparableProperty, PropertyLoader, ColumnProperty, CompositeProperty, BackRef
+from sqlalchemy.orm.mapper import \
+     Mapper, _mapper_registry, class_mapper, object_mapper
+from sqlalchemy.orm.interfaces import \
+     EXT_CONTINUE, EXT_STOP, ExtensionOption, InstrumentationManager, \
+     MapperExtension, PropComparator, SessionExtension
+from sqlalchemy.orm.properties import \
+     BackRef, ColumnProperty, ComparableProperty, CompositeProperty, \
+     PropertyLoader, SynonymProperty
 from sqlalchemy.orm import mapper as mapperlib
 from sqlalchemy.orm import strategies
-from sqlalchemy.orm.query import Query, AliasOption
-from sqlalchemy.orm.util import polymorphic_union, join, outerjoin, with_parent, AliasedClass as aliased
+from sqlalchemy.orm.query import AliasOption, Query
+from sqlalchemy.orm.util import \
+     AliasedClass as aliased, join, outerjoin, polymorphic_union, with_parent
 from sqlalchemy.sql import util as sql_util
 from sqlalchemy.orm.session import Session as _Session
 from sqlalchemy.orm.session import object_session, sessionmaker
 from sqlalchemy.orm.scoping import ScopedSession
 from sqlalchemy import util as __util
 
-__all__ = [ 'relation', 'column_property', 'composite', 'backref', 'eagerload',
-            'eagerload_all', 'lazyload', 'noload', 'deferred', 'defer',
-            'undefer', 'undefer_group', 'extension', 'mapper', 'clear_mappers',
-            'compile_mappers', 'class_mapper', 'object_mapper', 'sessionmaker',
-            'scoped_session', 'dynamic_loader', 'MapperExtension',
-            'polymorphic_union', 'comparable_property',
-            'create_session', 'synonym', 'contains_alias', 'Query', 'aliased',
-            'contains_eager', 'EXT_CONTINUE', 'EXT_STOP', 'EXT_PASS',
-            'object_session', 'PropComparator', 'InstrumentationManager' ]
+__all__ = (
+    'EXT_CONTINUE',
+    'EXT_STOP',
+    'InstrumentationManager',
+    'MapperExtension',
+    'PropComparator',
+    'Query',
+    'aliased',
+    'backref',
+    'class_mapper',
+    'clear_mappers',
+    'column_property',
+    'comparable_property',
+    'compile_mappers',
+    'composite',
+    'contains_alias',
+    'contains_eager',
+    'create_session',
+    'defer',
+    'deferred',
+    'dynamic_loader',
+    'eagerload',
+    'eagerload_all',
+    'extension',
+    'lazyload',
+    'mapper',
+    'noload',
+    'object_mapper',
+    'object_session',
+    'polymorphic_union',
+    'relation',
+    'scoped_session',
+    'sessionmaker',
+    'synonym',
+    'undefer',
+    'undefer_group',
+    )
 
 
 def scoped_session(session_factory, scopefunc=None):
@@ -80,7 +115,7 @@ def create_session(bind=None, **kwargs):
     if 'transactional' in kwargs:
         __util.warn_deprecated("The 'transactional' argument to sessionmaker() is deprecated; use autocommit=True|False instead.")
         autocommit = not kwargs.pop('transactional')
-    
+
     kwargs.setdefault('autoflush', False)
     kwargs.setdefault('autocommit', True)
     kwargs.setdefault('autoexpire', False)
@@ -488,8 +523,8 @@ def mapper(class_, local_table=None, *args, **params):
         which will identify the class/mapper combination to be used
         with a particular row.  Requires the ``polymorphic_identity``
         value to be set for all mappers in the inheritance
-        hierarchy.  The column specified by ``polymorphic_on`` is 
-        usually a column that resides directly within the base 
+        hierarchy.  The column specified by ``polymorphic_on`` is
+        usually a column that resides directly within the base
         mapper's mapped table; alternatively, it may be a column
         that is only present within the <selectable> portion
         of the ``with_polymorphic`` argument.
@@ -538,7 +573,7 @@ def mapper(class_, local_table=None, *args, **params):
         to be used against this mapper's selectable unit.  This is
         normally simply the primary key of the `local_table`, but
         can be overridden here.
-    
+
       with_polymorphic
         A tuple in the form ``(<classes>, <selectable>)`` indicating the
         default style of "polymorphic" loading, that is, which tables
@@ -555,9 +590,9 @@ def mapper(class_, local_table=None, *args, **params):
         which load from a "concrete" inheriting table, the <selectable>
         argument is required, since it usually requires more complex
         UNION queries.
-        
+
       select_table
-        Deprecated.  Synonymous with 
+        Deprecated.  Synonymous with
         ``with_polymorphic=('*', <selectable>)``.
 
       version_id_col

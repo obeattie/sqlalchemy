@@ -24,14 +24,25 @@ from sqlalchemy.sql import expression
 class_mapper = None
 collections = None
 
-__all__ = ['EXT_CONTINUE', 'EXT_STOP', 'EXT_PASS', 'MapperExtension',
-           'MapperProperty', 'PropComparator', 'StrategizedProperty',
-           'build_path', 'MapperOption', 'SessionExtension',
-           'ExtensionOption', 'PropertyOption',
-           'AttributeExtension', 'StrategizedOption', 'LoaderStrategy',
-           'InstrumentationManager']
+__all__ = (
+    'AttributeExtension',
+    'EXT_CONTINUE',
+    'EXT_STOP',
+    'ExtensionOption',
+    'InstrumentationManager',
+    'LoaderStrategy',
+    'MapperExtension',
+    'MapperOption',
+    'MapperProperty',
+    'PropComparator',
+    'PropertyOption',
+    'SessionExtension',
+    'StrategizedOption',
+    'StrategizedProperty',
+    'build_path',
+    )
 
-EXT_CONTINUE = EXT_PASS = util.symbol('EXT_CONTINUE')
+EXT_CONTINUE = util.symbol('EXT_CONTINUE')
 EXT_STOP = util.symbol('EXT_STOP')
 
 ONETOMANY = util.symbol('ONETOMANY')
@@ -50,9 +61,6 @@ class MapperExtension(object):
     requirements, see the individual documentation for details.  Other than
     these exception cases, any return value other than EXT_CONTINUE or
     EXT_STOP will be interpreted as equivalent to EXT_STOP.
-
-    EXT_PASS is a synonym for EXT_CONTINUE and is provided for backward
-    compatibility.
 
     """
     def instrument_class(self, mapper, class_):
