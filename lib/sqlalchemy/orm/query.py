@@ -21,8 +21,9 @@ iterable result sets.
 from itertools import chain
 
 from sqlalchemy import sql, util, log
-import sqlalchemy.exceptions as sa_exc
-import sqlalchemy.sql.util as sql_util
+from sqlalchemy import exc as sa_exc
+from sqlalchemy.orm import exc as orm_exc
+from sqlalchemy.sql import util as sql_util
 from sqlalchemy.sql import expression, visitors, operators
 from sqlalchemy.orm import attributes, interfaces, mapper, object_mapper
 from sqlalchemy.orm.util import _state_mapper, _is_mapped_class, \
@@ -203,12 +204,10 @@ class Query(object):
             return visitors.replacement_traverse(clause, {'column_collections':False}, self.__replace_orm_element(adapters))
         
     def _entity_zero(self):
-        if not getattr(self._entities[0], 'primary_entity', False):
-            raise sa_exc.InvalidRequestError("No primary mapper set up for this Query.")
         return self._entities[0]
 
     def _mapper_zero(self):
-        return self._entity_zero().mapper
+        return self._entity_zero().entity_zero
 
     def _extension_zero(self):
         ent = self._entity_zero()
@@ -221,7 +220,7 @@ class Query(object):
     _mapper_entities = property(_mapper_entities)
 
     def _joinpoint_zero(self):
-        return self._joinpoint or self._entity_zero().entity
+        return self._joinpoint or self._entity_zero().entity_zero
 
     def _mapper_zero_or_none(self):
         if not getattr(self._entities[0], 'primary_entity', False):
@@ -269,7 +268,7 @@ class Query(object):
 
     def __no_from_condition(self, meth):
         if self._from_obj:
-            raise sa_exc.InvalidRequestError("Query.%s() being called on a Query which already has a FROM clause established.  This usage is deprecated.")
+            raise sa_exc.InvalidRequestError("Query.%s() being called on a Query which already has a FROM clause established.  This usage is deprecated." % meth)
 
     def __no_statement_condition(self, meth):
         if self._statement:
@@ -1112,7 +1111,12 @@ class Query(object):
                 instance = self.session.identity_map[key]
                 state = attributes.instance_state(instance)
                 if state.expired:
-                    state()
+                    try:
+                        state()
+                    except orm_exc.ObjectDeletedError:
+                        # TODO: should we expunge ?  if so, should we expunge here ? or in mapper._load_scalar_attributes ?
+                        self.session.expunge(instance)
+                        return None
                 return instance
             except KeyError:
                 pass
@@ -1309,6 +1313,7 @@ class _MapperEntity(_QueryEntity):
         query._entities.append(self)
 
         self.entities = [entity]
+        self.entity_zero = entity
         self.entity_name = entity_name
 
     def setup_entity(self, entity, mapper, adapter, from_obj, is_aliased_class, with_polymorphic):
@@ -1319,10 +1324,10 @@ class _MapperEntity(_QueryEntity):
         self._with_polymorphic = with_polymorphic
         self.is_aliased_class = is_aliased_class
         if is_aliased_class:
-            self.path_entity = self.entity = entity
+            self.path_entity = self.entity = self.entity_zero = entity
         else:
             self.path_entity = mapper.base_mapper
-            self.entity = mapper
+            self.entity = self.entity_zero = mapper
 
     def set_with_polymorphic(self, query, cls_or_mappers, selectable):
         if cls_or_mappers is None:
@@ -1456,8 +1461,12 @@ class _ColumnEntity(_QueryEntity):
         self.column = column
         self.entity_name = None
         self.froms = util.Set()
-        self.entities = util.Set([elem._annotations['parententity'] for elem in visitors.iterate(column, {}) if 'parententity' in elem._annotations])
-
+        self.entities = util.OrderedSet([elem._annotations['parententity'] for elem in visitors.iterate(column, {}) if 'parententity' in elem._annotations])
+        if self.entities:
+            self.entity_zero = list(self.entities)[0]
+        else:
+            self.entity_zero = None
+        
     def setup_entity(self, entity, mapper, adapter, from_obj, is_aliased_class, with_polymorphic):
         self.froms.add(from_obj)
 

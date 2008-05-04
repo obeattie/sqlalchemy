@@ -78,9 +78,16 @@ class ExpireTest(FixtureTest):
         s.expire_all()
         users.delete().where(User.id==10).execute()
         
-        # object is gone, get() raises
-        self.assertRaises(orm_exc.ObjectDeletedError, s.get, User, 10)
+        # object is gone, get() returns None
+        assert u in s
+        assert s.get(User, 10) is None
+        assert u not in s # and expunges
     
+        # add it back
+        s.add(u)
+        # nope, raises ObjectDeletedError
+        self.assertRaises(orm_exc.ObjectDeletedError, getattr, u, 'name')
+        
     def test_refresh_cancels_expire(self):
         mapper(User, users)
         s = create_session()

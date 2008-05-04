@@ -39,6 +39,7 @@ class ColumnProperty(StrategizedProperty):
         self.group = kwargs.pop('group', None)
         self.deferred = kwargs.pop('deferred', False)
         self.comparator = ColumnProperty.ColumnComparator(self)
+        util.set_creation_order(self)
         if self.deferred:
             self.strategy_class = strategies.DeferredColumnLoader
         else:
@@ -163,6 +164,7 @@ class SynonymProperty(MapperProperty):
         self.name = name
         self.map_column = map_column
         self.descriptor = descriptor
+        util.set_creation_order(self)
 
     def setup(self, context, entity, path, adapter, **kwargs):
         pass
@@ -198,6 +200,7 @@ class ComparableProperty(MapperProperty):
     def __init__(self, comparator_factory, descriptor=None):
         self.descriptor = descriptor
         self.comparator = comparator_factory(self)
+        util.set_creation_order(self)
 
     def do_init(self):
         """Set up a proxy to the unmanaged descriptor."""
@@ -257,6 +260,7 @@ class PropertyLoader(StrategizedProperty):
         self.join_depth = join_depth
         self._arg_local_remote_pairs = _local_remote_pairs
         self.__join_cache = {}
+        util.set_creation_order(self)
         
         if strategy_class:
             self.strategy_class = strategy_class

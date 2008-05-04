@@ -33,14 +33,14 @@ We define our tables all within a catalog called `MetaData`, using the `Table` c
     >>> metadata = MetaData()
     >>> users = Table('users', metadata,
     ...     Column('id', Integer, primary_key=True),
-    ...     Column('name', String(40)),
-    ...     Column('fullname', String(100)),
+    ...     Column('name', String),
+    ...     Column('fullname', String),
     ... )
 
     >>> addresses = Table('addresses', metadata, 
     ...   Column('id', Integer, primary_key=True),
     ...   Column('user_id', None, ForeignKey('users.id')),
-    ...   Column('email_address', String(50), nullable=False)
+    ...   Column('email_address', String, nullable=False)
     ...  )
 
 All about how to define `Table` objects, as well as how to create them from an existing database automatically, is described in [metadata](rel:metadata).
@@ -55,8 +55,8 @@ Next, to tell the `MetaData` we'd actually like to create our selection of table
     {}
     CREATE TABLE users (
         id INTEGER NOT NULL, 
-        name VARCHAR(40), 
-        fullname VARCHAR(100), 
+        name VARCHAR, 
+        fullname VARCHAR, 
         PRIMARY KEY (id)
     )
     {}
@@ -64,12 +64,19 @@ Next, to tell the `MetaData` we'd actually like to create our selection of table
     CREATE TABLE addresses (
         id INTEGER NOT NULL, 
         user_id INTEGER, 
-        email_address VARCHAR(50) NOT NULL, 
+        email_address VARCHAR NOT NULL, 
         PRIMARY KEY (id), 
          FOREIGN KEY(user_id) REFERENCES users (id)
     )
     {}
     COMMIT
+
+Users familiar with the syntax of CREATE TABLE may notice that the VARCHAR columns were generated without a length; on SQLite, this is a valid datatype, but on most databases it's not allowed.  So if running this tutorial on a database such as Postgres or MySQL, and you wish to use SQLAlchemy to generate the tables, a "length" may be provided to the `String` type as below:
+
+    {python}
+    >>> Column('name', String(50))
+
+The length field on `String`, as well as similar fields available on `Integer`, `Numeric`, etc. are not referenced by SQLAlchemy other than when creating tables.
 
 ## Insert Expressions
 

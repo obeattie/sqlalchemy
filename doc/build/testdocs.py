@@ -5,7 +5,7 @@ import os
 import re
 import doctest
 import sqlalchemy.util as util
-import sqlalchemy.logging as salog
+import sqlalchemy.log as salog
 import logging
 
 salog.default_enabled=True
@@ -62,7 +62,8 @@ def replace_file(s, newfile):
         raise ValueError("Couldn't find suitable create_engine call to replace '%s' in it" % oldfile)
     return s
 
-for filename in ('ormtutorial', 'sqlexpression'):
+#for filename in ('ormtutorial', 'sqlexpression'):
+for filename in ('ormtutorial',):
 	filename = 'content/%s.txt' % filename
 	s = open(filename).read()
 	#s = replace_file(s, ':memory:')
