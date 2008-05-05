@@ -1141,7 +1141,8 @@ def _set_decorators():
 
     def add(fn):
         def add(self, value, _sa_initiator=None):
-            __set(self, value, _sa_initiator)
+            if value not in self:
+                __set(self, value, _sa_initiator)
             # testlib.pragma exempt:__hash__
             fn(self, value)
         _tidy(add)
@@ -1194,8 +1195,7 @@ def _set_decorators():
     def update(fn):
         def update(self, value):
             for item in value:
-                if item not in self:
-                    self.add(item)
+                self.add(item)
         _tidy(update)
         return update
 
@@ -1204,8 +1204,7 @@ def _set_decorators():
             if sautil.duck_type_collection(value) is not Set:
                 return NotImplemented
             for item in value:
-                if item not in self:
-                    self.add(item)
+                self.add(item)
             return self
         _tidy(__ior__)
         return __ior__
