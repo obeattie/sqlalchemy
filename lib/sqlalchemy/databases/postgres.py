@@ -99,11 +99,17 @@ class PGText(sqltypes.Text):
 
 class PGString(sqltypes.String):
     def get_col_spec(self):
-        return "VARCHAR(%(length)d)" % {'length' : self.length}
+        if self.length:
+            return "VARCHAR(%(length)d)" % {'length' : self.length}
+        else:
+            return "VARCHAR"
 
 class PGChar(sqltypes.CHAR):
     def get_col_spec(self):
-        return "CHAR(%(length)d)" % {'length' : self.length}
+        if self.length:
+            return "CHAR(%(length)d)" % {'length' : self.length}
+        else:
+            return "CHAR"
 
 class PGBinary(sqltypes.Binary):
     def get_col_spec(self):

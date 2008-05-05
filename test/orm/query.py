@@ -1101,6 +1101,7 @@ class MixedEntitiesTest(QueryTest):
             self.assertEquals(row.User, row[0])
             self.assertEquals(row.orders, row[1])
 
+
     def test_column_queries(self):
         sess = create_session()
 
@@ -1633,10 +1634,16 @@ class SelfReferentialTest(ORMTest):
         sess = create_session()
         
         n1 = aliased(Node)
-        self.assertRaises(sa_exc.InvalidRequestError, sess.query(n1).join, n1.parent)
 
+        # using 'n1.parent' implicitly joins to unaliased Node
         self.assertEquals(
-            sess.query(n1).join((n1.parent, Node)).filter(Node.data=='n1').all(),
+            sess.query(n1).join(n1.parent).filter(Node.data=='n1').all(),
+            [Node(parent_id=1,data=u'n11',id=2), Node(parent_id=1,data=u'n12',id=3), Node(parent_id=1,data=u'n13',id=4)]
+        )
+        
+        # explicit (new syntax)
+        self.assertEquals(
+            sess.query(n1).join((Node, n1.parent)).filter(Node.data=='n1').all(),
             [Node(parent_id=1,data=u'n11',id=2), Node(parent_id=1,data=u'n12',id=3), Node(parent_id=1,data=u'n13',id=4)]
         )
         

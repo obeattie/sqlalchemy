@@ -792,6 +792,135 @@ class Query(object):
             self.__reset_joinpoint()
 
         clause = self._from_obj
+        right_entity = None
+
+        for arg1 in util.to_list(keys):
+            prop =  None
+            aliased_entity = False
+            alias_criterion = False
+            left_entity = right_entity
+            right_entity = right_mapper = None
+            
+            if isinstance(arg1, tuple):
+                arg1, arg2 = arg1
+            else:
+                arg2 = None
+            
+            if isinstance(arg2, (interfaces.PropComparator, basestring)):
+                onclause = arg2
+                right_entity = arg1
+            elif isinstance(arg1, (interfaces.PropComparator, basestring)):
+                onclause = arg1
+                right_entity = arg2 
+            else:
+                onclause = arg2
+                right_entity = arg1
+
+            if isinstance(onclause, interfaces.PropComparator):
+                of_type = getattr(onclause, '_of_type', None)
+                prop = onclause.property
+                descriptor = onclause
+                
+                if not left_entity:
+                    left_entity = onclause.parententity
+                    
+                if of_type:
+                    right_mapper = of_type
+                else:
+                    right_mapper = prop.mapper
+                    
+                if not right_entity:
+                    right_entity = right_mapper
+                    
+            elif isinstance(onclause, basestring):
+                if not left_entity:
+                    left_entity = self._joinpoint_zero()
+                    
+                descriptor, prop = _entity_descriptor(left_entity, onclause)
+                right_mapper = prop.mapper
+                if not right_entity:
+                    right_entity = right_mapper
+            else:
+                raise NotImplementedError()
+            
+            if not clause:
+                if isinstance(onclause, interfaces.PropComparator):
+                    clause = onclause.__clause_element__()
+
+                for ent in self._mapper_entities:
+                    if ent.corresponds_to(left_entity):
+                        clause = ent.selectable
+                        break
+
+            if not clause:
+                raise exc.InvalidRequestError("Could not find a FROM clause to join from")
+
+            if not right_mapper:
+                raise NotImplementedError()
+
+            bogus, right_selectable, is_aliased_class = _entity_info(right_entity)
+            
+            if right_mapper and not is_aliased_class:
+                if right_entity is right_selectable:
+
+                    if not right_selectable.is_derived_from(right_mapper.mapped_table):
+                        raise sa_exc.InvalidRequestError("Selectable '%s' is not derived from '%s'" % (right_selectable.description, right_mapper.mapped_table.description))
+
+                    if not isinstance(right_selectable, expression.Alias):
+                        right_selectable = right_selectable.alias()
+
+                    right_entity = aliased(right_mapper, right_selectable)
+                    alias_criterion = True
+
+                elif right_mapper.with_polymorphic or isinstance(right_mapper.mapped_table, expression.Join):
+                    aliased_entity = True
+                    right_entity = aliased(right_mapper)
+                    alias_criterion = True
+                
+                elif create_aliases:
+                    right_entity = aliased(right_mapper)
+                    alias_criterion = True
+                    
+                elif prop:
+                    if prop.table in self.__currenttables:
+                        if prop.secondary is not None and prop.secondary not in self.__currenttables:
+                            # TODO: this check is not strong enough for different paths to the same endpoint which
+                            # does not use secondary tables
+                            raise sa_exc.InvalidRequestError("Can't join to property '%s'; a path to this table along a different secondary table already exists.  Use the `alias=True` argument to `join()`." % descriptor)
+
+                        continue
+
+                    if prop.secondary:
+                        self.__currenttables.add(prop.secondary)
+                    self.__currenttables.add(prop.table)
+
+                    if prop._is_self_referential() and left_entity is right_entity:
+                        raise sa_exc.InvalidRequestError("Self-referential join on %s requires target selectable, or the aliased=True flag" % descriptor)
+                        
+                    right_entity = prop.mapper
+
+            if prop:
+                onclause = prop
+            
+            clause = orm_join(clause, right_entity, onclause, isouter=outerjoin)
+            if alias_criterion: 
+                self._filter_aliases = ORMAdapter(right_entity, 
+                        equivalents=right_mapper._equivalent_columns, chain_to=self._filter_aliases)
+
+                if aliased_entity:
+                    self.__mapper_loads_polymorphically_with(right_mapper, ORMAdapter(right_entity, equivalents=right_mapper._equivalent_columns))
+
+        self._from_obj = clause
+        self._joinpoint = right_entity
+
+    def __old_join(self, keys, outerjoin, create_aliases, from_joinpoint):
+        self.__currenttables = util.Set(self.__currenttables)
+        self._polymorphic_adapters = self._polymorphic_adapters.copy()
+
+        if not from_joinpoint:
+            self.__reset_joinpoint()
+
+        clause = self._from_obj
         target = None
 
         for key in util.to_list(keys):
