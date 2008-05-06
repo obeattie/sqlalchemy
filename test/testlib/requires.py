@@ -10,7 +10,6 @@ def savepoints(fn):
     """Target database must support savepoints."""
     return (testing.unsupported(
             'access',
-            'firebird',
             'mssql',
             'sqlite',
             'sybase',
