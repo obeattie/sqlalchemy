@@ -1799,10 +1799,6 @@ class ExternalColumnsTest(QueryTest):
         })
         clear_mappers()
 
-        self.assertRaisesMessage(sa_exc.ArgumentError, "must be given a ColumnElement as its argument.", column_property,
-            select([func.count(addresses.c.id)], users.c.id==addresses.c.user_id).correlate(users)
-        )
-
     def test_external_columns_good(self):
         """test querying mappings that reference external columns or selectables."""
         

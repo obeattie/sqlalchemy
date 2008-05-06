@@ -745,7 +745,6 @@ class ForeignKey(SchemaItem):
 
     def references(self, table):
         """Return True if the given table is referenced by this ForeignKey."""
-
         return table.corresponding_column(self.column) is not None
 
     def get_referent(self, table):
@@ -754,6 +753,7 @@ class ForeignKey(SchemaItem):
         Returns None if this ``ForeignKey`` does not reference the given table.
 
         """
+
         return table.corresponding_column(self.column)
 
     def column(self):

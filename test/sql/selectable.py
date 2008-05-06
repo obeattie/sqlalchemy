@@ -164,7 +164,7 @@ class SelectableTest(TestBase, AssertsExecutionResults):
         print str(j)
         self.assert_(criterion.compare(j.onclause))
 
-    def testcolumnlabels(self):
+    def test_column_labels(self):
         a = select([table.c.col1.label('acol1'), table.c.col2.label('acol2'), table.c.col3.label('acol3')])
         print str(a)
         print [c for c in a.columns]
@@ -173,6 +173,15 @@ class SelectableTest(TestBase, AssertsExecutionResults):
         criterion = a.c.acol1 == table2.c.col2
         print str(j)
         self.assert_(criterion.compare(j.onclause))
+    
+    def test_labeled_select_correspoinding(self):
+        l1 = select([func.max(table.c.col1)]).label('foo')
+
+        s = select([l1])
+        assert s.corresponding_column(l1).name == s.c.foo
+        
+        s = select([table.c.col1, l1])
+        assert s.corresponding_column(l1).name == s.c.foo
 
     def testselectaliaslabels(self):
         a = table2.select(use_labels=True).alias('a')
@@ -184,7 +193,7 @@ class SelectableTest(TestBase, AssertsExecutionResults):
         print str(j.onclause)
         self.assert_(criterion.compare(j.onclause))
 
-    def testtablejoinedtoselectoftable(self):
+    def test_table_joined_to_select_of_table(self):
         metadata = MetaData()
         a = Table('a', metadata,
             Column('id', Integer, primary_key=True))

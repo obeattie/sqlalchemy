@@ -35,7 +35,7 @@ class ColumnProperty(StrategizedProperty):
         appears across each table.
         """
 
-        self.columns = list(columns)
+        self.columns = [expression._labeled(c) for c in columns]
         self.group = kwargs.pop('group', None)
         self.deferred = kwargs.pop('deferred', False)
         self.comparator = ColumnProperty.ColumnComparator(self)
@@ -44,10 +44,6 @@ class ColumnProperty(StrategizedProperty):
             self.strategy_class = strategies.DeferredColumnLoader
         else:
             self.strategy_class = strategies.ColumnLoader
-        # sanity check
-        for col in columns:
-            if not isinstance(col, ColumnElement):
-                raise sa_exc.ArgumentError('column_property() must be given a ColumnElement as its argument.  Try .label() or .as_scalar() for selectables.')
 
     def do_init(self):
         super(ColumnProperty, self).do_init()

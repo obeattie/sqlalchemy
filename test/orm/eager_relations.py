@@ -1138,7 +1138,7 @@ class SubqueryTest(ORMTest):
             session.save(User(name='bar', tags=[Tag(score1=5.0, score2=4.0), Tag(score1=50.0, score2=1.0), Tag(score1=15.0, score2=2.0)]))
             session.flush()
             session.clear()
-
+            
             for user in session.query(User).all():
                 self.assertEquals(user.query_score, user.prop_score)
 

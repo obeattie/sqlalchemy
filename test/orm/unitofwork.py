@@ -440,7 +440,7 @@ class PKTest(ORMTest):
         e.multi_rev = 2
         Session.commit()
         Session.close()
-        e2 = Query(Entry).get((e.multi_id, 2))
+        e2 = Session.query(Entry).get((e.multi_id, 2))
         self.assert_(e is not e2)
         state = attributes.instance_state(e)
         state2 = attributes.instance_state(e2)

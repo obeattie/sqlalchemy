@@ -876,7 +876,13 @@ def _is_literal(element):
 
 def _from_objects(*elements, **kwargs):
     return itertools.chain(*[element._get_from_objects(**kwargs) for element in elements])
-    
+
+def _labeled(element):
+    if not hasattr(element, 'name'):
+        return element.label(None)
+    else:
+        return element
+        
 def _literal_as_text(element):
     if hasattr(element, '__clause_element__'):
         return element.__clause_element__()
@@ -1737,7 +1743,10 @@ class FromClause(Selectable):
 
         col, intersect = None, None
         target_set = column.proxy_set
-        for c in self.c + [self.oid_column]:
+        cols = self.c
+        if self.oid_column:
+            cols += [self.oid_column]
+        for c in cols:
             i = c.proxy_set.intersection(target_set)
             if i and \
                 (not require_embedded or c.proxy_set.issuperset(target_set)) and \
@@ -2438,7 +2447,10 @@ class _Grouping(ColumnElement):
     key = property(key)
 
     def _label(self):
-        return self.element._label
+        try:
+            return self.element._label
+        except AttributeError:
+            return self.anon_label
     _label = property(_label)
 
     def _copy_internals(self, clone=_clone):
@@ -2536,9 +2548,11 @@ class _Label(ColumnElement):
 
     def _make_proxy(self, selectable, name = None):
         if isinstance(self.element, (Selectable, ColumnElement)):
-            return self.element._make_proxy(selectable, name=self.name)
+            e = self.element._make_proxy(selectable, name=self.name)
         else:
-            return column(self.name)._make_proxy(selectable=selectable)
+            e = column(self.name)._make_proxy(selectable=selectable)
+        e.proxies.append(self)
+        return e
 
 class _ColumnClause(_Immutable, ColumnElement):
     """Represents a generic column expression from any textual string.
