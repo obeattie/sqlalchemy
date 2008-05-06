@@ -503,15 +503,21 @@ def collate(expression, collation):
 
 def exists(*args, **kwargs):
     """Return an ``EXISTS`` clause as applied to a [sqlalchemy.sql.expression#Select] object.
+    
+    Calling styles are of the following forms::
+    
+        # use on an existing select()
+        s = select([<columns>]).where(<criterion>)
+        s = exists(s)
+        
+        # construct a select() at once
+        exists(['*'], **select_arguments).where(<criterion>)
+        
+        # columns argument is optional, generates "EXISTS (SELECT *)"
+        # by default.
+        exists().where(<criterion>) 
 
-    The resulting [sqlalchemy.sql.expression#_Exists] object can be executed by
-    itself or used as a subquery within an enclosing select.
-
-    \*args, \**kwargs
-      all arguments are sent directly to the [sqlalchemy.sql.expression#select()]
-      function to produce a ``SELECT`` statement.
     """
-
     return _Exists(*args, **kwargs)
 
 def union(*selects, **kwargs):
@@ -2245,7 +2251,13 @@ class _Exists(_UnaryExpression):
     __visit_name__ = _UnaryExpression.__visit_name__
 
     def __init__(self, *args, **kwargs):
-        s = select(*args, **kwargs).as_scalar().self_group()
+        if args and isinstance(args[0], _SelectBaseMixin):
+            s = args[0]
+        else:
+            if not args:
+                args = ([literal_column('*')],)
+            s = select(*args, **kwargs).as_scalar().self_group()
+            
         _UnaryExpression.__init__(self, s, operator=operators.exists)
 
     def select(self, whereclause=None, **params):

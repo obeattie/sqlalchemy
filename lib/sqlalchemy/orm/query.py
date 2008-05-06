@@ -74,6 +74,7 @@ class Query(object):
         self._criterion = None
         self._correlate = util.Set()
         self._joinpoint = None
+        self._with_labels = False
         self.__joinable_tables = None
         self._having = None
         self._populate_existing = False
@@ -306,9 +307,25 @@ class Query(object):
 
     def statement(self):
         """return the full SELECT statement represented by this Query."""
-        return self._compile_context().statement
+        return self._compile_context(labels=self._with_labels).statement
     statement = property(statement)
 
+    def with_labels(self):
+        """Apply column labels to the return value of Query.statement.
+        
+        Indicates that this Query's `statement` accessor should return a SELECT statement
+        that applies labels to all columns in the form <tablename>_<columnname>; this
+        is commonly used to disambiguate columns from multiple tables which have the
+        same name.
+        
+        When the `Query` actually issues SQL to load rows, it always uses 
+        column labeling.
+        
+        """
+        self._with_labels = True
+    with_labels = _generative()(with_labels)
+    
+    
     def whereclause(self):
         """return the WHERE criterion for this Query."""
         return self._criterion
@@ -694,32 +711,53 @@ class Query(object):
 
     def join(self, *props, **kwargs):
         """Create a join against this ``Query`` object's criterion
-        and apply generatively, retunring the newly resulting ``Query``.
+        and apply generatively, returning the newly resulting ``Query``.
 
         each element in \*props may be:
+        
           * a string property name, i.e. "rooms".  This will join along
-          the relation of the same name from this Query's "primary"
-          mapper, if one is present.
-
+            the relation of the same name from this Query's "primary"
+            mapper, if one is present.
+          
           * a class-mapped attribute, i.e. Houses.rooms.  This will create a
-          join from "Houses" table to that of the "rooms" relation.
-
-          * a 2-tuple containing one of the above, combined with a selectable
-            which derives from the destination table.   This will cause the join
-            to link to the given selectable instead of the relation's
-            usual target table.  This argument can be used to join to table
-            or class aliases, or "polymorphic" selectables.
-
+            join from "Houses" table to that of the "rooms" relation.
+          
+          * a 2-tuple containing a target class or selectable, and 
+            an "ON" clause.  The ON clause can be the property name/
+            attribute like above, or a SQL expression.
+          
+          
         e.g.::
 
+            # join along string attribute names
             session.query(Company).join('employees')
             session.query(Company).join('employees', 'tasks')
 
+            # join the Person entity to an alias of itself,
+            # along the "friends" relation
             PAlias = aliased(Person)
-            session.query(Person).join((Person.friends, Palias))
+            session.query(Person).join((Palias, Person.friends))
 
+            # join from Houses to the "rooms" attribute on the
+            # "Colonials" subclass of Houses, then join to the 
+            # "closets" relation on Room
             session.query(Houses).join(Colonials.rooms, Room.closets)
-            session.query(Company).join(('employees', people.join(engineers)), Engineer.computers)
+            
+            # join from Company entities to the "employees" collection,
+            # using "people JOIN engineers" as the target.  Then join
+            # to the "computers" collection on the Engineer entity.
+            session.query(Company).join((people.join(engineers), 'employees'), Engineer.computers)
+            
+            # join from Articles to Keywords, using the "keywords" attribute.
+            # assume this is a many-to-many relation.
+            session.query(Article).join(Article.keywords)
+            
+            # same thing, but spelled out entirely explicitly 
+            # including the association table.
+            session.query(Article).join(
+                (article_keywords, Articles.id==article_keywords.c.article_id),
+                (Keyword, Keyword.id==article_keywords.c.keyword_id)
+                )
 
         \**kwargs include:
 
@@ -729,8 +767,9 @@ class Query(object):
             approach to this.
 
             from_joinpoint - when joins are specified using string property names,
-            locate the property from the mapper found in the most recent join() call,
-            instead of from the root entity.
+            locate the property from the mapper found in the most recent previous 
+            join() call, instead of from the root entity.
+
         """
         aliased, from_joinpoint = kwargs.pop('aliased', False), kwargs.pop('from_joinpoint', False)
         if kwargs:
@@ -741,42 +780,9 @@ class Query(object):
     def outerjoin(self, *props, **kwargs):
         """Create a left outer join against this ``Query`` object's criterion
         and apply generatively, retunring the newly resulting ``Query``.
+        
+        Usage is the same as the ``join()`` method.
 
-        each element in \*props may be:
-          * a string property name, i.e. "rooms".  This will join along
-          the relation of the same name from this Query's "primary"
-          mapper, if one is present.
-
-          * a class-mapped attribute, i.e. Houses.rooms.  This will create a
-          join from "Houses" table to that of the "rooms" relation.
-
-          * a 2-tuple containing one of the above, combined with a selectable
-            which derives from the destination table.   This will cause the join
-            to link to the given selectable instead of the relation's
-            usual target table.  This argument can be used to join to table
-            or class aliases, or "polymorphic" selectables.
-
-        e.g.::
-
-            session.query(Company).outerjoin('employees')
-            session.query(Company).outerjoin('employees', 'tasks')
-
-            PAlias = aliased(Person)
-            session.query(Person).outerjoin((Person.friends, Palias))
-
-            session.query(Houses).outerjoin(Colonials.rooms, Room.closets)
-            session.query(Company).outerjoin(('employees', people.outerjoin(engineers)), Engineer.computers)
-
-        \**kwargs include:
-
-            aliased - when joining, create anonymous aliases of each table.  This is
-            used for self-referential joins or multiple joins to the same table.
-            Consider usage of the aliased(SomeClass) construct as a more explicit
-            approach to this.
-
-            from_joinpoint - when joins are specified using string property names,
-            locate the property from the mapper found in the most recent join() call,
-            instead of from the root entity.
         """
         aliased, from_joinpoint = kwargs.pop('aliased', False), kwargs.pop('from_joinpoint', False)
         if kwargs:
@@ -1217,7 +1223,7 @@ class Query(object):
 
         return self._compile_context().statement
 
-    def _compile_context(self):
+    def _compile_context(self, labels=True):
         context = QueryContext(self)
 
         if context.statement:
@@ -1254,7 +1260,7 @@ class Query(object):
                 context.order_by = None
                 order_by_col_expr = []
 
-            inner = sql.select(context.primary_columns + order_by_col_expr, context.whereclause, from_obj=froms, use_labels=True, correlate=False, order_by=context.order_by, **self._select_args)
+            inner = sql.select(context.primary_columns + order_by_col_expr, context.whereclause, from_obj=froms, use_labels=labels, correlate=False, order_by=context.order_by, **self._select_args)
 
             if self._correlate:
                 inner = inner.correlate(*self._correlate)
@@ -1265,7 +1271,7 @@ class Query(object):
 
             context.adapter = sql_util.ColumnAdapter(inner, equivs)
 
-            statement = sql.select([inner] + context.secondary_columns, for_update=for_update, use_labels=True)
+            statement = sql.select([inner] + context.secondary_columns, for_update=for_update, use_labels=labels)
 
             from_clause = inner
             for eager_join in context.eager_joins.values():
@@ -1288,7 +1294,7 @@ class Query(object):
 
             froms += context.eager_joins.values()
 
-            statement = sql.select(context.primary_columns + context.secondary_columns, context.whereclause, from_obj=froms, use_labels=True, for_update=for_update, correlate=False, order_by=context.order_by, **self._select_args)
+            statement = sql.select(context.primary_columns + context.secondary_columns, context.whereclause, from_obj=froms, use_labels=labels, for_update=for_update, correlate=False, order_by=context.order_by, **self._select_args)
             if self._correlate:
                 statement = statement.correlate(*self._correlate)
 

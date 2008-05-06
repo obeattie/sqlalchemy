@@ -293,7 +293,7 @@ class PropertyLoader(StrategizedProperty):
         else:
             self.backref = backref
         self._is_backref = _is_backref
-
+    
     class Comparator(PropComparator):
         def __init__(self, prop, of_type=None):
             self.prop = self.property = prop
@@ -753,19 +753,25 @@ class PropertyLoader(StrategizedProperty):
         if source_selectable is None:
             if source_polymorphic and self.parent.with_polymorphic:
                 source_selectable = self.parent._with_polymorphic_selectable
-                
+
+        aliased = False
         if dest_selectable is None:
-            
             if dest_polymorphic and self.mapper.with_polymorphic:
                 dest_selectable = self.mapper._with_polymorphic_selectable
+                aliased = True
             else:
                 dest_selectable = self.mapper.mapped_table
                 
             if self._is_self_referential() and source_selectable is None:
                 dest_selectable = dest_selectable.alias()
+                aliased = True
+        else:
+            aliased = True
+            
+        aliased = aliased or bool(source_selectable)
 
         primaryjoin, secondaryjoin, secondary = self.primaryjoin, self.secondaryjoin, self.secondary
-        if source_selectable or dest_selectable:
+        if aliased:
             if secondary:
                 secondary = secondary.alias()
                 primary_aliasizer = ClauseAdapter(secondary)
