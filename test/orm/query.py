@@ -687,7 +687,32 @@ class JoinTest(QueryTest):
             sess.query(User).join([('orders', orderalias), ('items', itemalias)]).filter(orderalias.user_id==9).filter(itemalias.description=='item 4').all(),
             []
         )
+    
+    def test_no_onclause(self):
+        sess = create_session()
+
+        self.assertEquals(
+            sess.query(User).select_from(join(User, Order).join(Item, Order.items)).filter(Item.description == 'item 4').all(),
+            [User(name='jack')]
+        )
+
+        self.assertEquals(
+            sess.query(User).join(Order, (Item, Order.items)).filter(Item.description == 'item 4').all(),
+            [User(name='jack')]
+        )
         
+    def test_clause_onclause(self):
+        sess = create_session()
+
+        self.assertEquals(
+            sess.query(User).join(
+                (Order, User.id==Order.user_id), 
+                (order_items, Order.id==order_items.c.order_id), 
+                (Item, order_items.c.item_id==Item.id)
+            ).filter(Item.description == 'item 4').all(),
+            [User(name='jack')]
+        )
+
     def test_aliased_classes(self):
         sess = create_session()
 

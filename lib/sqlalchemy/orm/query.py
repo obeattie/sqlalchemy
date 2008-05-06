@@ -840,9 +840,13 @@ class Query(object):
                 right_mapper = prop.mapper
                 if not right_entity:
                     right_entity = right_mapper
+            elif onclause is None:
+                if not left_entity:
+                    left_entity = self._joinpoint_zero()
             else:
-                raise NotImplementedError()
-            
+                if not left_entity:
+                    left_entity = self._joinpoint_zero()
+                    
             if not clause:
                 if isinstance(onclause, interfaces.PropComparator):
                     clause = onclause.__clause_element__()
@@ -855,11 +859,8 @@ class Query(object):
             if not clause:
                 raise exc.InvalidRequestError("Could not find a FROM clause to join from")
 
-            if not right_mapper:
-                raise NotImplementedError()
-
             bogus, right_selectable, is_aliased_class = _entity_info(right_entity)
-            
+
             if right_mapper and not is_aliased_class:
                 if right_entity is right_selectable:
 

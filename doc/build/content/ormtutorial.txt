@@ -618,7 +618,7 @@ Or we can make a real JOIN construct; one way to do so is to use the ORM `join()
     join(User, Address, User.addresses)            # specify relation from left to right
     join(User, Address, 'addresses')               # same, using a string
     
-The functionality of `join()` is also available generatively from `Query` itself using `Query.join`.  This method takes a relation descriptor or string name of a relation as its argument:
+The functionality of `join()` is also available generatively from `Query` itself using `Query.join`.  This is most easily used with just the "ON" clause portion of the join, such as:
 
     {python}
     {sql}>>> session.query(User).join(User.addresses).\
@@ -629,10 +629,17 @@ The functionality of `join()` is also available generatively from `Query` itself
     ['jack@google.com']
     {stop}[<User('jack','Jack Bean', 'gjffdd')>]
 
-`Query.join()` can also take a list of relation/string elements as its argument, indicating multiple joins along a path of relations:
+To explicitly specify the target of the join, use tuples to form an argument list similar to the standalone join.  This becomes more important when using aliases and similar constructs:
 
     {python}
-    session.query(Foo).join([Foo.bars, 'bats', 'widgets']).filter(...)
+    session.query(User).join((Address, User.addresses))
+    
+Multiple joins can be created by passing a list of arguments:
+
+    {python}
+    session.query(Foo).join(Foo.bars, Bar.bats, (Bat, 'widgets'))
+    
+The above would produce SQL something like `foo JOIN bars ON <onclause> JOIN bats ON <onclause> JOIN widgets ON <onclause>`.
     
 ### Using Aliases {@name=aliases}
 
@@ -643,7 +650,7 @@ When querying across multiple tables, if the same table needs to be referenced m
     >>> adalias1 = aliased(Address)
     >>> adalias2 = aliased(Address)
     {sql}>>> for username, email1, email2 in session.query(User.name, adalias1.email_address, adalias2.email_address).\
-    ...     select_from(join(User, adalias1).join(adalias2)).\
+    ...     join((adalias1, User.addresses), (adalias2, User.addresses)).\
     ...     filter(adalias1.email_address=='jack@google.com').\
     ...     filter(adalias2.email_address=='j25@yahoo.com'):
     ...     print username, email1, email2      # doctest: +NORMALIZE_WHITESPACE
@@ -655,12 +662,6 @@ When querying across multiple tables, if the same table needs to be referenced m
     ['jack@google.com', 'j25@yahoo.com']
     {stop}jack jack@google.com j25@yahoo.com
 
-The inline form of `join` can accomplish the above result using tuples for arguments, each expressing the ON clause and target entity:
-
-    {python}
-    session.query(User.name, adalias1.email_address, adalias2.email_address).\
-        join([(User.addresses, adalias1), (User.addresses, adalias2)])
-        
 ### Relation Operators
 
 A summary of all operators usable on relations:
