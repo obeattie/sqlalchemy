@@ -432,7 +432,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
 
         sess.save(User())
 
-        transaction._commit()
+        transaction.commit()
         sess.commit()
         sess.commit()
 
@@ -445,7 +445,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
 
         sess.save(User())
 
-        t2._commit()
+        t2.commit()
         assert sess.transaction is t1
 
         sess.close()
@@ -502,7 +502,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
 
         self.assertRaisesMessage(sa_exc.InvalidRequestError, "Session already has a Connection associated", transaction._connection_for_bind, testing.db.connect())
 
-        transaction._rollback()
+        transaction.rollback()
         assert len(sess.query(User).all()) == 0
         sess.close()
 

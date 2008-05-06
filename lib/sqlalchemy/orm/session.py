@@ -227,7 +227,7 @@ class SessionTransaction(object):
         self._connections[conn] = self._connections[conn.engine] = (conn, transaction, conn is not bind)
         return conn
 
-    def _prepare(self):
+    def prepare(self):
         if self._parent is not None or not self.session.twophase:
             raise sa_exc.InvalidRequestError("Only root two phase transactions of can be prepared")
         self._prepare_impl()
@@ -255,7 +255,7 @@ class SessionTransaction(object):
         self._deactivate()
         self._prepared = True
     
-    def _commit(self):
+    def commit(self):
         self._assert_is_open()
         if not self._prepared:
             self._prepare_impl()
@@ -272,7 +272,7 @@ class SessionTransaction(object):
         self._close()
         return self._parent
     
-    def _rollback(self):
+    def rollback(self):
         self._assert_is_open()
         
         if self.session.transaction is not self:
@@ -325,12 +325,12 @@ class SessionTransaction(object):
             return
         if type is None:
             try:
-                self._commit()
+                self.commit()
             except:
-                self._rollback()
+                self.rollback()
                 raise
         else:
-            self._rollback()
+            self.rollback()
 
 class Session(object):
     """Encapsulates a set of objects being operated upon within an object-relational operation.
@@ -577,7 +577,7 @@ class Session(object):
         if self.transaction is None:
             pass
         else:
-            self.transaction._rollback()
+            self.transaction.rollback()
         if self.transaction is None and not self.autocommit:
             self.begin()
 
@@ -606,7 +606,7 @@ class Session(object):
             else:
                 raise sa_exc.InvalidRequestError("No transaction is begun.")
 
-        self.transaction._commit()
+        self.transaction.commit()
         if self.transaction is None and not self.autocommit:
             self.begin()
     
@@ -625,7 +625,7 @@ class Session(object):
             else:
                 raise sa_exc.InvalidRequestError("No transaction is begun.")
 
-        self.transaction._prepare()
+        self.transaction.prepare()
 
     def connection(self, mapper=None, **kwargs):
         """Return a ``Connection`` corresponding to this session's
@@ -1271,9 +1271,9 @@ class Session(object):
 
             if self.extension is not None:
                 self.extension.after_flush(self, flush_context)
-            transaction._commit()
+            transaction.commit()
         except:
-            transaction._rollback()
+            transaction.rollback()
             raise
 
         flush_context.finalize_flush_changes()
