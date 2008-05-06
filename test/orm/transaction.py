@@ -7,13 +7,6 @@ from testlib import *
 from testlib.fixtures import *
 
 
-def uses_savepoints(fn):
-    """Macro decorator."""
-    return testing.unsupported(
-        'sqlite', 'mssql', 'firebird', 'sybase', 'access', 'oracle')(
-            testing.exclude('mysql', '<', (5, 0, 3))(fn))
-
-
 class TransactionTest(FixtureTest):
     keep_mappers = True
     session = sessionmaker()
@@ -187,7 +180,7 @@ class RollbackRecoverTest(TransactionTest):
         s.commit()
         assert s.query(User).all() == [User(id=1, name='edward', addresses=[Address(email_address='foober')])]
 
-    @uses_savepoints
+    @testing.requires.savepoints
     def test_pk_violation_with_savepoint(self):
         s = self.session()
         a1 = Address(email_address='foo')
@@ -218,7 +211,7 @@ class SavepointTest(TransactionTest):
 
     only_tables = True
 
-    @uses_savepoints
+    @testing.requires.savepoints
     def test_savepoint_rollback(self):
         s = self.session()
         u1 = User(name='ed')
@@ -241,7 +234,7 @@ class SavepointTest(TransactionTest):
         assert u2.name == 'jack'
         self.assertEquals(s.query(User.name).order_by(User.id).all(), [('ed',), ('jack',)])
 
-    @uses_savepoints
+    @testing.requires.savepoints
     def test_savepoint_commit(self):
         s = self.session()
         u1 = User(name='ed')
@@ -265,7 +258,7 @@ class SavepointTest(TransactionTest):
         s.commit()
         self.assertEquals(s.query(User.name).order_by(User.id).all(), [('edward',), ('jackward',), ('wendy',), ('foo',)])
 
-    @uses_savepoints
+    @testing.requires.savepoints
     def test_savepoint_rollback_collections(self):
         s = self.session()
         u1 = User(name='ed', addresses=[Address(email_address='foo')])
@@ -296,7 +289,7 @@ class SavepointTest(TransactionTest):
             ]
         )
 
-    @uses_savepoints
+    @testing.requires.savepoints
     def test_savepoint_commit_collections(self):
         s = self.session()
         u1 = User(name='ed', addresses=[Address(email_address='foo')])
@@ -329,7 +322,7 @@ class SavepointTest(TransactionTest):
             ]
         )
 
-    @uses_savepoints
+    @testing.requires.savepoints
     def test_expunge_pending_on_rollback(self):
         sess = self.session()
 
@@ -340,7 +333,7 @@ class SavepointTest(TransactionTest):
         sess.rollback()
         assert u2 not in sess
 
-    @uses_savepoints
+    @testing.requires.savepoints
     def test_update_deleted_on_rollback(self):
         s = self.session()
         u1 = User(name='ed')

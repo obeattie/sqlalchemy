@@ -17,6 +17,7 @@ from testlib.testing import \
      rowset
 import testlib.profiling as profiling
 import testlib.engines as engines
+import testlib.requires as requires
 from testlib.compat import set, frozenset, sorted, _function_named
 
 
@@ -29,6 +30,8 @@ __all__ = ('testing',
            'profiling', 'engines',
            'set', 'frozenset', 'sorted', '_function_named')
 
+
+testing.requires = requires
 
 sys.modules['testlib.sa'] = sa = testing.CompositeModule(
     'testlib.sa', 'sqlalchemy', 'testlib.schema', orm=testing.CompositeModule(

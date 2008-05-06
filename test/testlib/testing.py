@@ -37,6 +37,9 @@ _ops = { '<': operator.lt,
 # sugar ('testing.db'); set here by config() at runtime
 db = None
 
+# more sugar, installed by __init__
+requires = None
+
 def fails_if(callable_):
     """Mark a test as expected to fail if callable_ returns True.
 

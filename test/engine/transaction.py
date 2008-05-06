@@ -159,9 +159,7 @@ class TransactionTest(TestBase):
         assert len(result.fetchall()) == 0
         connection.close()
 
-
-    @testing.unsupported('sqlite', 'mssql', 'firebird', 'sybase', 'access')
-    @testing.exclude('mysql', '<', (5, 0, 3))
+    @testing.requires.savepoints
     def testnestedsubtransactionrollback(self):
         connection = testing.db.connect()
         transaction = connection.begin()
@@ -178,8 +176,7 @@ class TransactionTest(TestBase):
         )
         connection.close()
 
-    @testing.unsupported('sqlite', 'mssql', 'firebird', 'sybase', 'access')
-    @testing.exclude('mysql', '<', (5, 0, 3))
+    @testing.requires.savepoints
     def testnestedsubtransactioncommit(self):
         connection = testing.db.connect()
         transaction = connection.begin()
@@ -196,8 +193,7 @@ class TransactionTest(TestBase):
         )
         connection.close()
 
-    @testing.unsupported('sqlite', 'mssql', 'firebird', 'sybase', 'access')
-    @testing.exclude('mysql', '<', (5, 0, 3))
+    @testing.requires.savepoints
     def testrollbacktosubtransaction(self):
         connection = testing.db.connect()
         transaction = connection.begin()
@@ -216,9 +212,7 @@ class TransactionTest(TestBase):
         )
         connection.close()
 
-    @testing.unsupported('sqlite', 'mssql', 'firebird', 'sybase', 'access',
-                         'oracle', 'maxdb')
-    @testing.exclude('mysql', '<', (5, 0, 3))
+    @testing.requires.two_phase_transactions
     def testtwophasetransaction(self):
         connection = testing.db.connect()
 
@@ -246,9 +240,8 @@ class TransactionTest(TestBase):
         )
         connection.close()
 
-    @testing.unsupported('sqlite', 'mssql', 'firebird', 'sybase', 'access',
-                         'oracle', 'maxdb')
-    @testing.exclude('mysql', '<', (5, 0, 3))
+    @testing.requires.two_phase_transactions
+    @testing.requires.savepoints
     def testmixedtwophasetransaction(self):
         connection = testing.db.connect()
 
@@ -281,10 +274,8 @@ class TransactionTest(TestBase):
         )
         connection.close()
 
-    @testing.unsupported('sqlite', 'mssql', 'firebird', 'sybase', 'access',
-                         'oracle', 'maxdb')
-    # fixme: see if this is still true and/or can be convert to fails_on()
-    @testing.unsupported('mysql')
+    @testing.requires.two_phase_transactions
+    @testing.fails_on('mysql')
     def testtwophaserecover(self):
         # MySQL recovery doesn't currently seem to work correctly
         # Prepared transactions disappear when connections are closed and even
@@ -316,9 +307,7 @@ class TransactionTest(TestBase):
         )
         connection2.close()
 
-    @testing.unsupported('sqlite', 'mssql', 'firebird', 'sybase', 'access',
-                         'oracle', 'maxdb')
-    @testing.exclude('mysql', '<', (5, 0, 3))
+    @testing.requires.two_phase_transactions
     def testmultipletwophase(self):
         conn = testing.db.connect()
 
@@ -686,9 +675,7 @@ class TLTransactionTest(TestBase):
         c2.close()
         assert c1.connection.connection is not None
 
-    @testing.unsupported('sqlite', 'mssql', 'firebird', 'sybase', 'access',
-                         'oracle', 'maxdb')
-    @testing.exclude('mysql', '<', (5, 0, 3))
+    @testing.requires.two_phase_transactions
     def testtwophasetransaction(self):
         tlengine.begin_twophase()
         tlengine.execute(users.insert(), user_id=1, user_name='user1')

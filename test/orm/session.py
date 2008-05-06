@@ -12,15 +12,6 @@ from testlib.tables import *
 from testlib import fixtures, tables
 
 
-def uses_savepoints(fn):
-    """Macro decorator."""
-    return testing.unsupported(
-        'sqlite', 'mssql', 'firebird', 'sybase', 'access', 'oracle')(
-            testing.exclude('mysql', '<', (5, 0, 3))(fn))
-
-uses_twophase = uses_savepoints
-
-
 class SessionTest(TestBase, AssertsExecutionResults):
     def setUpAll(self):
         tables.create()
@@ -290,7 +281,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
             conn.close()
             raise
 
-    @uses_savepoints
+    @testing.requires.savepoints
     def test_heavy_nesting(self):
         session = create_session(bind=testing.db)
 
@@ -312,7 +303,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
         assert session.connection().execute("select count(1) from users").scalar() == 2
 
 
-    @uses_twophase
+    @testing.requires.two_phase_transactions
     def test_twophase(self):
         # TODO: mock up a failure condition here
         # to ensure a rollback succeeds
@@ -349,7 +340,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
         assert len(sess.query(User).all()) == 0
         sess.close()
 
-    @uses_savepoints
+    @testing.requires.savepoints
     def test_nested_transaction(self):
         class User(object):pass
         mapper(User, users)
@@ -372,7 +363,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
         assert len(sess.query(User).all()) == 1
         sess.close()
 
-    @uses_savepoints
+    @testing.requires.savepoints
     def test_nested_autotrans(self):
         class User(object):pass
         mapper(User, users)
@@ -393,7 +384,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
         assert len(sess.query(User).all()) == 1
         sess.close()
 
-    @uses_savepoints
+    @testing.requires.savepoints
     def test_nested_transaction_connection_add(self):
         class User(object): pass
         mapper(User, users)
@@ -428,7 +419,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
 
         sess.close()
 
-    @uses_savepoints
+    @testing.requires.savepoints
     def test_mixed_transaction_control(self):
         class User(object): pass
         mapper(User, users)
@@ -459,7 +450,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
 
         sess.close()
 
-    @uses_savepoints
+    @testing.requires.savepoints
     def test_mixed_transaction_close(self):
         class User(object): pass
         mapper(User, users)
