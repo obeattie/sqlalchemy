@@ -6,21 +6,29 @@ from sqlalchemy.orm import *
 from testlib import *
 from testlib.fixtures import *
 
-class TestBase(FixtureTest):
 
+def uses_savepoints(fn):
+    """Macro decorator."""
+    return testing.unsupported(
+        'sqlite', 'mssql', 'firebird', 'sybase', 'access', 'oracle')(
+            testing.exclude('mysql', '<', (5, 0, 3))(fn))
+
+
+class TransactionTest(FixtureTest):
     keep_mappers = True
+    session = sessionmaker()
 
     def setup_mappers(self):
         mapper(User, users, properties={
-            'addresses':relation(Address, backref='user', cascade="all, delete-orphan"),
+            'addresses':relation(Address, backref='user',
+                                 cascade="all, delete-orphan"),
             })
         mapper(Address, addresses)
 
-    session = sessionmaker()
 
-class FixtureDataTest(TestBase):
+class FixtureDataTest(TransactionTest):
     refresh_data = True
-    
+
     def test_attrs_on_rollback(self):
         sess = self.session()
         u1 = sess.get(User, 7)
@@ -50,9 +58,9 @@ class FixtureDataTest(TestBase):
 
         assert u1.name == 'will'
 
-class AutoExpireTest(TestBase):
+class AutoExpireTest(TransactionTest):
     tables_only = True
-    
+
     def test_expunge_pending_on_rollback(self):
         sess = self.session()
         u2= User(name='newuser')
@@ -97,13 +105,13 @@ class AutoExpireTest(TestBase):
         assert u1 not in s
         s.rollback()
         assert u1 not in s
-    
+
     def test_update_deleted_on_rollback_cascade(self):
         s = self.session()
         u1 = User(name='ed', addresses=[Address(email_address='foo')])
         s.add(u1)
         s.commit()
-        
+
         s.delete(u1)
         assert u1 in s.deleted
         assert u1.addresses[0] in s.deleted
@@ -120,13 +128,13 @@ class AutoExpireTest(TestBase):
 
         a1 = u1.addresses[0]
         u1.addresses.remove(a1)
-        
+
         s.flush()
         self.assertEquals(s.query(Address).filter(Address.email_address=='foo').all(), [])
         s.rollback()
         assert a1 not in s.deleted
         assert u1.addresses == [a1]
-    
+
     def test_commit_pending(self):
         sess = self.session()
         u1 = User(name='newuser')
@@ -149,16 +157,16 @@ class AutoExpireTest(TestBase):
 
         assert u1.name == 'will'
 
-class RollbackRecoverTest(TestBase):
+class RollbackRecoverTest(TransactionTest):
     only_tables = True
-    
+
     def test_pk_violation(self):
         s = self.session()
         a1 = Address(email_address='foo')
         u1 = User(id=1, name='ed', addresses=[a1])
         s.add(u1)
         s.commit()
-        
+
         a2 = Address(email_address='bar')
         u2 = User(id=1, name='jack', addresses=[a2])
 
@@ -179,7 +187,7 @@ class RollbackRecoverTest(TestBase):
         s.commit()
         assert s.query(User).all() == [User(id=1, name='edward', addresses=[Address(email_address='foober')])]
 
-    @testing.uses_savepoints()
+    @uses_savepoints
     def test_pk_violation_with_savepoint(self):
         s = self.session()
         a1 = Address(email_address='foo')
@@ -189,7 +197,7 @@ class RollbackRecoverTest(TestBase):
 
         a2 = Address(email_address='bar')
         u2 = User(id=1, name='jack', addresses=[a2])
-        
+
         u1.name = 'edward'
         a1.email_address = 'foober'
         s.begin_nested()
@@ -206,17 +214,17 @@ class RollbackRecoverTest(TestBase):
         assert s.query(User).all() == [User(id=1, name='edward', addresses=[Address(email_address='foober')])]
 
 
-class SavepointTest(TestBase):
+class SavepointTest(TransactionTest):
 
     only_tables = True
 
-    @testing.uses_savepoints()
+    @uses_savepoints
     def test_savepoint_rollback(self):
         s = self.session()
         u1 = User(name='ed')
         u2 = User(name='jack')
         s.add_all([u1, u2])
-        
+
         s.begin_nested()
         u3 = User(name='wendy')
         u4 = User(name='foo')
@@ -233,7 +241,7 @@ class SavepointTest(TestBase):
         assert u2.name == 'jack'
         self.assertEquals(s.query(User.name).order_by(User.id).all(), [('ed',), ('jack',)])
 
-    @testing.uses_savepoints()
+    @uses_savepoints
     def test_savepoint_commit(self):
         s = self.session()
         u1 = User(name='ed')
@@ -253,42 +261,42 @@ class SavepointTest(TestBase):
             assert u2.name == 'jackward'
             self.assertEquals(s.query(User.name).order_by(User.id).all(), [('edward',), ('jackward',), ('wendy',), ('foo',)])
         self.assert_sql_count(testing.db, go, 1)
-        
+
         s.commit()
         self.assertEquals(s.query(User.name).order_by(User.id).all(), [('edward',), ('jackward',), ('wendy',), ('foo',)])
-        
-    @testing.uses_savepoints()
+
+    @uses_savepoints
     def test_savepoint_rollback_collections(self):
         s = self.session()
         u1 = User(name='ed', addresses=[Address(email_address='foo')])
         s.add(u1)
         s.commit()
-        
+
         u1.name='edward'
         u1.addresses.append(Address(email_address='bar'))
         s.begin_nested()
         u2 = User(name='jack', addresses=[Address(email_address='bat')])
         s.add(u2)
-        self.assertEquals(s.query(User).order_by(User.id).all(), 
+        self.assertEquals(s.query(User).order_by(User.id).all(),
             [
                 User(name='edward', addresses=[Address(email_address='foo'), Address(email_address='bar')]),
                 User(name='jack', addresses=[Address(email_address='bat')])
             ]
         )
         s.rollback()
-        self.assertEquals(s.query(User).order_by(User.id).all(), 
+        self.assertEquals(s.query(User).order_by(User.id).all(),
             [
                 User(name='edward', addresses=[Address(email_address='foo'), Address(email_address='bar')]),
             ]
         )
         s.commit()
-        self.assertEquals(s.query(User).order_by(User.id).all(), 
+        self.assertEquals(s.query(User).order_by(User.id).all(),
             [
                 User(name='edward', addresses=[Address(email_address='foo'), Address(email_address='bar')]),
             ]
         )
 
-    @testing.uses_savepoints()
+    @uses_savepoints
     def test_savepoint_commit_collections(self):
         s = self.session()
         u1 = User(name='ed', addresses=[Address(email_address='foo')])
@@ -300,31 +308,31 @@ class SavepointTest(TestBase):
         s.begin_nested()
         u2 = User(name='jack', addresses=[Address(email_address='bat')])
         s.add(u2)
-        self.assertEquals(s.query(User).order_by(User.id).all(), 
+        self.assertEquals(s.query(User).order_by(User.id).all(),
             [
                 User(name='edward', addresses=[Address(email_address='foo'), Address(email_address='bar')]),
                 User(name='jack', addresses=[Address(email_address='bat')])
             ]
         )
         s.commit()
-        self.assertEquals(s.query(User).order_by(User.id).all(), 
+        self.assertEquals(s.query(User).order_by(User.id).all(),
             [
                 User(name='edward', addresses=[Address(email_address='foo'), Address(email_address='bar')]),
                 User(name='jack', addresses=[Address(email_address='bat')])
             ]
         )
         s.commit()
-        self.assertEquals(s.query(User).order_by(User.id).all(), 
+        self.assertEquals(s.query(User).order_by(User.id).all(),
             [
                 User(name='edward', addresses=[Address(email_address='foo'), Address(email_address='bar')]),
                 User(name='jack', addresses=[Address(email_address='bat')])
             ]
         )
 
-    @testing.uses_savepoints()
+    @uses_savepoints
     def test_expunge_pending_on_rollback(self):
         sess = self.session()
-        
+
         sess.begin_nested()
         u2= User(name='newuser')
         sess.add(u2)
@@ -332,23 +340,23 @@ class SavepointTest(TestBase):
         sess.rollback()
         assert u2 not in sess
 
-    @testing.uses_savepoints()
+    @uses_savepoints
     def test_update_deleted_on_rollback(self):
         s = self.session()
         u1 = User(name='ed')
         s.add(u1)
         s.commit()
-        
+
         s.begin_nested()
         s.delete(u1)
         assert u1 in s.deleted
         s.rollback()
         assert u1 in s
         assert u1 not in s.deleted
-        
 
 
-class AutocommitTest(TestBase):
+
+class AutocommitTest(TransactionTest):
     def test_begin_nested_requires_trans(self):
         sess = create_session(autocommit=True)
         self.assertRaises(sa_exc.InvalidRequestError, sess.begin_nested)

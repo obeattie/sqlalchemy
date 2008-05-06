@@ -2,16 +2,27 @@
 
 # monkeypatches unittest.TestLoader.suiteClass at import time
 
-import itertools, operator, re, sys, types, unittest, warnings
+import itertools
+import operator
+import re
+import sys
+import types
+import unittest
+import warnings
 from cStringIO import StringIO
+
 import testlib.config as config
 from testlib.compat import set, _function_named, reversed
 
-sqltypes, schema, MetaData, clear_mappers, Session, util = (
-    None, None, None, None, None, None)
+# Delayed imports
+MetaData = None
+Session = None
+clear_mappers = None
 sa_exc = None
+schema = None
+sqltypes = None
+util = None
 
-__all__ = ('TestBase', 'AssertsExecutionResults', 'ComparesTables', 'ORMTest', 'AssertsCompiledSQL')
 
 _ops = { '<': operator.lt,
          '>': operator.gt,
@@ -133,23 +144,6 @@ def fails_on_everything_except(*dbs):
         return _function_named(maybe, fn_name)
     return decorate
 
-def uses_savepoints():
-    """mark a test as using savepoints.
-    
-    Shorthand for the actual DBs that support/unsupport this operation.
-    
-    """
-    def decorate(fn):
-        return \
-            unsupported('sqlite', 'mssql', 'firebird', 'sybase', 'access',
-                             'oracle', 'maxdb')(
-                             exclude('mysql', '<', (5, 0, 3))(fn)                 
-                             )
-    return decorate
-    
-uses_twophase = uses_savepoints
-
-    
 def unsupported(*dbs):
     """Mark a test as unsupported by one or more database implementations.
 
@@ -445,7 +439,7 @@ class ExecutionContextWrapper(object):
 
             query = self.convert_statement(query)
             equivalent = ( (statement == query)
-                           or ( (config.db.name == 'oracle') and (self.trailing_underscore_pattern.sub(r'\1', statement) == query) ) 
+                           or ( (config.db.name == 'oracle') and (self.trailing_underscore_pattern.sub(r'\1', statement) == query) )
                          ) \
                          and \
                          ( (params is None) or (params == parameters)
@@ -453,7 +447,7 @@ class ExecutionContextWrapper(object):
                                                for (k, v) in p.items()])
                                          for p in parameters]
                          )
-            testdata.unittest.assert_(equivalent, 
+            testdata.unittest.assert_(equivalent,
                     "Testing for query '%s' params %s, received '%s' with params %s" % (query, repr(params), statement, repr(parameters)))
         testdata.sql_count += 1
         self.ctx.post_execution()
@@ -538,14 +532,14 @@ class TestBase(unittest.TestCase):
     def shortDescription(self):
         """overridden to not return docstrings"""
         return None
-    
+
     def assertRaisesMessage(self, except_cls, msg, callable_, *args, **kwargs):
         try:
             callable_(*args, **kwargs)
             assert False, "Callable did not raise expected exception"
         except except_cls, e:
             assert re.search(msg, str(e)), "Exception message did not match: '%s'" % str(e)
-        
+
     if not hasattr(unittest.TestCase, 'assertTrue'):
         assertTrue = unittest.TestCase.failUnless
     if not hasattr(unittest.TestCase, 'assertFalse'):
@@ -591,7 +585,7 @@ class ComparesTables(object):
                 set(type(c.type).__mro__).difference(base_mro)
                 )
             ) > 0, "Type '%s' doesn't correspond to type '%s'" % (reflected_c.type, c.type)
-            
+
             if isinstance(c.type, sqltypes.String):
                 self.assertEquals(c.type.length, reflected_c.type.length)
 
@@ -604,18 +598,18 @@ class ComparesTables(object):
             elif not c.primary_key or not against('postgres'):
                 print repr(c)
                 assert reflected_c.default is None, reflected_c.default
-        
+
         assert len(table.primary_key) == len(reflected_table.primary_key)
         for c in table.primary_key:
             assert reflected_table.primary_key.columns[c.name]
 
-    
+
 class AssertsExecutionResults(object):
     def assert_result(self, result, class_, *objects):
         result = list(result)
         print repr(result)
         self.assert_list(result, class_, objects)
-        
+
     def assert_list(self, result, class_, list):
         self.assert_(len(result) == len(list),
                      "result list is not the same size as test list, " +
@@ -744,10 +738,10 @@ class ORMTest(TestBase, AssertsExecutionResults):
 
     def define_tables(self, _otest_metadata):
         raise NotImplementedError()
-    
+
     def setup_mappers(self):
         pass
-        
+
     def insert_data(self):
         pass
 
