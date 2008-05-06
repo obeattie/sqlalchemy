@@ -894,9 +894,6 @@ class Query(object):
                         self.__currenttables.add(prop.secondary)
                     self.__currenttables.add(prop.table)
 
-                    if prop._is_self_referential() and left_entity is right_entity:
-                        raise sa_exc.InvalidRequestError("Self-referential join on %s requires target selectable, or the aliased=True flag" % descriptor)
-                        
                     right_entity = prop.mapper
 
             if prop:

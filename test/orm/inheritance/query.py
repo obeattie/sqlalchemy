@@ -653,11 +653,6 @@ class SelfReferentialTest(ORMTest):
         
         self.assertEquals(sess.query(Engineer).join('reports_to', aliased=True).filter(Person.name=='dogbert').first(), Engineer(name='dilbert'))
         
-    def test_noalias_raises(self):
-        sess = create_session()
-        def go():
-            sess.query(Engineer).join('reports_to')
-        self.assertRaises(sa_exc.InvalidRequestError, go)
 
 class M2MFilterTest(ORMTest):
     keep_mappers = True
