@@ -286,6 +286,14 @@ class SessionExtension(object):
         the flush started its own transaction or participated in a larger transaction.
         """
 
+    def after_begin(self, session, transaction, connection):
+        """Execute after a transaction is begun on a connection
+
+        `transaction` is the SessionTransaction. This method is called after an
+        engine level transaction is begun on a connection.
+        """
+
+
 class MapperProperty(object):
     """Manage the relationship of a ``Mapper`` to a single class
     attribute, as well as that attribute as it appears on individual

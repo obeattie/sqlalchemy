@@ -225,6 +225,8 @@ class SessionTransaction(object):
             transaction = conn.begin()
         
         self._connections[conn] = self._connections[conn.engine] = (conn, transaction, conn is not bind)
+        if self.session.extension is not None:
+            self.session.extension.after_begin(self.session, self, conn)
         return conn
 
     def prepare(self):
@@ -269,7 +271,7 @@ class SessionTransaction(object):
             
             self._remove_snapshot()
                 
-        self._close()
+        self.close()
         return self._parent
     
     def rollback(self):
@@ -277,9 +279,9 @@ class SessionTransaction(object):
         
         if self.session.transaction is not self:
             for subtransaction in self.session.transaction._iterate_parents(upto=self):
-                subtransaction._close()
+                subtransaction.close()
         
-        if self.is_active:
+        if self.is_active or self._prepared:
             for transaction in self._iterate_parents():
                 if transaction._parent is None or transaction.nested:
                     transaction._rollback_impl()
@@ -287,9 +289,8 @@ class SessionTransaction(object):
                     break
                 else:
                     transaction._deactivate()
-            
-                
-        self._close()
+
+        self.close()
         return self._parent
     
     def _rollback_impl(self):
@@ -304,7 +305,7 @@ class SessionTransaction(object):
     def _deactivate(self):
         self._active = False
 
-    def _close(self):
+    def close(self):
         self.session.transaction = self._parent
         if self._parent is None:
             for connection, transaction, autoclose in util.Set(self._connections.values()):
@@ -315,7 +316,6 @@ class SessionTransaction(object):
         self._deactivate()
         self.session = None
         self._connections = None
-    close = util.deprecated()(_close)
     
     def __enter__(self):
         return self
@@ -690,7 +690,7 @@ class Session(object):
         self.clear()
         if self.transaction is not None:
             for transaction in self.transaction._iterate_parents():
-                transaction._close()
+                transaction.close()
         if not self.autocommit:
             # note this doesnt use any connection resources
             self.begin()
