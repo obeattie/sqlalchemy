@@ -6,10 +6,12 @@ transparent proxied access to the endpoint of an association object.
 See the example ``examples/association/proxied_association.py``.
 """
 
-import weakref, itertools
-import sqlalchemy.exceptions as exceptions
-import sqlalchemy.orm as orm
-import sqlalchemy.util as util
+import itertools
+import weakref
+from sqlalchemy import exceptions
+from sqlalchemy import orm
+from sqlalchemy import util
+from sqlalchemy.orm import collections
 
 
 def association_proxy(targetcollection, attr, **kw):
@@ -723,7 +725,7 @@ class _AssociationSet(object):
             self.add(value)
 
     def __ior__(self, other):
-        if util.duck_type_collection(other) is not util.Set:
+        if not collections._set_binops_check_strict(self, other):
             return NotImplemented
         for value in other:
             self.add(value)
@@ -747,7 +749,7 @@ class _AssociationSet(object):
             self.discard(value)
 
     def __isub__(self, other):
-        if util.duck_type_collection(other) is not util.Set:
+        if not collections._set_binops_check_strict(self, other):
             return NotImplemented
         for value in other:
             self.discard(value)
@@ -769,7 +771,7 @@ class _AssociationSet(object):
             self.add(value)
 
     def __iand__(self, other):
-        if util.duck_type_collection(other) is not util.Set:
+        if not collections._set_binops_check_strict(self, other):
             return NotImplemented
         want, have = self.intersection(other), util.Set(self)
 
@@ -797,7 +799,7 @@ class _AssociationSet(object):
             self.add(value)
 
     def __ixor__(self, other):
-        if util.duck_type_collection(other) is not util.Set:
+        if not collections._set_binops_check_strict(self, other):
             return NotImplemented
         want, have = self.symmetric_difference(other), util.Set(self)
 

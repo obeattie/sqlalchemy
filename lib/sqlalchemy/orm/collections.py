@@ -98,6 +98,7 @@ through the adapter, allowing for some very sophisticated behavior.
 
 import copy
 import inspect
+import sets
 import sys
 import weakref
 
@@ -1130,6 +1131,22 @@ def _dict_decorators():
     l.pop('Unspecified')
     return l
 
+
+try:
+    _set_binop_bases = (set, frozenset, sets.BaseSet)
+except NameError:
+    _set_binop_bases = (sets.BaseSet,)
+
+def _set_binops_check_strict(self, obj):
+    """Allow only set, frozenset and self.__class__-derived objects in binops."""
+    return isinstance(obj, _set_binop_bases + (self.__class__,))
+
+def _set_binops_check_loose(self, obj):
+    """Allow anything set-like to participate in set binops."""
+    return (isinstance(obj, _set_binop_bases + (self.__class__,)) or
+            sautil.duck_type_collection(obj) == sautil.Set)
+
+
 def _set_decorators():
     """Tailored instrumentation wrappers for any set-like class."""
 
@@ -1201,7 +1218,7 @@ def _set_decorators():
 
     def __ior__(fn):
         def __ior__(self, value):
-            if sautil.duck_type_collection(value) is not Set:
+            if not _set_binops_check_strict(self, value):
                 return NotImplemented
             for item in value:
                 self.add(item)
@@ -1218,7 +1235,7 @@ def _set_decorators():
 
     def __isub__(fn):
         def __isub__(self, value):
-            if sautil.duck_type_collection(value) is not Set:
+            if not _set_binops_check_strict(self, value):
                 return NotImplemented
             for item in value:
                 self.discard(item)
@@ -1240,7 +1257,7 @@ def _set_decorators():
 
     def __iand__(fn):
         def __iand__(self, other):
-            if sautil.duck_type_collection(other) is not Set:
+            if not _set_binops_check_strict(self, other):
                 return NotImplemented
             want, have = self.intersection(other), Set(self)
             remove, add = have - want, want - have
@@ -1267,7 +1284,7 @@ def _set_decorators():
 
     def __ixor__(fn):
         def __ixor__(self, other):
-            if sautil.duck_type_collection(other) is not Set:
+            if not _set_binops_check_strict(self, other):
                 return NotImplemented
             want, have = self.symmetric_difference(other), Set(self)
             remove, add = have - want, want - have
