@@ -1,3 +1,14 @@
+"""this example illustrates how to replace SQLAlchemy's class descriptors with a user-defined system.
+
+This sort of thing is appropriate for integration with frameworks that redefine class behaviors
+in their own way, such that SQLA's default instrumentation is not compatible.   
+
+The example illustrates redefinition of instrumentation at the class level as well as the collection
+level, and redefines the storage of the class to store state within "instance._goofy_dict" instead
+of "instance.__dict__".  Note that the default collection implementations can be used 
+with a custom attribute system as well.
+
+"""
 from sqlalchemy import *
 from sqlalchemy.orm import *
 
