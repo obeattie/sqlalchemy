@@ -1,23 +1,16 @@
 import testenv; testenv.configure_for_tests()
-import inspect
-from sqlalchemy import MetaData, Table, Column, Integer, String, ForeignKey
+from sqlalchemy import MetaData, Table, Column, Integer, ForeignKey
 from sqlalchemy import util
 from sqlalchemy.orm import attributes
-from sqlalchemy.orm import backref
 from sqlalchemy.orm import create_session
 from sqlalchemy.orm import interfaces
 from sqlalchemy.orm import mapper
-from sqlalchemy.orm import mapperlib
 from sqlalchemy.orm import relation
 
-from testlib import *
+from testlib.testing import eq_, ne_
+from testlib.compat import _function_named
+from testlib import TestBase
 
-def eq(a, b, msg=None):
-    self = inspect.stack()[1][0].f_locals['self']
-    self.assertEqual(a, b, msg=None)
-def ne(a, b, msg=None):
-    self = inspect.stack()[1][0].f_locals['self']
-    self.assertNotEqual(a, b, msg=None)
 
 def modifies_instrumentation_finders(fn):
     def decorated(*args, **kw):
@@ -41,6 +34,7 @@ def with_lookup_strategy(strategy):
         return _function_named(wrapped, fn.func_name)
     return decorate
 
+
 class InitTest(TestBase):
     def fixture(self):
         return Table('t', MetaData(),
@@ -52,7 +46,7 @@ class InitTest(TestBase):
     def register(self, cls, canary):
         original_init = cls.__init__
         attributes.register_class(cls)
-        ne(cls.__init__, original_init)
+        ne_(cls.__init__, original_init)
         manager = attributes.manager_of_class(cls)
         def on_init(state, instance, args, kwargs):
             canary.append((cls, 'on_init', type(instance)))
@@ -66,7 +60,7 @@ class InitTest(TestBase):
                 inits.append((A, '__init__'))
 
         obj = A()
-        eq(inits, [(A, '__init__')])
+        eq_(inits, [(A, '__init__')])
 
     def test_A(self):
         inits = []
@@ -75,7 +69,7 @@ class InitTest(TestBase):
         self.register(A, inits)
 
         obj = A()
-        eq(inits, [(A, 'on_init', A)])
+        eq_(inits, [(A, 'on_init', A)])
 
     def test_Ai(self):
         inits = []
@@ -86,7 +80,7 @@ class InitTest(TestBase):
         self.register(A, inits)
 
         obj = A()
-        eq(inits, [(A, 'on_init', A), (A, '__init__')])
+        eq_(inits, [(A, 'on_init', A), (A, '__init__')])
 
     def test_ai_B(self):
         inits = []
@@ -99,12 +93,12 @@ class InitTest(TestBase):
         self.register(B, inits)
 
         obj = A()
-        eq(inits, [(A, '__init__')])
+        eq_(inits, [(A, '__init__')])
 
         del inits[:]
 
         obj = B()
-        eq(inits, [(B, 'on_init', B), (A, '__init__')])
+        eq_(inits, [(B, 'on_init', B), (A, '__init__')])
 
     def test_ai_Bi(self):
         inits = []
@@ -120,12 +114,12 @@ class InitTest(TestBase):
         self.register(B, inits)
 
         obj = A()
-        eq(inits, [(A, '__init__')])
+        eq_(inits, [(A, '__init__')])
 
         del inits[:]
 
         obj = B()
-        eq(inits, [(B, 'on_init', B), (B, '__init__'), (A, '__init__')])
+        eq_(inits, [(B, 'on_init', B), (B, '__init__'), (A, '__init__')])
 
     def test_Ai_bi(self):
         inits = []
@@ -141,12 +135,12 @@ class InitTest(TestBase):
                 super(B, self).__init__()
 
         obj = A()
-        eq(inits, [(A, 'on_init', A), (A, '__init__')])
+        eq_(inits, [(A, 'on_init', A), (A, '__init__')])
 
         del inits[:]
 
         obj = B()
-        eq(inits, [(B, '__init__'), (A, 'on_init', B), (A, '__init__')])
+        eq_(inits, [(B, '__init__'), (A, 'on_init', B), (A, '__init__')])
 
     def test_Ai_Bi(self):
         inits = []
@@ -163,12 +157,12 @@ class InitTest(TestBase):
         self.register(B, inits)
 
         obj = A()
-        eq(inits, [(A, 'on_init', A), (A, '__init__')])
+        eq_(inits, [(A, 'on_init', A), (A, '__init__')])
 
         del inits[:]
 
         obj = B()
-        eq(inits, [(B, 'on_init', B), (B, '__init__'), (A, '__init__')])
+        eq_(inits, [(B, 'on_init', B), (B, '__init__'), (A, '__init__')])
 
     def test_Ai_B(self):
         inits = []
@@ -182,12 +176,12 @@ class InitTest(TestBase):
         self.register(B, inits)
 
         obj = A()
-        eq(inits, [(A, 'on_init', A), (A, '__init__')])
+        eq_(inits, [(A, 'on_init', A), (A, '__init__')])
 
         del inits[:]
 
         obj = B()
-        eq(inits, [(B, 'on_init', B), (A, '__init__')])
+        eq_(inits, [(B, 'on_init', B), (A, '__init__')])
 
     def test_Ai_Bi_Ci(self):
         inits = []
@@ -210,16 +204,16 @@ class InitTest(TestBase):
         self.register(C, inits)
 
         obj = A()
-        eq(inits, [(A, 'on_init', A), (A, '__init__')])
+        eq_(inits, [(A, 'on_init', A), (A, '__init__')])
 
         del inits[:]
 
         obj = B()
-        eq(inits, [(B, 'on_init', B), (B, '__init__'), (A, '__init__')])
+        eq_(inits, [(B, 'on_init', B), (B, '__init__'), (A, '__init__')])
 
         del inits[:]
         obj = C()
-        eq(inits, [(C, 'on_init', C), (C, '__init__'), (B, '__init__'),
+        eq_(inits, [(C, 'on_init', C), (C, '__init__'), (B, '__init__'),
                    (A, '__init__')])
 
     def test_Ai_bi_Ci(self):
@@ -242,16 +236,16 @@ class InitTest(TestBase):
         self.register(C, inits)
 
         obj = A()
-        eq(inits, [(A, 'on_init', A), (A, '__init__')])
+        eq_(inits, [(A, 'on_init', A), (A, '__init__')])
 
         del inits[:]
 
         obj = B()
-        eq(inits, [(B, '__init__'), (A, 'on_init', B), (A, '__init__')])
+        eq_(inits, [(B, '__init__'), (A, 'on_init', B), (A, '__init__')])
 
         del inits[:]
         obj = C()
-        eq(inits, [(C, 'on_init', C), (C, '__init__'),  (B, '__init__'),
+        eq_(inits, [(C, 'on_init', C), (C, '__init__'),  (B, '__init__'),
                    (A, '__init__')])
 
     def test_Ai_b_Ci(self):
@@ -271,16 +265,16 @@ class InitTest(TestBase):
         self.register(C, inits)
 
         obj = A()
-        eq(inits, [(A, 'on_init', A), (A, '__init__')])
+        eq_(inits, [(A, 'on_init', A), (A, '__init__')])
 
         del inits[:]
 
         obj = B()
-        eq(inits, [(A, 'on_init', B), (A, '__init__')])
+        eq_(inits, [(A, 'on_init', B), (A, '__init__')])
 
         del inits[:]
         obj = C()
-        eq(inits, [(C, 'on_init', C), (C, '__init__'), (A, '__init__')])
+        eq_(inits, [(C, 'on_init', C), (C, '__init__'), (A, '__init__')])
 
     def test_Ai_B_Ci(self):
         inits = []
@@ -300,16 +294,16 @@ class InitTest(TestBase):
         self.register(C, inits)
 
         obj = A()
-        eq(inits, [(A, 'on_init', A), (A, '__init__')])
+        eq_(inits, [(A, 'on_init', A), (A, '__init__')])
 
         del inits[:]
 
         obj = B()
-        eq(inits, [(B, 'on_init', B), (A, '__init__')])
+        eq_(inits, [(B, 'on_init', B), (A, '__init__')])
 
         del inits[:]
         obj = C()
-        eq(inits, [(C, 'on_init', C), (C, '__init__'), (A, '__init__')])
+        eq_(inits, [(C, 'on_init', C), (C, '__init__'), (A, '__init__')])
 
     def test_Ai_B_C(self):
         inits = []
@@ -326,16 +320,16 @@ class InitTest(TestBase):
         self.register(C, inits)
 
         obj = A()
-        eq(inits, [(A, 'on_init', A), (A, '__init__')])
+        eq_(inits, [(A, 'on_init', A), (A, '__init__')])
 
         del inits[:]
 
         obj = B()
-        eq(inits, [(B, 'on_init', B), (A, '__init__')])
+        eq_(inits, [(B, 'on_init', B), (A, '__init__')])
 
         del inits[:]
         obj = C()
-        eq(inits, [(C, 'on_init', C), (A, '__init__')])
+        eq_(inits, [(C, 'on_init', C), (A, '__init__')])
 
     def test_A_Bi_C(self):
         inits = []
@@ -352,16 +346,16 @@ class InitTest(TestBase):
         self.register(C, inits)
 
         obj = A()
-        eq(inits, [(A, 'on_init', A)])
+        eq_(inits, [(A, 'on_init', A)])
 
         del inits[:]
 
         obj = B()
-        eq(inits, [(B, 'on_init', B), (B, '__init__')])
+        eq_(inits, [(B, 'on_init', B), (B, '__init__')])
 
         del inits[:]
         obj = C()
-        eq(inits, [(C, 'on_init', C), (B, '__init__')])
+        eq_(inits, [(C, 'on_init', C), (B, '__init__')])
 
     def test_A_B_Ci(self):
         inits = []
@@ -378,16 +372,16 @@ class InitTest(TestBase):
         self.register(C, inits)
 
         obj = A()
-        eq(inits, [(A, 'on_init', A)])
+        eq_(inits, [(A, 'on_init', A)])
 
         del inits[:]
 
         obj = B()
-        eq(inits, [(B, 'on_init', B)])
+        eq_(inits, [(B, 'on_init', B)])
 
         del inits[:]
         obj = C()
-        eq(inits, [(C, 'on_init', C), (C, '__init__')])
+        eq_(inits, [(C, 'on_init', C), (C, '__init__')])
 
     def test_A_B_C(self):
         inits = []
@@ -402,16 +396,16 @@ class InitTest(TestBase):
         self.register(C, inits)
 
         obj = A()
-        eq(inits, [(A, 'on_init', A)])
+        eq_(inits, [(A, 'on_init', A)])
 
         del inits[:]
 
         obj = B()
-        eq(inits, [(B, 'on_init', B)])
+        eq_(inits, [(B, 'on_init', B)])
 
         del inits[:]
         obj = C()
-        eq(inits, [(C, 'on_init', C)])
+        eq_(inits, [(C, 'on_init', C)])
 
 
 class MapperInitTest(TestBase):
@@ -708,14 +702,14 @@ class FinderTest(TestBase):
 
         attributes.register_class(A)
 
-        eq(type(attributes.manager_of_class(A)), attributes.ClassManager)
+        eq_(type(attributes.manager_of_class(A)), attributes.ClassManager)
 
     def test_nativeext_interfaceexact(self):
         class A(object):
             __sa_instrumentation_manager__ = interfaces.InstrumentationManager
 
         attributes.register_class(A)
-        ne(type(attributes.manager_of_class(A)), attributes.ClassManager)
+        ne_(type(attributes.manager_of_class(A)), attributes.ClassManager)
 
     def test_nativeext_submanager(self):
         class Mine(attributes.ClassManager): pass
@@ -723,7 +717,7 @@ class FinderTest(TestBase):
             __sa_instrumentation_manager__ = Mine
 
         attributes.register_class(A)
-        eq(type(attributes.manager_of_class(A)), Mine)
+        eq_(type(attributes.manager_of_class(A)), Mine)
 
     @modifies_instrumentation_finders
     def test_customfinder_greedy(self):
@@ -734,7 +728,7 @@ class FinderTest(TestBase):
 
         attributes.instrumentation_finders.insert(0, find)
         attributes.register_class(A)
-        eq(type(attributes.manager_of_class(A)), Mine)
+        eq_(type(attributes.manager_of_class(A)), Mine)
 
     @modifies_instrumentation_finders
     def test_customfinder_pass(self):
@@ -744,7 +738,7 @@ class FinderTest(TestBase):
 
         attributes.instrumentation_finders.insert(0, find)
         attributes.register_class(A)
-        eq(type(attributes.manager_of_class(A)), attributes.ClassManager)
+        eq_(type(attributes.manager_of_class(A)), attributes.ClassManager)
 
 
 if __name__ == "__main__":

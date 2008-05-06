@@ -8,8 +8,13 @@ import testlib.config
 from testlib.schema import Table, Column
 from testlib.orm import mapper
 import testlib.testing as testing
-from testlib.testing import rowset
-from testlib.testing import TestBase, AssertsExecutionResults, ORMTest, AssertsCompiledSQL, ComparesTables
+from testlib.testing import \
+     AssertsCompiledSQL, \
+     AssertsExecutionResults, \
+     ComparesTables, \
+     ORMTest, \
+     TestBase, \
+     rowset
 import testlib.profiling as profiling
 import testlib.engines as engines
 from testlib.compat import set, frozenset, sorted, _function_named
