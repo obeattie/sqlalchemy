@@ -162,10 +162,7 @@ class AppenderQuery(Query):
         if sess is None:
             sess = object_session(instance)
             if sess is None:
-                try:
-                    sess = object_mapper(instance).get_session()
-                except sa_exc.InvalidRequestError:
-                    raise sa_exc.UnboundExecutionError("Parent instance %s is not bound to a Session, and no contextual session is established; lazy load operation of attribute '%s' cannot proceed" % (mapperutil.instance_str(instance), self.attr.key))
+                raise sa_exc.UnboundExecutionError("Parent instance %s is not bound to a Session, and no contextual session is established; lazy load operation of attribute '%s' cannot proceed" % (mapperutil.instance_str(instance), self.attr.key))
 
         q = sess.query(self.attr.target_mapper).with_parent(instance, self.attr.key)
         if self.attr.order_by:

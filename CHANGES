@@ -129,6 +129,10 @@ user_defined_state
       their operands and only operate on sets, frozensets or
       subclasses of the collection type. Previously, they would
       accept any duck-typed set.
+      
+    - added an example dynamic_dict/dynamic_dict.py, illustrating
+      a simple way to place dictionary behavior on top of 
+      a dynamic_loader.
 
 - declarative extension
     - Joined table inheritance mappers use a slightly relaxed
