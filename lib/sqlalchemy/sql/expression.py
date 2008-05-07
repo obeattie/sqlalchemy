@@ -1238,7 +1238,7 @@ class ColumnOperators(Operators):
     def ilike(self, other, escape=None):
         return self.operate(operators.ilike_op, other, escape=escape)
 
-    def in_(self, *other):
+    def in_(self, other):
         return self.operate(operators.in_op, other)
 
     def startswith(self, other, **kwargs):
@@ -1351,17 +1351,10 @@ class _CompareMixin(ColumnOperators):
         o = _CompareMixin.operators[op]
         return o[0](self, op, other, reverse=True, *o[1:], **kwargs)
 
-    def in_(self, *other):
-        return self._in_impl(operators.in_op, operators.notin_op, *other)
+    def in_(self, other):
+        return self._in_impl(operators.in_op, operators.notin_op, other)
 
-    def _in_impl(self, op, negate_op, *other):
-        # Handle old style *args argument passing
-        if len(other) != 1 or not isinstance(other[0], Selectable) and (not hasattr(other[0], '__iter__') or isinstance(other[0], basestring)):
-            util.warn_deprecated('passing in_ arguments as varargs is deprecated, in_ takes a single argument that is a sequence or a selectable')
-            seq_or_selectable = other
-        else:
-            seq_or_selectable = other[0]
-
+    def _in_impl(self, op, negate_op, seq_or_selectable):
         if isinstance(seq_or_selectable, Selectable):
             return self.__compare( op, seq_or_selectable, negate=negate_op)
 

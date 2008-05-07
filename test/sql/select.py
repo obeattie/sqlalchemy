@@ -1151,20 +1151,6 @@ UNION SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE 
         self.assert_compile(select([table1], table1.c.myid.in_([])),
         "SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE (CASE WHEN (mytable.myid IS NULL) THEN NULL ELSE 0 END = 1)")
 
-    @testing.uses_deprecated('passing in_')
-    def test_in_deprecated_api(self):
-        self.assert_compile(select([table1], table1.c.myid.in_('abc')),
-        "SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE mytable.myid IN (:myid_1)")
-
-        self.assert_compile(select([table1], table1.c.myid.in_(1)),
-        "SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE mytable.myid IN (:myid_1)")
-
-        self.assert_compile(select([table1], table1.c.myid.in_(1,2)),
-        "SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE mytable.myid IN (:myid_1, :myid_2)")
-
-        self.assert_compile(select([table1], table1.c.myid.in_()),
-        "SELECT mytable.myid, mytable.name, mytable.description FROM mytable WHERE (CASE WHEN (mytable.myid IS NULL) THEN NULL ELSE 0 END = 1)")
-
     def test_cast(self):
         tbl = table('casttest',
                     column('id', Integer),
