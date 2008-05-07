@@ -1405,25 +1405,25 @@ If the "eager" portion of the statement is "aliased", the `alias` keyword argume
 The path given as the argument to `contains_eager()` needs to be a full path from the starting entity.  For example if we were loading `Users->orders->Order->items->Item`, the string version would look like:
 
     {python}
-    query(User).options(contains_eager(['orders', 'items']))
+    query(User).options(contains_eager('orders', 'items'))
     
 The descriptor version like:
 
     {python}
-    query(User).options(contains_eager([User.orders, Order.items]))
+    query(User).options(contains_eager(User.orders, Order.items))
     
-A slight variant on `contains_eager()` is the `contains_alias()` option, which is used in the rare case that the parent object is loaded from an alias within a user-defined SELECT statement:
+A variant on `contains_eager()` is the `contains_alias()` option, which is used in the rare case that the parent object is loaded from an alias within a user-defined SELECT statement:
 
     {python}
     # define an aliased UNION called 'ulist'
     statement = users.select(users.c.user_id==7).union(users.select(users.c.user_id>7)).alias('ulist')
 
     # add on an eager load of "addresses"
-    statement = statement.outerjoin(addresses).select(use_labels=True)
+    statement = statement.outerjoin(addresses).select().apply_labels()
     
     # create query, indicating "ulist" is an alias for the main table, "addresses" property should
     # be eager loaded
-    query = create_session().query(User).options(contains_alias('ulist'), contains_eager('addresses'))
+    query = session.query(User).options(contains_alias('ulist'), contains_eager('addresses'))
     
     # results
     r = query.from_statement(statement)

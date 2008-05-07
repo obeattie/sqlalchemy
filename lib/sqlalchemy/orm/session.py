@@ -60,10 +60,96 @@ def sessionmaker(bind=None, class_=None, autoflush=True, autocommit=False, autoe
 
         sess = Session()
 
-    The function features a single keyword argument of its own, `class_`, which
-    may be used to specify an alternate class other than ``sqlalchemy.orm.session.Session``
-    which should be used by the returned class.  All other keyword arguments sent to
-    `sessionmaker()` are passed through to the instantiated `Session()` object.
+    Options:
+    
+        autocommit
+            Defaults to ``False``. When ``True``, the ``Session`` does not keep a
+            persistent transaction running, and will acquire connections from the engine
+            on an as-needed basis, returning them immediately after their use. Flushes
+            will begin and commit (or possibly rollback) their own transaction if no
+            transaction is present. When using this mode, the `session.begin()` method
+            may be used to begin a transaction explicitly.
+        
+            Leaving it on its default value of ``False`` means that the ``Session`` will
+            acquire a connection and begin a transaction the first time it is used, which
+            it will maintain persistently until ``rollback()``, ``commit()``, or
+            ``close()`` is called. When the transaction is released by any of these
+            methods, the ``Session`` is ready for the next usage, which will again acquire
+            and maintain a new connection/transaction.
+        
+        autoexpire
+            When ``True``, all instances will be fully expired after each ``rollback()``
+            and after each ``commit()``, so that all attribute/object access subsequent
+            to a completed transaction will load from the most recent database state.
+        
+        autoflush
+            When ``True``, all query operations will issue a ``flush()`` call to this
+            ``Session`` before proceeding. This is a convenience feature so that
+            ``flush()`` need not be called repeatedly in order for database queries to
+            retrieve results. It's typical that ``autoflush`` is used in conjunction with
+            ``autocommit=False``.  In this scenario, explicit calls to ``flush()`` are rarely
+            needed; you usually only need to call ``commit()`` (which flushes) to finalize 
+            changes.
+
+        bind
+            An optional ``Engine`` or ``Connection`` to which this ``Session`` should be
+            bound. When specified, all SQL operations performed by this session will
+            execute via this connectable.
+
+        binds
+            An optional dictionary, which contains more granular "bind" information than
+            the ``bind`` parameter provides. This dictionary can map individual ``Table``
+            instances as well as ``Mapper`` instances to individual ``Engine`` or
+            ``Connection`` objects. Operations which proceed relative to a particular
+            ``Mapper`` will consult this dictionary for the direct ``Mapper`` instance as
+            well as the mapper's ``mapped_table`` attribute in order to locate an
+            connectable to use. The full resolution is described in the ``get_bind()``
+            method of ``Session``. Usage looks like::
+
+                sess = Session(binds={
+                    SomeMappedClass : create_engine('postgres://engine1'),
+                    somemapper : create_engine('postgres://engine2'),
+                    some_table : create_engine('postgres://engine3'),
+                })
+
+            Also see the ``bind_mapper()`` and ``bind_table()`` methods.
+
+        \class_
+            Specify an alternate class other than ``sqlalchemy.orm.session.Session``
+            which should be used by the returned class.  This is the only argument 
+            that is local to the ``sessionmaker()`` function, and is not sent
+            directly to the constructor for ``Session``.
+
+        echo_uow
+            When ``True``, configure Python logging to dump all unit-of-work
+            transactions. This is the equivalent of
+            ``logging.getLogger('sqlalchemy.orm.unitofwork').setLevel(logging.DEBUG)``.
+
+        extension
+            An optional [sqlalchemy.orm.session#SessionExtension] instance, which will receive
+            pre- and post- commit and flush events, as well as a post-rollback event.  User-
+            defined code may be placed within these hooks using a user-defined subclass
+            of ``SessionExtension``.
+
+        twophase
+            When ``True``, all transactions will be started using
+            [sqlalchemy.engine_TwoPhaseTransaction]. During a ``commit()``, after
+            ``flush()`` has been issued for all attached databases, the ``prepare()``
+            method on each database's ``TwoPhaseTransaction`` will be called. This allows
+            each database to roll back the entire transaction, before each transaction is
+            committed.
+
+        weak_identity_map
+            When set to the default value of ``False``, a weak-referencing map is used;
+            instances which are not externally referenced will be garbage collected
+            immediately. For dereferenced instances which have pending changes present,
+            the attribute management system will create a temporary strong-reference to
+            the object which lasts until the changes are flushed to the database, at which
+            point it's again dereferenced. Alternatively, when using the value ``True``,
+            the identity map uses a regular Python dictionary to store instances. The
+            session will maintain all instances present until they are removed using
+            expunge(), clear(), or purge().
+    
     """
     
     if 'transactional' in kwargs:
@@ -396,85 +482,8 @@ class Session(object):
     def __init__(self, bind=None, autoflush=True, autoexpire=True, autocommit=False, twophase=False, echo_uow=False, weak_identity_map=True, binds=None, extension=None):
         """Construct a new Session.
         
-        A session is usually constructed using the [sqlalchemy.orm#create_session()] function, 
-        or its more "automated" variant [sqlalchemy.orm#sessionmaker()].
-
-        autoexpire
-            When ``True``, all instances will be fully expired after each ``rollback()``
-            and after each ``commit()``, so that all attribute/object access subsequent
-            to a completed transaction will load from the most recent database state.
-            
-        autoflush
-            When ``True``, all query operations will issue a ``flush()`` call to this
-            ``Session`` before proceeding. This is a convenience feature so that
-            ``flush()`` need not be called repeatedly in order for database queries to
-            retrieve results. It's typical that ``autoflush`` is used in conjunction with
-            ``autocommit=False``.  In this scenario, explicit calls to ``flush()`` are rarely
-            needed; you usually only need to call ``commit()`` (which flushes) to finalize 
-            changes.
-
-        bind
-            An optional ``Engine`` or ``Connection`` to which this ``Session`` should be
-            bound. When specified, all SQL operations performed by this session will
-            execute via this connectable.
-
-        binds
-            An optional dictionary, which contains more granular "bind" information than
-            the ``bind`` parameter provides. This dictionary can map individual ``Table``
-            instances as well as ``Mapper`` instances to individual ``Engine`` or
-            ``Connection`` objects. Operations which proceed relative to a particular
-            ``Mapper`` will consult this dictionary for the direct ``Mapper`` instance as
-            well as the mapper's ``mapped_table`` attribute in order to locate an
-            connectable to use. The full resolution is described in the ``get_bind()``
-            method of ``Session``. Usage looks like::
-
-                sess = Session(binds={
-                    SomeMappedClass : create_engine('postgres://engine1'),
-                    somemapper : create_engine('postgres://engine2'),
-                    some_table : create_engine('postgres://engine3'),
-                })
-
-            Also see the ``bind_mapper()`` and ``bind_table()`` methods.
-
-        echo_uow
-            When ``True``, configure Python logging to dump all unit-of-work
-            transactions. This is the equivalent of
-            ``logging.getLogger('sqlalchemy.orm.unitofwork').setLevel(logging.DEBUG)``.
-
-        extension
-            An optional [sqlalchemy.orm.session#SessionExtension] instance, which will receive
-            pre- and post- commit and flush events, as well as a post-rollback event.  User-
-            defined code may be placed within these hooks using a user-defined subclass
-            of ``SessionExtension``.
-
-        transactional
-            Set up this ``Session`` to automatically begin transactions. Setting this
-            flag to ``True`` is the rough equivalent of calling ``begin()`` after each
-            ``commit()`` operation, after each ``rollback()``, and after each
-            ``close()``. Basically, this has the effect that all session operations are
-            performed within the context of a transaction. Note that the ``begin()``
-            operation does not immediately utilize any connection resources; only when
-            connection resources are first required do they get allocated into a
-            transactional context.
-
-        twophase
-            When ``True``, all transactions will be started using
-            [sqlalchemy.engine_TwoPhaseTransaction]. During a ``commit()``, after
-            ``flush()`` has been issued for all attached databases, the ``prepare()``
-            method on each database's ``TwoPhaseTransaction`` will be called. This allows
-            each database to roll back the entire transaction, before each transaction is
-            committed.
-
-        weak_identity_map
-            When set to the default value of ``False``, a weak-referencing map is used;
-            instances which are not externally referenced will be garbage collected
-            immediately. For dereferenced instances which have pending changes present,
-            the attribute management system will create a temporary strong-reference to
-            the object which lasts until the changes are flushed to the database, at which
-            point it's again dereferenced. Alternatively, when using the value ``True``,
-            the identity map uses a regular Python dictionary to store instances. The
-            session will maintain all instances present until they are removed using
-            expunge(), clear(), or purge().
+        Arguments to ``Session`` are described using the [sqlalchemy.orm#sessionmaker()] function.
+        
         """
         self.echo_uow = echo_uow
         if weak_identity_map:
