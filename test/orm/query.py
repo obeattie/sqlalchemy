@@ -997,6 +997,12 @@ class InstancesTest(QueryTest):
         sess.clear()
 
         def go():
+            l = q.options(contains_eager(User.addresses)).instances(selectquery.execute())
+            assert fixtures.user_address_result[0:3] == l
+        self.assert_sql_count(testing.db, go, 1)
+        sess.clear()
+
+        def go():
             l = q.options(contains_eager('addresses')).from_statement(selectquery).all()
             assert fixtures.user_address_result[0:3] == l
         self.assert_sql_count(testing.db, go, 1)
@@ -1006,40 +1012,34 @@ class InstancesTest(QueryTest):
         selectquery = users.outerjoin(adalias).select(use_labels=True, order_by=[users.c.id, adalias.c.id])
         sess = create_session()
         q = sess.query(User)
-
+        
+        # string alias name
         def go():
-            # test using a string alias name
             l = q.options(contains_eager('addresses', alias="adalias")).instances(selectquery.execute())
             assert fixtures.user_address_result == l
         self.assert_sql_count(testing.db, go, 1)
         sess.clear()
 
+        # expression.Alias object
         def go():
-            # test using the Alias object itself
             l = q.options(contains_eager('addresses', alias=adalias)).instances(selectquery.execute())
             assert fixtures.user_address_result == l
         self.assert_sql_count(testing.db, go, 1)
 
         sess.clear()
 
-        def decorate(row):
-            d = {}
-            for c in addresses.c:
-                d[c] = row[adalias.corresponding_column(c)]
-            return d
-
-        if False:
-            # custom decorate functions no longer supported
-            def go():
-                # test using a custom 'decorate' function
-                l = q.options(contains_eager('addresses', decorator=decorate)).instances(selectquery.execute())
-                assert fixtures.user_address_result == l
-            self.assert_sql_count(testing.db, go, 1)
-            sess.clear()
+        # Aliased object
+        adalias = aliased(Address)
+        def go():
+            l = q.options(contains_eager('addresses', alias=adalias)).outerjoin((adalias, User.addresses)).order_by(User.id, adalias.id)
+            assert fixtures.user_address_result == l.all()
+        self.assert_sql_count(testing.db, go, 1)
+        sess.clear()
+        
 
         oalias = orders.alias('o1')
         ialias = items.alias('i1')
-        query = users.outerjoin(oalias).outerjoin(order_items).outerjoin(ialias).select(use_labels=True).order_by(users.c.id).order_by(oalias.c.id).order_by(ialias.c.id)
+        query = users.outerjoin(oalias).outerjoin(order_items).outerjoin(ialias).select(use_labels=True).order_by(users.c.id, oalias.c.id, ialias.c.id)
         q = create_session().query(User)
         # test using string alias with more than one level deep
         def go():
@@ -1055,6 +1055,17 @@ class InstancesTest(QueryTest):
             assert fixtures.user_order_result == l
         self.assert_sql_count(testing.db, go, 1)
         sess.clear()
+
+        # test using Aliased with more than one level deep
+        oalias = aliased(Order)
+        ialias = aliased(Item)
+        def go():
+            l = q.options(contains_eager(User.orders, alias=oalias), contains_eager(User.orders, Order.items, alias=ialias)).\
+                outerjoin((oalias, User.orders), (ialias, Order.items)).order_by(User.id, oalias.id, ialias.id)
+            assert fixtures.user_order_result == l.all()
+        self.assert_sql_count(testing.db, go, 1)
+        sess.clear()
+
 
 class MixedEntitiesTest(QueryTest):
 
@@ -1490,13 +1501,13 @@ class SelectFromTest(QueryTest):
         sess = create_session()
         
         # TODO: remove
-        sess.query(User).select_from(sel).options(eagerload_all('orders.items.keywords')).join(['orders', 'items', 'keywords'], aliased=True).filter(Keyword.name.in_(['red', 'big', 'round'])).all()
+        sess.query(User).select_from(sel).options(eagerload_all('orders.items.keywords')).join('orders', 'items', 'keywords', aliased=True).filter(Keyword.name.in_(['red', 'big', 'round'])).all()
 
-        self.assertEquals(sess.query(User).select_from(sel).join(['orders', 'items', 'keywords']).filter(Keyword.name.in_(['red', 'big', 'round'])).all(), [
+        self.assertEquals(sess.query(User).select_from(sel).join('orders', 'items', 'keywords').filter(Keyword.name.in_(['red', 'big', 'round'])).all(), [
             User(name=u'jack',id=7)
         ])
 
-        self.assertEquals(sess.query(User).select_from(sel).join(['orders', 'items', 'keywords'], aliased=True).filter(Keyword.name.in_(['red', 'big', 'round'])).all(), [
+        self.assertEquals(sess.query(User).select_from(sel).join('orders', 'items', 'keywords', aliased=True).filter(Keyword.name.in_(['red', 'big', 'round'])).all(), [
             User(name=u'jack',id=7)
         ])
 

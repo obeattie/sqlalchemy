@@ -705,16 +705,21 @@ class EagerLazyOption(StrategizedOption):
 class LoadEagerFromAliasOption(PropertyOption):
     def __init__(self, key, alias=None):
         super(LoadEagerFromAliasOption, self).__init__(key)
+        if alias:
+            if not isinstance(alias, basestring):
+                m, alias, is_aliased_class = mapperutil._entity_info(alias)
         self.alias = alias
 
     def process_query_property(self, query, paths):
         if self.alias:
-            (mapper, propname) = paths[-1][-2:]
-
-            prop = mapper.get_property(propname, resolve_synonyms=True)
             if isinstance(self.alias, basestring):
-                self.alias = prop.target.alias(self.alias)
+                (mapper, propname) = paths[-1][-2:]
 
+                prop = mapper.get_property(propname, resolve_synonyms=True)
+                self.alias = prop.target.alias(self.alias)
+            if not isinstance(self.alias, expression.Alias):
+                import pdb
+                pdb.set_trace()
             query._attributes[("eager_row_processor", paths[-1])] = sql_util.ColumnAdapter(self.alias)
         else:
             query._attributes[("eager_row_processor", paths[-1])] = None

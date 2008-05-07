@@ -897,7 +897,7 @@ class OptionsTest(MapperSuperTest):
 
         self.assertRaisesMessage(sa_exc.ArgumentError,
             r"Can't find entity Mapper\|Order\|orders in Query.  Current list: \['Mapper\|User\|users'\]",
-            sess.query(User).options, eagerload('items', Order)
+            sess.query(User).options, eagerload(Order.items)
         )
 
         # eagerload "keywords" on items.  it will lazy load "orders", then lazy load

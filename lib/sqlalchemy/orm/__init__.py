@@ -722,15 +722,16 @@ def extension(ext):
 
     return ExtensionOption(ext)
 
-def eagerload(name, mapper=None):
+def eagerload(*keys):
     """Return a ``MapperOption`` that will convert the property of the given name into an eager load.
 
     Used with ``query.options()``.
     """
 
-    return strategies.EagerLazyOption(name, lazy=False, mapper=mapper)
+    return strategies.EagerLazyOption(keys, lazy=False)
+eagerload = sa_util.array_as_starargs_fn_decorator(eagerload)
 
-def eagerload_all(name, mapper=None):
+def eagerload_all(*keys):
     """Return a ``MapperOption`` that will convert all properties along the given dot-separated path into an eager load.
 
     For example, this::
@@ -743,25 +744,27 @@ def eagerload_all(name, mapper=None):
     Used with ``query.options()``.
     """
 
-    return strategies.EagerLazyOption(name, lazy=False, chained=True, mapper=mapper)
+    return strategies.EagerLazyOption(keys, lazy=False, chained=True)
+eagerload_all = sa_util.array_as_starargs_fn_decorator(eagerload_all)
 
-def lazyload(name, mapper=None):
+def lazyload(*keys):
     """Return a ``MapperOption`` that will convert the property of the
     given name into a lazy load.
 
     Used with ``query.options()``.
     """
 
-    return strategies.EagerLazyOption(name, lazy=True, mapper=mapper)
+    return strategies.EagerLazyOption(keys, lazy=True)
+lazyload = sa_util.array_as_starargs_fn_decorator(lazyload)
 
-def noload(name):
+def noload(*keys):
     """Return a ``MapperOption`` that will convert the property of the
     given name into a non-load.
 
     Used with ``query.options()``.
     """
 
-    return strategies.EagerLazyOption(name, lazy=None)
+    return strategies.EagerLazyOption(keys, lazy=None)
 
 def contains_alias(alias):
     """Return a ``MapperOption`` that will indicate to the query that
@@ -773,7 +776,7 @@ def contains_alias(alias):
 
     return AliasOption(alias)
 
-def contains_eager(key, alias=None):
+def contains_eager(*keys, **kwargs):
     """Return a ``MapperOption`` that will indicate to the query that
     the given attribute will be eagerly loaded.
 
@@ -785,24 +788,30 @@ def contains_eager(key, alias=None):
     object, which represents the aliased columns in the query.  This
     argument is optional.
     """
+    alias = kwargs.pop('alias', None)
+    if kwargs:
+        raise exceptions.ArgumentError("Invalid kwargs for contains_eager: %r" % kwargs.keys())
+        
+    return (strategies.EagerLazyOption(keys, lazy=False), strategies.LoadEagerFromAliasOption(keys, alias=alias))
+contains_eager = sa_util.array_as_starargs_fn_decorator(contains_eager)
 
-    return (strategies.EagerLazyOption(key, lazy=False), strategies.LoadEagerFromAliasOption(key, alias=alias))
-
-def defer(name):
+def defer(*keys):
     """Return a ``MapperOption`` that will convert the column property
     of the given name into a deferred load.
 
     Used with ``query.options()``"""
-    return strategies.DeferredOption(name, defer=True)
+    return strategies.DeferredOption(keys, defer=True)
+defer = sa_util.array_as_starargs_fn_decorator(defer)
 
-def undefer(name):
+def undefer(*keys):
     """Return a ``MapperOption`` that will convert the column property
     of the given name into a non-deferred (regular column) load.
 
     Used with ``query.options()``.
     """
 
-    return strategies.DeferredOption(name, defer=False)
+    return strategies.DeferredOption(keys, defer=False)
+undefer = sa_util.array_as_starargs_fn_decorator(undefer)
 
 def undefer_group(name):
     """Return a ``MapperOption`` that will convert the given

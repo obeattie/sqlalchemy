@@ -646,45 +646,45 @@ class PropertyOption(MapperOption):
             mapper = entity.mapper
             path_element = entity.path_entity
             
-        if isinstance(self.key, basestring):
-            tokens = self.key.split('.')
-        else:
-            tokens = util.to_list(self.key)
-            
-        for token in tokens:
-            if isinstance(token, basestring):
-                if not entity:
-                    entity = query._entity_zero()
-                    path_element = entity.path_entity
-                    mapper = entity.mapper
-                prop = mapper.get_property(token, resolve_synonyms=True, raiseerr=raiseerr)
-                key = token
-            elif isinstance(token, PropComparator):
-                prop = token.property
-                if not entity:
-                    entity = self.__find_entity(query, token.parententity, raiseerr)
+        for key in util.to_list(self.key):
+            if isinstance(key, basestring):
+                tokens = key.split('.')
+            else:
+                tokens = [key]
+            for token in tokens:
+                if isinstance(token, basestring):
                     if not entity:
-                        return []
-                    path_element = entity.path_entity
-                key = prop.key
-            else:
-                raise sa_exc.ArgumentError("mapper option expects string key or list of attributes")
+                        entity = query._entity_zero()
+                        path_element = entity.path_entity
+                        mapper = entity.mapper
+                    prop = mapper.get_property(token, resolve_synonyms=True, raiseerr=raiseerr)
+                    key = token
+                elif isinstance(token, PropComparator):
+                    prop = token.property
+                    if not entity:
+                        entity = self.__find_entity(query, token.parententity, raiseerr)
+                        if not entity:
+                            return []
+                        path_element = entity.path_entity
+                    key = prop.key
+                else:
+                    raise sa_exc.ArgumentError("mapper option expects string key or list of attributes")
             
-            if current_path and key == current_path[1]:
-                current_path = current_path[2:]
-                continue
+                if current_path and key == current_path[1]:
+                    current_path = current_path[2:]
+                    continue
                 
-            if prop is None:
-                return []
+                if prop is None:
+                    return []
 
-            path = build_path(path_element, prop.key, path)
-            l.append(path)
-            if getattr(token, '_of_type', None):
-                path_element = mapper = token._of_type
-            else:
-                path_element = mapper = getattr(prop, 'mapper', None)
-            if path_element:
-                path_element = path_element.base_mapper
+                path = build_path(path_element, prop.key, path)
+                l.append(path)
+                if getattr(token, '_of_type', None):
+                    path_element = mapper = token._of_type
+                else:
+                    path_element = mapper = getattr(prop, 'mapper', None)
+                if path_element:
+                    path_element = path_element.base_mapper
             
         return l
 

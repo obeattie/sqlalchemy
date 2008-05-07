@@ -217,6 +217,20 @@ def array_as_starargs_decorator(fn):
     starargs_as_list.__doc__ = fn.__doc__
     return function_named(starargs_as_list, fn.__name__)
 
+def array_as_starargs_fn_decorator(fn):
+    """Interpret a single positional array argument as
+    *args for the decorated function.
+
+    """
+
+    def starargs_as_list(*args, **kwargs):
+        if isinstance(args, basestring) or (len(args) == 1 and not isinstance(args[0], tuple)):
+            return fn(*to_list(args[0], []), **kwargs)
+        else:
+            return fn(*args, **kwargs)
+    starargs_as_list.__doc__ = fn.__doc__
+    return function_named(starargs_as_list, fn.__name__)
+
 def to_set(x):
     if x is None:
         return Set()
