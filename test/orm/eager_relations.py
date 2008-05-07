@@ -1023,7 +1023,7 @@ class MixedEntitiesTest(FixtureTest, AssertsCompiledSQL):
         
         # improper setup: oalias in the columns clause but join to usual orders alias.  
         # this should create two FROM clauses even though the query has a from_clause set up via the join
-        self.assert_compile(sess.query(User, oalias).join(User.orders).options(eagerload(oalias.items)).statement, 
+        self.assert_compile(sess.query(User, oalias).join(User.orders).options(eagerload(oalias.items)).with_labels().statement, 
         "SELECT users.id AS users_id, users.name AS users_name, orders_1.id AS orders_1_id, "\
         "orders_1.user_id AS orders_1_user_id, orders_1.address_id AS orders_1_address_id, "\
         "orders_1.description AS orders_1_description, orders_1.isopen AS orders_1_isopen, items_1.id AS items_1_id, "\

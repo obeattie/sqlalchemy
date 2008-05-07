@@ -11,7 +11,7 @@ import weakref
 import sqlalchemy.exceptions as sa_exc
 import sqlalchemy.orm.attributes
 from sqlalchemy import util, sql, engine
-from sqlalchemy.sql import util as sql_util
+from sqlalchemy.sql import util as sql_util, expression
 from sqlalchemy.orm import exc, unitofwork, query, attributes, \
      util as mapperutil, SessionExtension
 from sqlalchemy.orm.util import object_mapper as _object_mapper
@@ -664,7 +664,8 @@ class Session(object):
         then the ``ResultProxy`` 's ``close()`` method will release the
         resources of the underlying ``Connection``.
         """
-
+        clause = expression._literal_as_text(clause)
+        
         engine = self.get_bind(mapper, clause=clause, **kwargs)
 
         return self.__connection(engine, close_with_result=True).execute(clause, params or {})

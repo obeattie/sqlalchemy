@@ -216,8 +216,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
         assert testing.db.connect().execute("select count(1) from users").scalar() == 1
         sess.commit()
 
-    # TODO: not doing rollback of attributes right now.
-    def dont_test_autoflush_rollback(self):
+    def test_autoflush_rollback(self):
         tables.data()
         mapper(Address, addresses)
         mapper(User, users, properties={
@@ -237,7 +236,14 @@ class SessionTest(TestBase, AssertsExecutionResults):
         assert u.user_name == 'ed'
         assert len(u.addresses) == 3
         assert newad not in u.addresses
-
+    
+    def test_textual_execute(self):
+        """test that Session.execute() converts to text()"""
+        
+        tables.data()
+        sess = create_session(bind=testing.db)
+        # use :bindparam style
+        self.assertEquals(sess.execute("select * from users where user_id=:id", {'id':7}).fetchall(), [(7, u'jack')])
 
     @engines.close_open_connections
     def test_subtransaction_on_external(self):
