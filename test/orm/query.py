@@ -687,6 +687,11 @@ class JoinTest(QueryTest):
             sess.query(User).join([('orders', orderalias), ('items', itemalias)]).filter(orderalias.user_id==9).filter(itemalias.description=='item 4').all(),
             []
         )
+
+    def test_orderby_arg_bug(self):
+        sess = create_session()
+        # no arg error
+        result = sess.query(User).join('orders', aliased=True).order_by([Order.id]).reset_joinpoint().order_by(users.c.id).all()
     
     def test_no_onclause(self):
         sess = create_session()
