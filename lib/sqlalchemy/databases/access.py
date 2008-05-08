@@ -378,7 +378,7 @@ class AccessCompiler(compiler.DefaultCompiler):
     # Strip schema
     def visit_table(self, table, asfrom=False, **kwargs):
         if asfrom:
-            return self.preparer.quote(table, table.name)
+            return self.preparer.quote(table.name, table.quote)
         else:
             return ""
 

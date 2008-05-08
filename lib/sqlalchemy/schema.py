@@ -42,7 +42,7 @@ class SchemaItem(object):
     """Base class for items that define a database schema."""
 
     __metaclass__ = expression._FigureVisitName
-    quote = False
+    quote = None
     
     def _init_items(self, *args):
         """Initialize the list of child items for this SchemaItem."""
@@ -183,17 +183,19 @@ class Table(SchemaItem, expression.TableClause):
             Deprecated; this is an oracle-only argument - "schema" should
             be used in its place.
 
-          quote
-            Defaults to False: indicates that the Table identifier must be
-            properly escaped and quoted before being sent to the
-            database. This flag overrides all other quoting behavior.
+        quote
+          Force quoting of the identifier on or off, based on `True` or
+          `False`.  Defaults to `None`.  This flag is rarely needed, 
+          as quoting is normally applied
+          automatically for known reserved words, as well as for
+          "case sensitive" identifiers.  An identifier is "case sensitive"
+          if it contains non-lowercase letters, otherwise it's 
+          considered to be "case insensitive".
 
           quote_schema
-            Defaults to False: indicates that the Namespace identifier must be
-            properly escaped and quoted before being sent to the
-            database. This flag overrides all other quoting behavior.
+            same as 'quote' but applies to the schema identifier.
+            
         """
-
         super(Table, self).__init__(name)
         self.metadata = metadata
         self.schema = kwargs.pop('schema', kwargs.pop('owner', None))
@@ -259,8 +261,8 @@ class Table(SchemaItem, expression.TableClause):
             ['autoload', 'autoload_with', 'schema', 'owner']))
 
     def __extra_kwargs(self, **kwargs):
-        self.quote = kwargs.pop('quote', False)
-        self.quote_schema = kwargs.pop('quote_schema', False)
+        self.quote = kwargs.pop('quote', None)
+        self.quote_schema = kwargs.pop('quote_schema', None)
         if kwargs.get('info'):
             self._info = kwargs.pop('info')
 
@@ -489,10 +491,13 @@ class Column(SchemaItem, expression._ColumnClause):
             or subtype of Integer.
 
           quote
-            Defaults to False: indicates that the Column identifier must be
-            properly escaped and quoted before being sent to the database.
-            This flag should normally not be required as dialects can
-            auto-detect conditions where quoting is required.
+            Force quoting of the identifier on or off, based on `True` or
+            `False`.  Defaults to `None`.  This flag is rarely needed, 
+            as quoting is normally applied
+            automatically for known reserved words, as well as for
+            "case sensitive" identifiers.  An identifier is "case sensitive"
+            if it contains non-lowercase letters, otherwise it's 
+            considered to be "case insensitive".
         """
 
         name = kwargs.pop('name', None)
@@ -522,7 +527,7 @@ class Column(SchemaItem, expression._ColumnClause):
         self.default = kwargs.pop('default', None)
         self.index = kwargs.pop('index', None)
         self.unique = kwargs.pop('unique', None)
-        self.quote = kwargs.pop('quote', False)
+        self.quote = kwargs.pop('quote', None)
         self.onupdate = kwargs.pop('onupdate', None)
         self.autoincrement = kwargs.pop('autoincrement', True)
         self.constraints = util.Set()
@@ -929,7 +934,7 @@ class Sequence(DefaultGenerator):
     """Represents a named database sequence."""
 
     def __init__(self, name, start=None, increment=None, schema=None,
-                 optional=False, quote=False, **kwargs):
+                 optional=False, quote=None, **kwargs):
         super(Sequence, self).__init__(**kwargs)
         self.name = name
         self.start = start

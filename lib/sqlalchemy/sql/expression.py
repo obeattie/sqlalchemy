@@ -1486,7 +1486,7 @@ class ColumnElement(ClauseElement, _CompareMixin):
 
     primary_key = False
     foreign_keys = []
-    quote = False
+    quote = None
     
     def base_columns(self):
         if not hasattr(self, '_base_columns'):
@@ -1658,7 +1658,7 @@ class FromClause(Selectable):
     __visit_name__ = 'fromclause'
     named_with_column = False
     _hide_froms = []
-    quote = False
+    quote = None
 
     def _get_from_objects(self, **modifiers):
         return []
@@ -3450,7 +3450,7 @@ class Delete(_UpdateBase):
 
 class _IdentifiedClause(ClauseElement):
     supports_execution = True
-    quote = False
+    quote = None
     
     def __init__(self, ident):
         self.ident = ident

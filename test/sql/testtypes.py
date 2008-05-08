@@ -652,8 +652,11 @@ class DateTest(TestBase, AssertsExecutionResults):
 class StringTest(TestBase, AssertsExecutionResults):
     
     
-    @testing.fails_on_everything_except('sqlite')
-    def test_nolen_string_deprecated(self):
+    def test_nolength_string(self):
+        # this tests what happens with String DDL with no length.
+        # seems like we need to decide amongst "VARCHAR" (sqlite, postgres), "TEXT" (mysql)
+        # i.e. theres some inconsisency here.
+        
         metadata = MetaData(testing.db)
         foo =Table('foo', metadata,
             Column('one', String))
