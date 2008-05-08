@@ -957,7 +957,7 @@ class SynonymTest(QueryTest):
             o = sess.query(Order).with_parent(u1, property=orderprop).all()
             assert [Order(description="order 1"), Order(description="order 3"), Order(description="order 5")] == o
 
-class InstancesTest(QueryTest):
+class InstancesTest(QueryTest, AssertsCompiledSQL):
 
     def test_from_alias(self):
 
@@ -984,9 +984,28 @@ class InstancesTest(QueryTest):
         self.assert_sql_count(testing.db, go, 1)
 
     def test_contains_eager(self):
+        sess = create_session()
+
+        # test that contains_eager suppresses the normal outer join rendering
+        q = sess.query(User).outerjoin(User.addresses).options(contains_eager(User.addresses))
+        self.assert_compile(q.with_labels().statement, "SELECT users.id AS users_id, users.name AS users_name, "\
+                "addresses.id AS addresses_id, addresses.user_id AS addresses_user_id, "\
+                "addresses.email_address AS addresses_email_address FROM users LEFT OUTER JOIN addresses "\
+                "ON users.id = addresses.user_id ORDER BY users.id", dialect=default.DefaultDialect())
+
+        def go():
+            assert fixtures.user_address_result == q.all()
+        self.assert_sql_count(testing.db, go, 1)
+        sess.clear()
+
+        adalias = addresses.alias()
+        q = sess.query(User).select_from(users.outerjoin(adalias)).options(contains_eager(User.addresses, alias=adalias))
+        def go():
+            assert fixtures.user_address_result == q.all()
+        self.assert_sql_count(testing.db, go, 1)
+        sess.clear()
 
         selectquery = users.outerjoin(addresses).select(users.c.id<10, use_labels=True, order_by=[users.c.id, addresses.c.id])
-        sess = create_session()
         q = sess.query(User)
 
         def go():
@@ -995,6 +1014,7 @@ class InstancesTest(QueryTest):
         self.assert_sql_count(testing.db, go, 1)
 
         sess.clear()
+
 
         def go():
             l = q.options(contains_eager(User.addresses)).instances(selectquery.execute())
