@@ -226,7 +226,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
         sess = create_session(autocommit=False, autoflush=True)
         u = sess.query(User).get(8)
         newad = Address()
-        newad.email_address == 'something new'
+        newad.email_address = 'something new'
         u.addresses.append(newad)
         u.user_name = 'some new name'
         assert u.user_name == 'some new name'
@@ -236,6 +236,9 @@ class SessionTest(TestBase, AssertsExecutionResults):
         assert u.user_name == 'ed'
         assert len(u.addresses) == 3
         assert newad not in u.addresses
+        
+        # pending objects dont get expired
+        assert newad.email_address == 'something new'
     
     def test_textual_execute(self):
         """test that Session.execute() converts to text()"""

@@ -324,7 +324,7 @@ class DDLTest(TestBase):
         ddl = DDL('%(schema)s-%(table)s-%(fullname)s')
 
         self.assertEquals(ddl._expand(sane_alone, bind), '-t-t')
-        self.assertEquals(ddl._expand(sane_schema, bind), '"s"-t-s.t')
+        self.assertEquals(ddl._expand(sane_schema, bind), 's-t-s.t')
         self.assertEquals(ddl._expand(insane_alone, bind), '-"t t"-"t t"')
         self.assertEquals(ddl._expand(insane_schema, bind),
                           '"s s"-"t t"-"s s"."t t"')
