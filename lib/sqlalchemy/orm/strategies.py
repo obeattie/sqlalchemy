@@ -455,7 +455,7 @@ class LoadLazyAttribute(object):
 
         session = sessionlib._state_session(state)
         if session is None:
-            raise sa_exc.UnboundExecutionError("Parent instance %s is not bound to a Session; lazy load operation of attribute '%s' cannot proceed" % (mapperutil.state_str, self.key))
+            raise sa_exc.UnboundExecutionError("Parent instance %s is not bound to a Session; lazy load operation of attribute '%s' cannot proceed" % (mapperutil.state_str(state), self.key))
 
         q = session.query(prop.mapper).autoflush(False)._adapt_all_clauses()
         
@@ -590,7 +590,10 @@ class EagerLoader(AbstractRelationLoader):
             onclause = self.parent_property
     
         context.eager_joins[entity_key] = eagerjoin = mapperutil.outerjoin(towrap, clauses.aliased_class, onclause)
-    
+        
+        # send a hint to the Query as to where it may "splice" this join
+        eagerjoin.stop_on = entity.selectable
+        
         if not self.parent_property.secondary and context.query._should_nest_selectable and not parentmapper:
             # for parentclause that is the non-eager end of the join,
             # ensure all the parent cols in the primaryjoin are actually in the

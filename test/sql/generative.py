@@ -574,6 +574,7 @@ class SpliceJoinsTest(TestBase, AssertsCompiledSQL):
 
     def test_splice(self):
         (t1, t2, t3, t4) = (table1, table2, table1.alias(), table2.alias())
+        
         j = t1.join(t2, t1.c.col1==t2.c.col1).join(t3, t2.c.col1==t3.c.col1).join(t4, t4.c.col1==t1.c.col1)
         
         s = select([t1]).where(t1.c.col2<5).alias()
@@ -583,6 +584,24 @@ class SpliceJoinsTest(TestBase, AssertsCompiledSQL):
             "table1.col3 AS col3 FROM table1 WHERE table1.col2 < :col2_1) AS anon_1 "\
             "JOIN table2 ON anon_1.col1 = table2.col1 JOIN table1 AS table1_1 ON table2.col1 = table1_1.col1 "\
             "JOIN table2 AS table2_1 ON table2_1.col1 = anon_1.col1")
+
+    def test_stop_on(self):
+        (t1, t2, t3) = (table1, table2, table3)
+        
+        j1= t1.join(t2, t1.c.col1==t2.c.col1)
+        j2 = j1.join(t3, t2.c.col1==t3.c.col1)
+        
+        s = select([t1]).select_from(j1).alias()
+        
+        self.assert_compile(sql_util.splice_joins(s, j2), 
+            "(SELECT table1.col1 AS col1, table1.col2 AS col2, table1.col3 AS col3 FROM table1 JOIN table2 "\
+            "ON table1.col1 = table2.col1) AS anon_1 JOIN table2 ON anon_1.col1 = table2.col1 JOIN table3 "\
+            "ON table2.col1 = table3.col1"
+        )
+
+        self.assert_compile(sql_util.splice_joins(s, j2, j1), 
+            "(SELECT table1.col1 AS col1, table1.col2 AS col2, table1.col3 AS col3 FROM table1 "\
+            "JOIN table2 ON table1.col1 = table2.col1) AS anon_1 JOIN table3 ON table2.col1 = table3.col1")
     
     def test_splice_2(self):
         t2a = table2.alias()

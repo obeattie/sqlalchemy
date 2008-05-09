@@ -10,6 +10,8 @@ from sqlalchemy.orm import *
 from sqlalchemy import exc as sa_exc
 from testlib import *
 from testlib import fixtures
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.engine import default
 
 class Company(fixtures.Base):
     pass
@@ -718,6 +720,59 @@ class M2MFilterTest(ORMTest):
         sess = create_session()
         self.assertEquals(sess.query(Organization).filter(Organization.engineers.of_type(Engineer).any(Engineer.name=='e1')).all(), [Organization(name='org1')])
         self.assertEquals(sess.query(Organization).filter(Organization.engineers.any(Engineer.name=='e1')).all(), [Organization(name='org1')])
+
+class SelfReferentialM2MTest(ORMTest, AssertsCompiledSQL):
+    def define_tables(self, metadata):
+        Base = declarative_base(metadata=metadata)
+
+        secondary_table = Table('secondary', Base.metadata,
+           Column('left_id', Integer, ForeignKey('parent.id'), nullable=False),
+           Column('right_id', Integer, ForeignKey('parent.id'), nullable=False))
+          
+        global Parent, Child1, Child2
+        class Parent(Base):
+           __tablename__ = 'parent'
+           id = Column(Integer, primary_key=True)
+           cls = Column(String(50))
+           __mapper_args__ = dict(polymorphic_on = cls )
+
+        class Child1(Parent):
+           __tablename__ = 'child1'
+           id = Column(Integer, ForeignKey('parent.id'), primary_key=True)
+           __mapper_args__ = dict(polymorphic_identity = 'child1')
+
+        class Child2(Parent):
+           __tablename__ = 'child2'
+           id = Column(Integer, ForeignKey('parent.id'), primary_key=True)
+           __mapper_args__ = dict(polymorphic_identity = 'child2')
+
+        Child1.left_child2 = relation(Child2, secondary = secondary_table,
+               primaryjoin = Parent.id == secondary_table.c.right_id,
+               secondaryjoin = Parent.id == secondary_table.c.left_id,
+               uselist = False,
+                               )
+
+    def test_eager_join(self):
+        session = create_session()
         
+        c1 = Child1()
+        c1.left_child2 = Child2()
+        session.add(c1)
+        session.flush()
+        
+        q = session.query(Child1).options(eagerload('left_child2'))
+
+        # test that the splicing of the join works here, doesnt break in the middle of "parent join child1"
+        self.assert_compile(q.limit(1).with_labels().statement, 
+        "SELECT anon_1.child1_id AS anon_1_child1_id, anon_1.parent_id AS anon_1_parent_id, "\
+        "anon_1.parent_cls AS anon_1_parent_cls, anon_2.child2_id AS anon_2_child2_id, anon_2.parent_id AS anon_2_parent_id, "\
+        "anon_2.parent_cls AS anon_2_parent_cls FROM (SELECT child1.id AS child1_id, parent.id AS parent_id, "\
+        "parent.cls AS parent_cls, parent.id AS parent_oid FROM parent JOIN child1 ON parent.id = child1.id ORDER BY parent.id  "\
+        "LIMIT 1) AS anon_1 LEFT OUTER JOIN secondary AS secondary_1 ON anon_1.parent_id = secondary_1.right_id LEFT OUTER JOIN "\
+        "(SELECT parent.id AS parent_id, parent.cls AS parent_cls, child2.id AS child2_id FROM parent JOIN child2 ON parent.id = child2.id) "\
+        "AS anon_2 ON anon_2.parent_id = secondary_1.left_id ORDER BY anon_1.child1_id"
+        , dialect=default.DefaultDialect())
+        assert q.first() is c1
+
 if __name__ == "__main__":
     testenv.main()

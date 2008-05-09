@@ -1274,8 +1274,10 @@ class Query(object):
             statement = sql.select([inner] + context.secondary_columns, for_update=for_update, use_labels=labels)
 
             from_clause = inner
-            for eager_join in context.eager_joins.values():
-                from_clause = sql_util.splice_joins(from_clause, eager_join)
+            for eager_join in eager_joins:
+                # EagerLoader places a 'stop_on' attribute on the join, 
+                # giving us a marker as to where the "splice point" of the join should be
+                from_clause = sql_util.splice_joins(from_clause, eager_join, eager_join.stop_on)
 
             statement.append_from(from_clause)
 

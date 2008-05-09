@@ -723,7 +723,7 @@ class Session(object):
             sess.close()
     close_all = classmethod(close_all)
 
-    def clear(self):
+    def expunge_all(self):
         """Remove all object instances from this ``Session``.
 
         This is equivalent to calling ``expunge()`` for all objects in
@@ -736,7 +736,11 @@ class Session(object):
         self.identity_map = self._identity_cls()
         self._new = {}
         self._deleted = {}
-
+    clear = expunge_all
+    
+    # TODO: deprecate
+    #clear = util.deprecated()(expunge_all)
+    
     # TODO: need much more test coverage for bind_mapper() and similar !
 
     def bind_mapper(self, mapper, bind, entity_name=None):

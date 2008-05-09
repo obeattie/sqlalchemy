@@ -165,7 +165,7 @@ class Annotated(object):
     def __cmp__(self, other):
         return cmp(hash(self.__element), hash(other))
 
-def splice_joins(left, right):
+def splice_joins(left, right, stop_on=None):
     if left is None:
         return right
         
@@ -175,7 +175,7 @@ def splice_joins(left, right):
     ret = None
     while stack:
         (right, prevright) = stack.pop()
-        if isinstance(right, expression.Join):
+        if isinstance(right, expression.Join) and right is not stop_on:
             right = right._clone()
             right._reset_exported()
             right.onclause = adapter.traverse(right.onclause)
