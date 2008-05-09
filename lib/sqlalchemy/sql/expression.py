@@ -1959,7 +1959,7 @@ class _TextClause(ClauseElement):
 
     def _get_from_objects(self, **modifiers):
         return []
-
+    
 class _Null(ColumnElement):
     """Represent the NULL keyword in a SQL statement.
 

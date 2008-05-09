@@ -800,7 +800,15 @@ class MSSQLDialect_pyodbc(MSSQLDialect):
         # This should obviously be set to 'No' if you query a cp1253 encoded 
         # database from a latin1 client... 
         if 'odbc_autotranslate' in keys: 
-            connectors.append("AutoTranslate=%s" % keys.pop("odbc_autotranslate")) 
+            connectors.append("AutoTranslate=%s" % keys.pop("odbc_autotranslate"))
+
+        # Allow specification of partial ODBC connect string
+        if 'odbc_options' in keys: 
+            odbc_options=keys.pop('odbc_options')
+            if odbc_options[0]=="'" and odbc_options[-1]=="'":
+                odbc_options=odbc_options[1:-1]
+            connectors.append(odbc_options)
+        
         return [[";".join (connectors)], {}]
 
     def is_disconnect(self, e):

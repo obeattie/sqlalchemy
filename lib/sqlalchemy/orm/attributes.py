@@ -1437,7 +1437,6 @@ def del_attribute(instance, key):
 def is_instrumented(instance, key):
     return manager_of_class(instance.__class__).is_instrumented(key, search=True)
 
-
 class InstrumentationRegistry(object):
     """Private instrumentation registration singleton."""
 

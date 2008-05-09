@@ -1619,7 +1619,6 @@ class RequirementsTest(ORMTest):
                     return self.value == other.value
                 return False
 
-
         mapper(H1, t1, properties={
             'h2s': relation(H2, backref='h1'),
             'h3s': relation(H3, secondary=t4, backref='h1s'),

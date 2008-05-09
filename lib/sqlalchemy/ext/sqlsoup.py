@@ -381,6 +381,11 @@ __all__ = ['PKNotFoundError', 'SqlSoup']
 #
 class Objectstore(ScopedSession):
     def __getattr__(self, key):
+        if key.startswith('__'):        # dont trip the registry for module-level sweeps of things
+                                        # like '__bases__'.  the session gets bound to the
+                                        # module which is interfered with by other unit tests.
+                                        # (removal of mapper.get_session() revealed the issue)
+            raise AttributeError()
         return getattr(self.registry(), key)
     def current(self):
         return self.registry()

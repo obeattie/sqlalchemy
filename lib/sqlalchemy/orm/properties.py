@@ -312,7 +312,7 @@ class PropertyLoader(StrategizedProperty):
             
         def __eq__(self, other):
             if other is None:
-                if self.prop.direction == ONETOMANY:
+                if self.prop.direction in [ONETOMANY, MANYTOMANY]:
                     return ~sql.exists([1], self.prop.primaryjoin)
                 else:
                     return self.prop._optimized_compare(None)
@@ -338,7 +338,7 @@ class PropertyLoader(StrategizedProperty):
                 to_selectable = target_mapper._with_polymorphic_selectable
             else:
                 to_selectable = None
-
+            
             pj, sj, source, dest, secondary, target_adapter = self.prop._create_joins(dest_polymorphic=True, dest_selectable=to_selectable)
 
             for k in kwargs:

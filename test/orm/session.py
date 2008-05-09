@@ -845,7 +845,7 @@ class SessionTest(TestBase, AssertsExecutionResults):
         log = []
         sess.commit()
         assert log == ['before_commit', 'after_commit']
-
+        
         log = []
         sess = create_session(autocommit=False, extension=MyExt(), bind=testing.db)
         conn = sess.connection()
@@ -934,6 +934,7 @@ class TLTransactionTest(TestBase):
         users.create(tlengine)
     def tearDown(self):
         tlengine.execute(users.delete())
+
     def tearDownAll(self):
         users.drop(tlengine)
         tlengine.dispose()

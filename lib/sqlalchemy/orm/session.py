@@ -819,7 +819,6 @@ class Session(object):
         """Return a new ``Query`` object corresponding to this ``Session``."""
         
         return self._query_cls(entities, self, **kwargs)
-
     def _autoflush(self):
         if self.autoflush and (self.transaction is None or self.transaction.autoflush):
             self.flush()

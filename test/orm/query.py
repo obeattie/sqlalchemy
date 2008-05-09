@@ -313,7 +313,8 @@ class RawSelectTest(QueryTest, AssertsCompiledSQL):
         self.assert_compile(sess.query(users, s.c.email).select_from(users.join(s, s.c.id==users.c.id)).with_labels().statement, 
                 "SELECT users.id AS users_id, users.name AS users_name, anon_1.email AS anon_1_email "
                 "FROM users JOIN (SELECT addresses.id AS id, addresses.email_address AS email FROM addresses "
-                "WHERE addresses.user_id = users.id) AS anon_1 ON anon_1.id = users.id"
+                "WHERE addresses.user_id = users.id) AS anon_1 ON anon_1.id = users.id",
+                dialect=default.DefaultDialect()
             )
 
         x = func.lala(users.c.id).label('foo')
@@ -452,6 +453,10 @@ class FilterTest(QueryTest):
         dingaling = sess.query(Dingaling).get(2)
         assert [Address(id=5)] == sess.query(Address).filter(Address.dingaling==dingaling).all()
 
+        # m2m
+        self.assertEquals(sess.query(Item).filter(Item.keywords==None).all(), [Item(id=4), Item(id=5)])
+        self.assertEquals(sess.query(Item).filter(Item.keywords!=None).all(), [Item(id=1),Item(id=2), Item(id=3)])
+        
     def test_filter_by(self):
         sess = create_session()
         user = sess.query(User).get(8)
@@ -718,6 +723,9 @@ class JoinTest(QueryTest):
             [User(name='jack')]
         )
 
+        # no arg error
+        result = sess.query(User).join('orders', aliased=True).order_by([Order.id]).reset_joinpoint().order_by(users.c.id).all()
+        
     def test_aliased_classes(self):
         sess = create_session()
 
@@ -823,7 +831,7 @@ class JoinTest(QueryTest):
 
             result = create_session().query(User).outerjoin(['orders', 'items'], aliased=aliased).filter_by(id=3).reset_joinpoint().outerjoin(['orders','address'], aliased=aliased).filter_by(id=1).all()
             assert [User(id=7, name='jack')] == result
-
+    
     def test_overlap_with_aliases(self):
         oalias = orders.alias('oalias')
 
@@ -1293,7 +1301,7 @@ class MixedEntitiesTest(QueryTest):
         sess.clear()
 
         for address_entity in (Address, aliased(Address)):
-            q = sess.query(User).add_entity(address_entity).outerjoin(('addresses', address_entity))
+            q = sess.query(User).add_entity(address_entity).outerjoin(('addresses', address_entity)).order_by(User.id, address_entity.id)
             self.assertEquals(q.all(), expected)
             sess.clear()
 
