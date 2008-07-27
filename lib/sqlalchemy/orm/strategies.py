@@ -196,9 +196,8 @@ class DeferredColumnLoader(DefaultColumnLoader):
         localparent = mapper._state_mapper(state)
 
         # adjust for the ColumnProperty associated with the instance
-        # not being our own ColumnProperty.  This can occur when entity_name
-        # mappers are used to map different versions of the same ColumnProperty
-        # to the class.
+        # not being our own ColumnProperty.  
+        # TODO: this may no longer be relevant without entity_name.
         prop = localparent.get_property(self.key)
         if prop is not self.parent_property:
             return prop._get_strategy(DeferredColumnLoader).setup_loader(state)
@@ -398,9 +397,8 @@ class LazyLoader(AbstractRelationLoader):
         localparent = mapper._state_mapper(state)
 
         # adjust for the PropertyLoader associated with the instance
-        # not being our own PropertyLoader.  This can occur when entity_name
-        # mappers are used to map different versions of the same PropertyLoader
-        # to the class.
+        # not being our own PropertyLoader.  
+        # TODO: this may no longer be relevant without entity_name
         prop = localparent.get_property(self.key)
         if prop is not self.parent_property:
             return prop._get_strategy(LazyLoader).setup_loader(state)
