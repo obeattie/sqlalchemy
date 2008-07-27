@@ -1179,7 +1179,6 @@ class Session(object):
                 merged = mapper.class_manager.new_instance()
                 merged_state = attributes.instance_state(merged)
                 merged_state.key = key
-                merged_state.mapped = True
                 self._update_impl(merged_state)
                 new_instance = True
             else:
@@ -1541,7 +1540,6 @@ def _state_for_unsaved_instance(instance, create=False):
     else:
         raise exc.UnmappedInstanceError(instance)
 
-    state.mapped = True
     return state
 
 def _state_for_unknown_persistence_instance(instance):
@@ -1549,7 +1547,7 @@ def _state_for_unknown_persistence_instance(instance):
         state = attributes.instance_state(instance)
     except exc.NO_STATE:
         raise exc.UnmappedInstanceError(instance)
-    state.mapped = True
+
     return state
 
 def object_session(instance):

@@ -1509,7 +1509,7 @@ class Mapper(object):
 
                 state = attributes.instance_state(instance)
                 state.key = identitykey
-                state.mapped = True
+
                 # manually adding instance to session.  for a complete add,
                 # session._finalize_loaded() must be called.
                 state.session_id = context.session.hash_key

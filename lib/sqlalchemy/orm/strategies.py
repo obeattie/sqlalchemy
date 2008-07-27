@@ -190,7 +190,7 @@ class DeferredColumnLoader(DefaultColumnLoader):
             self.parent_property._get_strategy(ColumnLoader).setup_query(context, entity, path, adapter, **kwargs)
     
     def class_level_loader(self, state, props=None):
-        if not mapperutil._state_has_mapper(state):
+        if not mapperutil._state_has_identity(state):
             return None
             
         localparent = mapper._state_mapper(state)
@@ -391,7 +391,7 @@ class LazyLoader(AbstractRelationLoader):
         return visitors.cloned_traverse(criterion, {}, {'binary':visit_binary})
         
     def class_level_loader(self, state, options=None, path=None):
-        if not mapperutil._state_has_mapper(state):
+        if not mapperutil._state_has_identity(state):
             return None
 
         localparent = mapper._state_mapper(state)

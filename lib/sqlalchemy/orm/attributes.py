@@ -22,7 +22,6 @@ PASSIVE_NORESULT = util.symbol('PASSIVE_NORESULT')
 ATTR_WAS_SET = util.symbol('ATTR_WAS_SET')
 NO_VALUE = util.symbol('NO_VALUE')
 NEVER_SET = util.symbol('NEVER_SET')
-#NO_ENTITY_NAME = util.symbol('NO_ENTITY_NAME')
 
 INSTRUMENTATION_MANAGER = '__sa_instrumentation_manager__'
 """Attribute, elects custom instrumentation when present on a mapped class.
@@ -741,7 +740,6 @@ class InstanceState(object):
     key = None
     runid = None
     expired_attributes = EMPTY_SET
-    mapped = False
     
     def __init__(self, obj, manager):
         self.class_ = obj.__class__
@@ -807,6 +805,7 @@ class InstanceState(object):
         impl = self.get_impl(key)
         x = impl.get(self, passive=passive)
         if x is PASSIVE_NORESULT:
+            
             return None
         elif hasattr(impl, 'get_collection'):
             return impl.get_collection(self, x, passive=passive)
@@ -822,7 +821,6 @@ class InstanceState(object):
 
     def __getstate__(self):
         return {'key': self.key,
-                'mapped': self.mapped,
                 'committed_state': self.committed_state,
                 'pending': self.pending,
                 'parents': self.parents,
@@ -837,7 +835,6 @@ class InstanceState(object):
         self.parents = state['parents']
         self.key = state['key']
         self.session_id = None
-        self.mapped = state['mapped']
         self.pending = state['pending']
         self.modified = state['modified']
         self.obj = weakref.ref(state['instance'])

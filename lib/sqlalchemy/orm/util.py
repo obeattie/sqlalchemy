@@ -492,13 +492,6 @@ def has_identity(object):
 def _state_has_identity(state):
     return bool(state.key)
 
-def has_mapper(object):
-    state = attributes.instance_state(object)
-    return _state_has_mapper(state)
-
-def _state_has_mapper(state):
-    return state.mapped
-
 def _is_mapped_class(cls):
     from sqlalchemy.orm import mapperlib as mapper
     if isinstance(cls, (AliasedClass, mapper.Mapper)):
