@@ -1,0 +1,49 @@
+SQLAlchemy
+++++++++++
+
+The Python SQL Toolkit and Object Relational Mapper
+
+Requirements
+------------
+
+SQLAlchemy requires Python 2.3 or higher.  One or more DB-API implementations
+are also required for database access.  See docs/intro.html for more
+information on supported DB-API implementations.
+
+Installing
+----------
+
+To install::
+
+  python setup.py install
+
+To use without installation, include the ``lib`` directory in your Python
+path.
+
+Package Contents
+----------------
+
+  doc/
+     HTML documentation, including tutorials and API reference.
+
+  examples/
+     Fully commented and executable implementations for a variety of tasks.
+
+  lib/
+     SQLAlchemy.
+
+  test/
+     Unit tests for SQLAlchemy.  See ``README.unittests`` for more
+     information.
+
+Help
+----
+
+Mailing lists, wiki, and more are available on-line at
+http://www.sqlalchemy.org.
+
+License
+-------
+
+SQLAlchemy is distributed under the `MIT license
+<http://www.opensource.org/licenses/mit-license.php>`_.
