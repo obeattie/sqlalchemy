@@ -311,19 +311,6 @@ def _orm_annotate(element, exclude=None):
     
     """
     return sql_util._deep_annotate(element, {'_orm_adapt':True}, exclude)
-    def clone(elem):
-        # check if element is present in the exclude list.
-        # take into account proxying relationships.
-        if exclude and elem.proxy_set.intersection(exclude):
-            elem = elem._clone()
-        elif '_orm_adapt' not in elem._annotations:
-            elem = elem._annotate()
-        elem._copy_internals(clone=clone)
-        return elem
-    
-    if element is not None:
-        element = clone(element)
-    return element
 
 _orm_deannotate = sql_util._deep_deannotate
         
