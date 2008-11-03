@@ -159,12 +159,57 @@ class Annotated(object):
         clone.__dict__ = self.__dict__.copy()
         clone._annotations = _values
         return clone
+    
+    def _deannotate(self):
+        return self.__element
+        
+    def _clone(self):
+        clone = self.__element._clone()
+        if clone is self.__element:
+            # detect immutable, don't change anything
+            return self
+        else:
+            clone.__dict__.update(self.__dict__)
+            return Annotated(clone, self._annotations)
         
     def __hash__(self):
         return hash(self.__element)
 
     def __cmp__(self, other):
         return cmp(hash(self.__element), hash(other))
+
+def _deep_annotate(element, annotations, exclude=None):
+    """Deep copy the given ClauseElement, annotating each element with the given annotations dictionary.
+
+    Elements within the exclude collection will be cloned but not annotated.
+
+    """
+    def clone(elem):
+        # check if element is present in the exclude list.
+        # take into account proxying relationships.
+        if exclude and elem.proxy_set.intersection(exclude):
+            elem = elem._clone()
+        elif annotations != elem._annotations:
+            elem = elem._annotate(annotations.copy())
+        elem._copy_internals(clone=clone)
+        return elem
+
+    if element is not None:
+        element = clone(element)
+    return element
+
+def _deep_deannotate(element):
+    """Deep copy the given element, removing all annotations."""
+
+    def clone(elem):
+        elem = elem._deannotate()
+        elem._copy_internals(clone=clone)
+        return elem
+
+    if element is not None:
+        element = clone(element)
+    return element
+
 
 def splice_joins(left, right, stop_on=None):
     if left is None:

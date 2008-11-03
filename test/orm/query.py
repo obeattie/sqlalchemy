@@ -1147,12 +1147,12 @@ class JoinTest(QueryTest):
         assert q.count() == 1
         assert [User(id=7)] == q.all()
 
-
         # test the control version - same joins but not aliased.  rows are not returned because order 3 does not have item 1
         q = sess.query(User).join('orders').filter(Order.description=="order 3").join(['orders', 'items']).filter(Item.description=="item 1")
         assert [] == q.all()
         assert q.count() == 0
 
+        # the left half of the join condition of the any() is aliased.
         q = sess.query(User).join('orders', aliased=True).filter(Order.items.any(Item.description=='item 4'))
         assert [User(id=7)] == q.all()
         

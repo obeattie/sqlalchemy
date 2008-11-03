@@ -18,7 +18,7 @@ from sqlalchemy.sql import operators, expression
 from sqlalchemy.orm import (
     attributes, dependency, mapper, object_mapper, strategies,
     )
-from sqlalchemy.orm.util import CascadeOptions, _class_to_mapper, _orm_annotate
+from sqlalchemy.orm.util import CascadeOptions, _class_to_mapper, _orm_annotate, _orm_deannotate
 from sqlalchemy.orm.interfaces import (
     MANYTOMANY, MANYTOONE, MapperProperty, ONETOMANY, PropComparator,
     StrategizedProperty,
@@ -360,8 +360,6 @@ class PropertyLoader(StrategizedProperty):
             elif self.prop.uselist:
                 raise sa_exc.InvalidRequestError("Can't compare a collection to an object or collection; use contains() to test for membership.")
             else:
-                import pdb
-                pdb.set_trace()
                 return self.prop._optimized_compare(other, adapt_source=self.adapter)
 
         def _criterion_exists(self, criterion=None, **kwargs):
@@ -386,13 +384,15 @@ class PropertyLoader(StrategizedProperty):
                     criterion = crit
                 else:
                     criterion = criterion & crit
-
-            # why are we annotating ????
+            
+            # annotate the *local* side of the join condition, in the case of pj + sj this
+            # is the full primaryjoin, in the case of just pj its the local side of
+            # the primaryjoin.  
             if sj:
                 j = _orm_annotate(pj) & sj
             else:
                 j = _orm_annotate(pj, exclude=self.prop.remote_side)
-
+            
             if criterion and target_adapter:
                 # limit this adapter to annotated only?
                 criterion = target_adapter.traverse(criterion)
@@ -582,6 +582,14 @@ class PropertyLoader(StrategizedProperty):
         for attr in ('order_by', 'primaryjoin', 'secondaryjoin', 'secondary', '_foreign_keys', 'remote_side'):
             if callable(getattr(self, attr)):
                 setattr(self, attr, getattr(self, attr)())
+
+        # in the case that InstrumentedAttributes were used to construct
+        # primaryjoin or secondaryjoin, remove the "_orm_adapt" annotation so these
+        # interact with Query in the same way as the original Table-bound Column objects
+        for attr in ('primaryjoin', 'secondaryjoin'):
+            val = getattr(self, attr)
+            if val:
+                setattr(self, attr, _orm_deannotate(val))
         
         if self.order_by:
             self.order_by = [expression._literal_as_column(x) for x in util.to_list(self.order_by)]
@@ -638,10 +646,6 @@ class PropertyLoader(StrategizedProperty):
                         "Specify a 'primaryjoin' expression.  If this is a "
                         "many-to-many relation, 'secondaryjoin' is needed as well." % (self))
 
-        self.primaryjoin = self.primaryjoin._annotate({}) #{'_halt_adapt':True})
-#        if self.secondaryjoin:
-#            self.secondaryjoin = self.secondaryjoin._annotate({}) #{'_halt_adapt':True})
-        
     def _col_is_part_of_mappings(self, column):
         if self.secondary is None:
             return self.parent.mapped_table.c.contains_column(column) or \

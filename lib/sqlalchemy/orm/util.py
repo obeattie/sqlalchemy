@@ -310,11 +310,14 @@ def _orm_annotate(element, exclude=None):
     Elements within the exclude collection will be cloned but not annotated.
     
     """
+    return sql_util._deep_annotate(element, {'_orm_adapt':True}, exclude)
     def clone(elem):
-        if exclude and elem in exclude:
+        # check if element is present in the exclude list.
+        # take into account proxying relationships.
+        if exclude and elem.proxy_set.intersection(exclude):
             elem = elem._clone()
-        elif '_orm_adapt' not in elem._annotations or '_halt_adapt' in elem._annotations:
-            elem = elem._annotate({'_orm_adapt':True, '_halt_adapt':False})
+        elif '_orm_adapt' not in elem._annotations:
+            elem = elem._annotate()
         elem._copy_internals(clone=clone)
         return elem
     
@@ -322,7 +325,8 @@ def _orm_annotate(element, exclude=None):
         element = clone(element)
     return element
 
-
+_orm_deannotate = sql_util._deep_deannotate
+        
 class _ORMJoin(expression.Join):
     """Extend Join to support ORM constructs as input."""
     
