@@ -359,7 +359,7 @@ class OperatorTest(QueryTest, AssertsCompiledSQL):
                 "nodes.id = nodes_1.parent_id AND nodes_1.data = :data_1)"
         )
 
-        # fails, needs autoaliasing
+        # needs autoaliasing
         self._test(
             Node.children==None, 
             "NOT (EXISTS (SELECT 1 FROM nodes AS nodes_1 WHERE nodes.id = nodes_1.parent_id))"
@@ -375,13 +375,11 @@ class OperatorTest(QueryTest, AssertsCompiledSQL):
             "nodes_1.parent_id IS NULL"
         )
 
-        # fails, overaliases
         self._test(
             nalias.children==None, 
             "NOT (EXISTS (SELECT 1 FROM nodes WHERE nodes_1.id = nodes.parent_id))"
         )
         
-        # fails
         self._test(
                 nalias.children.any(Node.data=='some data'), 
                 "EXISTS (SELECT 1 FROM nodes WHERE "
@@ -394,7 +392,6 @@ class OperatorTest(QueryTest, AssertsCompiledSQL):
         #        "nodes.id = nodes_1.parent_id AND nodes_1.data = :data_1)"
         #        )
 
-        # fails, overaliases
         self._test(
             nalias.parent.has(Node.data=='some data'), 
            "EXISTS (SELECT 1 FROM nodes WHERE nodes.id = nodes_1.parent_id AND nodes.data = :data_1)"
@@ -415,8 +412,6 @@ class OperatorTest(QueryTest, AssertsCompiledSQL):
             ":param_1 = nodes_1.parent_id"
         )
 
-        # fails
-        # (also why are we doing an EXISTS for this??)
         self._test(
             nalias.parent != Node(id=7), 
             'nodes_1.parent_id != :parent_id_1 OR nodes_1.parent_id IS NULL'

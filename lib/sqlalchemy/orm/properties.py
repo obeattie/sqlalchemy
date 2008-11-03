@@ -150,7 +150,11 @@ class CompositeProperty(ColumnProperty):
 
     class Comparator(PropComparator):
         def __clause_element__(self):
-            return expression.ClauseList(*self.prop.columns)
+            if self.adapter:
+                # TODO: test coverage for adapted composite comparison
+                return expression.ClauseList(*[self.adapter(x) for x in self.prop.columns])
+            else:
+                return expression.ClauseList(*self.prop.columns)
 
         def __eq__(self, other):
             if other is None:
@@ -329,6 +333,10 @@ class PropertyLoader(StrategizedProperty):
                 self._of_type = _class_to_mapper(of_type)
 
         def adapted(self, adapter):
+            """Return a copy of this PropComparator which will use the given adaption function
+            on the local side of generated expressions.
+
+            """
             return PropertyLoader.Comparator(self.prop, self.mapper, getattr(self, '_of_type', None), adapter)
             
         @property

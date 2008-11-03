@@ -169,6 +169,8 @@ class Annotated(object):
             # detect immutable, don't change anything
             return self
         else:
+            # update the clone with any changes that have occured
+            # to this object's __dict__.
             clone.__dict__.update(self.__dict__)
             return Annotated(clone, self._annotations)
         
@@ -253,7 +255,6 @@ def reduce_columns(columns, *clauses, **kw):
     in the the selectable to just those that are not repeated.
 
     """
-
     ignore_nonexistent_tables = kw.pop('ignore_nonexistent_tables', False)
     
     columns = util.OrderedSet(columns)
@@ -362,7 +363,12 @@ def folded_equivalents(join, equivs=None):
     return collist
 
 class AliasedRow(object):
+    """Wrap a RowProxy with a translation map.
     
+    This object allows a set of keys to be translated
+    to those present in a RowProxy.
+    
+    """
     def __init__(self, row, map):
         # AliasedRow objects don't nest, so un-nest
         # if another AliasedRow was passed
@@ -386,10 +392,8 @@ class AliasedRow(object):
 
 
 class ClauseAdapter(visitors.ReplacingCloningVisitor):
-    """Given a clause (like as in a WHERE criterion), locate columns
-    which are embedded within a given selectable, and changes those
-    columns to be that of the selectable.
-
+    """Clones and modifies clauses based on column correspondence.
+    
     E.g.::
 
       table1 = Table('sometable', metadata,
@@ -403,7 +407,7 @@ class ClauseAdapter(visitors.ReplacingCloningVisitor):
 
       condition = table1.c.col1 == table2.c.col1
 
-    and make an alias of table1::
+    make an alias of table1::
 
       s = table1.alias('foo')
 
@@ -446,7 +450,14 @@ class ClauseAdapter(visitors.ReplacingCloningVisitor):
         return self._corresponding_column(col, True)
 
 class ColumnAdapter(ClauseAdapter):
-
+    """Extends ClauseAdapter with extra utility functions.
+    
+    Provides the ability to "wrap" this ClauseAdapter 
+    around another, a columns dictionary which returns
+    cached, adapted elements given an original, and an 
+    adapted_row() factory.
+    
+    """
     def __init__(self, selectable, equivalents=None, chain_to=None, include=None, exclude=None):
         ClauseAdapter.__init__(self, selectable, equivalents, include, exclude)
         if chain_to:

@@ -447,6 +447,10 @@ class PropComparator(expression.ColumnOperators):
         raise NotImplementedError("%r" % self)
 
     def adapted(self, adapter):
+        """Return a copy of this PropComparator which will use the given adaption function
+        on the local side of generated expressions.
+        
+        """
         return self.__class__(self.prop, self.mapper, adapter)
         
     @staticmethod
