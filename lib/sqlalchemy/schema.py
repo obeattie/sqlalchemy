@@ -536,7 +536,7 @@ class Column(SchemaItem, expression._ColumnClause):
         type_ = kwargs.pop('type_', None)
         if args:
             args = list(args)
-            if isinstance(args[0], basestring):
+            if isinstance(args[0], (basestring, expression._deferred_label)):
                 if name is not None:
                     raise exc.ArgumentError(
                         "May not pass name positionally and as a keyword.")
@@ -703,6 +703,7 @@ class Column(SchemaItem, expression._ColumnClause):
         (such as an alias or select statement).
 
         """
+
         fk = [ForeignKey(f._colspec) for f in self.foreign_keys]
         c = Column(name or self.name, self.type, self.default, key = name or self.key, primary_key = self.primary_key, nullable = self.nullable, quote=self.quote, *fk)
         c.table = selectable

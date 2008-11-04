@@ -698,6 +698,8 @@ class EagerLoader(AbstractRelationLoader):
             return decorator
         except KeyError, k:
             # no identity key - dont return a row processor, will cause a degrade to lazy
+            import pdb
+            pdb.set_trace()
             if self._should_log_debug:
                 self.logger.debug("could not locate identity key from row; missing column '%s'" % k)
             return False

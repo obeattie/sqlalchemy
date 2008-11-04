@@ -47,7 +47,7 @@ ILLEGAL_INITIAL_CHARACTERS = re.compile(r'[0-9$]')
 
 BIND_PARAMS = re.compile(r'(?<![:\w\$\x5c]):([\w\$]+)(?![:\w\$])', re.UNICODE)
 BIND_PARAMS_ESC = re.compile(r'\x5c(:[\w\$]+)(?![:\w\$])', re.UNICODE)
-ANONYMOUS_LABEL = re.compile(r'{ANON (-?\d+) ([^{}]+)}')
+#ANONYMOUS_LABEL = re.compile(r'{ANON (-?\d+) ([^{}]+)}')
 
 BIND_TEMPLATES = {
     'pyformat':"%%(%(name)s)s",
@@ -241,7 +241,7 @@ class DefaultCompiler(engine.Compiled):
             labelname = self._truncated_identifier("colident", label.name)
 
             if result_map is not None:
-                result_map[labelname.lower()] = (label.name, (label, label.element, labelname), label.element.type)
+                result_map[labelname.lower()] = (labelname, (label, label.element, label.name), label.element.type)
 
             return " ".join([self.process(label.element), self.operator_string(operators.as_), self.preparer.format_label(label, labelname)])
         else:
@@ -269,7 +269,7 @@ class DefaultCompiler(engine.Compiled):
                 schema_prefix = self.preparer.quote(column.table.schema, column.table.quote_schema) + '.'
             else:
                 schema_prefix = ''
-            return schema_prefix + self.preparer.quote(ANONYMOUS_LABEL.sub(self._process_anon, column.table.name), column.table.quote) + "." + name
+            return schema_prefix + self.preparer.quote(self._generate_name(column.table.name), column.table.quote) + "." + name
 
     def escape_literal_column(self, text):
         """provide escaping for the literal_column() construct."""
@@ -397,12 +397,15 @@ class DefaultCompiler(engine.Compiled):
         self.bind_names[bindparam] = bind_name
 
         return bind_name
-
+    
+    def _generate_name(self, label):
+        return sql._generate_name(label, self._process_anon)
+        
     def _truncated_identifier(self, ident_class, name):
         if (ident_class, name) in self.generated_ids:
             return self.generated_ids[(ident_class, name)]
         
-        anonname = ANONYMOUS_LABEL.sub(self._process_anon, name)
+        anonname = self._generate_name(name)
 
         if len(anonname) > self.dialect.max_identifier_length:
             counter = self.generated_ids.get(ident_class, 1)
@@ -413,8 +416,8 @@ class DefaultCompiler(engine.Compiled):
         self.generated_ids[(ident_class, name)] = truncname
         return truncname
     
-    def _process_anon(self, match):
-        (ident, derived) = match.group(1, 2)
+    def _process_anon(self, label):
+        (ident, derived) = label
 
         key = ('anonymous', ident)
         if key in self.generated_ids:
@@ -426,8 +429,8 @@ class DefaultCompiler(engine.Compiled):
             self.generated_ids[key] = newname
             return newname
 
-    def _anonymize(self, name):
-        return ANONYMOUS_LABEL.sub(self._process_anon, name)
+    #def _anonymize(self, name):
+    #    return ANONYMOUS_LABEL.sub(self._process_anon, name)
 
     def bindparam_string(self, name):
         if self.positional:
@@ -438,7 +441,7 @@ class DefaultCompiler(engine.Compiled):
 
     def visit_alias(self, alias, asfrom=False, **kwargs):
         if asfrom:
-            return self.process(alias.original, asfrom=True, **kwargs) + " AS " + self.preparer.format_alias(alias, self._anonymize(alias.name))
+            return self.process(alias.original, asfrom=True, **kwargs) + " AS " + self.preparer.format_alias(alias, self._generate_name(alias.name))
         else:
             return self.process(alias.original, **kwargs)
 

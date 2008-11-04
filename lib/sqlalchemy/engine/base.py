@@ -1469,8 +1469,8 @@ class ResultProxy(object):
             # this is a rare use case which only occurs when matching text()
             # constructs to ColumnElements
             if isinstance(key, expression.ColumnElement):
-                if key._label and key._label.lower() in props:
-                    return props[key._label.lower()]
+                if key._label and key._label in props:
+                    return props[key._label]
                 elif hasattr(key, 'name') and key.name.lower() in props:
                     return props[key.name.lower()]
 

@@ -869,6 +869,28 @@ func = _FunctionGenerator()
 # TODO: use UnaryExpression for this instead ?
 modifier = _FunctionGenerator(group=False)
 
+class _deferred_label(tuple):
+    pass
+    
+class _anonymous_label(_deferred_label):
+    def __new__(cls, obj, token):
+        return tuple.__new__(cls, [obj, token])
+
+class _column_label(_deferred_label):
+    def __new__(cls, *tokens):
+        return tuple.__new__(cls, tokens)
+        
+def _generate_name(label, anon_generator=None):
+    if isinstance(label, basestring):
+        return label
+    elif isinstance(label, _anonymous_label):
+        if anon_generator:
+            return anon_generator(label)
+        else:
+            return "%d %s" % (id(label[0]), label[1])
+    else:
+        return "_".join(_generate_name(x, anon_generator) for x in label)
+    
 def _clone(element):
     return element._clone()
 
@@ -1607,7 +1629,7 @@ class ColumnElement(ClauseElement, _CompareMixin):
         expressions and function calls.
 
         """
-        return "{ANON %d %s}" % (id(self), getattr(self, 'name', 'anon'))
+        return _anonymous_label(self, getattr(self, 'name', 'anon'))
 
 class ColumnCollection(util.OrderedProperties):
     """An ordered dictionary that stores a list of ColumnElement
@@ -1653,7 +1675,11 @@ class ColumnCollection(util.OrderedProperties):
         for this dictionary.
         
         """
-        self[column.key] = column
+        
+        
+        name = column.key
+        name = _generate_name(name)
+        self[name] = column
 
     def __setitem__(self, key, value):
         if key in self:
@@ -1683,8 +1709,8 @@ class ColumnCollection(util.OrderedProperties):
         return and_(*l)
 
     def __contains__(self, other):
-        if not isinstance(other, basestring):
-            raise exc.ArgumentError("__contains__ requires a string argument")
+        #if not isinstance(other, basestring):
+        #    raise exc.ArgumentError("__contains__ requires a string argument")
         return util.OrderedProperties.__contains__(self, other)
 
     def contains_column(self, col):
@@ -1908,9 +1934,9 @@ class _BindParamClause(ColumnElement):
 
         """
         if unique:
-            self.key = "{ANON %d %s}" % (id(self), key or 'param')
+            self.key = _anonymous_label(self, key or 'param')
         else:
-            self.key = key or "{ANON %d param}" % id(self)
+            self.key = key or _anonymous_label(self, 'param')
         self._orig_key = key or 'param'
         self.unique = unique
         self.value = value
@@ -1927,13 +1953,13 @@ class _BindParamClause(ColumnElement):
     def _clone(self):
         c = ClauseElement._clone(self)
         if self.unique:
-            c.key = "{ANON %d %s}" % (id(c), c._orig_key or 'param')
+            c.key = _anonymous_label(c, c._orig_key or 'param')
         return c
 
     def _convert_to_unique(self):
         if not self.unique:
             self.unique = True
-            self.key = "{ANON %d %s}" % (id(self), self._orig_key or 'param')
+            self.key = _anonymous_label(self, self._orig_key or 'param')
 
     def _get_from_objects(self, **modifiers):
         return []
@@ -2422,7 +2448,7 @@ class Join(FromClause):
             from sqlalchemy.sql import util as sql_util
         self._primary_key.extend(sql_util.reduce_columns(
                 (c for c in columns if c.primary_key), self.onclause))
-        self._columns.update((col._label, col) for col in columns)
+        self._columns.update((_generate_name(col._label), col) for col in columns)
         self._foreign_keys.update(itertools.chain(*[col.foreign_keys for col in columns]))    
 
     def _copy_internals(self, clone=_clone):
@@ -2518,12 +2544,12 @@ class Alias(FromClause):
         if alias is None:
             if self.original.named_with_column:
                 alias = getattr(self.original, 'name', None)
-            alias = '{ANON %d %s}' % (id(self), alias or 'anon')
+            alias = _anonymous_label(self, alias or 'anon')
         self.name = alias
 
     @property
     def description(self):
-        return self.name.encode('ascii', 'backslashreplace')
+        return _generate_name(self.name).encode('ascii', 'backslashreplace')
 
     def is_derived_from(self, fromclause):
         if fromclause in set(self._cloned_set):
@@ -2637,7 +2663,7 @@ class _Label(ColumnElement):
     def __init__(self, name, element, type_=None):
         while isinstance(element, _Label):
             element = element.element
-        self.name = self.key = self._label = name or "{ANON %d %s}" % (id(self), getattr(element, 'name', 'anon'))
+        self.name = self.key = self._label = name or _anonymous_label(self, getattr(element, 'name', 'anon'))
         self._element = element
         self._type = type_
         self.quote = element.quote
@@ -2715,7 +2741,7 @@ class _ColumnClause(_Immutable, ColumnElement):
 
     @util.memoized_property
     def description(self):
-        return self.name.encode('ascii', 'backslashreplace')
+        return _generate_name(self.name).encode('ascii', 'backslashreplace')
 
     @util.memoized_property
     def _label(self):
@@ -2724,18 +2750,9 @@ class _ColumnClause(_Immutable, ColumnElement):
             
         elif self.table and self.table.named_with_column:
             if getattr(self.table, 'schema', None):
-                label = self.table.schema + "_" + self.table.name + "_" + self.name
+                return _column_label(self.table.schema, self.table.name, self.name)
             else:
-                label = self.table.name + "_" + self.name
-                
-            if label in self.table.c:
-                # TODO: coverage does not seem to be present for this
-                _label = label
-                counter = 1
-                while _label in self.table.c:
-                    _label = label + "_" + str(counter)
-                    counter += 1
-                label = _label
+                return _column_label(self.table.name, self.name)
             return label
             
         else:
@@ -2763,7 +2780,7 @@ class _ColumnClause(_Immutable, ColumnElement):
         c = _ColumnClause(name or self.name, selectable=selectable, type_=self.type, is_literal=is_literal)
         c.proxies = [self]
         if attach:
-            selectable.columns[c.name] = c
+            selectable.columns.add(c) #[c.name] = c
         return c
 
     def _compare_type(self, obj):
@@ -2797,7 +2814,7 @@ class TableClause(_Immutable, FromClause):
         return self.name.encode('ascii', 'backslashreplace')
 
     def append_column(self, c):
-        self._columns[c.name] = c
+        self._columns.add(c) #[c.name] = c
         c.table = self
 
     def get_children(self, column_collections=True, **kwargs):
@@ -3351,8 +3368,8 @@ class Select(_SelectBaseMixin, FromClause):
 
     def _populate_column_collection(self):
         for c in self.__exportable_columns():
-            c._make_proxy(self, name=self.use_labels and c._label or None)
-    
+            c2 = c._make_proxy(self, name=self.use_labels and c._label or None)
+            
     def self_group(self, against=None):
         """return a 'grouping' construct as per the ClauseElement specification.
 
