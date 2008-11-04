@@ -47,7 +47,6 @@ ILLEGAL_INITIAL_CHARACTERS = re.compile(r'[0-9$]')
 
 BIND_PARAMS = re.compile(r'(?<![:\w\$\x5c]):([\w\$]+)(?![:\w\$])', re.UNICODE)
 BIND_PARAMS_ESC = re.compile(r'\x5c(:[\w\$]+)(?![:\w\$])', re.UNICODE)
-#ANONYMOUS_LABEL = re.compile(r'{ANON (-?\d+) ([^{}]+)}')
 
 BIND_TEMPLATES = {
     'pyformat':"%%(%(name)s)s",
@@ -186,6 +185,8 @@ class DefaultCompiler(engine.Compiled):
         # an IdentifierPreparer that formats the quoting of identifiers
         self.preparer = self.dialect.identifier_preparer
 
+        self._generate_name = sql._name_generator(self._process_anon, cache=True)
+        
     def compile(self):
         self.string = self.process(self.statement)
 
@@ -398,9 +399,6 @@ class DefaultCompiler(engine.Compiled):
 
         return bind_name
     
-    def _generate_name(self, label):
-        return sql._generate_name(label, self._process_anon)
-        
     def _truncated_identifier(self, ident_class, name):
         if (ident_class, name) in self.generated_ids:
             return self.generated_ids[(ident_class, name)]
@@ -428,9 +426,6 @@ class DefaultCompiler(engine.Compiled):
             self.generated_ids[('anon_counter', derived)] = anonymous_counter + 1
             self.generated_ids[key] = newname
             return newname
-
-    #def _anonymize(self, name):
-    #    return ANONYMOUS_LABEL.sub(self._process_anon, name)
 
     def bindparam_string(self, name):
         if self.positional:

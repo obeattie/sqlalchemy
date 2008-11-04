@@ -33,6 +33,7 @@ from sqlalchemy import util, exc
 from sqlalchemy.sql import operators
 from sqlalchemy.sql.visitors import Visitable, cloned_traverse
 from sqlalchemy import types as sqltypes
+from collections import deque
 
 functions, schema, sql_util = None, None, None
 DefaultDialect, ClauseAdapter, Annotated = None, None, None
@@ -876,21 +877,26 @@ class _anonymous_label(_deferred_label):
     def __new__(cls, obj, token):
         return tuple.__new__(cls, [obj, token])
 
+    def gen(self, generate, gen):
+        return gen(self)
+        
 class _column_label(_deferred_label):
     def __new__(cls, *tokens):
         return tuple.__new__(cls, tokens)
-        
-def _generate_name(label, anon_generator=None):
-    if isinstance(label, basestring):
-        return label
-    elif isinstance(label, _anonymous_label):
-        if anon_generator:
-            return anon_generator(label)
-        else:
-            return "%d %s" % (id(label[0]), label[1])
-    else:
-        return "_".join(_generate_name(x, anon_generator) for x in label)
     
+    def gen(self, generate, gen):
+        return "_".join(generate(x) for x in self)
+        
+def _name_generator(gen, cache=False):
+    def generate(label):
+        if hasattr(label, 'gen'):
+            return label.gen(generate, gen)
+        else:
+            return label
+    return generate
+    
+_generate_name = _name_generator(lambda token: "%d %s" % (id(token[0]), token[1]))
+
 def _clone(element):
     return element._clone()
 
