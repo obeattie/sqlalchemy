@@ -870,6 +870,16 @@ func = _FunctionGenerator()
 # TODO: use UnaryExpression for this instead ?
 modifier = _FunctionGenerator(group=False)
 
+def _to_label(name):
+    if isinstance(name, basestring):
+        return _string_label(name)
+    else:
+        return name
+        
+class _string_label(unicode):
+    def gen(self, gen):
+        return self
+        
 class _deferred_label(tuple):
     pass
     
@@ -877,25 +887,18 @@ class _anonymous_label(_deferred_label):
     def __new__(cls, obj, token):
         return tuple.__new__(cls, [obj, token])
 
-    def gen(self, generate, gen):
+    def gen(self, gen):
         return gen(self)
         
 class _column_label(_deferred_label):
     def __new__(cls, *tokens):
         return tuple.__new__(cls, tokens)
     
-    def gen(self, generate, gen):
-        return "_".join(generate(x) for x in self)
+    def gen(self, gen):
+        return "_".join(x.gen(gen) for x in self)
         
-def _name_generator(gen, cache=False):
-    def generate(label):
-        if hasattr(label, 'gen'):
-            return label.gen(generate, gen)
-        else:
-            return label
-    return generate
-    
-_generate_name = _name_generator(lambda token: "%d %s" % (id(token[0]), token[1]))
+def _generate_name(label):
+    return label.gen(lambda token: "%d %s" % (id(token[0]), token[1]))
 
 def _clone(element):
     return element._clone()
@@ -1684,7 +1687,7 @@ class ColumnCollection(util.OrderedProperties):
         
         
         name = column.key
-        name = _generate_name(name)
+        name = _generate_name(_to_label(name))
         self[name] = column
 
     def __setitem__(self, key, value):
@@ -1942,7 +1945,7 @@ class _BindParamClause(ColumnElement):
         if unique:
             self.key = _anonymous_label(self, key or 'param')
         else:
-            self.key = key or _anonymous_label(self, 'param')
+            self.key = _to_label(key) or _anonymous_label(self, 'param')
         self._orig_key = key or 'param'
         self.unique = unique
         self.value = value
@@ -2551,7 +2554,7 @@ class Alias(FromClause):
             if self.original.named_with_column:
                 alias = getattr(self.original, 'name', None)
             alias = _anonymous_label(self, alias or 'anon')
-        self.name = alias
+        self.name = _to_label(alias)
 
     @property
     def description(self):
@@ -2669,7 +2672,8 @@ class _Label(ColumnElement):
     def __init__(self, name, element, type_=None):
         while isinstance(element, _Label):
             element = element.element
-        self.name = self.key = self._label = name or _anonymous_label(self, getattr(element, 'name', 'anon'))
+        label = _to_label(name) or _anonymous_label(self, getattr(element, 'name', 'anon'))
+        self.name = self.key = self._label = label
         self._element = element
         self._type = type_
         self.quote = element.quote
@@ -2740,7 +2744,8 @@ class _ColumnClause(_Immutable, ColumnElement):
     """
     def __init__(self, text, selectable=None, type_=None, is_literal=False):
         ColumnElement.__init__(self)
-        self.key = self.name = text
+        self.key = text
+        self.name = _to_label(text)
         self.table = selectable
         self.type = sqltypes.to_instance(type_)
         self.is_literal = is_literal
@@ -2756,7 +2761,7 @@ class _ColumnClause(_Immutable, ColumnElement):
             
         elif self.table and self.table.named_with_column:
             if getattr(self.table, 'schema', None):
-                return _column_label(self.table.schema, self.table.name, self.name)
+                return _column_label(_to_label(self.table.schema), self.table.name, self.name)
             else:
                 return _column_label(self.table.name, self.name)
             return label
@@ -2786,7 +2791,7 @@ class _ColumnClause(_Immutable, ColumnElement):
         c = _ColumnClause(name or self.name, selectable=selectable, type_=self.type, is_literal=is_literal)
         c.proxies = [self]
         if attach:
-            selectable.columns.add(c) #[c.name] = c
+            selectable.columns.add(c)
         return c
 
     def _compare_type(self, obj):
@@ -2805,7 +2810,8 @@ class TableClause(_Immutable, FromClause):
     
     def __init__(self, name, *columns):
         super(TableClause, self).__init__()
-        self.name = self.fullname = name
+        self.fullname = name
+        self.name = _to_label(name)
         self._columns = ColumnCollection()
         self._primary_key = ColumnSet()
         self._foreign_keys = set()
@@ -2820,7 +2826,7 @@ class TableClause(_Immutable, FromClause):
         return self.name.encode('ascii', 'backslashreplace')
 
     def append_column(self, c):
-        self._columns.add(c) #[c.name] = c
+        self._columns.add(c)
         c.table = self
 
     def get_children(self, column_collections=True, **kwargs):

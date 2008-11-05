@@ -117,7 +117,7 @@ class _CompileLabel(visitors.Visitable):
     
     def __init__(self, col, name):
         self.element = col
-        self.name = name
+        self.name = sql._to_label(name)
         
     @property
     def quote(self):
@@ -185,8 +185,6 @@ class DefaultCompiler(engine.Compiled):
         # an IdentifierPreparer that formats the quoting of identifiers
         self.preparer = self.dialect.identifier_preparer
 
-        self._generate_name = sql._name_generator(self._process_anon, cache=True)
-        
     def compile(self):
         self.string = self.process(self.statement)
 
@@ -270,7 +268,7 @@ class DefaultCompiler(engine.Compiled):
                 schema_prefix = self.preparer.quote(column.table.schema, column.table.quote_schema) + '.'
             else:
                 schema_prefix = ''
-            return schema_prefix + self.preparer.quote(self._generate_name(column.table.name), column.table.quote) + "." + name
+            return schema_prefix + self.preparer.quote(column.table.name.gen(self._process_anon), column.table.quote) + "." + name
 
     def escape_literal_column(self, text):
         """provide escaping for the literal_column() construct."""
@@ -403,7 +401,7 @@ class DefaultCompiler(engine.Compiled):
         if (ident_class, name) in self.generated_ids:
             return self.generated_ids[(ident_class, name)]
         
-        anonname = self._generate_name(name)
+        anonname = name.gen(self._process_anon)
 
         if len(anonname) > self.dialect.max_identifier_length:
             counter = self.generated_ids.get(ident_class, 1)
@@ -436,7 +434,7 @@ class DefaultCompiler(engine.Compiled):
 
     def visit_alias(self, alias, asfrom=False, **kwargs):
         if asfrom:
-            return self.process(alias.original, asfrom=True, **kwargs) + " AS " + self.preparer.format_alias(alias, self._generate_name(alias.name))
+            return self.process(alias.original, asfrom=True, **kwargs) + " AS " + self.preparer.format_alias(alias, alias.name.gen(self._process_anon))
         else:
             return self.process(alias.original, **kwargs)
 
