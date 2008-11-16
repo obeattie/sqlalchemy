@@ -107,7 +107,7 @@ class CompositeProperty(ColumnProperty):
     
     def __init__(self, class_, *columns, **kwargs):
         super(CompositeProperty, self).__init__(*columns, **kwargs)
-        self._col_position_map = dict((c, i) for i, c in enumerate(columns))
+        self._col_position_map = util.column_dict((c, i) for i, c in enumerate(columns))
         self.composite_class = class_
         self.comparator_factory = kwargs.pop('comparator', CompositeProperty.Comparator)
         self.strategy_class = strategies.CompositeColumnLoader
@@ -155,7 +155,7 @@ class CompositeProperty(ColumnProperty):
                 return expression.ClauseList(*[self.adapter(x) for x in self.prop.columns])
             else:
                 return expression.ClauseList(*self.prop.columns)
-
+        
         def __eq__(self, other):
             if other is None:
                 values = [None] * len(self.prop.columns)
@@ -583,7 +583,7 @@ class PropertyLoader(StrategizedProperty):
             self.mapper = mapper.class_mapper(self.argument, compile=False)
         elif isinstance(self.argument, mapper.Mapper):
             self.mapper = self.argument
-        elif callable(self.argument):
+        elif util.callable(self.argument):
             # accept a callable to suit various deferred-configurational schemes
             self.mapper = mapper.class_mapper(self.argument(), compile=False)
         else:
@@ -592,7 +592,7 @@ class PropertyLoader(StrategizedProperty):
 
         # accept callables for other attributes which may require deferred initialization
         for attr in ('order_by', 'primaryjoin', 'secondaryjoin', 'secondary', '_foreign_keys', 'remote_side'):
-            if callable(getattr(self, attr)):
+            if util.callable(getattr(self, attr)):
                 setattr(self, attr, getattr(self, attr)())
 
         # in the case that InstrumentedAttributes were used to construct
@@ -606,8 +606,8 @@ class PropertyLoader(StrategizedProperty):
         if self.order_by:
             self.order_by = [expression._literal_as_column(x) for x in util.to_list(self.order_by)]
         
-        self._foreign_keys = set(expression._literal_as_column(x) for x in util.to_set(self._foreign_keys))
-        self.remote_side = set(expression._literal_as_column(x) for x in util.to_set(self.remote_side))
+        self._foreign_keys = util.column_set(expression._literal_as_column(x) for x in util.to_column_set(self._foreign_keys))
+        self.remote_side = util.column_set(expression._literal_as_column(x) for x in util.to_column_set(self.remote_side))
 
         if not self.parent.concrete:
             for inheriting in self.parent.iterate_to_root():
@@ -726,7 +726,7 @@ class PropertyLoader(StrategizedProperty):
         else:
             self.secondary_synchronize_pairs = None
 
-        self._foreign_keys = set(r for l, r in self.synchronize_pairs)
+        self._foreign_keys = util.column_set(r for l, r in self.synchronize_pairs)
         if self.secondary_synchronize_pairs:
             self._foreign_keys.update(r for l, r in self.secondary_synchronize_pairs)
 
@@ -811,7 +811,7 @@ class PropertyLoader(StrategizedProperty):
                         "Specify remote_side argument to indicate which column lazy "
                         "join condition should bind." % (r, self.mapper))
 
-        self.local_side, self.remote_side = [util.OrderedSet(x) for x in zip(*list(self.local_remote_pairs))]
+        self.local_side, self.remote_side = [util.ordered_column_set(x) for x in zip(*list(self.local_remote_pairs))]
 
 
     def _post_init(self):

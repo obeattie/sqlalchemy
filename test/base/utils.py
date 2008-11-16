@@ -260,6 +260,36 @@ class IdentitySetTest(unittest.TestCase):
         self.assertRaises(TypeError, lambda: s1 - os2)
         self.assertRaises(TypeError, lambda: s1 - [3, 4, 5])
 
+class OrderedIdentitySetTest(unittest.TestCase):
+    
+    class Unhashable(object):
+        def __hash__(self):
+            raise NotImplementedError()
+            
+    def assert_eq(self, identityset, expected_iterable):
+        expected = [id(o) for o in expected_iterable]
+        found = [id(o) for o in identityset]
+        eq_(found, expected)
+
+    def test_add(self):
+        elem = self.Unhashable
+        s = util.OrderedIdentitySet()
+        s.add(elem())
+        s.add(elem())
+
+    def test_intersection(self):
+        elem = self.Unhashable
+        eq_ = self.assert_eq
+        
+        a, b, c, d, e, f, g = elem(), elem(), elem(), elem(), elem(), elem(), elem()
+        
+        s1 = util.OrderedIdentitySet([a, b, c])
+        s2 = util.OrderedIdentitySet([d, e, f])
+        s3 = util.OrderedIdentitySet([a, d, f, g])
+        eq_(s1.intersection(s2), [])
+        eq_(s1.intersection(s3), [a])
+        eq_(s1.union(s2).intersection(s3), [a, d, f])
+
 
 class DictlikeIteritemsTest(unittest.TestCase):
     baseline = set([('a', 1), ('b', 2), ('c', 3)])

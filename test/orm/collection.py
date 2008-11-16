@@ -148,7 +148,7 @@ class CollectionsTest(_base.ORMTest):
             control[0] = e
             assert_eq()
 
-            if reduce(and_, [hasattr(direct, a) for a in
+            if util.reduce(and_, [hasattr(direct, a) for a in
                              ('__delitem__', 'insert', '__len__')], True):
                 values = [creator(), creator(), creator(), creator()]
                 direct[slice(0,1)] = values

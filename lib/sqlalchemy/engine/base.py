@@ -1405,7 +1405,7 @@ class ResultProxy(object):
             return
             
         self._rowcount = None
-        self._props = util.PopulateDict(None)
+        self._props = util.populate_column_dict(None)
         self._props.creator = self.__key_fallback()
         self.keys = []
 
@@ -1828,7 +1828,7 @@ class DefaultRunner(schema.SchemaVisitor):
     def visit_column_onupdate(self, onupdate):
         if isinstance(onupdate.arg, expression.ClauseElement):
             return self.exec_default_sql(onupdate)
-        elif callable(onupdate.arg):
+        elif util.callable(onupdate.arg):
             return onupdate.arg(self.context)
         else:
             return onupdate.arg
@@ -1836,7 +1836,7 @@ class DefaultRunner(schema.SchemaVisitor):
     def visit_column_default(self, default):
         if isinstance(default.arg, expression.ClauseElement):
             return self.exec_default_sql(default)
-        elif callable(default.arg):
+        elif util.callable(default.arg):
             return default.arg(self.context)
         else:
             return default.arg

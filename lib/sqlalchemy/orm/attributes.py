@@ -175,7 +175,7 @@ def proxied_attribute_factory(descriptor):
 
         @property
         def comparator(self):
-            if callable(self._comparator):
+            if util.callable(self._comparator):
                 self._comparator = self._comparator()
             return self._comparator
 
@@ -838,7 +838,7 @@ class InstanceState(object):
     
     @property
     def sort_key(self):
-        return self.key and self.key[1] or self.insert_order
+        return self.key and self.key[1] or (self.insert_order, )
 
     def check_modified(self):
         if self.modified:

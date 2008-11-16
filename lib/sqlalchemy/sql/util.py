@@ -60,7 +60,7 @@ def find_tables(clause, check_columns=False, include_aliases=False, include_join
 def find_columns(clause):
     """locate Column objects within the given expression."""
     
-    cols = set()
+    cols = util.column_set()
     def visit_column(col):
         cols.add(col)
     visitors.traverse(clause, {}, {'column':visit_column})
@@ -177,6 +177,9 @@ class Annotated(object):
             # to this object's __dict__.
             clone.__dict__.update(self.__dict__)
             return Annotated(clone, self._annotations)
+    
+    def __sa_hash_key__(self):
+        return self.__element.__sa_hash_key__()
         
     def __hash__(self):
         return hash(self.__element)
@@ -272,9 +275,9 @@ def reduce_columns(columns, *clauses, **kw):
     """
     ignore_nonexistent_tables = kw.pop('ignore_nonexistent_tables', False)
     
-    columns = util.OrderedSet(columns)
+    columns = util.column_set(columns)
 
-    omit = set()
+    omit = util.column_set()
     for col in columns:
         for fk in col.foreign_keys:
             for c in columns:
@@ -294,7 +297,7 @@ def reduce_columns(columns, *clauses, **kw):
     if clauses:
         def visit_binary(binary):
             if binary.operator == operators.eq:
-                cols = set(chain(*[c.proxy_set for c in columns.difference(omit)]))
+                cols = util.column_set(chain(*[c.proxy_set for c in columns.difference(omit)]))
                 if binary.left in cols and binary.right in cols:
                     for c in columns:
                         if c.shares_lineage(binary.right):
@@ -437,7 +440,7 @@ class ClauseAdapter(visitors.ReplacingCloningVisitor):
         self.selectable = selectable
         self.include = include
         self.exclude = exclude
-        self.equivalents = equivalents or {}
+        self.equivalents = util.column_dict(equivalents or {})
         
     def _corresponding_column(self, col, require_embedded):
         newcol = self.selectable.corresponding_column(col, require_embedded=require_embedded)
@@ -477,7 +480,7 @@ class ColumnAdapter(ClauseAdapter):
         ClauseAdapter.__init__(self, selectable, equivalents, include, exclude)
         if chain_to:
             self.chain(chain_to)
-        self.columns = util.PopulateDict(self._locate_col)
+        self.columns = util.populate_column_dict(self._locate_col)
 
     def wrap(self, adapter):
         ac = self.__class__.__new__(self.__class__)
@@ -485,7 +488,7 @@ class ColumnAdapter(ClauseAdapter):
         ac._locate_col = ac._wrap(ac._locate_col, adapter._locate_col)
         ac.adapt_clause = ac._wrap(ac.adapt_clause, adapter.adapt_clause)
         ac.adapt_list = ac._wrap(ac.adapt_list, adapter.adapt_list)
-        ac.columns = util.PopulateDict(ac._locate_col)
+        ac.columns = util.populate_column_dict(ac._locate_col)
         return ac
 
     adapt_clause = ClauseAdapter.traverse

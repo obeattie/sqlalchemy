@@ -4,7 +4,7 @@
 # This module is part of SQLAlchemy and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
-import inspect, itertools, new, operator, sys, warnings, weakref
+import inspect, itertools, operator, sys, warnings, weakref
 import __builtin__
 types = __import__('types')
 
@@ -17,6 +17,8 @@ except ImportError:
     import dummy_thread as thread
     import dummy_threading as threading
     from dummy_threading import local as ThreadLocal
+
+py3k = sys.py3kwarning or sys.version_info >= (3, 0)
 
 if sys.version_info < (2, 6):
     import sets
@@ -70,6 +72,17 @@ else:
                 self[key] = value = self.creator(key)
                 return value
 
+if py3k:
+    def callable(fn):
+        return hasattr(fn, '__call__')
+else:
+    callable = __builtin__.callable
+
+if py3k:
+    from functools import reduce
+else:
+    reduce = __builtin__.reduce
+
 try:
     from collections import defaultdict
 except ImportError:
@@ -122,6 +135,14 @@ def to_set(x):
         return set()
     if not isinstance(x, set):
         return set(to_list(x))
+    else:
+        return x
+
+def to_column_set(x):
+    if x is None:
+        return column_set()
+    if not isinstance(x, column_set):
+        return column_set(to_list(x))
     else:
         return x
 
@@ -815,7 +836,8 @@ class IdentitySet(object):
     """
 
     _working_set = set
-
+    __hash_func__ = id
+    
     def __init__(self, iterable=None):
         self._members = dict()
         if iterable:
@@ -823,13 +845,13 @@ class IdentitySet(object):
                 self.add(o)
 
     def add(self, value):
-        self._members[id(value)] = value
+        self._members[self.__hash_func__(value)] = value
 
     def __contains__(self, value):
-        return id(value) in self._members
+        return self.__hash_func__(value) in self._members
 
     def remove(self, value):
-        del self._members[id(value)]
+        del self._members[self.__hash_func__(value)]
 
     def discard(self, value):
         try:
@@ -907,7 +929,7 @@ class IdentitySet(object):
         result = type(self)()
         # testlib.pragma exempt:__hash__
         result._members.update(
-            self._working_set(self._members.iteritems()).union(_iter_id(iterable)))
+            self._working_set(self._member_id_tuples()).union(_iter_id(iterable, self.__hash_func__)))
         return result
 
     def __or__(self, other):
@@ -928,7 +950,7 @@ class IdentitySet(object):
         result = type(self)()
         # testlib.pragma exempt:__hash__
         result._members.update(
-            self._working_set(self._members.iteritems()).difference(_iter_id(iterable)))
+            self._working_set(self._member_id_tuples()).difference(_iter_id(iterable, self.__hash_func__)))
         return result
 
     def __sub__(self, other):
@@ -949,7 +971,7 @@ class IdentitySet(object):
         result = type(self)()
         # testlib.pragma exempt:__hash__
         result._members.update(
-            self._working_set(self._members.iteritems()).intersection(_iter_id(iterable)))
+            self._working_set(self._member_id_tuples()).intersection(_iter_id(iterable, self.__hash_func__)))
         return result
 
     def __and__(self, other):
@@ -970,9 +992,12 @@ class IdentitySet(object):
         result = type(self)()
         # testlib.pragma exempt:__hash__
         result._members.update(
-            self._working_set(self._members.iteritems()).symmetric_difference(_iter_id(iterable)))
+            self._working_set(self._member_id_tuples()).symmetric_difference(_iter_id(iterable, self.__hash_func__)))
         return result
-
+    
+    def _member_id_tuples(self):
+        return (_id_tuple(v, self.__hash_func__) for v in self._members.itervalues())
+        
     def __xor__(self, other):
         if not isinstance(other, IdentitySet):
             return NotImplemented
@@ -1004,11 +1029,66 @@ class IdentitySet(object):
     def __repr__(self):
         return '%s(%r)' % (type(self).__name__, self._members.values())
 
+class IdentityDict(dict):
+    """A dictionary that considers only object id() for uniqueness."""
+    
+    __hash_func__ = id
+    
+    def __init__(self, items=None):
+        self._keys = {}
+        if items:
+            self.update(items)
+    
+    def update(self, items):
+        if isinstance(items, dict):
+            iter_ = list(items.iteritems())
+        else:
+            iter_ = list(items)
+        dict.update(self, ((self.__hash_func__(key), value) for key, value in iter_))
+        self._keys.update((self.__hash_func__(key), key) for key, value in iter_)
+        
+    def __getitem__(self, key):
+        return dict.__getitem__(self, self.__hash_func__(key))
 
-def _iter_id(iterable):
-    """Generator: ((id(o), o) for o in iterable)."""
-    for item in iterable:
-        yield id(item), item
+    def __setitem__(self, key, value):
+        dict.__setitem__(self, self.__hash_func__(key), value)
+        self._keys[self.__hash_func__(key)] = key
+    
+    def setdefault(self, key, value):
+        r = dict.setdefault(self, self.__hash_func__(key), value)
+        self._keys[self.__hash_func__(key)] = key
+        return r
+        
+    def __delitem__(self, key):
+        dict.__delitem__(self, self.__hash_func__(key))
+        del self._keys[self.__hash_func__(key)]
+        
+    def keys(self):
+        return self._keys.values()
+    
+    def __iter__(self):
+        return self._keys.itervalues()
+        
+    def iteritems(self):
+        return iter((vk, dict.__getitem__(self, idk)) for idk, vk in self._keys.iteritems())
+    
+    def __contains__(self, key):
+        return dict.__contains__(self, self.__hash_func__(key))
+
+class PopulateIdentityDict(IdentityDict):
+    def __init__(self, creator):
+        IdentityDict.__init__(self)
+        self.creator = creator
+
+    def __getitem__(self, key):
+        if not dict.__contains__(self, self.__hash_func__(key)):
+            return self.__missing__(key)
+        else:
+            return dict.__getitem__(self, self.__hash_func__(key))
+        
+    def __missing__(self, key):
+        self[key] = val = self.creator(key)
+        return val
 
 class OrderedIdentitySet(IdentitySet):
     class _working_set(OrderedSet):
@@ -1017,13 +1097,51 @@ class OrderedIdentitySet(IdentitySet):
         # but it's safe here: IDS operates on (id, instance) tuples in the
         # working set.
         __sa_hash_exempt__ = True
-
+    
     def __init__(self, iterable=None):
         IdentitySet.__init__(self)
         self._members = OrderedDict()
         if iterable:
             for o in iterable:
                 self.add(o)
+
+if py3k:
+    class ColumnIdentityMixin(object):
+        def __hash_func__(self, obj):
+            if hasattr(obj, '__sa_hash_key__'):
+                return obj.__sa_hash_key__()
+            else:
+                return obj.__hash__()
+    
+    class column_set(ColumnIdentityMixin, IdentitySet):
+        pass
+    class column_dict(ColumnIdentityMixin, IdentityDict):
+        pass
+    class ordered_column_set(ColumnIdentityMixin, OrderedIdentitySet):
+        pass
+    class populate_column_dict(ColumnIdentityMixin, PopulateIdentityDict):
+        pass
+else:
+    column_set = set
+    column_dict = dict
+    ordered_column_set = OrderedSet
+    populate_column_dict = PopulateDict
+    
+class _id_tuple(tuple):
+    def __new__(cls, value, fn):
+        return tuple.__new__(cls, [fn(value), value])
+    
+    def __hash__(self):
+        return self[0]
+    
+    def __eq__(self, other):
+        return self[0] == other[0]
+
+def _iter_id(iterable, fn):
+    """Generator: ((id(o), o) for o in iterable)."""
+    for item in iterable:
+        yield _id_tuple(item, fn)
+        #yield id(item), item
 
 def unique_list(seq, compare_with=set):
     seen = compare_with()
@@ -1285,7 +1403,7 @@ def function_named(fn, name):
     try:
         fn.__name__ = name
     except TypeError:
-        fn = new.function(fn.func_code, fn.func_globals, name,
+        fn = types.FunctionType(fn.func_code, fn.func_globals, name,
                           fn.func_defaults, fn.func_closure)
     return fn
 
