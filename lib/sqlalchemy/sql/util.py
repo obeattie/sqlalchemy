@@ -7,6 +7,7 @@ from itertools import chain
 def sort_tables(tables):
     """sort a collection of Table objects in order of their foreign-key dependency."""
     
+    tables = list(tables)
     tuples = []
     def visit_foreign_key(fkey):
         if fkey.use_alter:

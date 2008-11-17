@@ -1328,7 +1328,7 @@ class RowProxy(object):
     def items(self):
         """Return a list of tuples, each tuple containing a key/value pair."""
 
-        return [(key, getattr(self, key)) for key in self.keys()]
+        return [(key, getattr(self, key)) for key in self.iterkeys()]
 
     def keys(self):
         """Return the list of keys as strings represented by this RowProxy."""

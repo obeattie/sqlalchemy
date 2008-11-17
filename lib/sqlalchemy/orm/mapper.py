@@ -1225,7 +1225,7 @@ class Mapper(object):
             for t in mapper.tables:
                 table_to_mapper[t] = mapper
 
-        for table in sqlutil.sort_tables(table_to_mapper.keys()):
+        for table in sqlutil.sort_tables(table_to_mapper.iterkeys()):
             insert = []
             update = []
 
@@ -1275,7 +1275,7 @@ class Mapper(object):
                         if col is mapper.version_id_col:
                             params[col._label] = mapper._get_state_attr_by_column(state, col)
                             params[col.key] = params[col._label] + 1
-                            for prop in mapper._columntoproperty.values():
+                            for prop in mapper._columntoproperty.itervalues():
                                 history = attributes.get_history(state, prop.key, passive=True)
                                 if history.added:
                                     hasdata = True
@@ -1425,7 +1425,7 @@ class Mapper(object):
             for t in mapper.tables:
                 table_to_mapper[t] = mapper
 
-        for table in reversed(sqlutil.sort_tables(table_to_mapper.keys())):
+        for table in reversed(sqlutil.sort_tables(table_to_mapper.iterkeys())):
             delete = {}
             for state, mapper, connection in tups:
                 if table not in mapper._pks_by_table:
@@ -1659,7 +1659,7 @@ class Mapper(object):
         """Produce a collection of attribute level row processor callables."""
         
         new_populators, existing_populators = [], []
-        for prop in self._props.values():
+        for prop in self._props.itervalues():
             newpop, existingpop = prop.create_row_processor(context, path, self, row, adapter)
             if newpop:
                 new_populators.append((prop.key, newpop))
