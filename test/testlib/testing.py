@@ -868,7 +868,6 @@ class ORMTest(TestBase, AssertsExecutionResults):
 
     def setUpAll(self):
         global MetaData, _otest_metadata
-
         if MetaData is None:
             from sqlalchemy import MetaData
 
@@ -943,8 +942,6 @@ class TTestSuite(unittest.TestSuite):
         unittest.TestSuite.__init__(self, tests)
 
     def do_run(self, result):
-        # nice job unittest !  you switched __call__ and run() between py2.3
-        # and 2.4 thereby making straight subclassing impossible !
         for test in self._tests:
             if result.shouldStop:
                 break

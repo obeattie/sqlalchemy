@@ -949,7 +949,8 @@ class Session(object):
     def expire_all(self):
         """Expires all persistent instances within this Session."""
 
-        for state in self.identity_map.all_states():
+        # PY3K - wrap all_states() in list()
+        for state in list(self.identity_map.all_states()):
             _expire_state(state, None)
 
     def expire(self, instance, attribute_names=None):

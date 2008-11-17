@@ -338,9 +338,6 @@ def format_argspec_plus(fn, grouped=True, debug=False):
        'apply_pos': '(self, a, b, c, **d)'}
 
     """
-#    if debug:
-#        import pdb
-#        pdb.set_trace()
     spec = hasattr(fn, '__call__') and inspect.getargspec(fn) or fn
     args = inspect.formatargspec(*spec)
     if spec[0]:

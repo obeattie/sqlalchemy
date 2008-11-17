@@ -153,12 +153,14 @@ class PolymorphicCircularTest(ORMTest):
         sess.save(t)
         sess.flush()
 
+        # PY3K - 2to3 tool turns node.next into node.__next__ - switch it back
+        
         # string version of the saved list
         assertlist = []
         node = t
         while (node):
             assertlist.append(node)
-            n = node.__next__
+            n = node.next
             if n is not None:
                 assert n.prev is node
             node = n
@@ -171,7 +173,7 @@ class PolymorphicCircularTest(ORMTest):
         assertlist = []
         while (node):
             assertlist.append(node)
-            n = node.__next__
+            n = node.next
             if n is not None:
                 assert n.prev is node
             node = n
@@ -185,7 +187,7 @@ class PolymorphicCircularTest(ORMTest):
             assertlist.insert(0, node)
             n = node.prev
             if n is not None:
-                assert n.__next__ is node
+                assert n.next is node
             node = n
         backwards = repr(assertlist)
 

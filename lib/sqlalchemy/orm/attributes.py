@@ -1733,8 +1733,9 @@ def _generate_init(class_, class_manager):
     # calling signature.
     # FIXME: need to juggle local names to avoid constructor argument
     # clashes.
+    # PY3K - use %(args)s instead of %(apply_pos)s (is that correct in the 2.5 version?)
     func_body = """\
-def __init__(%(apply_pos)s):
+def __init__(%(args)s):
     new_state = class_manager._new_state_if_none(%(self_arg)s)
     if new_state:
         return new_state.initialize_instance(%(apply_kw)s)

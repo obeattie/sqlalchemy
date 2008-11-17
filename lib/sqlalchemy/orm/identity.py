@@ -141,7 +141,7 @@ class WeakInstanceDict(IdentityMap):
 
     def values(self):
         # PY3K - itervalues() moves into values()
-        for state in dict.itervalues(self):
+        for state in dict.values(self):
             instance = state.obj()
             if instance is not None:
                 yield instance
