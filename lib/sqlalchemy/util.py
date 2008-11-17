@@ -1062,7 +1062,6 @@ def _iter_id(iterable):
     for item in iterable:
         yield id(item), item
 
-
 column_set = set
 column_dict = dict
 ordered_column_set = OrderedSet
