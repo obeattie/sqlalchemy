@@ -1247,7 +1247,6 @@ class Engine(Connectable):
 
         return self.pool.unique_connection()
 
-
 def _proxy_connection_cls(cls, proxy):
     class ProxyConnection(cls):
         def execute(self, object, *multiparams, **params):
@@ -1299,6 +1298,8 @@ class RowProxy(object):
         for i in xrange(len(self.__row)):
             yield self.__parent._get_col(self.__row, i)
 
+    __hash__ = None
+    
     def __eq__(self, other):
         return ((other is self) or
                 (other == tuple(self.__parent._get_col(self.__row, key)

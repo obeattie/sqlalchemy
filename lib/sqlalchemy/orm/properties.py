@@ -156,6 +156,8 @@ class CompositeProperty(ColumnProperty):
             else:
                 return expression.ClauseList(*self.prop.columns)
         
+        __hash__ = None
+        
         def __eq__(self, other):
             if other is None:
                 values = [None] * len(self.prop.columns)
@@ -363,6 +365,8 @@ class PropertyLoader(StrategizedProperty):
             raise NotImplementedError("in_() not yet supported for relations.  For a "
                     "simple many-to-one, use in_() against the set of foreign key values.")
             
+        __hash__ = None
+        
         def __eq__(self, other):
             if other is None:
                 if self.prop.direction in [ONETOMANY, MANYTOMANY]:

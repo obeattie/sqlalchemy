@@ -284,7 +284,7 @@ class Concatenable(object):
     """marks a type as supporting 'concatenation'"""
     def adapt_operator(self, op):
         from sqlalchemy.sql import operators
-        if op == operators.add:
+        if op is operators.add:
             return operators.concat_op
         else:
             return op

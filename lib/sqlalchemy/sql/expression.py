@@ -1263,6 +1263,8 @@ class ColumnOperators(Operators):
     def __le__(self, other):
         return self.operate(operators.le, other)
 
+    __hash__ = Operators.__hash__
+    
     def __eq__(self, other):
         return self.operate(operators.eq, other)
 
@@ -1578,8 +1580,6 @@ class ColumnElement(ClauseElement, _CompareMixin):
     foreign_keys = []
     quote = None
     
-    __hash__ = None
-    
     @property
     def _select_iterable(self):
         return (self, )
@@ -1700,6 +1700,8 @@ class ColumnCollection(util.OrderedProperties):
         for c in iter:
             self.add(c)
 
+    __hash__ = None
+    
     def __eq__(self, other):
         l = []
         for c in other:
@@ -1719,7 +1721,7 @@ class ColumnCollection(util.OrderedProperties):
         # "True" value (i.e. a BinaryClause...)
         return col in util.column_set(self)
 
-class ColumnSet(util.column_set):
+class ColumnSet(util.ordered_column_set):
     def contains_column(self, col):
         return col in self
 
@@ -1739,7 +1741,7 @@ class ColumnSet(util.column_set):
         return and_(*l)
 
     def __hash__(self):
-        return hash(tuple(id(x) for x in self))
+        return hash(tuple(x for x in self))
 
 class Selectable(ClauseElement):
     """mark a class as being selectable"""

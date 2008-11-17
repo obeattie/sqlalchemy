@@ -1274,6 +1274,8 @@ class PrimaryKeyConstraint(Constraint):
     def copy(self, **kw):
         return PrimaryKeyConstraint(name=self.name, *[c.key for c in self])
 
+    __hash__ = Constraint.__hash__
+    
     def __eq__(self, other):
         return self.columns == other
 

@@ -262,23 +262,19 @@ class IdentitySetTest(unittest.TestCase):
 
 class OrderedIdentitySetTest(unittest.TestCase):
     
-    class Unhashable(object):
-        def __hash__(self):
-            raise NotImplementedError()
-            
     def assert_eq(self, identityset, expected_iterable):
         expected = [id(o) for o in expected_iterable]
         found = [id(o) for o in identityset]
         eq_(found, expected)
 
     def test_add(self):
-        elem = self.Unhashable
+        elem = object
         s = util.OrderedIdentitySet()
         s.add(elem())
         s.add(elem())
 
     def test_intersection(self):
-        elem = self.Unhashable
+        elem = object
         eq_ = self.assert_eq
         
         a, b, c, d, e, f, g = elem(), elem(), elem(), elem(), elem(), elem(), elem()
