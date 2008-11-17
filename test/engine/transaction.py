@@ -61,8 +61,8 @@ class TransactionTest(TestBase):
             connection.execute(users.insert(), user_id=1, user_name='user3')
             transaction.commit()
             assert False
-        except Exception , e:
-            print "Exception: ", e
+        except Exception as e:
+            print("Exception: ", e)
             transaction.rollback()
 
         result = connection.execute("select * from query_users")
@@ -88,10 +88,10 @@ class TransactionTest(TestBase):
                     trans2.rollback()
                     raise
                 transaction.rollback()
-            except Exception, e:
+            except Exception as e:
                 transaction.rollback()
                 raise
-        except Exception, e:
+        except Exception as e:
             try:
                 assert str(e) == 'uh oh'  # and not "This transaction is inactive"
             finally:
@@ -714,7 +714,7 @@ class ForUpdateTest(TestBase):
         sel = counters.select(for_update=update_style,
                               whereclause=counters.c.counter_id==1)
 
-        for i in xrange(count):
+        for i in range(count):
             trans = con.begin()
             try:
                 existing = con.execute(sel).fetchone()
@@ -730,7 +730,7 @@ class ForUpdateTest(TestBase):
                     raise AssertionError("Got %s post-update, expected %s" %
                                          (readback['counter_value'], incr))
                 trans.commit()
-            except Exception, e:
+            except Exception as e:
                 trans.rollback()
                 errors.append(e)
                 break
@@ -753,15 +753,15 @@ class ForUpdateTest(TestBase):
 
         iterations, thread_count = 10, 5
         threads, errors = [], []
-        for i in xrange(thread_count):
+        for i in range(thread_count):
             thread = threading.Thread(target=self.increment,
                                       args=(iterations,),
                                       kwargs={'errors': errors,
                                               'update_style': True})
-            thread.start()
+            _thread.start()
             threads.append(thread)
         for thread in threads:
-            thread.join()
+            _thread.join()
 
         for e in errors:
             sys.stdout.write("Failure: %s\n" % e)
@@ -781,7 +781,7 @@ class ForUpdateTest(TestBase):
             rows = con.execute(sel).fetchall()
             time.sleep(0.25)
             trans.commit()
-        except Exception, e:
+        except Exception as e:
             trans.rollback()
             errors.append(e)
         con.close()
@@ -792,13 +792,13 @@ class ForUpdateTest(TestBase):
             db.execute(counters.insert(), counter_id=cid + 1, counter_value=0)
 
         errors, threads = [], []
-        for i in xrange(thread_count):
+        for i in range(thread_count):
             thread = threading.Thread(target=self.overlap,
                                       args=(groups.pop(0), errors, update_style))
-            thread.start()
+            _thread.start()
             threads.append(thread)
         for thread in threads:
-            thread.join()
+            _thread.join()
 
         return errors
 

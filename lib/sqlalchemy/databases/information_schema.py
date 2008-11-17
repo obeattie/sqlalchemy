@@ -178,5 +178,5 @@ def reflecttable(connection, table, include_columns, ischema_names):
             if refspec not in fk[1]:
                 fk[1].append(refspec)
 
-    for name, value in fks.iteritems():
+    for name, value in fks.items():
         table.append_constraint(ForeignKeyConstraint(value[0], value[1], name=name))

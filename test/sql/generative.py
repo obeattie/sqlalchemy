@@ -196,7 +196,7 @@ class ClauseTest(TestBase, AssertsCompiledSQL):
         clause2 = Vis().traverse(clause)
         assert c1 == str(clause)
         assert str(clause2) == c1 + " SOME MODIFIER=:lala"
-        assert clause.bindparams.keys() == ['bar']
+        assert list(clause.bindparams.keys()) == ['bar']
         assert set(clause2.bindparams.keys()) == set(['bar', 'lala'])
 
     def test_select(self):
@@ -209,27 +209,27 @@ class ClauseTest(TestBase, AssertsCompiledSQL):
         s3 = Vis().traverse(s2)
         assert str(s3) == s3_assert
         assert str(s2) == s2_assert
-        print str(s2)
-        print str(s3)
+        print(str(s2))
+        print(str(s3))
         class Vis(ClauseVisitor):
             def visit_select(self, select):
                 select.append_whereclause(t1.c.col2==7)
         Vis().traverse(s2)
         assert str(s2) == s3_assert
 
-        print "------------------"
+        print("------------------")
 
         s4_assert = str(select([t1], and_(t1.c.col2==7, t1.c.col3==9)))
         class Vis(CloningVisitor):
             def visit_select(self, select):
                 select.append_whereclause(t1.c.col3==9)
         s4 = Vis().traverse(s3)
-        print str(s3)
-        print str(s4)
+        print(str(s3))
+        print(str(s4))
         assert str(s4) == s4_assert
         assert str(s3) == s3_assert
 
-        print "------------------"
+        print("------------------")
         s5_assert = str(select([t1], and_(t1.c.col2==7, t1.c.col1==9)))
         class Vis(CloningVisitor):
             def visit_binary(self, binary):
@@ -237,8 +237,8 @@ class ClauseTest(TestBase, AssertsCompiledSQL):
                     binary.left = t1.c.col1
                     binary.right = bindparam("col1", unique=True)
         s5 = Vis().traverse(s4)
-        print str(s4)
-        print str(s5)
+        print(str(s4))
+        print(str(s5))
         assert str(s5) == s5_assert
         assert str(s4) == s4_assert
     

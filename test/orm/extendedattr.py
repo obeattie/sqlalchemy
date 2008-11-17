@@ -197,13 +197,13 @@ class UserDefinedExtensionTest(_base.ORMTest):
             attributes.register_class(Bar)
 
             def func1():
-                print "func1"
+                print("func1")
                 return "this is the foo attr"
             def func2():
-                print "func2"
+                print("func2")
                 return "this is the bar attr"
             def func3():
-                print "func3"
+                print("func3")
                 return "this is the shared attr"
             attributes.register_attribute(Foo, 'element', uselist=False, callable_=lambda o:func1, useobject=True)
             attributes.register_attribute(Foo, 'element2', uselist=False, callable_=lambda o:func3, useobject=True)

@@ -94,7 +94,7 @@ class _StringType(sqltypes.String):
             return None
         else:
             def process(value):
-                if isinstance(value, unicode):
+                if isinstance(value, str):
                     return value.encode(dialect.encoding)
                 else:
                     return value
@@ -105,7 +105,7 @@ class _StringType(sqltypes.String):
             while True:
                 if value is None:
                     return None
-                elif isinstance(value, unicode):
+                elif isinstance(value, str):
                     return value
                 elif isinstance(value, str):
                     if self.convert_unicode or dialect.convert_unicode:
@@ -204,7 +204,7 @@ class MaxTimestamp(sqltypes.DateTime):
         def process(value):
             if value is None:
                 return None
-            elif isinstance(value, basestring):
+            elif isinstance(value, str):
                 return value
             elif dialect.datetimeformat == 'internal':
                 ms = getattr(value, 'microsecond', 0)
@@ -249,7 +249,7 @@ class MaxDate(sqltypes.Date):
         def process(value):
             if value is None:
                 return None
-            elif isinstance(value, basestring):
+            elif isinstance(value, str):
                 return value
             elif dialect.datetimeformat == 'internal':
                 return value.strftime("%Y%m%d")
@@ -286,7 +286,7 @@ class MaxTime(sqltypes.Time):
         def process(value):
             if value is None:
                 return None
-            elif isinstance(value, basestring):
+            elif isinstance(value, str):
                 return value
             elif dialect.datetimeformat == 'internal':
                 return value.strftime("%H%M%S")
@@ -437,7 +437,7 @@ class MaxDBCachedColumnRow(engine_base.RowProxy):
         return self.columns[key]
 
     def __iter__(self):
-        for i in xrange(len(self._row)):
+        for i in range(len(self._row)):
             yield self._get_col(i)
 
     def __repr__(self):
@@ -446,11 +446,11 @@ class MaxDBCachedColumnRow(engine_base.RowProxy):
     def __eq__(self, other):
         return ((other is self) or
                 (other == tuple([self._get_col(key)
-                                 for key in xrange(len(self._row))])))
+                                 for key in range(len(self._row))])))
     def __getitem__(self, key):
         if isinstance(key, slice):
             indices = key.indices(len(self._row))
-            return tuple([self._get_col(i) for i in xrange(*indices)])
+            return tuple([self._get_col(i) for i in range(*indices)])
         else:
             return self._get_col(key)
 
@@ -752,7 +752,7 @@ class MaxDBCompiler(compiler.DefaultCompiler):
             return " WITH LOCK (IGNORE) EXCLUSIVE"
         elif clause == "nowait":
             return " WITH LOCK (NOWAIT) EXCLUSIVE"
-        elif isinstance(clause, basestring):
+        elif isinstance(clause, str):
             return " WITH LOCK %s" % clause.upper()
         elif not clause:
             return ""
@@ -800,15 +800,15 @@ class MaxDBCompiler(compiler.DefaultCompiler):
     def _find_labeled_columns(self, columns, use_labels=False):
         labels = {}
         for column in columns:
-            if isinstance(column, basestring):
+            if isinstance(column, str):
                 continue
             snagger = self.ColumnSnagger()
             snagger.traverse(column)
             if snagger.count == 1:
                 if isinstance(column, sql_expr._Label):
-                    labels[unicode(snagger.column)] = column.name
+                    labels[str(snagger.column)] = column.name
                 elif use_labels:
-                    labels[unicode(snagger.column)] = column._label
+                    labels[str(snagger.column)] = column._label
 
         return labels
 
@@ -821,7 +821,7 @@ class MaxDBCompiler(compiler.DefaultCompiler):
             labels = self._find_labeled_columns(select.inner_columns,
                                                 select.use_labels)
             if labels:
-                for needs_alias in labels.keys():
+                for needs_alias in list(labels.keys()):
                     r = re.compile(r'(^| )(%s)(,| |$)' %
                                    re.escape(needs_alias))
                     order_by = r.sub((r'\1%s\3' % labels[needs_alias]),
@@ -869,7 +869,7 @@ class MaxDBCompiler(compiler.DefaultCompiler):
         self._safeserial = True
 
         colparams = self._get_colparams(insert)
-        for value in (insert.parameters or {}).itervalues():
+        for value in (insert.parameters or {}).values():
             if isinstance(value, sql_expr._Function):
                 self._safeserial = False
                 break
@@ -989,13 +989,13 @@ class MaxDBSchemaGenerator(compiler.SchemaGenerator):
 
     def get_column_default_string(self, column):
         if isinstance(column.server_default, schema.DefaultClause):
-            if isinstance(column.default.arg, basestring):
+            if isinstance(column.default.arg, str):
                 if isinstance(column.type, sqltypes.Integer):
                     return str(column.default.arg)
                 else:
                     return "'%s'" % column.default.arg
             else:
-                return unicode(self._compile(column.default.arg, None))
+                return str(self._compile(column.default.arg, None))
         else:
             return None
 
@@ -1044,7 +1044,7 @@ class MaxDBSchemaGenerator(compiler.SchemaGenerator):
                 ddl.extend(('START WITH', str(sequence.start)))
 
             opts = dict([(pair[0][6:].lower(), pair[1])
-                         for pair in sequence.kwargs.items()
+                         for pair in list(sequence.kwargs.items())
                          if pair[0].startswith('maxdb_')])
 
             if 'maxvalue' in opts:

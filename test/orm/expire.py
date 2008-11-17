@@ -276,7 +276,7 @@ class ExpireTest(_fixtures.FixtureTest):
         u.addresses[0].email_address = 'someotheraddress'
         s.expire(u)
         u.name
-        print attributes.instance_state(u).dict
+        print(attributes.instance_state(u).dict)
         assert u.addresses[0].email_address == 'ed@wood.com'
 
     @testing.resolve_artifact_names
@@ -632,7 +632,7 @@ class ExpireTest(_fixtures.FixtureTest):
         assert len(u.addresses) == 3
         sess.expire(u)
         assert 'addresses' not in u.__dict__
-        print "-------------------------------------------"
+        print("-------------------------------------------")
         sess.query(User).filter_by(id=8).all()
         assert 'addresses' in u.__dict__
         assert len(u.addresses) == 3
@@ -769,7 +769,7 @@ class RefreshTest(_fixtures.FixtureTest):
         s.expire(u)
 
         # get the attribute, it refreshes
-        print "OK------"
+        print("OK------")
 #        print u.__dict__
 #        print u._state.callables
         assert u.name == 'jack'

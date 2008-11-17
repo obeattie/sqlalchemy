@@ -38,4 +38,4 @@ for i in range(0,130):
 #    print len(managed_attributes)
 #    managed_attributes.clear()
 total = time.time() - now
-print "Total time", total
+print("Total time", total)

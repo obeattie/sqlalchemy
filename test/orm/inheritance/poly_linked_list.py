@@ -158,7 +158,7 @@ class PolymorphicCircularTest(ORMTest):
         node = t
         while (node):
             assertlist.append(node)
-            n = node.next
+            n = node.__next__
             if n is not None:
                 assert n.prev is node
             node = n
@@ -171,7 +171,7 @@ class PolymorphicCircularTest(ORMTest):
         assertlist = []
         while (node):
             assertlist.append(node)
-            n = node.next
+            n = node.__next__
             if n is not None:
                 assert n.prev is node
             node = n
@@ -185,7 +185,7 @@ class PolymorphicCircularTest(ORMTest):
             assertlist.insert(0, node)
             n = node.prev
             if n is not None:
-                assert n.next is node
+                assert n.__next__ is node
             node = n
         backwards = repr(assertlist)
 

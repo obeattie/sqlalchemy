@@ -12,7 +12,7 @@ def fixture_table(table, columns, *rows):
         bind = bind or table.bind
         bind.execute(
             table.insert(),
-            [dict(zip(columns, column_values)) for column_values in rows])
+            [dict(list(zip(columns, column_values))) for column_values in rows])
     table.info[('fixture', 'loader')] = load_fixture
     table.info[('fixture', 'columns')] = columns
     table.info[('fixture', 'rows')] = rows
@@ -233,7 +233,7 @@ class FixtureTest(_base.MappedTest):
         pass
 
     def setup_classes(self):
-        for cls in self.fixture_classes.values():
+        for cls in list(self.fixture_classes.values()):
             self.register_class(cls)
 
     def setup_mappers(self):

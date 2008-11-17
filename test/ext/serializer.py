@@ -43,7 +43,7 @@ class SerializeTest(testing.ORMTest):
         compile_mappers()
         
     def insert_data(self):
-        params = [dict(zip(('id', 'name'), column_values)) for column_values in 
+        params = [dict(list(zip(('id', 'name'), column_values))) for column_values in 
             [(7, 'jack'),
             (8, 'ed'),
             (9, 'fred'),
@@ -52,7 +52,7 @@ class SerializeTest(testing.ORMTest):
         users.insert().execute(params)
     
         addresses.insert().execute(
-            [dict(zip(('id', 'user_id', 'email'), column_values)) for column_values in 
+            [dict(list(zip(('id', 'user_id', 'email'), column_values))) for column_values in 
                 [(1, 7, "jack@bean.com"),
                 (2, 8, "ed@wood.com"),
                 (3, 8, "ed@bettyboop.com"),
@@ -86,7 +86,7 @@ class SerializeTest(testing.ORMTest):
         assert re_expr.bind is testing.db
         eq_(
             re_expr.execute().fetchall(),
-            [(7, u'jack'), (8, u'ed'), (8, u'ed'), (8, u'ed'), (9, u'fred')]
+            [(7, 'jack'), (8, 'ed'), (8, 'ed'), (8, 'ed'), (9, 'fred')]
         )
         
     def test_query(self):
@@ -111,7 +111,7 @@ class SerializeTest(testing.ORMTest):
         q2 = serializer.loads(serializer.dumps(q), users.metadata, Session)
         eq_(q2.all(), [User(name='fred')])
         
-        eq_(list(q2.values(User.id, User.name)), [(9, u'fred')])
+        eq_(list(q2.values(User.id, User.name)), [(9, 'fred')])
 
     def test_aliases(self):
         u7, u8, u9, u10 = Session.query(User).order_by(User.id).all()

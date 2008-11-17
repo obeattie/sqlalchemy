@@ -80,7 +80,7 @@ def polymorphic_union(table_map, typecolname, aliasname='p_union'):
     colnames = set()
     colnamemaps = {}
     types = {}
-    for key in table_map.keys():
+    for key in list(table_map.keys()):
         table = table_map[key]
 
         # mysql doesnt like selecting from a select; make it an alias of the select
@@ -102,7 +102,7 @@ def polymorphic_union(table_map, typecolname, aliasname='p_union'):
             return sql.cast(sql.null(), types[name]).label(name)
 
     result = []
-    for type, table in table_map.iteritems():
+    for type, table in table_map.items():
         if typecolname is not None:
             result.append(sql.select([col(name, table) for name in colnames] +
                                      [sql.literal_column("'%s'" % type).label(typecolname)],
@@ -156,7 +156,7 @@ def identity_key(*args, **kwargs):
                 "positional arguments, got %s" % len(args))
         if kwargs:
             raise sa_exc.ArgumentError("unknown keyword arguments: %s"
-                % ", ".join(kwargs.keys()))
+                % ", ".join(list(kwargs.keys())))
         mapper = class_mapper(class_)
         if "ident" in locals():
             return mapper.identity_key_from_primary_key(ident)
@@ -164,7 +164,7 @@ def identity_key(*args, **kwargs):
     instance = kwargs.pop("instance")
     if kwargs:
         raise sa_exc.ArgumentError("unknown keyword arguments: %s"
-            % ", ".join(kwargs.keys()))
+            % ", ".join(list(kwargs.keys())))
     mapper = object_mapper(instance)
     return mapper.identity_key_from_instance(instance)
     
@@ -321,8 +321,8 @@ class AliasedClass(object):
 
         if hasattr(attr, 'func_code'):
             is_method = getattr(self.__target, key, None)
-            if is_method and is_method.im_self is not None:
-                return util.types.MethodType(attr.im_func, self, self)
+            if is_method and is_method.__self__ is not None:
+                return util.types.MethodType(attr.__func__, self, self)
             else:
                 return None
         elif hasattr(attr, '__get__'):
@@ -370,7 +370,7 @@ class _ORMJoin(expression.Join):
         if left_mapper or right_mapper:
             self._orm_mappers = (left_mapper, right_mapper)
 
-            if isinstance(onclause, basestring):
+            if isinstance(onclause, str):
                 prop = left_mapper.get_property(onclause)
             elif isinstance(onclause, attributes.QueryableAttribute):
                 adapt_from = onclause.__clause_element__()
@@ -437,7 +437,7 @@ def with_parent(instance, prop):
        Query.
 
     """
-    if isinstance(prop, basestring):
+    if isinstance(prop, str):
         mapper = object_mapper(instance)
         prop = mapper.get_property(prop, resolve_synonyms=True)
     elif isinstance(prop, attributes.QueryableAttribute):

@@ -51,7 +51,7 @@ class PoolTest(PoolTestBase):
         connection2 = manager.connect('foo.db')
         connection3 = manager.connect('bar.db')
 
-        print "connection " + repr(connection)
+        print("connection " + repr(connection))
         self.assert_(connection.cursor() is not None)
         self.assert_(connection is connection2)
         self.assert_(connection2 is not connection3)
@@ -70,7 +70,7 @@ class PoolTest(PoolTestBase):
         connection = manager.connect('foo.db')
         connection2 = manager.connect('foo.db')
 
-        print "connection " + repr(connection)
+        print("connection " + repr(connection))
 
         self.assert_(connection.cursor() is not None)
         self.assert_(connection is not connection2)
@@ -182,18 +182,18 @@ class PoolTest(PoolTestBase):
                 self.assert_((item in innerself.checked_out) == in_cout)
                 self.assert_((item in innerself.checked_in) == in_cin)
             def inst_connect(self, con, record):
-                print "connect(%s, %s)" % (con, record)
+                print("connect(%s, %s)" % (con, record))
                 assert con is not None
                 assert record is not None
                 self.connected.append(con)
             def inst_checkout(self, con, record, proxy):
-                print "checkout(%s, %s, %s)" % (con, record, proxy)
+                print("checkout(%s, %s, %s)" % (con, record, proxy))
                 assert con is not None
                 assert record is not None
                 assert proxy is not None
                 self.checked_out.append(con)
             def inst_checkin(self, con, record):
-                print "checkin(%s, %s)" % (con, record)
+                print("checkin(%s, %s)" % (con, record))
                 # con can be None if invalidated
                 assert record is not None
                 self.checked_in.append(con)
@@ -237,7 +237,7 @@ class PoolTest(PoolTestBase):
         assert_listeners(p, 4, 2, 2, 2)
         del p
 
-        print "----"
+        print("----")
         snoop = ListenAll()
         p = _pool(listeners=[snoop])
         assert_listeners(p, 1, 1, 1, 1)
@@ -375,7 +375,7 @@ class QueuePoolTest(PoolTestBase):
 
        def status(pool):
            tup = (pool.size(), pool.checkedin(), pool.overflow(), pool.checkedout())
-           print "Pool size: %d  Connections in pool: %d Current Overflow: %d Current Checked out connections: %d" % tup
+           print("Pool size: %d  Connections in pool: %d Current Overflow: %d Current Checked out connections: %d" % tup)
            return tup
 
        c1 = p.connect()
@@ -422,7 +422,7 @@ class QueuePoolTest(PoolTestBase):
        try:
            c4 = p.connect()
            assert False
-       except tsa.exc.TimeoutError, e:
+       except tsa.exc.TimeoutError as e:
            assert int(time.time() - now) == 2
 
    def test_timeout_race(self):
@@ -436,25 +436,25 @@ class QueuePoolTest(PoolTestBase):
        p = pool.QueuePool(creator = lambda: mock_dbapi.connect(delay=.05), pool_size = 2, max_overflow = 1, use_threadlocal = False, timeout=3)
        timeouts = []
        def checkout():
-           for x in xrange(1):
+           for x in range(1):
                now = time.time()
                try:
                    c1 = p.connect()
-               except tsa.exc.TimeoutError, e:
+               except tsa.exc.TimeoutError as e:
                    timeouts.append(int(time.time()) - now)
                    continue
                time.sleep(4)
                c1.close()
 
        threads = []
-       for i in xrange(10):
+       for i in range(10):
            th = threading.Thread(target=checkout)
            th.start()
            threads.append(th)
        for th in threads:
            th.join()
 
-       print timeouts
+       print(timeouts)
        assert len(timeouts) > 0
        for t in timeouts:
            assert abs(t - 3) < 1, "Not all timeouts were 3 seconds: " + repr(timeouts)
@@ -479,7 +479,7 @@ class QueuePoolTest(PoolTestBase):
                except tsa.exc.TimeoutError:
                    pass
        threads = []
-       for i in xrange(thread_count):
+       for i in range(thread_count):
            th = threading.Thread(target=whammy)
            th.start()
            threads.append(th)
@@ -625,7 +625,7 @@ class SingletonThreadPoolTest(PoolTestBase):
         p = pool.SingletonThreadPool(creator = mock_dbapi.connect, pool_size=3)
         
         def checkout():
-            for x in xrange(10):
+            for x in range(10):
                 c = p.connect()
                 assert c
                 c.cursor()
@@ -634,7 +634,7 @@ class SingletonThreadPoolTest(PoolTestBase):
                 time.sleep(.1)
                 
         threads = []
-        for i in xrange(10):
+        for i in range(10):
             th = threading.Thread(target=checkout)
             th.start()
             threads.append(th)

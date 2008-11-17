@@ -116,10 +116,8 @@ class _TableSingleton(visitors.VisitableType):
                 raise
 
 
-class Table(SchemaItem, expression.TableClause):
+class Table(SchemaItem, expression.TableClause, metaclass=_TableSingleton):
     """Represent a relational database table."""
-
-    __metaclass__ = _TableSingleton
 
     ddl_events = ('before-create', 'after-create', 'before-drop', 'after-drop')
 
@@ -284,7 +282,7 @@ class Table(SchemaItem, expression.TableClause):
         if len([k for k in kwargs
                 if not re.match(r'^(?:%s)_' % '|'.join(databases.__all__), k)]):
             raise TypeError(
-                "Invalid argument(s) for Table: %s" % repr(kwargs.keys()))
+                "Invalid argument(s) for Table: %s" % repr(list(kwargs.keys())))
         self.kwargs.update(kwargs)
 
     def __post_init(self, *args, **kwargs):
@@ -536,7 +534,7 @@ class Column(SchemaItem, expression._ColumnClause):
         type_ = kwargs.pop('type_', None)
         if args:
             args = list(args)
-            if isinstance(args[0], basestring):
+            if isinstance(args[0], str):
                 if name is not None:
                     raise exc.ArgumentError(
                         "May not pass name positionally and as a keyword.")
@@ -577,7 +575,7 @@ class Column(SchemaItem, expression._ColumnClause):
             self._info = kwargs.pop('info')
         if kwargs:
             raise exc.ArgumentError(
-                "Unknown arguments passed to Column: " + repr(kwargs.keys()))
+                "Unknown arguments passed to Column: " + repr(list(kwargs.keys())))
 
     def __str__(self):
         if self.table is not None:
@@ -650,14 +648,14 @@ class Column(SchemaItem, expression._ColumnClause):
         self.table = table
 
         if self.index:
-            if isinstance(self.index, basestring):
+            if isinstance(self.index, str):
                 raise exc.ArgumentError(
                     "The 'index' keyword argument on Column is boolean only. "
                     "To create indexes with a specific name, create an "
                     "explicit Index object external to the Table.")
             Index('ix_%s' % self._label, self, unique=self.unique)
         elif self.unique:
-            if isinstance(self.unique, basestring):
+            if isinstance(self.unique, str):
                 raise exc.ArgumentError(
                     "The 'unique' keyword argument on Column is boolean only. "
                     "To create unique constraints or indexes with a specific "
@@ -792,7 +790,7 @@ class ForeignKey(SchemaItem):
     def _get_colspec(self, schema=None):
         if schema:
             return schema + "." + self.column.table.name + "." + self.column.key
-        elif isinstance(self._colspec, basestring):
+        elif isinstance(self._colspec, str):
             return self._colspec
         else:
             return "%s.%s" % (self._colspec.table.fullname, self._colspec.key)
@@ -815,7 +813,7 @@ class ForeignKey(SchemaItem):
     def column(self):
         # ForeignKey inits its remote column as late as possible, so tables
         # can be defined without dependencies
-        if isinstance(self._colspec, basestring):
+        if isinstance(self._colspec, str):
             # locate the parent table this foreign key is attached to.  we
             # use the "original" column which our parent column represents
             # (its a list of columns/other ColumnElements if the parent
@@ -855,7 +853,7 @@ class ForeignKey(SchemaItem):
                     _column = table.c[self.parent.key]
                 else:
                     _column = table.c[colname]
-            except KeyError, e:
+            except KeyError as e:
                 raise exc.NoReferencedColumnError(
                     "Could not create ForeignKey '%s' on table '%s': "
                     "table '%s' has no column named '%s'" % (
@@ -1032,7 +1030,7 @@ class DefaultClause(FetchedValue):
     """A DDL-specified DEFAULT column value."""
 
     def __init__(self, arg, for_update=False):
-        util.assert_arg_type(arg, (basestring,
+        util.assert_arg_type(arg, (str,
                                    expression.ClauseElement,
                                    expression._TextClause), 'arg')
         super(DefaultClause, self).__init__(for_update)
@@ -1079,7 +1077,7 @@ class Constraint(SchemaItem):
         return self.columns.contains_column(col)
 
     def keys(self):
-        return self.columns.keys()
+        return list(self.columns.keys())
 
     def __add__(self, other):
         return self.columns + other
@@ -1119,7 +1117,7 @@ class CheckConstraint(Constraint):
         """
 
         super(CheckConstraint, self).__init__(name, deferrable, initially)
-        if not isinstance(sqltext, basestring):
+        if not isinstance(sqltext, str):
             raise exc.ArgumentError(
                 "sqltext must be a string and will be used verbatim.")
         self.sqltext = sqltext
@@ -1248,7 +1246,7 @@ class PrimaryKeyConstraint(Constraint):
         if kwargs:
             raise exc.ArgumentError(
                 'Unknown PrimaryKeyConstraint argument(s): %s' %
-                ', '.join(repr(x) for x in kwargs.keys()))
+                ', '.join(repr(x) for x in list(kwargs.keys())))
 
         super(PrimaryKeyConstraint, self).__init__(**constraint_args)
         self.__colnames = list(columns)
@@ -1313,7 +1311,7 @@ class UniqueConstraint(Constraint):
         if kwargs:
             raise exc.ArgumentError(
                 'Unknown UniqueConstraint argument(s): %s' %
-                ', '.join(repr(x) for x in kwargs.keys()))
+                ', '.join(repr(x) for x in list(kwargs.keys())))
 
         super(UniqueConstraint, self).__init__(**constraint_args)
         self.__colnames = list(columns)
@@ -1495,7 +1493,7 @@ class MetaData(SchemaItem):
         global URL
         if URL is None:
             from sqlalchemy.engine.url import URL
-        if isinstance(bind, (basestring, URL)):
+        if isinstance(bind, (str, URL)):
             from sqlalchemy import create_engine
             self._bind = create_engine(bind, **kwargs)
         else:
@@ -1517,7 +1515,7 @@ class MetaData(SchemaItem):
         if URL is None:
             from sqlalchemy.engine.url import URL
 
-        if isinstance(bind, (basestring, URL)):
+        if isinstance(bind, (str, URL)):
             from sqlalchemy import create_engine
             self._bind = create_engine(bind)
         else:
@@ -1535,9 +1533,9 @@ class MetaData(SchemaItem):
     def table_iterator(self, reverse=True, tables=None):
         from sqlalchemy.sql.util import sort_tables
         if tables is None:
-            tables = self.tables.values()
+            tables = list(self.tables.values())
         else:
-            tables = set(tables).intersection(self.tables.values())
+            tables = set(tables).intersection(list(self.tables.values()))
         ret = sort_tables(tables)
         if reverse:
             ret = reversed(ret)
@@ -1549,7 +1547,7 @@ class MetaData(SchemaItem):
         dependency.
         """
         from sqlalchemy.sql.util import sort_tables
-        return sort_tables(self.tables.values())
+        return sort_tables(list(self.tables.values()))
         
     def reflect(self, bind=None, schema=None, only=None):
         """Load all available table definitions from the database.
@@ -1747,7 +1745,7 @@ class ThreadLocalMetaData(MetaData):
         if URL is None:
             from sqlalchemy.engine.url import URL
 
-        if isinstance(bind, (basestring, URL)):
+        if isinstance(bind, (str, URL)):
             try:
                 engine = self.__engines[bind]
             except KeyError:
@@ -1772,7 +1770,7 @@ class ThreadLocalMetaData(MetaData):
         if URL is None:
             from sqlalchemy.engine.url import URL
 
-        if isinstance(bind, (basestring, URL)):
+        if isinstance(bind, (str, URL)):
             try:
                 self.context._engine = self.__engines[bind]
             except KeyError:
@@ -1797,7 +1795,7 @@ class ThreadLocalMetaData(MetaData):
     def dispose(self):
         """Dispose all bound engines, in all thread contexts."""
 
-        for e in self.__engines.values():
+        for e in list(self.__engines.values()):
             if hasattr(e, 'dispose'):
                 e.dispose()
 
@@ -1872,12 +1870,12 @@ class DDL(object):
           is invoked without a bind argument.
         """
 
-        if not isinstance(statement, basestring):
+        if not isinstance(statement, str):
             raise exc.ArgumentError(
                 "Expected a string or unicode SQL statement, got '%r'" %
                 statement)
         if (on is not None and
-            (not isinstance(on, basestring) and not util.callable(on))):
+            (not isinstance(on, str) and not util.callable(on))):
             raise exc.ArgumentError(
                 "Expected the name of a database dialect or a callable for "
                 "'on' criteria, got type '%s'." % type(on).__name__)
@@ -1979,7 +1977,7 @@ class DDL(object):
         if URL is None:
             from sqlalchemy.engine.url import URL
 
-        if isinstance(bind, (basestring, URL)):
+        if isinstance(bind, (str, URL)):
             from sqlalchemy import create_engine
             self._bind = create_engine(bind)
         else:
@@ -1999,7 +1997,7 @@ class DDL(object):
     def _should_execute(self, event, schema_item, bind):
         if self.on is None:
             return True
-        elif isinstance(self.on, basestring):
+        elif isinstance(self.on, str):
             return self.on == bind.engine.name
         else:
             return self.on(event, schema_item, bind)

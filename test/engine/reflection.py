@@ -1,5 +1,5 @@
 import testenv; testenv.configure_for_tests()
-import StringIO, unicodedata
+import io, unicodedata
 import sqlalchemy as sa
 from testlib.sa import MetaData, Table, Column
 from testlib import TestBase, ComparesTables, testing, engines, sa as tsa
@@ -309,7 +309,7 @@ class ReflectionTest(TestBase, ComparesTables):
             try:
                 users = Table('users', meta2, Column('name', sa.Unicode), autoload=True)
                 assert False
-            except tsa.exc.InvalidRequestError, err:
+            except tsa.exc.InvalidRequestError as err:
                 assert str(err) == "Table 'users' is already defined for this MetaData instance.  Specify 'useexisting=True' to redefine options and columns on an existing Table object."
 
             users = Table('users', meta2, Column('name', sa.Unicode), autoload=True, useexisting=True)
@@ -354,7 +354,7 @@ class ReflectionTest(TestBase, ComparesTables):
         try:
             metadata.create_all()
             assert False
-        except tsa.exc.InvalidRequestError, err:
+        except tsa.exc.InvalidRequestError as err:
             assert str(err) == "Could not find table 'pkgs' with which to generate a foreign key"
 
     def test_composite_pks(self):
@@ -494,7 +494,7 @@ class ReflectionTest(TestBase, ComparesTables):
             try:
                 m4.reflect(only=['rt_a', 'rt_f'])
                 self.assert_(False)
-            except tsa.exc.InvalidRequestError, e:
+            except tsa.exc.InvalidRequestError as e:
                 self.assert_(e.args[0].endswith('(rt_f)'))
 
             m5 = MetaData(testing.db)
@@ -511,7 +511,7 @@ class ReflectionTest(TestBase, ComparesTables):
             try:
                 m8 = MetaData(reflect=True)
                 self.assert_(False)
-            except tsa.exc.ArgumentError, e:
+            except tsa.exc.ArgumentError as e:
                 self.assert_(
                     e.args[0] ==
                     "A bind must be supplied in conjunction with reflect=True")
@@ -519,7 +519,7 @@ class ReflectionTest(TestBase, ComparesTables):
             baseline.drop_all()
 
         if existing:
-            print "Other tables present in database, skipping some checks."
+            print("Other tables present in database, skipping some checks.")
         else:
             m9 = MetaData(testing.db)
             m9.reflect()
@@ -621,7 +621,7 @@ class UnicodeReflectionTest(TestBase):
             if testing.against('sybase', 'maxdb', 'oracle', 'mssql'):
                 names = set(['plain'])
             else:
-                names = set([u'plain', u'Unit\u00e9ble', u'\u6e2c\u8a66'])
+                names = set(['plain', 'Unit\u00e9ble', '\u6e2c\u8a66'])
 
             for name in names:
                 Table(name, metadata, Column('id', sa.Integer, sa.Sequence(name + "_id_seq"), primary_key=True))
@@ -657,8 +657,8 @@ class SchemaTest(TestBase):
             Column('col2', sa.Integer, sa.ForeignKey('someschema.table1.col1')),
             schema='someschema')
         # ensure this doesnt crash
-        print [t for t in metadata.sorted_tables]
-        buf = StringIO.StringIO()
+        print([t for t in metadata.sorted_tables])
+        buf = io.StringIO()
         def foo(s, p=None):
             buf.write(s)
         gen = sa.create_engine(testing.db.name + "://", strategy="mock", executor=foo)
@@ -666,7 +666,7 @@ class SchemaTest(TestBase):
         gen.traverse(table1)
         gen.traverse(table2)
         buf = buf.getvalue()
-        print buf
+        print(buf)
         if testing.db.dialect.preparer(testing.db.dialect).omit_schema:
             assert buf.index("CREATE TABLE table1") > -1
             assert buf.index("CREATE TABLE table2") > -1

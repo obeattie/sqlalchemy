@@ -66,7 +66,7 @@ class SelectableTest(TestBase, AssertsExecutionResults):
         assert jjj.corresponding_column(jjj.c.table1_col1) is jjj.c.table1_col1
 
         j2 = jjj.alias('foo')
-        print j2.corresponding_column(jjj.c.table1_col1)
+        print(j2.corresponding_column(jjj.c.table1_col1))
         assert j2.corresponding_column(jjj.c.table1_col1) is j2.c.table1_col1
 
         assert jjj.corresponding_column(jj.c.bar_col1) is jj.c.bar_col1
@@ -87,11 +87,11 @@ class SelectableTest(TestBase, AssertsExecutionResults):
             )
         s1 = table1.select(use_labels=True)
         s2 = table2.select(use_labels=True)
-        print ["%d %s" % (id(c),c.key) for c in u.c]
+        print(["%d %s" % (id(c),c.key) for c in u.c])
         c = u.corresponding_column(s1.c.table1_col2)
-        print "%d %s" % (id(c), c.key)
-        print id(u.corresponding_column(s1.c.table1_col2).table)
-        print id(u.c.col2.table)
+        print("%d %s" % (id(c), c.key))
+        print(id(u.corresponding_column(s1.c.table1_col2).table))
+        print(id(u.c.col2.table))
         assert u.corresponding_column(s1.c.table1_col2) is u.c.col2
         assert u.corresponding_column(s2.c.table2_col2) is u.c.col2
 
@@ -137,10 +137,10 @@ class SelectableTest(TestBase, AssertsExecutionResults):
 
     def test_join(self):
         a = join(table1, table2)
-        print str(a.select(use_labels=True))
+        print(str(a.select(use_labels=True)))
         b = table2.alias('b')
         j = join(a, b)
-        print str(j)
+        print(str(j))
         criterion = a.c.table1_col1 == b.c.col2
         self.assert_(criterion.compare(j.onclause))
 
@@ -153,7 +153,7 @@ class SelectableTest(TestBase, AssertsExecutionResults):
 
     def test_select_labels(self):
         a = table1.select(use_labels=True)
-        print str(a.select())
+        print(str(a.select()))
         j = join(a, table2)
 
         criterion = a.c.table1_col1 == table2.c.col2
@@ -196,9 +196,9 @@ class SelectableTest(TestBase, AssertsExecutionResults):
         j3 = a.join(j2, j2.c.aid==a.c.id)
 
         j4 = select([j3]).alias('foo')
-        print j4
-        print j4.corresponding_column(j2.c.aid)
-        print j4.c.aid
+        print(j4)
+        print(j4.corresponding_column(j2.c.aid))
+        print(j4.c.aid)
         assert j4.corresponding_column(j2.c.aid) is j4.c.aid
         assert j4.corresponding_column(a.c.id) is j4.c.id
 
@@ -245,7 +245,7 @@ class PrimaryKeyTest(TestBase, AssertsExecutionResults):
         c = Table('c', meta, Column('id', Integer, ForeignKey('b.id'), primary_key=True), Column('x', Integer))
         d = Table('d', meta, Column('id', Integer, ForeignKey('c.id'), primary_key=True), Column('x', Integer))
 
-        print list(a.join(b, a.c.x==b.c.id).primary_key)
+        print(list(a.join(b, a.c.x==b.c.id).primary_key))
         assert list(a.join(b, a.c.x==b.c.id).primary_key) == [b.c.id]
         assert list(b.join(c, b.c.x==c.c.id).primary_key) == [b.c.id]
         assert list(a.join(b).join(c, c.c.id==b.c.x).primary_key) == [a.c.id]

@@ -449,8 +449,8 @@ class EagerTest(_fixtures.FixtureTest):
             assert self.static.user_all_result[:2] == l
         else:
             l = q.order_by(User.id).limit(2).offset(1).all()
-            print self.static.user_all_result[1:3]
-            print l
+            print(self.static.user_all_result[1:3])
+            print(l)
             assert self.static.user_all_result[1:3] == l
 
     @testing.resolve_artifact_names
@@ -540,11 +540,11 @@ class EagerTest(_fixtures.FixtureTest):
 
         sess = create_session()
         eq_(sess.query(User).first(),
-            User(name=u'jack',orders=[
-                Order(address_id=1,description=u'order 1',isopen=0,user_id=7,id=1),
-                Order(address_id=1,description=u'order 3',isopen=1,user_id=7,id=3),
-                Order(address_id=None,description=u'order 5',isopen=0,user_id=7,id=5)],
-            email_address=u'jack@bean.com',id=7)
+            User(name='jack',orders=[
+                Order(address_id=1,description='order 1',isopen=0,user_id=7,id=1),
+                Order(address_id=1,description='order 3',isopen=1,user_id=7,id=3),
+                Order(address_id=None,description='order 5',isopen=0,user_id=7,id=5)],
+            email_address='jack@bean.com',id=7)
         )
 
     @testing.resolve_artifact_names
@@ -1076,14 +1076,14 @@ class SelfReferentialM2MEagerTest(_base.MappedTest):
         })
 
         sess = create_session()
-        w1 = Widget(name=u'w1')
-        w2 = Widget(name=u'w2')
+        w1 = Widget(name='w1')
+        w2 = Widget(name='w2')
         w1.children.append(w2)
         sess.save(w1)
         sess.flush()
         sess.clear()
 
-        assert [Widget(name='w1', children=[Widget(name='w2')])] == sess.query(Widget).filter(Widget.name==u'w1').all()
+        assert [Widget(name='w1', children=[Widget(name='w2')])] == sess.query(Widget).filter(Widget.name=='w1').all()
 
 class MixedEntitiesTest(_fixtures.FixtureTest, testing.AssertsCompiledSQL):
     run_setup_mappers = 'once'

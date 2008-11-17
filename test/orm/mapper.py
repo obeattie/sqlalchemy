@@ -128,7 +128,7 @@ class MapperTest(_fixtures.FixtureTest):
         try:
             Foo()
             assert False
-        except Exception, e:
+        except Exception as e:
             assert e is ex
 
         sa.orm.clear_mappers()
@@ -346,7 +346,7 @@ class MapperTest(_fixtures.FixtureTest):
                 'addresses':relation(Address)
             }).compile()
             assert False
-        except sa.exc.ArgumentError, e:
+        except sa.exc.ArgumentError as e:
             assert "Attempting to assign a new relation 'addresses' to a non-primary mapper on class 'User'" in str(e)
 
     @testing.resolve_artifact_names
@@ -354,7 +354,7 @@ class MapperTest(_fixtures.FixtureTest):
         try:
             mapper(User, users, non_primary=True)
             assert False
-        except sa.exc.InvalidRequestError, e:
+        except sa.exc.InvalidRequestError as e:
             assert "Configure a primary mapper first" in str(e)
 
     @testing.resolve_artifact_names
@@ -2052,7 +2052,7 @@ class RequirementsTest(_base.MappedTest):
         class _Base(object):
             def __init__(self, value='abc'):
                 self.value = value
-            def __nonzero__(self):
+            def __bool__(self):
                 return False
             def __hash__(self):
                 return hash(self.value)

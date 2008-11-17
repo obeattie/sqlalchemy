@@ -1,5 +1,5 @@
 import testenv; testenv.configure_for_tests()
-import ConfigParser, StringIO
+import configparser, io
 import sqlalchemy.engine.url as url
 from sqlalchemy import create_engine, engine_from_config
 import testlib.sa as tsa
@@ -29,8 +29,8 @@ class ParseConnectTest(TestBase):
             'dbtype://username:apples%2Foranges@hostspec/mydatabase',
         ):
             u = url.make_url(text)
-            print u, text
-            print "username=", u.username, "password=", u.password,  "database=", u.database, "host=", u.host
+            print(u, text)
+            print("username=", u.username, "password=", u.password,  "database=", u.database, "host=", u.host)
             assert u.drivername == 'dbtype'
             assert u.username == 'username' or u.username is None
             assert u.password == 'password' or u.password == 'apples/oranges' or u.password is None
@@ -76,8 +76,8 @@ pool_size=2
 pool_threadlocal=1
 pool_timeout=10
 """
-        ini = ConfigParser.ConfigParser()
-        ini.readfp(StringIO.StringIO(raw))
+        ini = configparser.ConfigParser()
+        ini.readfp(io.StringIO(raw))
 
         expected = {
             'url': 'postgres://scott:tiger@somehost/test?fooz=somevalue',
@@ -214,7 +214,7 @@ class MockDBAPI(object):
         self.kwargs = kwargs
         self.paramstyle = 'named'
     def connect(self, **kwargs):
-        print kwargs, self.kwargs
+        print(kwargs, self.kwargs)
         for k in self.kwargs:
             assert k in kwargs, "key %s not present in dictionary" % k
             assert kwargs[k]==self.kwargs[k], "value %s does not match %s" % (kwargs[k], self.kwargs[k])

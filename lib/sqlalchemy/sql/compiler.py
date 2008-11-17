@@ -64,7 +64,6 @@ OPERATORS =  {
     operators.add : '+',
     operators.mul : '*',
     operators.sub : '-',
-    operators.div : '/',
     operators.mod : '%',
     operators.truediv : '/',
     operators.lt : '<',
@@ -93,6 +92,10 @@ OPERATORS =  {
     operators.isnot : 'IS NOT',
     operators.collate : 'COLLATE',
 }
+
+# PY3K: move operators.div out
+if not util.py3k:
+    OPERATORS.update({operators.div : '/'})
 
 FUNCTIONS = {
     functions.coalesce : 'coalesce%(expr)s',
@@ -194,7 +197,7 @@ class DefaultCompiler(engine.Compiled):
 
     def compile(self):
         self.string = self.process(self.statement)
-
+        
     def process(self, obj, **kwargs):
         return obj._compiler_dispatch(self, **kwargs)
 
@@ -207,7 +210,7 @@ class DefaultCompiler(engine.Compiled):
         if params:
             params = util.column_dict(params)
             pd = {}
-            for bindparam, name in self.bind_names.iteritems():
+            for bindparam, name in self.bind_names.items():
                 for paramname in (bindparam, bindparam.key, bindparam.shortname, name):
                     if paramname in params:
                         pd[name] = params[paramname]
@@ -296,7 +299,7 @@ class DefaultCompiler(engine.Compiled):
 
     def visit_textclause(self, textclause, **kwargs):
         if textclause.typemap is not None:
-            for colname, type_ in textclause.typemap.iteritems():
+            for colname, type_ in textclause.typemap.items():
                 self.result_map[colname.lower()] = (colname, None, type_)
 
         def do_bindparam(m):
@@ -352,9 +355,12 @@ class DefaultCompiler(engine.Compiled):
         entry = self.stack and self.stack[-1] or {}
         self.stack.append({'from':entry.get('from', None), 'iswrapper':True})
 
-        text = string.join((self.process(c, asfrom=asfrom, parens=False, compound_index=i)
-                            for i, c in enumerate(cs.selects)),
-                           " " + cs.keyword + " ")
+        # PY3K - change string.join to (" " + cs.keyword + " ").join
+        text = (" " + cs.keyword + " ").join(
+                            self.process(c, asfrom=asfrom, parens=False, compound_index=i)
+                            for i, c in enumerate(cs.selects)
+                        )
+                            
         group_by = self.process(cs._group_by_clause, asfrom=asfrom)
         if group_by:
             text += " GROUP BY " + group_by
@@ -656,7 +662,7 @@ class DefaultCompiler(engine.Compiled):
                               for key in self.column_keys)
 
         if stmt.parameters is not None:
-            for k, v in stmt.parameters.iteritems():
+            for k, v in stmt.parameters.items():
                 parameters.setdefault(getattr(k, 'key', k), v)
 
         # create a list of column assignment clauses as tuples
@@ -785,7 +791,7 @@ class SchemaGenerator(DDLBase):
         if self.tables:
             tables = self.tables
         else:
-            tables = metadata.tables.values()
+            tables = list(metadata.tables.values())
         collection = [t for t in sql_util.sort_tables(tables) if self._can_create(t)]
         for table in collection:
             self.traverse_single(table)
@@ -841,10 +847,10 @@ class SchemaGenerator(DDLBase):
 
     def get_column_default_string(self, column):
         if isinstance(column.server_default, schema.DefaultClause):
-            if isinstance(column.server_default.arg, basestring):
+            if isinstance(column.server_default.arg, str):
                 return "'%s'" % column.server_default.arg
             else:
-                return unicode(self._compile(column.server_default.arg, None))
+                return str(self._compile(column.server_default.arg, None))
         else:
             return None
 
@@ -952,7 +958,7 @@ class SchemaDropper(DDLBase):
         if self.tables:
             tables = self.tables
         else:
-            tables = metadata.tables.values()
+            tables = list(metadata.tables.values())
         collection = [t for t in reversed(sql_util.sort_tables(tables)) if self._can_drop(t)]
         if self.dialect.supports_alter:
             for alterable in self.find_alterables(collection):
@@ -1052,7 +1058,7 @@ class IdentifierPreparer(object):
         lc_value = value.lower()
         return (lc_value in self.reserved_words
                 or self.illegal_initial_characters.match(value[0])
-                or not self.legal_characters.match(unicode(value))
+                or not self.legal_characters.match(str(value))
                 or (lc_value != value))
     
     def quote(self, ident, force):

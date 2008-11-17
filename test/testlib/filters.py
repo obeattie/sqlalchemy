@@ -23,7 +23,7 @@ __all__ = ['py23_decorators', 'py23']
 def py23_decorators(lines):
     """Translates @decorators in source lines to 2.3 syntax."""
 
-    tokens = peekable(generate_tokens(iter(lines).next))
+    tokens = peekable(generate_tokens(iter(lines).__next__))
     text = untokenize(backport_decorators(tokens))
     return [x + '\n' for x in text.split('\n')]
 
@@ -217,14 +217,14 @@ class peekable(object):
     def __init__(self, iterator):
         self.iterator = iterator
         self.buffer = []
-    def next(self):
+    def __next__(self):
         if self.buffer:
             return self.buffer.pop(0)
-        return self.iterator.next()
+        return next(self.iterator)
     def peek(self):
         if self.buffer:
             return self.buffer[0]
-        x = self.iterator.next()
+        x = next(self.iterator)
         self.buffer.append(x)
         return x
     def __iter__(self):
@@ -236,4 +236,4 @@ if __name__ == '__main__':
 
     tokens = generate_tokens(input.readline)
     back = backport_decorators(tokens)
-    print untokenize(back)
+    print(untokenize(back))

@@ -5,7 +5,7 @@ from testlib import TestBase
 
 class DependencySortTest(TestBase):
     def assert_sort(self, tuples, node, collection=None):
-        print str(node)
+        print(str(node))
         def assert_tuple(tuple, node):
             if node[1]:
                 cycles = node[1]
@@ -94,9 +94,9 @@ class DependencySortTest(TestBase):
 
         # TODO: figure out a "node == node2" function
         #self.assert_(str(head1) == str(head2) == str(head3))
-        print "\n" + str(head1)
-        print "\n" + str(head2)
-        print "\n" + str(head3)
+        print("\n" + str(head1))
+        print("\n" + str(head2))
+        print("\n" + str(head3))
 
     def testsort4(self):
         node1 = 'keywords'

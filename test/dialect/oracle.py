@@ -25,7 +25,7 @@ create or replace procedure foo(x_in IN number, x_out OUT number, y_out OUT numb
     def test_out_params(self):
         result = testing.db.execute(text("begin foo(:x, :y, :z); end;", bindparams=[bindparam('x', Numeric), outparam('y', Numeric), outparam('z', Numeric)]), x=5)
         assert result.out_parameters == {'y':10, 'z':75}, result.out_parameters
-        print result.out_parameters
+        print(result.out_parameters)
 
     def tearDownAll(self):
          testing.db.execute("DROP PROCEDURE foo")
@@ -284,7 +284,7 @@ class TypesTest(TestBase, AssertsCompiledSQL):
         b = bindparam("foo", "hello world!")
         assert b.type.dialect_impl(dialect).get_dbapi_type(dbapi) == 'STRING'
 
-        b = bindparam("foo", u"hello world!")
+        b = bindparam("foo", "hello world!")
         assert b.type.dialect_impl(dialect).get_dbapi_type(dbapi) == 'STRING'
 
     def test_reflect_raw(self):
@@ -294,7 +294,7 @@ class TypesTest(TestBase, AssertsCompiledSQL):
             Column('type_name', String(30), primary_key=True),
             autoload=True, oracle_resolve_synonyms=True
             )
-        [[row[k] for k in row.keys()] for row in types_table.select().execute().fetchall()]
+        [[row[k] for k in list(row.keys())] for row in types_table.select().execute().fetchall()]
 
     def test_longstring(self):
         metadata = MetaData(testing.db)

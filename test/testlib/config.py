@@ -1,4 +1,4 @@
-import optparse, os, sys, re, ConfigParser, StringIO, time, warnings
+import optparse, os, sys, re, configparser, io, time, warnings
 logging, require = None, None
 
 
@@ -29,8 +29,8 @@ def configure():
     global options, config
     global getopts_options, file_config
 
-    file_config = ConfigParser.ConfigParser()
-    file_config.readfp(StringIO.StringIO(base_config))
+    file_config = configparser.ConfigParser()
+    file_config.readfp(io.StringIO(base_config))
     file_config.read(['test.cfg', os.path.expanduser('~/.satest.cfg')])
 
     # Opt parsing can fire immediate actions, like logging and coverage
@@ -48,8 +48,8 @@ def configure_defaults():
     global getopts_options, file_config
     global db
 
-    file_config = ConfigParser.ConfigParser()
-    file_config.readfp(StringIO.StringIO(base_config))
+    file_config = configparser.ConfigParser()
+    file_config.readfp(io.StringIO(base_config))
     file_config.read(['test.cfg', os.path.expanduser('~/.satest.cfg')])
     (options, args) = parser.parse_args([])
 
@@ -98,9 +98,9 @@ def _start_coverage(option, opt_str, value, parser):
     coverage.start()
 
 def _list_dbs(*args):
-    print "Available --db options (use --dburi to override)"
+    print("Available --db options (use --dburi to override)")
     for macro in sorted(file_config.options('db')):
-        print "%20s\t%s" % (macro, file_config.get('db', macro))
+        print("%20s\t%s" % (macro, file_config.get('db', macro)))
     sys.exit(0)
 
 def _server_side_cursors(options, opt_str, value, parser):
@@ -244,19 +244,19 @@ def _prep_testing_database(options, file_config):
             existing = e.table_names()
             if existing:
                 if not options.quiet:
-                    print "Dropping existing tables in database: " + db_url
+                    print("Dropping existing tables in database: " + db_url)
                     try:
-                        print "Tables: %s" % ', '.join(existing)
+                        print("Tables: %s" % ', '.join(existing))
                     except:
                         pass
-                    print "Abort within 5 seconds..."
+                    print("Abort within 5 seconds...")
                     time.sleep(5)
                 md = schema.MetaData(e, reflect=True)
                 md.drop_all()
             e.dispose()
     except (KeyboardInterrupt, SystemExit):
         raise
-    except Exception, e:
+    except Exception as e:
         if not options.quiet:
             warnings.warn(RuntimeWarning(
                 "Error checking for existing tables in testing "

@@ -39,7 +39,7 @@ class InheritTest(ORMTest):
     def testbasic(self):
         class Principal(object):
             def __init__(self, **kwargs):
-                for key, value in kwargs.iteritems():
+                for key, value in kwargs.items():
                     setattr(self, key, value)
 
         class User(Principal):
@@ -90,8 +90,8 @@ class InheritTest2(ORMTest):
 
         mapper(Foo, foo)
         mapper(Bar, bar, inherits=Foo)
-        print foo.join(bar).primary_key
-        print class_mapper(Bar).primary_key
+        print(foo.join(bar).primary_key)
+        print(class_mapper(Bar).primary_key)
         b = Bar('somedata')
         sess = create_session()
         sess.save(b)
@@ -129,8 +129,8 @@ class InheritTest2(ORMTest):
         sess.clear()
 
         l = sess.query(Bar).all()
-        print l[0]
-        print l[0].foos
+        print(l[0])
+        print(l[0].foos)
         self.assert_unordered_result(l, Bar,
 #            {'id':1, 'data':'barfoo', 'bid':1, 'foos':(Foo, [{'id':2,'data':'subfoo1'}, {'id':3,'data':'subfoo2'}])},
             {'id':b.id, 'data':'barfoo', 'foos':(Foo, [{'id':f1.id,'data':'subfoo1'}, {'id':f2.id,'data':'subfoo2'}])},
@@ -192,7 +192,7 @@ class InheritTest3(ORMTest):
         compare = repr(b) + repr(sorted([repr(o) for o in b.foos]))
         sess.clear()
         l = sess.query(Bar).all()
-        print repr(l[0]) + repr(l[0].foos)
+        print(repr(l[0]) + repr(l[0].foos))
         found = repr(l[0]) + repr(sorted([repr(o) for o in l[0].foos]))
         self.assertEqual(found, compare)
 
@@ -234,11 +234,11 @@ class InheritTest3(ORMTest):
         sess.clear()
 
         l = sess.query(Blub).all()
-        print l
+        print(l)
         self.assert_(repr(l[0]) == compare)
         sess.clear()
         x = sess.query(Blub).filter_by(id=blubid).one()
-        print x
+        print(x)
         self.assert_(repr(x) == compare)
 
 

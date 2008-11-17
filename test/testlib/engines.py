@@ -16,13 +16,13 @@ class ConnectionKiller(object):
             if rec is not None and rec.is_valid:
                 try:
                     for name in methods:
-                        if callable(name):
+                        if hasattr(name, '__call__'):
                             name(rec)
                         else:
                             getattr(rec, name)()
                 except (SystemExit, KeyboardInterrupt):
                     raise
-                except Exception, e:
+                except Exception as e:
                     # fixme
                     sys.stderr.write("\n" + str(e) + "\n")
 
@@ -173,7 +173,7 @@ class ReplayableSession(object):
                    difference([getattr(types, t)
                                for t in ('FunctionType', 'BuiltinFunctionType',
                                          'MethodType', 'BuiltinMethodType',
-                                         'LambdaType', 'UnboundMethodType',)])
+                                         'LambdaType')])  # PY3K: remove UnboundMethodType
     def __init__(self):
         self.buffer = deque()
 

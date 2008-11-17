@@ -644,7 +644,7 @@ class PropertyLoader(StrategizedProperty):
             # is a join.
             try:
                 return join_condition(mapper.local_table, table)
-            except sa_exc.ArgumentError, e:
+            except sa_exc.ArgumentError as e:
                 return join_condition(mapper.mapped_table, table)
 
         try:
@@ -656,7 +656,7 @@ class PropertyLoader(StrategizedProperty):
             else:
                 if self.primaryjoin is None:
                     self.primaryjoin = _search_for_join(self.parent, self.target)
-        except sa_exc.ArgumentError, e:
+        except sa_exc.ArgumentError as e:
             raise sa_exc.ArgumentError("Could not determine join condition between "
                         "parent/child tables on relation %s.  "
                         "Specify a 'primaryjoin' expression.  If this is a "

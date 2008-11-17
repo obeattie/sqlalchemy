@@ -12,7 +12,7 @@ from sqlalchemy.engine import default
 import sqlalchemy.types as sqltypes
 import sqlalchemy.util as util
 from sqlalchemy.sql import compiler, functions as sql_functions
-from types import NoneType
+NoneType = type(None)
 
 class SLNumeric(sqltypes.Numeric):
     def bind_processor(self, dialect):
@@ -140,7 +140,7 @@ class SLUnicodeMixin(object):
                 return None
                 
             def process(value):
-                if not isinstance(value, (unicode, NoneType)):
+                if not isinstance(value, (str, NoneType)):
                     if assert_unicode == 'warn':
                         util.warn("Unicode type received non-unicode bind "
                                   "param value %r" % value)
@@ -259,7 +259,7 @@ class SQLiteDialect(default.DefaultDialect):
     def dbapi(cls):
         try:
             from pysqlite2 import dbapi2 as sqlite
-        except ImportError, e:
+        except ImportError as e:
             try:
                 from sqlite3 import dbapi2 as sqlite #try the 2.5+ stdlib name.
             except ImportError:
@@ -409,7 +409,7 @@ class SQLiteDialect(default.DefaultDialect):
                 fk[0].append(constrained_column)
             if refspec not in fk[1]:
                 fk[1].append(refspec)
-        for name, value in fks.iteritems():
+        for name, value in fks.items():
             table.append_constraint(schema.ForeignKeyConstraint(value[0], value[1]))
         # check for UNIQUE indexes
         c = connection.execute("%sindex_list(%s)" % (pragma, qtable))

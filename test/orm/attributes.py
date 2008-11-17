@@ -299,13 +299,13 @@ class AttributesTest(_base.ORMTest):
         attributes.register_class(Bar)
 
         def func1():
-            print "func1"
+            print("func1")
             return "this is the foo attr"
         def func2():
-            print "func2"
+            print("func2")
             return "this is the bar attr"
         def func3():
-            print "func3"
+            print("func3")
             return "this is the shared attr"
         attributes.register_attribute(Foo, 'element', uselist=False, callable_=lambda o:func1, useobject=True)
         attributes.register_attribute(Foo, 'element2', uselist=False, callable_=lambda o:func3, useobject=True)
@@ -472,7 +472,7 @@ class AttributesTest(_base.ORMTest):
         try:
             attributes.register_attribute(Foo, "collection", uselist=True, typecallable=dict, useobject=True)
             assert False
-        except sa_exc.ArgumentError, e:
+        except sa_exc.ArgumentError as e:
             assert str(e) == "Type InstrumentedDict must elect an appender method to be a collection class"
 
         class MyDict(dict):
@@ -491,7 +491,7 @@ class AttributesTest(_base.ORMTest):
         try:
             attributes.register_attribute(Foo, "collection", uselist=True, typecallable=MyColl, useobject=True)
             assert False
-        except sa_exc.ArgumentError, e:
+        except sa_exc.ArgumentError as e:
             assert str(e) == "Type MyColl must elect an appender method to be a collection class"
 
         class MyColl(object):
@@ -508,7 +508,7 @@ class AttributesTest(_base.ORMTest):
         try:
             Foo().collection
             assert True
-        except sa_exc.ArgumentError, e:
+        except sa_exc.ArgumentError as e:
             assert False
 
 
@@ -827,7 +827,7 @@ class HistoryTest(_base.ORMTest):
 
         class Bar(_base.BasicEntity):
             _state = None
-            def __nonzero__(self):
+            def __bool__(self):
                 assert False
 
         hi = Bar(name='hi')
@@ -895,7 +895,7 @@ class HistoryTest(_base.ORMTest):
         class Foo(_base.BasicEntity):
             pass
         class Bar(_base.BasicEntity):
-            def __nonzero__(self):
+            def __bool__(self):
                 assert False
 
         attributes.register_class(Foo)

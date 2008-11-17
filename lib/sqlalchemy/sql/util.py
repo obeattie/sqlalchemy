@@ -192,11 +192,11 @@ class Annotated(object):
 # is used instead of on-the-fly types (i.e. type.__new__())
 # so that the resulting objects are pickleable.
 from sqlalchemy.sql import expression
-for cls in expression.__dict__.values() + [schema.Column, schema.Table]:
+for cls in list(expression.__dict__.values()) + [schema.Column, schema.Table]:
     if isinstance(cls, type) and issubclass(cls, expression.ClauseElement):
-        exec "class Annotated%s(Annotated, cls):\n" \
+        exec("class Annotated%s(Annotated, cls):\n" \
              "    __visit_name__ = cls.__visit_name__\n"\
-             "    pass" % (cls.__name__, ) in locals()
+             "    pass" % (cls.__name__, ), locals())
 
 
 def _deep_annotate(element, annotations, exclude=None):
@@ -407,7 +407,7 @@ class AliasedRow(object):
         return self.row[self.map[key]]
 
     def keys(self):
-        return self.row.keys()
+        return list(self.row.keys())
 
 
 class ClauseAdapter(visitors.ReplacingCloningVisitor):

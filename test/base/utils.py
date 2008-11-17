@@ -13,12 +13,12 @@ class OrderedDictTest(TestBase):
         o['snack'] = 'attack'
         o['c'] = 3
 
-        eq_(o.keys(), ['a', 'b', 'snack', 'c'])
-        eq_(o.values(), [1, 2, 'attack', 3])
+        eq_(list(o.keys()), ['a', 'b', 'snack', 'c'])
+        eq_(list(o.values()), [1, 2, 'attack', 3])
 
         o.pop('snack')
-        eq_(o.keys(), ['a', 'b', 'c'])
-        eq_(o.values(), [1, 2, 3])
+        eq_(list(o.keys()), ['a', 'b', 'c'])
+        eq_(list(o.values()), [1, 2, 3])
 
         try:
             o.pop('eep')
@@ -34,23 +34,23 @@ class OrderedDictTest(TestBase):
         except TypeError:
             pass
 
-        eq_(o.keys(), ['a', 'b', 'c'])
-        eq_(o.values(), [1, 2, 3])
+        eq_(list(o.keys()), ['a', 'b', 'c'])
+        eq_(list(o.values()), [1, 2, 3])
 
         o2 = util.OrderedDict(d=4)
         o2['e'] = 5
 
-        eq_(o2.keys(), ['d', 'e'])
-        eq_(o2.values(), [4, 5])
+        eq_(list(o2.keys()), ['d', 'e'])
+        eq_(list(o2.values()), [4, 5])
 
         o.update(o2)
-        eq_(o.keys(), ['a', 'b', 'c', 'd', 'e'])
-        eq_(o.values(), [1, 2, 3, 4, 5])
+        eq_(list(o.keys()), ['a', 'b', 'c', 'd', 'e'])
+        eq_(list(o.values()), [1, 2, 3, 4, 5])
 
         o.setdefault('c', 'zzz')
         o.setdefault('f', 6)
-        eq_(o.keys(), ['a', 'b', 'c', 'd', 'e', 'f'])
-        eq_(o.values(), [1, 2, 3, 4, 5, 6])
+        eq_(list(o.keys()), ['a', 'b', 'c', 'd', 'e', 'f'])
+        eq_(list(o.values()), [1, 2, 3, 4, 5, 6])
 
 class OrderedSetTest(TestBase):
     def test_mutators_against_iter(self):
@@ -73,7 +73,7 @@ class ColumnCollectionTest(TestBase):
         try:
             cc['col1'] in cc
             assert False
-        except exc.ArgumentError, e:
+        except exc.ArgumentError as e:
             eq_(str(e), "__contains__ requires a string argument")
 
     def test_compare(self):
@@ -170,14 +170,14 @@ class IdentitySetTest(unittest.TestCase):
         for type_ in (object, ImmutableSubclass):
             data = [type_(), type_()]
             ids = util.IdentitySet()
-            for i in range(2) + range(2):
+            for i in list(range(2)) + list(range(2)):
                 ids.add(data[i])
             self.assert_eq(ids, data)
 
         for type_ in (EqOverride, HashOverride, HashEqOverride):
             data = [type_(1), type_(1), type_(2)]
             ids = util.IdentitySet()
-            for i in range(3) + range(3):
+            for i in list(range(3)) + list(range(3)):
                 ids.add(data[i])
             self.assert_eq(ids, data)
 
@@ -475,7 +475,7 @@ class SymbolTest(TestBase):
         sym3 = util.pickle.loads(s)
 
         for protocol in 0, 1, 2:
-            print protocol
+            print(protocol)
             serial = util.pickle.dumps(sym1)
             rt = util.pickle.loads(serial)
             assert rt is sym1
@@ -486,7 +486,7 @@ class WeakIdentityMappingTest(TestBase):
         pass
 
     def _some_data(self, some=20):
-        return [self.Data() for _ in xrange(some)]
+        return [self.Data() for _ in range(some)]
 
     def _fixture(self, some=20):
         data = self._some_data()

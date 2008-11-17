@@ -258,14 +258,14 @@ sq.myothertable_othername AS sq_myothertable_othername FROM (" + sqstring + ") A
         try:
             s = select([table1.c.myid, table1.c.name]).as_scalar()
             assert False
-        except exc.InvalidRequestError, err:
+        except exc.InvalidRequestError as err:
             assert str(err) == "Scalar select can only be created from a Select object that has exactly one column expression.", str(err)
 
         try:
             # generic function which will look at the type of expression
             func.coalesce(select([table1.c.myid]))
             assert False
-        except exc.InvalidRequestError, err:
+        except exc.InvalidRequestError as err:
             assert str(err) == "Select objects don't have a type.  Call as_scalar() on this Select object to return a 'scalar' version of this Select.", str(err)
 
         s = select([table1.c.myid], scalar=True, correlate=False)
@@ -291,12 +291,12 @@ sq.myothertable_othername AS sq_myothertable_othername FROM (" + sqstring + ") A
         s = select([table1.c.myid]).as_scalar()
         try:
             s.c.foo
-        except exc.InvalidRequestError, err:
+        except exc.InvalidRequestError as err:
             assert str(err) == 'Scalar Select expression has no columns; use this object directly within a column-level expression.'
 
         try:
             s.columns.foo
-        except exc.InvalidRequestError, err:
+        except exc.InvalidRequestError as err:
             assert str(err) == 'Scalar Select expression has no columns; use this object directly within a column-level expression.'
 
         zips = table('zips',
@@ -503,25 +503,25 @@ sq.myothertable_othername AS sq_myothertable_othername FROM (" + sqstring + ") A
         
     def test_composed_string_comparators(self):
         self.assert_compile(
-            table1.c.name.contains('jo'), "mytable.name LIKE '%%' || :name_1 || '%%'" , checkparams = {'name_1': u'jo'},
+            table1.c.name.contains('jo'), "mytable.name LIKE '%%' || :name_1 || '%%'" , checkparams = {'name_1': 'jo'},
         )
         self.assert_compile(
-            table1.c.name.contains('jo'), "mytable.name LIKE concat(concat('%%', %s), '%%')" , checkparams = {'name_1': u'jo'},
+            table1.c.name.contains('jo'), "mytable.name LIKE concat(concat('%%', %s), '%%')" , checkparams = {'name_1': 'jo'},
             dialect=mysql.dialect()
         )
         self.assert_compile(
-            table1.c.name.contains('jo', escape='\\'), "mytable.name LIKE '%%' || :name_1 || '%%' ESCAPE '\\'" , checkparams = {'name_1': u'jo'},
+            table1.c.name.contains('jo', escape='\\'), "mytable.name LIKE '%%' || :name_1 || '%%' ESCAPE '\\'" , checkparams = {'name_1': 'jo'},
         )
         self.assert_compile( table1.c.name.startswith('jo', escape='\\'), "mytable.name LIKE :name_1 || '%%' ESCAPE '\\'" )
         self.assert_compile( table1.c.name.endswith('jo', escape='\\'), "mytable.name LIKE '%%' || :name_1 ESCAPE '\\'" )
-        self.assert_compile( table1.c.name.endswith('hn'), "mytable.name LIKE '%%' || :name_1", checkparams = {'name_1': u'hn'}, )
+        self.assert_compile( table1.c.name.endswith('hn'), "mytable.name LIKE '%%' || :name_1", checkparams = {'name_1': 'hn'}, )
         self.assert_compile(
             table1.c.name.endswith('hn'), "mytable.name LIKE concat('%%', %s)",
-            checkparams = {'name_1': u'hn'}, dialect=mysql.dialect()
+            checkparams = {'name_1': 'hn'}, dialect=mysql.dialect()
         )
         self.assert_compile(
-            table1.c.name.startswith(u"hi \xf6 \xf5"), "mytable.name LIKE :name_1 || '%%'",
-            checkparams = {'name_1': u'hi \xf6 \xf5'},
+            table1.c.name.startswith("hi \xf6 \xf5"), "mytable.name LIKE :name_1 || '%%'",
+            checkparams = {'name_1': 'hi \xf6 \xf5'},
         )
         self.assert_compile(column('name').endswith(text("'foo'")), "name LIKE '%%' || 'foo'"  )
         self.assert_compile(column('name').endswith(literal_column("'foo'")), "name LIKE '%%' || 'foo'"  )
@@ -649,11 +649,11 @@ WHERE mytable.myid = myothertable.otherid) AS t2view WHERE t2view.mytable_myid =
 
         # test unicode
         self.assert_compile(select(
-            [u"foobar(a)", u"pk_foo_bar(syslaal)"],
-            u"a = 12",
-            from_obj = [u"foobar left outer join lala on foobar.foo = lala.foo"]
+            ["foobar(a)", "pk_foo_bar(syslaal)"],
+            "a = 12",
+            from_obj = ["foobar left outer join lala on foobar.foo = lala.foo"]
         ),
-        u"SELECT foobar(a), pk_foo_bar(syslaal) FROM foobar left outer join lala on foobar.foo = lala.foo WHERE a = 12")
+        "SELECT foobar(a), pk_foo_bar(syslaal) FROM foobar left outer join lala on foobar.foo = lala.foo WHERE a = 12")
 
         # test building a select query programmatically with text
         s = select()
@@ -682,9 +682,9 @@ WHERE mytable.myid = myothertable.otherid) AS t2view WHERE t2view.mytable_myid =
             "SELECT column1 AS foobar, column2 AS hoho, mytable.myid AS mytable_myid FROM mytable"
         )
 
-        print "---------------------------------------------"
+        print("---------------------------------------------")
         s1 = select(["column1 AS foobar", "column2 AS hoho", table1.c.myid], from_obj=[table1])
-        print "---------------------------------------------"
+        print("---------------------------------------------")
         # test that "auto-labeling of subquery columns" doesnt interfere with literal columns,
         # exported columns dont get quoted
         self.assert_compile(
@@ -892,7 +892,7 @@ EXISTS (select yay from foo where boo = lar)",
     def test_compound_selects(self):
         try:
             union(table3.select(), table1.select())
-        except exc.ArgumentError, err:
+        except exc.ArgumentError as err:
             assert str(err) == "All selectables passed to CompoundSelect must have identical numbers of columns; select #1 has 2 columns, select #2 has 3"
     
         x = union(
@@ -1277,7 +1277,7 @@ UNION SELECT mytable.myid FROM mytable WHERE mytable.myid = :myid_2)")
     
     def test_naming(self):
         s1 = select([table1.c.myid, table1.c.myid.label('foobar'), func.hoho(table1.c.name), func.lala(table1.c.name).label('gg')])
-        assert s1.c.keys() == ['myid', 'foobar', 'hoho(mytable.name)', 'gg']
+        assert list(s1.c.keys()) == ['myid', 'foobar', 'hoho(mytable.name)', 'gg']
 
         from sqlalchemy.databases.sqlite import SLNumeric
         meta = MetaData()
@@ -1292,7 +1292,7 @@ UNION SELECT mytable.myid FROM mytable WHERE mytable.myid = :myid_2)")
             (column('some wacky thing'), 'some wacky thing', '"some wacky thing"', '')
         ):
             s1 = select([col], from_obj=getattr(col, 'table', None) or table1)
-            assert s1.c.keys() == [key], s1.c.keys()
+            assert list(s1.c.keys()) == [key], list(s1.c.keys())
         
             if label:
                 self.assert_compile(s1, "SELECT %s AS %s FROM mytable" % (expr, label))

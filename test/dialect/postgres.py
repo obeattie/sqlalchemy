@@ -331,12 +331,12 @@ class InsertTest(TestBase, AssertsExecutionResults):
         try:
             table.insert().execute({'data':'d2'})
             assert False
-        except exc.IntegrityError, e:
+        except exc.IntegrityError as e:
             assert "violates not-null constraint" in str(e)
         try:
             table.insert().execute({'data':'d2'}, {'data':'d3'})
             assert False
-        except exc.IntegrityError, e:
+        except exc.IntegrityError as e:
             assert "violates not-null constraint" in str(e)
 
         table.insert().execute({'id':31, 'data':'d2'}, {'id':32, 'data':'d3'})
@@ -358,12 +358,12 @@ class InsertTest(TestBase, AssertsExecutionResults):
         try:
             table.insert().execute({'data':'d2'})
             assert False
-        except exc.IntegrityError, e:
+        except exc.IntegrityError as e:
             assert "violates not-null constraint" in str(e)
         try:
             table.insert().execute({'data':'d2'}, {'data':'d3'})
             assert False
-        except exc.IntegrityError, e:
+        except exc.IntegrityError as e:
             assert "violates not-null constraint" in str(e)
 
         table.insert().execute({'id':31, 'data':'d2'}, {'id':32, 'data':'d3'})
@@ -387,7 +387,7 @@ class DomainReflectionTest(TestBase, AssertsExecutionResults):
                     'CREATE DOMAIN alt_schema.testdomain INTEGER DEFAULT 0'):
             try:
                 con.execute(ddl)
-            except exc.SQLError, e:
+            except exc.SQLError as e:
                 if not "already exists" in str(e):
                     raise e
         con.execute('CREATE TABLE testtable (question integer, answer testdomain)')
@@ -465,7 +465,7 @@ class MiscTest(TestBase, AssertsExecutionResults):
             meta2 = MetaData(testing.db)
             subject = Table("subject", meta2, autoload=True)
             referer = Table("referer", meta2, autoload=True)
-            print str(subject.join(referer).onclause)
+            print(str(subject.join(referer).onclause))
             self.assert_((subject.c['id$']==referer.c.ref).compare(subject.join(referer).onclause))
         finally:
             meta1.drop_all()
@@ -519,10 +519,10 @@ class MiscTest(TestBase, AssertsExecutionResults):
             addresses = Table('email_addresses', meta2, autoload=True, schema="alt_schema")
             users = Table('users', meta2, mustexist=True, schema="alt_schema")
 
-            print users
-            print addresses
+            print(users)
+            print(addresses)
             j = join(users, addresses)
-            print str(j.onclause)
+            print(str(j.onclause))
             self.assert_((users.c.user_id==addresses.c.remote_user_id).compare(j.onclause))
         finally:
             meta1.drop_all()
@@ -542,7 +542,7 @@ class MiscTest(TestBase, AssertsExecutionResults):
             meta2 = MetaData(testing.db)
             subject = Table("subject", meta2, autoload=True)
             referer = Table("referer", meta2, schema="alt_schema", autoload=True)
-            print str(subject.join(referer).onclause)
+            print(str(subject.join(referer).onclause))
             self.assert_((subject.c.id==referer.c.ref).compare(subject.join(referer).onclause))
         finally:
             meta1.drop_all()
@@ -564,7 +564,7 @@ class MiscTest(TestBase, AssertsExecutionResults):
             meta2 = MetaData(testing.db)
             subject = Table("subject", meta2, autoload=True, schema="alt_schema_2")
             referer = Table("referer", meta2, schema="alt_schema", autoload=True)
-            print str(subject.join(referer).onclause)
+            print(str(subject.join(referer).onclause))
             self.assert_((subject.c.id==referer.c.ref).compare(subject.join(referer).onclause))
         finally:
             meta1.drop_all()
@@ -665,14 +665,14 @@ class TimezoneTest(TestBase, AssertsExecutionResults):
         somedate = testing.db.connect().scalar(func.current_timestamp().select())
         tztable.insert().execute(id=1, name='row1', date=somedate)
         c = tztable.update(tztable.c.id==1).execute(name='newname')
-        print tztable.select(tztable.c.id==1).execute().fetchone()
+        print(tztable.select(tztable.c.id==1).execute().fetchone())
 
     def test_without_timezone(self):
         # get a date without a tzinfo
         somedate = datetime.datetime(2005, 10,20, 11, 52, 00)
         notztable.insert().execute(id=1, name='row1', date=somedate)
         c = notztable.update(notztable.c.id==1).execute(name='newname')
-        print notztable.select(tztable.c.id==1).execute().fetchone()
+        print(notztable.select(tztable.c.id==1).execute().fetchone())
 
 class ArrayTest(TestBase, AssertsExecutionResults):
     __only_on__ = 'postgres'
@@ -722,12 +722,12 @@ class ArrayTest(TestBase, AssertsExecutionResults):
         arrtable.delete().execute()
 
     def test_array_subtype_resultprocessor(self):
-        arrtable.insert().execute(intarr=[4,5,6], strarr=[[u'm\xe4\xe4'], [u'm\xf6\xf6']])
-        arrtable.insert().execute(intarr=[1,2,3], strarr=[u'm\xe4\xe4', u'm\xf6\xf6'])
+        arrtable.insert().execute(intarr=[4,5,6], strarr=[['m\xe4\xe4'], ['m\xf6\xf6']])
+        arrtable.insert().execute(intarr=[1,2,3], strarr=['m\xe4\xe4', 'm\xf6\xf6'])
         results = arrtable.select(order_by=[arrtable.c.intarr]).execute().fetchall()
         self.assertEquals(len(results), 2)
-        self.assertEquals(results[0]['strarr'], [u'm\xe4\xe4', u'm\xf6\xf6'])
-        self.assertEquals(results[1]['strarr'], [[u'm\xe4\xe4'], [u'm\xf6\xf6']])
+        self.assertEquals(results[0]['strarr'], ['m\xe4\xe4', 'm\xf6\xf6'])
+        self.assertEquals(results[1]['strarr'], [['m\xe4\xe4'], ['m\xf6\xf6']])
         arrtable.delete().execute()
 
     def test_array_mutability(self):

@@ -533,7 +533,7 @@ class AutoIncrementTest(_base.TablesTest):
             nonai.insert().execute(data='row 1')
             nonai.insert().execute(data='row 2')
             assert False
-        except sa.exc.SQLError, e:
+        except sa.exc.SQLError as e:
             assert True
 
         nonai.insert().execute(id=1, data='row 1')

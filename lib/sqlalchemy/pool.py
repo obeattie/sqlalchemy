@@ -20,7 +20,7 @@ import weakref, time, threading
 
 from sqlalchemy import exc, log
 from sqlalchemy import queue as Queue
-from sqlalchemy.util import thread, threading, pickle, as_interface
+from sqlalchemy.util import threading, pickle, as_interface
 
 proxies = {}
 
@@ -54,7 +54,7 @@ def clear_managers():
     All pools and connections are disposed.
     """
 
-    for manager in proxies.values():
+    for manager in list(proxies.values()):
         manager.close()
     proxies.clear()
 
@@ -267,7 +267,7 @@ class _ConnectionRecord(object):
             if self.__pool._should_log_info:
                 self.__pool.log("Closing connection %r" % self.connection)
             self.connection.close()
-        except Exception, e:
+        except Exception as e:
             if self.__pool._should_log_info:
                 self.__pool.log("Connection %r threw an error on close: %s" %
                                 (self.connection, e))
@@ -281,7 +281,7 @@ class _ConnectionRecord(object):
             if self.__pool._should_log_info:
                 self.__pool.log("Created new connection %r" % connection)
             return connection
-        except Exception, e:
+        except Exception as e:
             if self.__pool._should_log_info:
                 self.__pool.log("Error on connect(): %s" % e)
             raise
@@ -297,7 +297,7 @@ def _finalize_fairy(connection, connection_record, pool, ref=None):
             # Immediately close detached instances
             if connection_record is None:
                 connection.close()
-        except Exception, e:
+        except Exception as e:
             if connection_record is not None:
                 connection_record.invalidate(e=e)
             if isinstance(e, (SystemExit, KeyboardInterrupt)):
@@ -372,7 +372,7 @@ class _ConnectionFairy(object):
         try:
             c = self.connection.cursor(*args, **kwargs)
             return _CursorFairy(self, c)
-        except Exception, e:
+        except Exception as e:
             self.invalidate(e=e)
             raise
 
@@ -394,7 +394,7 @@ class _ConnectionFairy(object):
                 for l in self._pool._on_checkout:
                     l.checkout(self.connection, self._connection_record, self)
                 return self
-            except exc.DisconnectionError, e:
+            except exc.DisconnectionError as e:
                 if self._pool._should_log_info:
                     self._pool.log(
                     "Disconnection detected on checkout: %s" % e)
@@ -452,7 +452,7 @@ class _CursorFairy(object):
     def close(self):
         try:
             self.cursor.close()
-        except Exception, e:
+        except Exception as e:
             try:
                 ex_text = str(e)
             except TypeError:
@@ -577,7 +577,7 @@ class QueuePool(Pool):
 
     def __init__(self, creator, pool_size = 5, max_overflow = 10, timeout=30, **params):
         Pool.__init__(self, creator, **params)
-        self._pool = Queue.Queue(pool_size)
+        self._pool = queue.Queue(pool_size)
         self._overflow = 0 - pool_size
         self._max_overflow = max_overflow
         self._timeout = timeout
@@ -590,7 +590,7 @@ class QueuePool(Pool):
     def do_return_conn(self, conn):
         try:
             self._pool.put(conn, False)
-        except Queue.Full:
+        except queue.Full:
             if self._overflow_lock is None:
                 self._overflow -= 1
             else:
@@ -604,7 +604,7 @@ class QueuePool(Pool):
         try:
             wait = self._max_overflow > -1 and self._overflow >= self._max_overflow
             return self._pool.get(wait, self._timeout)
-        except Queue.Empty:
+        except queue.Empty:
             if self._max_overflow > -1 and self._overflow >= self._max_overflow:
                 if not wait:
                     return self.do_get()
@@ -632,7 +632,7 @@ class QueuePool(Pool):
             try:
                 conn = self._pool.get(False)
                 conn.close()
-            except Queue.Empty:
+            except queue.Empty:
                 break
 
         self._overflow = 0 - self.size()
@@ -762,7 +762,7 @@ class _DBProxy(object):
         self.pools = {}
 
     def close(self):
-        for key in self.pools.keys():
+        for key in list(self.pools.keys()):
             del self.pools[key]
 
     def __del__(self):

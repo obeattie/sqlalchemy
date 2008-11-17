@@ -328,7 +328,7 @@ class OracleExecutionContext(default.DefaultExecutionContext):
     def get_result_proxy(self):
         if hasattr(self, 'out_parameters'):
             if self.compiled_parameters is not None and len(self.compiled_parameters) == 1:
-                for bind, name in self.compiled.bind_names.iteritems():
+                for bind, name in self.compiled.bind_names.items():
                     if name in self.out_parameters:
                         type = bind.type
                         self.out_parameters[name] = type.dialect_impl(self.dialect).result_processor(self.dialect)(self.out_parameters[name].getvalue())
@@ -413,7 +413,7 @@ class OracleDialect(default.DefaultDialect):
             )
         if 'mode' in url.query:
             opts['mode'] = url.query['mode']
-            if isinstance(opts['mode'], basestring):
+            if isinstance(opts['mode'], str):
                 mode = opts['mode'].upper()
                 if mode == 'SYSDBA':
                     opts['mode'] = self.dbapi.SYSDBA
@@ -673,7 +673,7 @@ class OracleDialect(default.DefaultDialect):
                 if refspec not in fk[1]:
                     fk[1].append(refspec)
 
-        for name, value in fks.iteritems():
+        for name, value in fks.items():
             table.append_constraint(schema.ForeignKeyConstraint(value[0], value[1], name=name))
 
 

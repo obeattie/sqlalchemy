@@ -112,7 +112,7 @@ class LongLabelsTest(TestBase, AssertsCompiledSQL):
     def test_subquery(self):
         q = table1.select(table1.c.this_is_the_primarykey_column == 4).alias('foo')
         x = select([q])
-        print x.execute().fetchall()
+        print(x.execute().fetchall())
 
     @testing.requires.subqueries
     def test_anon_alias(self):
@@ -127,7 +127,7 @@ class LongLabelsTest(TestBase, AssertsCompiledSQL):
             "FROM some_large_named_table "
             "WHERE some_large_named_table.this_is_the_primarykey_column = :this_is_the_primarykey__1) AS anon_1", dialect=compile_dialect)
 
-        print x.execute().fetchall()
+        print(x.execute().fetchall())
 
     def test_adjustable(self):
 

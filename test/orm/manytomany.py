@@ -118,9 +118,9 @@ class M2MTest(_base.MappedTest):
 
         for p in l:
             pp = p.places
-            print "Place " + str(p) +" places " + repr(pp)
+            print("Place " + str(p) +" places " + repr(pp))
 
-        [sess.delete(p) for p in p1,p2,p3,p4,p5,p6,p7]
+        [sess.delete(p) for p in (p1,p2,p3,p4,p5,p6,p7)]
         sess.flush()
 
     @testing.resolve_artifact_names

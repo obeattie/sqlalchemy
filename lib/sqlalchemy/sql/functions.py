@@ -14,9 +14,7 @@ class _GenericMeta(VisitableType):
         args = [_literal_as_binds(c) for c in args]
         return type.__call__(self, *args, **kwargs)
 
-class GenericFunction(_Function):
-    __metaclass__ = _GenericMeta
-
+class GenericFunction(_Function, metaclass=_GenericMeta):
     def __init__(self, type_=None, group=True, args=(), **kwargs):
         self.packagenames = []
         self.name = self.__class__.__name__

@@ -1,7 +1,7 @@
 """MaxDB-specific tests."""
 
 import testenv; testenv.configure_for_tests()
-import StringIO, sys
+import io, sys
 from sqlalchemy import *
 from sqlalchemy import exc, sql
 from decimal import Decimal
@@ -31,7 +31,7 @@ class ReflectionTest(TestBase, AssertsExecutionResults):
 
         meta = MetaData(testing.db)
         try:
-            if isinstance(tabledef, basestring):
+            if isinstance(tabledef, str):
                 # run textual CREATE TABLE
                 testing.db.execute(tabledef)
             else:
@@ -41,12 +41,12 @@ class ReflectionTest(TestBase, AssertsExecutionResults):
 
             vals = [Decimal('2.2'), Decimal('23'), Decimal('2.4'), 25]
             cols = ['d1','d2','n1','i1']
-            t.insert().execute(dict(zip(cols,vals)))
+            t.insert().execute(dict(list(zip(cols,vals))))
             roundtrip = list(t.select().execute())
             self.assertEquals(roundtrip, [tuple([1] + vals)])
 
-            t.insert().execute(dict(zip(['id'] + cols,
-                                        [2] + list(roundtrip[0][1:]))))
+            t.insert().execute(dict(list(zip(['id'] + cols,
+                                        [2] + list(roundtrip[0][1:])))))
             roundtrip2 = list(t.select(order_by=t.c.id).execute())
             self.assertEquals(roundtrip2, [tuple([1] + vals),
                                            tuple([2] + vals)])
@@ -183,7 +183,7 @@ class DBAPITest(TestBase, AssertsExecutionResults):
         cr.execute('CREATE SEQUENCE busto START WITH 1 INCREMENT BY 1')
         try:
             vals = []
-            for i in xrange(3):
+            for i in range(3):
                 cr.execute('SELECT busto.NEXTVAL FROM DUAL')
                 vals.append(cr.fetchone()[0])
 

@@ -9,7 +9,7 @@ import sys
 import types
 import unittest
 import warnings
-from cStringIO import StringIO
+from io import StringIO
 
 from sqlalchemy.util import callable
 
@@ -62,9 +62,9 @@ def fails_if(callable_):
             else:
                 try:
                     fn(*args, **kw)
-                except Exception, ex:
-                    print ("'%s' failed as expected (condition: %s): %s " % (
-                        fn_name, description, str(ex)))
+                except Exception as ex:
+                    print(("'%s' failed as expected (condition: %s): %s " % (
+                        fn_name, description, str(ex))))
                     return True
                 else:
                     raise AssertionError(
@@ -84,9 +84,9 @@ def future(fn):
     def decorated(*args, **kw):
         try:
             fn(*args, **kw)
-        except Exception, ex:
-            print ("Future test '%s' failed as expected: %s " % (
-                fn_name, str(ex)))
+        except Exception as ex:
+            print(("Future test '%s' failed as expected: %s " % (
+                fn_name, str(ex))))
             return True
         else:
             raise AssertionError(
@@ -110,10 +110,10 @@ def fails_on(*dbs):
             else:
                 try:
                     fn(*args, **kw)
-                except Exception, ex:
-                    print ("'%s' failed as expected on DB implementation "
+                except Exception as ex:
+                    print(("'%s' failed as expected on DB implementation "
                            "'%s': %s" % (
-                        fn_name, config.db.name, str(ex)))
+                        fn_name, config.db.name, str(ex))))
                     return True
                 else:
                     raise AssertionError(
@@ -137,10 +137,10 @@ def fails_on_everything_except(*dbs):
             else:
                 try:
                     fn(*args, **kw)
-                except Exception, ex:
-                    print ("'%s' failed as expected on DB implementation "
+                except Exception as ex:
+                    print(("'%s' failed as expected on DB implementation "
                            "'%s': %s" % (
-                        fn_name, config.db.name, str(ex)))
+                        fn_name, config.db.name, str(ex))))
                     return True
                 else:
                     raise AssertionError(
@@ -163,9 +163,9 @@ def crashes(db, reason):
             if config.db.name == db:
                 msg = "'%s' unsupported on DB implementation '%s': %s" % (
                     fn_name, config.db.name, reason)
-                print msg
+                print(msg)
                 if carp:
-                    print >> sys.stderr, msg
+                    print(msg, file=sys.stderr)
                 return True
             else:
                 return fn(*args, **kw)
@@ -187,9 +187,9 @@ def _block_unconditionally(db, reason):
             if config.db.name == db:
                 msg = "'%s' unsupported on DB implementation '%s': %s" % (
                     fn_name, config.db.name, reason)
-                print msg
+                print(msg)
                 if carp:
-                    print >> sys.stderr, msg
+                    print(msg, file=sys.stderr)
                 return True
             else:
                 return fn(*args, **kw)
@@ -216,9 +216,9 @@ def exclude(db, op, spec, reason):
             if _is_excluded(db, op, spec):
                 msg = "'%s' unsupported on DB %s version '%s': %s" % (
                     fn_name, config.db.name, _server_version(), reason)
-                print msg
+                print(msg)
                 if carp:
-                    print >> sys.stderr, msg
+                    print(msg, file=sys.stderr)
                 return True
             else:
                 return fn(*args, **kw)
@@ -278,7 +278,7 @@ def skip_if(predicate, reason=None):
             if predicate():
                 msg = "'%s' skipped on DB %s version '%s': %s" % (
                     fn_name, config.db.name, _server_version(), reason)
-                print msg
+                print(msg)
                 return True
             else:
                 return fn(*args, **kw)
@@ -399,7 +399,7 @@ def against(*queries):
     """
 
     for query in queries:
-        if isinstance(query, basestring):
+        if isinstance(query, str):
             if config.db.name == query:
                 return True
         else:
@@ -457,7 +457,7 @@ def fixture(table, columns, *rows):
     def onload(event, schema_item, connection):
         insert = table.insert()
         column_names = [col.key for col in columns]
-        connection.execute(insert, [dict(zip(column_names, column_values))
+        connection.execute(insert, [dict(list(zip(column_names, column_values)))
                                     for column_values in rows])
     table.append_ddl_listener('after-create', onload)
 
@@ -492,7 +492,7 @@ class ExecutionContextWrapper(object):
     trailing_underscore_pattern = re.compile(r'(\W:[\w_#]+)_\b',re.MULTILINE)
     def post_exec(self):
         ctx = self.ctx
-        statement = unicode(ctx.compiled)
+        statement = str(ctx.compiled)
         statement = re.sub(r'\n', '', ctx.statement)
         if config.db.name == 'mssql' and statement.endswith('; select scope_identity()'):
             statement = statement[:-25]
@@ -509,7 +509,7 @@ class ExecutionContextWrapper(object):
                 # this is to specify query assertions where the queries can be in
                 # multiple orderings
                 if '_converted' not in item:
-                    for key in item.keys():
+                    for key in list(item.keys()):
                         ckey = self.convert_statement(key)
                         item[ckey] = item[key]
                         if ckey != key:
@@ -521,10 +521,10 @@ class ExecutionContextWrapper(object):
                         testdata.assert_list.pop()
                     item = (statement, entry)
                 except KeyError:
-                    assert False, "Testing for one of the following queries: %s, received '%s'" % (repr([k for k in item.keys()]), statement)
+                    assert False, "Testing for one of the following queries: %s, received '%s'" % (repr([k for k in list(item.keys())]), statement)
 
             (query, params) = item
-            if callable(params):
+            if hasattr(params, '__call__'):
                 params = params(ctx)
             if params is not None and not isinstance(params, list):
                 params = [params]
@@ -538,7 +538,7 @@ class ExecutionContextWrapper(object):
                          and \
                          ( (params is None) or (params == parameters)
                            or params == [dict([(k.strip('_'), v)
-                                               for (k, v) in p.items()])
+                                               for (k, v) in list(p.items())])
                                          for p in parameters]
                          )
             testdata.unittest.assert_(equivalent,
@@ -590,12 +590,12 @@ class CompositeModule(types.ModuleType):
         """
         types.ModuleType.__init__(self, name)
         self.__modules = list(reversed(modules))
-        for key, value in overrides.iteritems():
+        for key, value in overrides.items():
             setattr(self, key, value)
 
     def __getattr__(self, key):
         for idx, mod in enumerate(self.__modules):
-            if isinstance(mod, basestring):
+            if isinstance(mod, str):
                 self.__modules[idx] = mod = _import_by_name(mod)
             if hasattr(mod, key):
                 return getattr(mod, key)
@@ -619,15 +619,15 @@ def resolve_artifact_names(fn):
     # the func_globals.
     def resolved(*args, **kwargs):
         self = args[0]
-        context = dict(fn.func_globals)
+        context = dict(fn.__globals__)
         for source in self._artifact_registries:
             context.update(getattr(self, source))
         # jython bug #1034
         rebound = types.FunctionType(
-            fn.func_code, context, fn.func_name, fn.func_defaults,
-            fn.func_closure)
+            fn.__code__, context, fn.__name__, fn.__defaults__,
+            fn.__closure__)
         return rebound(*args, **kwargs)
-    return _function_named(resolved, fn.func_name)
+    return _function_named(resolved, fn.__name__)
 
 class adict(dict):
     """Dict keys available as attributes.  Shadows."""
@@ -683,7 +683,7 @@ class TestBase(unittest.TestCase):
         try:
             callable_(*args, **kwargs)
             assert False, "Callable did not raise an exception"
-        except except_cls, e:
+        except except_cls as e:
             assert re.search(msg, str(e)), "%r !~ %s" % (msg, e)
 
     if not hasattr(unittest.TestCase, 'assertTrue'):
@@ -699,11 +699,11 @@ class AssertsCompiledSQL(object):
         if params is None:
             keys = None
         else:
-            keys = params.keys()
+            keys = list(params.keys())
 
         c = clause.compile(column_keys=keys, dialect=dialect)
 
-        print "\nSQL String:\n" + str(c) + repr(c.params)
+        print("\nSQL String:\n" + str(c) + repr(c.params))
 
         cc = re.sub(r'\n', '', str(c))
 
@@ -743,7 +743,7 @@ class ComparesTables(object):
                 # ignore reflection of bogus db-generated DefaultClause()
                 pass
             elif not c.primary_key or not against('postgres'):
-                print repr(c)
+                print(repr(c))
                 assert reflected_c.default is None, reflected_c.default
 
         assert len(table.primary_key) == len(reflected_table.primary_key)
@@ -754,7 +754,7 @@ class ComparesTables(object):
 class AssertsExecutionResults(object):
     def assert_result(self, result, class_, *objects):
         result = list(result)
-        print repr(result)
+        print(repr(result))
         self.assert_list(result, class_, objects)
 
     def assert_list(self, result, class_, list):
@@ -767,7 +767,7 @@ class AssertsExecutionResults(object):
     def assert_row(self, class_, rowobj, desc):
         self.assert_(rowobj.__class__ is class_,
                      "item class is not " + repr(class_))
-        for key, value in desc.iteritems():
+        for key, value in desc.items():
             if isinstance(value, tuple):
                 if isinstance(value[1], list):
                     self.assert_list(getattr(rowobj, key), value[0], value[1])
@@ -796,7 +796,7 @@ class AssertsExecutionResults(object):
         found = util.IdentitySet(result)
         expected = set([frozendict(e) for e in expected])
 
-        for wrong in itertools.ifilterfalse(lambda o: type(o) == cls, found):
+        for wrong in itertools.filterfalse(lambda o: type(o) == cls, found):
             self.fail('Unexpected type "%s", expected "%s"' % (
                 type(wrong).__name__, cls.__name__))
 
@@ -806,7 +806,7 @@ class AssertsExecutionResults(object):
 
         NOVALUE = object()
         def _compare_item(obj, spec):
-            for key, value in spec.iteritems():
+            for key, value in spec.items():
                 if isinstance(value, tuple):
                     try:
                         self.assert_unordered_result(
@@ -918,14 +918,15 @@ class ORMTest(TestBase, AssertsExecutionResults):
             for t in reversed(_otest_metadata.sorted_tables):
                 try:
                     t.delete().execute().close()
-                except Exception, e:
-                    print "EXCEPTION DELETING...", e
+                except Exception as e:
+                    print("EXCEPTION DELETING...", e)
 
 
 class TTestSuite(unittest.TestSuite):
     """A TestSuite with once per TestCase setUpAll() and tearDownAll()"""
 
     def __init__(self, tests=()):
+        tests = list(tests)
         if len(tests) > 0 and isinstance(tests[0], TestBase):
             self._initTest = tests[0]
         else:
@@ -957,7 +958,7 @@ class TTestSuite(unittest.TestSuite):
         if hasattr(cls, '__requires__'):
             global requires
             if requires is None:
-                from testing import requires
+                from .testing import requires
             def test_suite(): return 'ok'
             for requirement in cls.__requires__:
                 check = getattr(requires, requirement)
@@ -966,24 +967,24 @@ class TTestSuite(unittest.TestSuite):
                     return True
         if (hasattr(cls, '__unsupported_on__') and
             config.db.name in cls.__unsupported_on__):
-            print "'%s' unsupported on DB implementation '%s'" % (
-                cls.__class__.__name__, config.db.name)
+            print("'%s' unsupported on DB implementation '%s'" % (
+                cls.__class__.__name__, config.db.name))
             return True
         if (getattr(cls, '__only_on__', None) not in (None,config.db.name)):
-            print "'%s' unsupported on DB implementation '%s'" % (
-                cls.__class__.__name__, config.db.name)
+            print("'%s' unsupported on DB implementation '%s'" % (
+                cls.__class__.__name__, config.db.name))
             return True
         if (getattr(cls, '__skip_if__', False)):
             for c in getattr(cls, '__skip_if__'):
                 if c():
-                    print "'%s' skipped by %s" % (
-                        cls.__class__.__name__, c.__name__)
+                    print("'%s' skipped by %s" % (
+                        cls.__class__.__name__, c.__name__))
                     return True
         for rule in getattr(cls, '__excluded_on__', ()):
             if _is_excluded(*rule):
-                print "'%s' unsupported on DB %s version %s" % (
+                print("'%s' unsupported on DB %s version %s" % (
                     cls.__class__.__name__, config.db.name,
-                    _server_version())
+                    _server_version()))
                 return True
         return False
 

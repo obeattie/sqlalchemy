@@ -696,7 +696,7 @@ class EagerLoader(AbstractRelationLoader):
         try:
             identity_key = self.mapper.identity_key_from_row(row, decorator)
             return decorator
-        except KeyError, k:
+        except KeyError as k:
             # no identity key - dont return a row processor, will cause a degrade to lazy
             if self._should_log_debug:
                 self.logger.debug("could not locate identity key from row; missing column '%s'" % k)
@@ -773,13 +773,13 @@ class LoadEagerFromAliasOption(PropertyOption):
     def __init__(self, key, alias=None):
         super(LoadEagerFromAliasOption, self).__init__(key)
         if alias:
-            if not isinstance(alias, basestring):
+            if not isinstance(alias, str):
                 m, alias, is_aliased_class = mapperutil._entity_info(alias)
         self.alias = alias
 
     def process_query_property(self, query, paths):
         if self.alias:
-            if isinstance(self.alias, basestring):
+            if isinstance(self.alias, str):
                 (mapper, propname) = paths[-1][-2:]
 
                 prop = mapper.get_property(propname, resolve_synonyms=True)

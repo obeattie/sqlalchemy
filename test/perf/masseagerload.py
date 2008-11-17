@@ -40,7 +40,7 @@ def masseagerload(session):
     session.begin()
     query = session.query(Item)
     l = query.all()
-    print "loaded ", len(l), " items each with ", len(l[0].subs), "subitems"
+    print("loaded ", len(l), " items each with ", len(l[0].subs), "subitems")
 
 def all():
     meta.create_all()

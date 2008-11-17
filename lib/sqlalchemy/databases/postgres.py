@@ -629,10 +629,10 @@ class PGCompiler(compiler.DefaultCompiler):
                 return "DISTINCT "
             elif isinstance(select._distinct, (list, tuple)):
                 return "DISTINCT ON (" + ', '.join(
-                    [(isinstance(col, basestring) and col or self.process(col)) for col in select._distinct]
+                    [(isinstance(col, str) and col or self.process(col)) for col in select._distinct]
                 )+ ") "
             else:
-                return "DISTINCT ON (" + unicode(select._distinct) + ") "
+                return "DISTINCT ON (" + str(select._distinct) + ") "
         else:
             return ""
 
@@ -706,7 +706,7 @@ class PGSchemaGenerator(compiler.SchemaGenerator):
             compiler = self._compile(whereclause, None)
             # this might belong to the compiler class
             inlined_clause = str(compiler) % dict(
-                [(key,bind.value) for key,bind in compiler.binds.iteritems()])
+                [(key,bind.value) for key,bind in compiler.binds.items()])
             self.append(" WHERE " + inlined_clause)
         self.execute()
 

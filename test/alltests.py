@@ -1,4 +1,4 @@
-import testenv; testenv.configure_for_tests()
+from . import testenv; testenv.configure_for_tests()
 import unittest
 
 import orm.alltests as orm

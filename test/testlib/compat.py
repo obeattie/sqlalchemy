@@ -7,7 +7,7 @@ def _function_named(fn, newname):
     try:
         fn.__name__ = newname
     except:
-        fn = types.FunctionType(fn.func_code, fn.func_globals, newname,
-                          fn.func_defaults, fn.func_closure)
+        fn = types.FunctionType(fn.__code__, fn.__globals__, newname,
+                          fn.__defaults__, fn.__closure__)
     return fn
 

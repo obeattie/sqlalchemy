@@ -88,7 +88,7 @@ class SessionTest(_fixtures.FixtureTest):
         u = session.query(User).filter_by(id=7).one()
 
         # get everything to load in both directions
-        print [a.user for a in u.addresses]
+        print([a.user for a in u.addresses])
 
         # then see if expunge fails
         session.expunge(u)
@@ -326,7 +326,7 @@ class SessionTest(_fixtures.FixtureTest):
         # use :bindparam style
         eq_(sess.execute("select * from users where id=:id",
                          {'id':7}).fetchall(),
-            [(7, u'jack')])
+            [(7, 'jack')])
 
     @engines.close_open_connections
     @testing.resolve_artifact_names
@@ -784,7 +784,7 @@ class SessionTest(_fixtures.FixtureTest):
         s.flush()
         user = s.query(User).one()
         user = None
-        print s.identity_map
+        print(s.identity_map)
         import gc
         gc.collect()
         assert len(s.identity_map) == 1
@@ -794,7 +794,7 @@ class SessionTest(_fixtures.FixtureTest):
         s = create_session(weak_identity_map=False)
         mapper(User, users)
 
-        for o in [User(name='u%s' % x) for x in xrange(10)]:
+        for o in [User(name='u%s' % x) for x in range(10)]:
             s.add(o)
         # o is still live after this loop...
 
@@ -853,7 +853,7 @@ class SessionTest(_fixtures.FixtureTest):
         assert u in s
         assert a not in s
         s.flush()
-        print "\n".join([repr(x.__dict__) for x in s])
+        print("\n".join([repr(x.__dict__) for x in s]))
         s.clear()
         assert s.query(User).one().id == u.id
         assert s.query(Address).first() is None

@@ -246,13 +246,13 @@ class _StringType(object):
     """Base for MySQL string types."""
 
     def __init__(self, charset=None, collation=None,
-                 ascii=False, unicode=False, binary=False,
+                 ascii=False, str=False, binary=False,
                  national=False, **kwargs):
         self.charset = charset
         # allow collate= or collation=
         self.collation = kwargs.get('collate', collation)
         self.ascii = ascii
-        self.unicode = unicode
+        self.str = str
         self.binary = binary
         self.national = national
 
@@ -265,7 +265,7 @@ class _StringType(object):
             charset = 'CHARACTER SET %s' % self.charset
         elif self.ascii:
             charset = 'ASCII'
-        elif self.unicode:
+        elif self.str:
             charset = 'UNICODE'
         else:
             charset = None
@@ -652,7 +652,7 @@ class MSBit(sqltypes.TypeEngine):
         """Convert a MySQL's 64 bit, variable length binary string to a long."""
         def process(value):
             if value is not None:
-                v = 0L
+                v = 0
                 for i in map(ord, value):
                     v = v << 8 | i
                 value = v
@@ -1344,7 +1344,7 @@ class MSSet(MSString):
     def bind_processor(self, dialect):
         super_convert = super(MSSet, self).bind_processor(dialect)
         def process(value):
-            if value is None or isinstance(value, (int, long, basestring)):
+            if value is None or isinstance(value, (int, int, str)):
                 pass
             else:
                 if None in value:
@@ -1640,7 +1640,7 @@ class MySQLDialect(default.DefaultDialect):
                 have = rs.rowcount > 0
                 rs.close()
                 return have
-            except exc.SQLError, e:
+            except exc.SQLError as e:
                 if e.orig.args[0] == 1146:
                     return False
                 raise
@@ -1862,7 +1862,7 @@ class MySQLDialect(default.DefaultDialect):
         try:
             try:
                 rp = connection.execute(st)
-            except exc.SQLError, e:
+            except exc.SQLError as e:
                 if e.orig.args[0] == 1146:
                     raise exc.NoSuchTableError(full_name)
                 else:
@@ -1889,7 +1889,7 @@ class MySQLDialect(default.DefaultDialect):
         try:
             try:
                 rp = connection.execute(st)
-            except exc.SQLError, e:
+            except exc.SQLError as e:
                 if e.orig.args[0] == 1146:
                     raise exc.NoSuchTableError(full_name)
                 else:
@@ -1985,7 +1985,7 @@ class MySQLCompiler(compiler.DefaultCompiler):
 
 
     def get_select_precolumns(self, select):
-        if isinstance(select._distinct, basestring):
+        if isinstance(select._distinct, str):
             return select._distinct.upper() + " "
         elif select._distinct:
             return "DISTINCT "
@@ -2390,7 +2390,7 @@ class MySQLSchemaReflector(object):
         for nope in ('auto_increment', 'data_directory', 'index_directory'):
             options.pop(nope, None)
 
-        for opt, val in options.items():
+        for opt, val in list(options.items()):
             table.kwargs['mysql_%s' % opt] = val
 
     def _prep_regexes(self):
@@ -2402,11 +2402,11 @@ class MySQLSchemaReflector(object):
 
         _final = self.preparer.final_quote
 
-        quotes = dict(zip(('iq', 'fq', 'esc_fq'),
+        quotes = dict(list(zip(('iq', 'fq', 'esc_fq'),
                           [re.escape(s) for s in
                            (self.preparer.initial_quote,
                             _final,
-                            self.preparer._escape_identifier(_final))]))
+                            self.preparer._escape_identifier(_final))])))
 
         self._pr_name = _pr_compile(
             r'^CREATE (?:\w+ +)?TABLE +'

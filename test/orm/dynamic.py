@@ -31,7 +31,7 @@ class DynamicTest(_fixtures.FixtureTest):
         })
         sess = create_session()
         u = sess.query(User).get(8)
-        eq_(list(u.addresses.order_by(desc(Address.email_address))), [Address(email_address=u'ed@wood.com'), Address(email_address=u'ed@lala.com'), Address(email_address=u'ed@bettyboop.com')])
+        eq_(list(u.addresses.order_by(desc(Address.email_address))), [Address(email_address='ed@wood.com'), Address(email_address='ed@lala.com'), Address(email_address='ed@bettyboop.com')])
 
     @testing.resolve_artifact_names
     def test_configured_order_by(self):
@@ -40,7 +40,7 @@ class DynamicTest(_fixtures.FixtureTest):
         })
         sess = create_session()
         u = sess.query(User).get(8)
-        eq_(list(u.addresses), [Address(email_address=u'ed@wood.com'), Address(email_address=u'ed@lala.com'), Address(email_address=u'ed@bettyboop.com')])
+        eq_(list(u.addresses), [Address(email_address='ed@wood.com'), Address(email_address='ed@lala.com'), Address(email_address='ed@bettyboop.com')])
 
     @testing.resolve_artifact_names
     def test_count(self):
@@ -151,7 +151,7 @@ class FlushTest(_fixtures.FixtureTest):
         })
         u1 = User(name='jack')
         
-        assert 'addresses' not in u1.__dict__.keys()
+        assert 'addresses' not in list(u1.__dict__.keys())
         u1.addresses = [Address(email_address='test')]
         assert 'addresses' in dir(u1)
         
@@ -263,7 +263,7 @@ class FlushTest(_fixtures.FixtureTest):
         try:
             del u.addresses[3]
             assert False
-        except TypeError, e:
+        except TypeError as e:
             assert "doesn't support item deletion" in str(e), str(e)
 
         for a in u.addresses.filter(Address.email_address.in_(['c', 'e', 'f'])):

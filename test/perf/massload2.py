@@ -47,7 +47,7 @@ else:
     T3.mapper.add_property( 't4s', relation(T4, cascade=cascade) )
 
 now = time.time()
-print "start"
+print("start")
 sess = create_session()
 o1 = T1()
 sess.save(o1)
@@ -61,10 +61,10 @@ for i2 in range(10):
 
         for i4 in range( 10 ):
             o3.t4s.append ( T4() )
-            print i2, i3, i4
+            print(i2, i3, i4)
 
-print len([s for s in sess])
-print "flushing"
+print(len([s for s in sess]))
+print("flushing")
 sess.flush()
 total = time.time() - now
-print "done,total time", total
+print("done,total time", total)

@@ -965,13 +965,13 @@ class CollectionsTest(_base.ORMTest):
             self._test_adapter(dict, self.dictable_entity,
                                to_set=lambda c: set(c.values()))
             self.assert_(False)
-        except sa_exc.ArgumentError, e:
+        except sa_exc.ArgumentError as e:
             self.assert_(e.args[0] == 'Type InstrumentedDict must elect an appender method to be a collection class')
 
         try:
             self._test_dict(dict)
             self.assert_(False)
-        except sa_exc.ArgumentError, e:
+        except sa_exc.ArgumentError as e:
             self.assert_(e.args[0] == 'Type InstrumentedDict must elect an appender method to be a collection class')
 
     def test_dict_subclass(self):
@@ -1035,12 +1035,12 @@ class CollectionsTest(_base.ORMTest):
             def __delitem__(self, key):
                 del self.data[key]
             def values(self):
-                return self.data.values()
+                return list(self.data.values())
             def __contains__(self, key):
                 return key in self.data
             @collection.iterator
             def itervalues(self):
-                return self.data.itervalues()
+                return iter(self.data.values())
             __hash__ = object.__hash__
             def __eq__(self, other):
                 return self.data == other
@@ -1048,7 +1048,7 @@ class CollectionsTest(_base.ORMTest):
                 return 'DictLike(%s)' % repr(self.data)
 
         self._test_adapter(DictLike, self.dictable_entity,
-                           to_set=lambda c: set(c.itervalues()))
+                           to_set=lambda c: set(c.values()))
         self._test_dict(DictLike)
         self._test_dict_bulk(DictLike)
         self.assert_(getattr(DictLike, '_sa_instrumented') == id(DictLike))
@@ -1075,12 +1075,12 @@ class CollectionsTest(_base.ORMTest):
             def __delitem__(self, key):
                 del self.data[key]
             def values(self):
-                return self.data.values()
+                return list(self.data.values())
             def __contains__(self, key):
                 return key in self.data
             @collection.iterator
             def itervalues(self):
-                return self.data.itervalues()
+                return iter(self.data.values())
             __hash__ = object.__hash__
             def __eq__(self, other):
                 return self.data == other
@@ -1088,7 +1088,7 @@ class CollectionsTest(_base.ORMTest):
                 return 'DictIsh(%s)' % repr(self.data)
 
         self._test_adapter(DictIsh, self.dictable_entity,
-                           to_set=lambda c: set(c.itervalues()))
+                           to_set=lambda c: set(c.values()))
         self._test_dict(DictIsh)
         self._test_dict_bulk(DictIsh)
         self.assert_(getattr(DictIsh, '_sa_instrumented') == id(DictIsh))
@@ -1626,7 +1626,7 @@ class CustomCollectionsTest(_base.MappedTest):
         f = sess.query(Foo).get(f.col1)
         assert len(list(f.bars)) == 2
 
-        existing = set([id(b) for b in f.bars.values()])
+        existing = set([id(b) for b in list(f.bars.values())])
 
         col = collections.collection_adapter(f.bars)
         col.append_with_event(Bar('b'))
@@ -1636,7 +1636,7 @@ class CustomCollectionsTest(_base.MappedTest):
         f = sess.query(Foo).get(f.col1)
         assert len(list(f.bars)) == 2
 
-        replaced = set([id(b) for b in f.bars.values()])
+        replaced = set([id(b) for b in list(f.bars.values())])
         self.assert_(existing != replaced)
 
     @testing.resolve_artifact_names

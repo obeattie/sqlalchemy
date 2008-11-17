@@ -188,7 +188,7 @@ class TypeDecorator(AbstractType):
         raise NotImplementedError()
 
     def bind_processor(self, dialect):
-        if self.__class__.process_bind_param.func_code is not TypeDecorator.process_bind_param.func_code:
+        if self.__class__.process_bind_param.__code__ is not TypeDecorator.process_bind_param.__code__:
             impl_processor = self.impl.bind_processor(dialect)
             if impl_processor:
                 def process(value):
@@ -202,7 +202,7 @@ class TypeDecorator(AbstractType):
             return self.impl.bind_processor(dialect)
 
     def result_processor(self, dialect):
-        if self.__class__.process_result_value.func_code is not TypeDecorator.process_result_value.func_code:
+        if self.__class__.process_result_value.__code__ is not TypeDecorator.process_result_value.__code__:
             impl_processor = self.impl.result_processor(dialect)
             if impl_processor:
                 def process(value):
@@ -316,9 +316,9 @@ class String(Concatenable, TypeEngine):
             else:
                 assert_unicode = self.assert_unicode
             def process(value):
-                if isinstance(value, unicode):
+                if isinstance(value, str):
                     return value.encode(dialect.encoding)
-                elif assert_unicode and not isinstance(value, (unicode, NoneType)):
+                elif assert_unicode and not isinstance(value, (str, NoneType)):
                     if assert_unicode == 'warn':
                         util.warn("Unicode type received non-unicode bind "
                                   "param value %r" % value)
@@ -334,7 +334,7 @@ class String(Concatenable, TypeEngine):
     def result_processor(self, dialect):
         if self.convert_unicode or dialect.convert_unicode:
             def process(value):
-                if value is not None and not isinstance(value, unicode):
+                if value is not None and not isinstance(value, str):
                     return value.decode(dialect.encoding)
                 else:
                     return value
@@ -624,7 +624,7 @@ NULLTYPE = NullType()
 # type which usually resolves to TEXT/CLOB
 type_map = {
     str : VARCHAR,
-    unicode : NCHAR,
+    str : NCHAR,
     int : Integer,
     float : Numeric,
     bool: Boolean,

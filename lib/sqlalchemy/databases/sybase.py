@@ -460,7 +460,7 @@ class SybaseSQLDialect(default.DefaultDialect):
         if cls != SybaseSQLDialect:
             return super(SybaseSQLDialect, cls).__new__(cls, *args, **kwargs)
         if dbapi:
-            print dbapi.__name__
+            print(dbapi.__name__)
             dialect = dialect_mapping.get(dbapi.__name__)
             return dialect(*args, **kwargs)
         else:
@@ -478,12 +478,12 @@ class SybaseSQLDialect(default.DefaultDialect):
                 dialect_cls = dialect_mapping[module_name]
                 return dialect_cls.import_dbapi()
             except KeyError:
-                raise exc.InvalidRequestError("Unsupported SybaseSQL module '%s' requested (must be " + " or ".join([x for x in dialect_mapping.keys()]) + ")" % module_name)
+                raise exc.InvalidRequestError("Unsupported SybaseSQL module '%s' requested (must be " + " or ".join([x for x in list(dialect_mapping.keys())]) + ")" % module_name)
         else:
-            for dialect_cls in dialect_mapping.values():
+            for dialect_cls in list(dialect_mapping.values()):
                 try:
                     return dialect_cls.import_dbapi()
-                except ImportError, e:
+                except ImportError as e:
                     pass
             else:
                 raise ImportError('No DBAPI module detected for SybaseSQL - please install mxodbc')
@@ -517,7 +517,7 @@ class SybaseSQLDialect(default.DefaultDialect):
             c.execute(statement, parameters)
             self.context.rowcount = c.rowcount
             c.DBPROP_COMMITPRESERVE = "Y"
-        except Exception, e:
+        except Exception as e:
             raise exc.DBAPIError.instance(statement, parameters, e)
 
     def table_names(self, connection, schema):
@@ -535,7 +535,7 @@ class SybaseSQLDialect(default.DefaultDialect):
 
         c = connection.execute(s)
         row = c.fetchone()
-        print "has_table: " + tablename + ": " + str(bool(row is not None))
+        print("has_table: " + tablename + ": " + str(bool(row is not None)))
         return row is not None
 
     def reflecttable(self, connection, table, include_columns):
@@ -614,12 +614,12 @@ class SybaseSQLDialect(default.DefaultDialect):
             (foreign_table, foreign_column, primary_table, primary_column) = (
                 row[0], row[1], row[2], row[3],
             )
-            if not primary_table in foreignKeys.keys():
+            if not primary_table in list(foreignKeys.keys()):
                 foreignKeys[primary_table] = [['%s' % (foreign_column)], ['%s.%s'%(primary_table, primary_column)]]
             else:
                 foreignKeys[primary_table][0].append('%s'%(foreign_column))
                 foreignKeys[primary_table][1].append('%s.%s'%(primary_table, primary_column))
-        for primary_table in foreignKeys.keys():
+        for primary_table in list(foreignKeys.keys()):
             #table.append_constraint(schema.ForeignKeyConstraint(['%s.%s'%(foreign_table, foreign_column)], ['%s.%s'%(primary_table,primary_column)]))
             table.append_constraint(schema.ForeignKeyConstraint(foreignKeys[primary_table][0], foreignKeys[primary_table][1]))
 
@@ -635,7 +635,7 @@ class SybaseSQLDialect_mxodbc(SybaseSQLDialect):
 
     def import_dbapi(cls):
         #import mx.ODBC.Windows as module
-        import mxODBC as module
+        from . import mxODBC as module
         return module
     import_dbapi = classmethod(import_dbapi)
 

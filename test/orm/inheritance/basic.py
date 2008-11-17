@@ -60,8 +60,8 @@ class O2MTest(ORMTest):
         sess.clear()
         l = sess.query(Blub).all()
         result = ','.join([repr(l[0]), repr(l[1]), repr(l[0].parent_foo), repr(l[1].parent_foo)])
-        print compare
-        print result
+        print(compare)
+        print(result)
         self.assert_(compare == result)
         self.assert_(l[0].parent_foo.data == 'foo #1' and l[1].parent_foo.data == 'foo #1')
 
@@ -300,7 +300,7 @@ class ConstructionTest(ORMTest):
                 'content_type':relation(content_types)
             }, polymorphic_identity='contents')
             assert False
-        except sa_exc.ArgumentError, e:
+        except sa_exc.ArgumentError as e:
             assert str(e) == "Mapper 'Mapper|Content|content' specifies a polymorphic_identity of 'contents', but no mapper in it's hierarchy specifies the 'polymorphic_on' column argument"
 
     def testbackref(self):
@@ -505,13 +505,13 @@ class VersioningTest(ORMTest):
         try:
             sess2.query(Base).with_lockmode('read').get(s1.id)
             assert False
-        except orm_exc.ConcurrentModificationError, e:
+        except orm_exc.ConcurrentModificationError as e:
             assert True
 
         try:
             sess2.flush()
             assert False
-        except orm_exc.ConcurrentModificationError, e:
+        except orm_exc.ConcurrentModificationError as e:
             assert True
 
         sess2.refresh(s2)
@@ -551,7 +551,7 @@ class VersioningTest(ORMTest):
             s1.subdata = 'some new subdata'
             sess.flush()
             assert False
-        except orm_exc.ConcurrentModificationError, e:
+        except orm_exc.ConcurrentModificationError as e:
             assert True
 
 class DistinctPKTest(ORMTest):
@@ -604,7 +604,7 @@ class DistinctPKTest(ORMTest):
             mapper(Employee, employee_table, inherits=person_mapper, primary_key=[person_table.c.id, employee_table.c.id])
             self._do_test(True)
             assert False
-        except sa_exc.SAWarning, e:
+        except sa_exc.SAWarning as e:
             assert str(e) == "On mapper Mapper|Employee|employees, primary key column 'employees.id' is being combined with distinct primary key column 'persons.id' in attribute 'id'.  Use explicit properties to give each column its own mapped attribute name.", str(e)
 
     def test_explicit_pk(self):
@@ -659,7 +659,7 @@ class SyncCompileTest(ORMTest):
     def _do_test(self, j1, j2):
         class A(object):
            def __init__(self, **kwargs):
-               for key, value in kwargs.items():
+               for key, value in list(kwargs.items()):
                     setattr(self, key, value)
 
         class B(A):

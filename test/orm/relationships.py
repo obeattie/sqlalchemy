@@ -132,7 +132,7 @@ class RelationTest2(_base.MappedTest):
                 self.company = company
                 self.emp_id = emp_id
                 self.reports_to = reports_to
-
+        
         mapper(Company, company_t)
         mapper(Employee, employee_t, properties= {
             'company':relation(Company, primaryjoin=employee_t.c.company_id==company_t.c.company_id, backref='employees'),
@@ -150,13 +150,13 @@ class RelationTest2(_base.MappedTest):
         c1 = Company()
         c2 = Company()
 
-        e1 = Employee(u'emp1', c1, 1)
-        e2 = Employee(u'emp2', c1, 2, e1)
-        e3 = Employee(u'emp3', c1, 3, e1)
-        e4 = Employee(u'emp4', c1, 4, e3)
-        e5 = Employee(u'emp5', c2, 1)
-        e6 = Employee(u'emp6', c2, 2, e5)
-        e7 = Employee(u'emp7', c2, 3, e5)
+        e1 = Employee('emp1', c1, 1)
+        e2 = Employee('emp2', c1, 2, e1)
+        e3 = Employee('emp3', c1, 3, e1)
+        e4 = Employee('emp4', c1, 4, e3)
+        e5 = Employee('emp5', c2, 1)
+        e6 = Employee('emp6', c2, 2, e5)
+        e7 = Employee('emp7', c2, 3, e5)
 
         sess.add_all((c1, c2))
         sess.flush()
@@ -196,13 +196,13 @@ class RelationTest2(_base.MappedTest):
         c1 = Company()
         c2 = Company()
 
-        e1 = Employee(u'emp1', c1, 1)
-        e2 = Employee(u'emp2', c1, 2, e1)
-        e3 = Employee(u'emp3', c1, 3, e1)
-        e4 = Employee(u'emp4', c1, 4, e3)
-        e5 = Employee(u'emp5', c2, 1)
-        e6 = Employee(u'emp6', c2, 2, e5)
-        e7 = Employee(u'emp7', c2, 3, e5)
+        e1 = Employee('emp1', c1, 1)
+        e2 = Employee('emp2', c1, 2, e1)
+        e3 = Employee('emp3', c1, 3, e1)
+        e4 = Employee('emp4', c1, 4, e3)
+        e5 = Employee('emp5', c2, 1)
+        e6 = Employee('emp6', c2, 2, e5)
+        e7 = Employee('emp7', c2, 3, e5)
 
         sess.add_all((c1, c2))
         sess.flush()
@@ -276,7 +276,7 @@ class RelationTest3(_base.MappedTest):
                     page=self, version=self.currentversion.version+1)
                 comment = self.add_comment()
                 comment.closeable = False
-                comment.content = u'some content'
+                comment.content = 'some content'
                 return self.currentversion
             def add_comment(self):
                 nextnum = max([-1] + [c.comment_id for c in self.comments]) + 1
@@ -325,15 +325,15 @@ class RelationTest3(_base.MappedTest):
     def testbasic(self):
         """A combination of complicated join conditions with post_update."""
 
-        j1 = Job(jobno=u'somejob')
-        j1.create_page(u'page1')
-        j1.create_page(u'page2')
-        j1.create_page(u'page3')
+        j1 = Job(jobno='somejob')
+        j1.create_page('page1')
+        j1.create_page('page2')
+        j1.create_page('page3')
 
-        j2 = Job(jobno=u'somejob2')
-        j2.create_page(u'page1')
-        j2.create_page(u'page2')
-        j2.create_page(u'page3')
+        j2 = Job(jobno='somejob2')
+        j2.create_page('page1')
+        j2.create_page('page2')
+        j2.create_page('page3')
 
         j2.pages[0].add_version()
         j2.pages[0].add_version()
@@ -345,14 +345,14 @@ class RelationTest3(_base.MappedTest):
         s.flush()
 
         s.clear()
-        j = s.query(Job).filter_by(jobno=u'somejob').one()
+        j = s.query(Job).filter_by(jobno='somejob').one()
         oldp = list(j.pages)
         j.pages = []
 
         s.flush()
 
         s.clear()
-        j = s.query(Job).filter_by(jobno=u'somejob2').one()
+        j = s.query(Job).filter_by(jobno='somejob2').one()
         j.pages[1].current_version = 12
         s.delete(j)
         s.flush()
@@ -393,7 +393,7 @@ class RelationTest4(_base.MappedTest):
         try:
             sess.flush()
             assert False
-        except AssertionError, e:
+        except AssertionError as e:
             startswith_(str(e),
                         "Dependency rule tried to blank-out "
                         "primary key column 'tableB.id' on instance ")
@@ -414,7 +414,7 @@ class RelationTest4(_base.MappedTest):
         try:
             sess.flush()
             assert False
-        except AssertionError, e:
+        except AssertionError as e:
             startswith_(str(e),
                         "Dependency rule tried to blank-out "
                         "primary key column 'tableB.id' on instance ")
@@ -742,7 +742,7 @@ class TypeMatchTest(_base.MappedTest):
         try:
             sess.add(a1)
             assert False
-        except AssertionError, err:
+        except AssertionError as err:
             eq_(str(err),
                 "Attribute 'bs' on class '%s' doesn't handle "
                 "objects of type '%s'" % (A, C))

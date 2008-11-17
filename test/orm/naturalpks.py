@@ -181,8 +181,8 @@ class NaturalPKTest(_base.MappedTest):
 
         u1.username = 'ed'
 
-        print id(a1), id(a2), id(u1)
-        print sa.orm.attributes.instance_state(u1).parents
+        print(id(a1), id(a2), id(u1))
+        print(sa.orm.attributes.instance_state(u1).parents)
         def go():
             sess.flush()
         if passive_updates:
@@ -240,7 +240,7 @@ class NaturalPKTest(_base.MappedTest):
         u1 = sess.query(User).get('ed')
         assert len(u1.addresses) == 2    # load addresses
         u1.username = 'fred'
-        print "--------------------------------"
+        print("--------------------------------")
         def go():
             sess.flush()
         # check that the passive_updates is on on the other side

@@ -132,7 +132,7 @@ class _EdgeCollection(object):
             return []
 
     def get_parents(self):
-        return self.parent_to_children.keys()
+        return list(self.parent_to_children.keys())
 
     def pop_node(self, node):
         """Remove all edges where the given node is a parent.
@@ -149,10 +149,10 @@ class _EdgeCollection(object):
                     yield child
 
     def __len__(self):
-        return sum(len(x) for x in self.parent_to_children.values())
+        return sum(len(x) for x in list(self.parent_to_children.values()))
 
     def __iter__(self):
-        for parent, children in self.parent_to_children.iteritems():
+        for parent, children in self.parent_to_children.items():
             for child in children:
                 yield (parent, child)
 
@@ -181,7 +181,7 @@ def _sort(tuples, allitems, allow_cycles=False, ignore_self_cycles=False):
         edges.add((parentnode, childnode))
 
     queue = []
-    for n in nodes.values():
+    for n in list(nodes.values()):
         if not edges.has_parents(n):
             queue.append(n)
 
@@ -244,7 +244,7 @@ def _organize_as_tree(nodes):
         nodealldeps = node.all_deps()
         if nodealldeps:
             # iterate over independent node indexes in reverse order so we can efficiently remove them
-            for index in xrange(len(independents) - 1, -1, -1):
+            for index in range(len(independents) - 1, -1, -1):
                 child, childsubtree, childcycles = independents[index]
                 # if there is a dependency between this node and an independent node
                 if (childsubtree.intersection(nodealldeps) or childcycles.intersection(node.dependencies)):
@@ -297,7 +297,7 @@ def _find_cycles(edges):
         traverse(parent)
 
     # sets are not hashable, so uniquify with id
-    unique_cycles = dict((id(s), s) for s in cycles.values()).values()
+    unique_cycles = list(dict((id(s), s) for s in list(cycles.values())).values())
     for cycle in unique_cycles:
         edgecollection = [edge for edge in edges
                           if edge[0] in cycle and edge[1] in cycle]

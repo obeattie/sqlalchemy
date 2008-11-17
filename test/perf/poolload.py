@@ -1,6 +1,6 @@
 # load test of connection pool
 import testenv; testenv.configure_for_tests()
-import thread, time
+import _thread, time
 from sqlalchemy import *
 import sqlalchemy.pool as pool
 from testlib import testing
@@ -29,10 +29,10 @@ def runfast():
 #                d[col] = row[col]
 #        time.sleep(.005)
 #        result.close()
-        print "runfast cycle complete"
+        print("runfast cycle complete")
 
 #thread.start_new_thread(runslow, ())
-for x in xrange(0,50):
-    thread.start_new_thread(runfast, ())
+for x in range(0,50):
+    _thread.start_new_thread(runfast, ())
 
 time.sleep(100)

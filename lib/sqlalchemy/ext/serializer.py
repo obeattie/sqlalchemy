@@ -43,7 +43,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.util import pickle
 import re
 import base64
-from cStringIO import StringIO
+from io import StringIO
 
 __all__ = ['Serializer', 'Deserializer', 'dumps', 'loads']
 

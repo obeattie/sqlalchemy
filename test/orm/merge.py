@@ -529,7 +529,7 @@ class MergeTest(_fixtures.FixtureTest):
         try:
             sess2.merge(u, dont_load=True)
             assert False
-        except sa.exc.InvalidRequestError, e:
+        except sa.exc.InvalidRequestError as e:
             assert ("merge() with dont_load=True option does not support "
                     "objects marked as 'dirty'.  flush() all changes on mapped "
                     "instances before merging with dont_load=True.") in str(e)
@@ -634,7 +634,7 @@ class MergeTest(_fixtures.FixtureTest):
             sess2.clear()
             eq_(sess2.query(User).get(u2.id).addresses[0].email_address,
                 'somenewaddress')
-        except sa.exc.InvalidRequestError, e:
+        except sa.exc.InvalidRequestError as e:
             assert "dont_load=True option does not support" in str(e)
 
     @testing.resolve_artifact_names

@@ -50,18 +50,16 @@ class VisitableType(type):
             "    return getattr(visitor, 'visit_%s' % self.__visit_name__)(self, **kw)"
     
         env = locals().copy()
-        exec func_text in env
+        exec(func_text, env)
         cls._compiler_dispatch = env['_compiler_dispatch']
         
         super(VisitableType, cls).__init__(clsname, bases, dict)
 
-class Visitable(object):
+class Visitable(object, metaclass=VisitableType):
     """Base class for visitable objects, applies the
     ``VisitableType`` metaclass.
     
     """
-
-    __metaclass__ = VisitableType
 
 class ClauseVisitor(object):
     """Base class for visitor objects which can traverse using 

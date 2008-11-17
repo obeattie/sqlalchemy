@@ -45,7 +45,7 @@ class TestTypes(TestBase, AssertsExecutionResults):
             ):
 
             bindproc = t.dialect_impl(dialect).bind_processor(dialect)
-            assert not bindproc or isinstance(bindproc(u"some string"), unicode)
+            assert not bindproc or isinstance(bindproc("some string"), str)
         
     @testing.uses_deprecated('Using String type with no length')
     def test_type_reflection(self):
@@ -109,7 +109,7 @@ class TestTypes(TestBase, AssertsExecutionResults):
                 expected = [len(c) > 1 and c[1] or c[0] for c in specs]
                 for table in rt, rv:
                     for i, reflected in enumerate(table.c):
-                        print reflected.type, type(expected[i])
+                        print(reflected.type, type(expected[i]))
                         assert isinstance(reflected.type, type(expected[i])), type(expected[i])
             finally:
                 db.execute('DROP VIEW types_v')
@@ -247,7 +247,7 @@ class InsertTest(TestBase, AssertsExecutionResults):
                 table.insert().execute()
 
                 rows = table.select().execute().fetchall()
-                print rows
+                print(rows)
                 self.assertEquals(len(rows), wanted)
         finally:
             table.drop()

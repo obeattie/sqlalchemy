@@ -10,7 +10,7 @@ from testlib.compat import _function_named
 _repr_stack = set()
 class BasicEntity(object):
     def __init__(self, **kw):
-        for key, value in kw.iteritems():
+        for key, value in kw.items():
             setattr(self, key, value)
 
     def __repr__(self):
@@ -68,12 +68,12 @@ class ComparableEntity(BasicEntity):
             else:
                 a, b = self, other
 
-            for attr in a.__dict__.keys():
+            for attr in list(a.__dict__.keys()):
                 if attr.startswith('_'):
                     continue
                 value = getattr(a, attr)
                 if (hasattr(value, '__iter__') and
-                    not isinstance(value, basestring)):
+                    not isinstance(value, str)):
                     try:
                         # catch AttributeError so that lazy loaders trigger
                         battr = getattr(b, attr)
@@ -205,12 +205,12 @@ class MappedTest(ORMTest):
             for table in reversed(self.metadata.sorted_tables):
                 try:
                     table.delete().execute().close()
-                except sa.exc.DBAPIError, ex:
-                    print >> sys.stderr, "Error emptying table %s: %r" % (
-                        table, ex)
+                except sa.exc.DBAPIError as ex:
+                    print("Error emptying table %s: %r" % (
+                        table, ex), file=sys.stderr)
 
     def tearDownAll(self):
-        for cls in self.classes.values():
+        for cls in list(self.classes.values()):
             self.unregister_class(cls)
         ORMTest.tearDownAll(self)
         self.metadata.drop_all()
@@ -259,8 +259,8 @@ class MappedTest(ORMTest):
 
     def _load_fixtures(self):
         headers, rows = {}, {}
-        for table, data in self.fixtures().iteritems():
-            if isinstance(table, basestring):
+        for table, data in self.fixtures().items():
+            if isinstance(table, str):
                 table = self.tables[table]
             headers[table] = data[0]
             rows[table] = data[1:]
@@ -269,7 +269,7 @@ class MappedTest(ORMTest):
                 continue
             table.bind.execute(
                 table.insert(),
-                [dict(zip(headers[table], column_values))
+                [dict(list(zip(headers[table], column_values)))
                  for column_values in rows[table]])
 
 

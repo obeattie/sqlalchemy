@@ -958,7 +958,7 @@ class InstanceState(object):
         """a set of keys which have no uncommitted changes"""
 
         return set(
-            key for key in self.manager.iterkeys()
+            key for key in self.manager.keys()
             if (key not in self.committed_state or
                 (key in self.manager.mutable_attributes and
                  not self.manager[key].impl.check_mutable_modified(self))))
@@ -972,14 +972,14 @@ class InstanceState(object):
 
         """
         return set(
-            key for key in self.manager.iterkeys()
+            key for key in self.manager.keys()
             if key not in self.committed_state and key not in self.dict)
 
     def expire_attributes(self, attribute_names):
         self.expired_attributes = set(self.expired_attributes)
 
         if attribute_names is None:
-            attribute_names = self.manager.keys()
+            attribute_names = list(self.manager.keys())
             self.expired = True
             self.modified = False
         for key in attribute_names:
@@ -1154,8 +1154,7 @@ class ClassManager(dict):
             self.install_descriptor(key, inst)
         self[key] = inst
         for cls in self.class_.__subclasses__():
-            if isinstance(cls, types.ClassType):
-                continue
+            # PY3K: remove isinstance(cls, ClassType), or fix, 2to3 turns it into 'type'
             manager = manager_of_class(cls)
             if manager is None:
                 manager = create_manager_for_cls(cls)
@@ -1174,7 +1173,7 @@ class ClassManager(dict):
         if key in self.mutable_attributes:
             self.mutable_attributes.remove(key)
         for cls in self.class_.__subclasses__():
-            if isinstance(cls, types.ClassType):
+            if isinstance(cls, type):
                 continue
             manager = manager_of_class(cls)
             if manager is None:
@@ -1228,7 +1227,7 @@ class ClassManager(dict):
 
     @property
     def attributes(self):
-        return self.itervalues()
+        return iter(self.values())
 
     @classmethod
     def deferred_scalar_loader(cls, state, keys):
@@ -1279,7 +1278,7 @@ class ClassManager(dict):
         """TODO"""
         return self.get_impl(key).hasparent(state, optimistic=optimistic)
 
-    def __nonzero__(self):
+    def __bool__(self):
         """All ClassManagers are non-zero regardless of attribute state."""
         return True
 
@@ -1394,7 +1393,7 @@ class History(tuple):
     def __new__(cls, added, unchanged, deleted):
         return tuple.__new__(cls, (added, unchanged, deleted))
     
-    def __nonzero__(self):
+    def __bool__(self):
         return self != HISTORY_BLANK
     
     def sum(self):
@@ -1742,17 +1741,19 @@ def __init__(%(apply_pos)s):
     else:
         return original__init__(%(apply_kw)s)
 """
-    func_vars = util.format_argspec_init(original__init__, grouped=False)
+    func_vars = util.format_argspec_init(original__init__, grouped=False, debug=True)
     func_text = func_body % func_vars
+    
+    print (func_text)
     #TODO: log debug #print func_text
 
     func = getattr(original__init__, 'im_func', original__init__)
     func_defaults = getattr(func, 'func_defaults', None)
 
     env = locals().copy()
-    exec func_text in env
+    exec(func_text, env)
     __init__ = env['__init__']
     __init__.__doc__ = original__init__.__doc__
     if func_defaults:
-        __init__.func_defaults = func_defaults
+        __init__.__defaults__ = func_defaults
     return __init__

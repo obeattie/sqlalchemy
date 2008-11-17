@@ -1,15 +1,18 @@
 import operator
 from sqlalchemy.sql import operators, functions
 from sqlalchemy.sql import expression as sql
-
+from sqlalchemy import util
 
 class UnevaluatableError(Exception):
     pass
 
 _straight_ops = set(getattr(operators, op)
-                    for op in ('add', 'mul', 'sub', 'div', 'mod', 'truediv',
+                    for op in ('add', 'mul', 'sub', 'mod', 'truediv',
                                'lt', 'le', 'ne', 'gt', 'ge', 'eq'))
 
+# PY3K - conditionally add 'div'
+if not util.py3k:
+    _straight_ops.add(operators.div)
 
 _notimplemented_ops = set(getattr(operators, op)
                           for op in ('like_op', 'notlike_op', 'ilike_op',
@@ -38,7 +41,7 @@ class EvaluatorCompiler(object):
         return lambda obj: get_corresponding_attr(obj)
 
     def visit_clauselist(self, clause):
-        evaluators = map(self.process, clause.clauses)
+        evaluators = list(map(self.process, clause.clauses))
         if clause.operator is operators.or_:
             def evaluate(obj):
                 has_null = False
@@ -63,7 +66,7 @@ class EvaluatorCompiler(object):
         return evaluate
 
     def visit_binary(self, clause):
-        eval_left,eval_right = map(self.process, [clause.left, clause.right])
+        eval_left,eval_right = list(map(self.process, [clause.left, clause.right]))
         operator = clause.operator
         if operator is operators.is_:
             def evaluate(obj):

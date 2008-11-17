@@ -69,7 +69,7 @@ class CompileTest(TestBase, AssertsCompiledSQL):
 
         s = table4.select(use_labels=True)
         c = s.compile(dialect=self.__dialect__)
-        print c.result_map
+        print(c.result_map)
         assert table4.c.rem_id in set(c.result_map['remote_owner_remotetable_rem_id'][1])
 
         self.assert_compile(table4.select(), "SELECT remotetable_1.rem_id, remotetable_1.datatype_id, remotetable_1.value FROM remote_owner.remotetable AS remotetable_1")

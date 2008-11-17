@@ -855,7 +855,7 @@ def contains_eager(*keys, **kwargs):
     """
     alias = kwargs.pop('alias', None)
     if kwargs:
-        raise exceptions.ArgumentError("Invalid kwargs for contains_eager: %r" % kwargs.keys())
+        raise exceptions.ArgumentError("Invalid kwargs for contains_eager: %r" % list(kwargs.keys()))
 
     return (strategies.EagerLazyOption(keys, lazy=False), strategies.LoadEagerFromAliasOption(keys, alias=alias))
 

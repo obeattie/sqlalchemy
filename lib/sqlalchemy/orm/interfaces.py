@@ -680,12 +680,12 @@ class PropertyOption(MapperOption):
             path_element = entity.path_entity
 
         for key in util.to_list(self.key):
-            if isinstance(key, basestring):
+            if isinstance(key, str):
                 tokens = key.split('.')
             else:
                 tokens = [key]
             for token in tokens:
-                if isinstance(token, basestring):
+                if isinstance(token, str):
                     if not entity:
                         entity = query._entity_zero()
                         path_element = entity.path_entity

@@ -5,26 +5,30 @@
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
 import inspect, itertools, operator, sys, warnings, weakref
-import __builtin__
+import builtins
 types = __import__('types')
 
 from sqlalchemy import exc
 
 try:
-    import thread, threading
+    import _thread, threading
     from threading import local as ThreadLocal
 except ImportError:
-    import dummy_thread as thread
+    import _dummy_thread as thread
     import dummy_threading as threading
     from dummy_threading import local as ThreadLocal
 
 py3k = getattr(sys, 'py3kwarning', False) or sys.version_info >= (3, 0)
 
+# PY3K: add conditional for set_types = set
 if py3k:
     set_types = set
+    set_binop_bases = (set, frozenset)
+    
 elif sys.version_info < (2, 6):
     import sets
     set_types = set, sets.Set
+    set_binop_bases = (set, frozenset, sets.BaseSet)
 else:
     # 2.6 deprecates sets.Set, but we still need to be able to detect them
     # in user code and as return values from DB-APIs
@@ -38,6 +42,7 @@ else:
         warnings.filters.remove(ignore)
 
     set_types = set, sets.Set
+    set_binop_bases = (set, frozenset, sets.BaseSet)
 
 EMPTY_SET = frozenset()
 
@@ -45,15 +50,16 @@ if py3k:
     import pickle
 else:
     try:
-        import cPickle as pickle
+        import pickle as pickle
     except ImportError:
         import pickle
 
+# PY3K: add no-op for buffer
 if py3k:
     def buffer(x):
         return x # no-op until we figure out what MySQLdb is going to use
 else:
-    buffer = __builtin__.buffer
+    buffer = builtins.buffer
         
 if sys.version_info >= (2, 5):
     class PopulateDict(dict):
@@ -88,12 +94,12 @@ if py3k:
     def callable(fn):
         return hasattr(fn, '__call__')
 else:
-    callable = __builtin__.callable
+    callable = builtins.callable
 
 if py3k:
     from functools import reduce
 else:
-    reduce = __builtin__.reduce
+    reduce = builtins.reduce
 
 try:
     from collections import defaultdict
@@ -120,7 +126,7 @@ except ImportError:
                 args = tuple()
             else:
                 args = self.default_factory,
-            return type(self), args, None, None, self.iteritems()
+            return type(self), args, None, None, iter(self.items())
         def copy(self):
             return self.__copy__()
         def __copy__(self):
@@ -128,7 +134,7 @@ except ImportError:
         def __deepcopy__(self, memo):
             import copy
             return type(self)(self.default_factory,
-                              copy.deepcopy(self.items()))
+                              copy.deepcopy(list(self.items())))
         def __repr__(self):
             return 'defaultdict(%s, %s)' % (self.default_factory,
                                             dict.__repr__(self))
@@ -188,7 +194,7 @@ def accepts_a_list_as_starargs(list_deprecation=None):
                     "variable argument list.  Supplying %s as a single "
                     "list is deprecated and support will be removed "
                     "in a future release." % (
-                        fn.func_name,
+                        fn.__name__,
                         inspect.formatargspec(*spec),
                         spec[1], spec[1]))
                 warnings.warn(msg, warning_type, stacklevel=3)
@@ -208,8 +214,8 @@ def unique_symbols(used, *bases):
     used = set(used)
     for base in bases:
         pool = itertools.chain((base,),
-                               itertools.imap(lambda i: base + str(i),
-                                              xrange(1000)))
+                               map(lambda i: base + str(i),
+                                              range(1000)))
         for sym in pool:
             if sym not in used:
                 used.add(sym)
@@ -223,7 +229,7 @@ def decorator(target):
 
     def decorate(fn):
         spec = inspect.getargspec(fn)
-        names = tuple(spec[0]) + spec[1:3] + (fn.func_name,)
+        names = tuple(spec[0]) + spec[1:3] + (fn.__name__,)
         targ_name, fn_name = unique_symbols(names, 'target', 'fn')
 
         metadata = dict(target=targ_name, fn=fn_name)
@@ -232,7 +238,7 @@ def decorator(target):
         code = 'lambda %(args)s: %(target)s(%(fn)s, %(apply_kw)s)' % (
                 metadata)
         decorated = eval(code, {targ_name:target, fn_name:fn})
-        decorated.func_defaults = getattr(fn, 'im_func', fn).func_defaults
+        decorated.__defaults__ = getattr(fn, 'im_func', fn).__defaults__
         return update_wrapper(decorated, fn)
     return update_wrapper(decorate, target)
 
@@ -260,7 +266,7 @@ def flatten_iterator(x):
 
     """
     for elem in x:
-        if not isinstance(elem, basestring) and hasattr(elem, '__iter__'):
+        if not isinstance(elem, str) and hasattr(elem, '__iter__'):
             for y in flatten_iterator(elem):
                 yield y
         else:
@@ -300,7 +306,7 @@ def get_func_kwargs(func):
     """Return the full set of legal kwargs for the given `func`."""
     return inspect.getargspec(func)[0]
 
-def format_argspec_plus(fn, grouped=True):
+def format_argspec_plus(fn, grouped=True, debug=False):
     """Returns a dictionary of formatted, introspected function arguments.
 
     A enhanced variant of inspect.formatargspec to support code generation.
@@ -332,7 +338,10 @@ def format_argspec_plus(fn, grouped=True):
        'apply_pos': '(self, a, b, c, **d)'}
 
     """
-    spec = callable(fn) and inspect.getargspec(fn) or fn
+#    if debug:
+#        import pdb
+#        pdb.set_trace()
+    spec = hasattr(fn, '__call__') and inspect.getargspec(fn) or fn
     args = inspect.formatargspec(*spec)
     if spec[0]:
         self_arg = spec[0][0]
@@ -351,7 +360,7 @@ def format_argspec_plus(fn, grouped=True):
         return dict(args=args[1:-1], self_arg=self_arg,
                     apply_pos=apply_pos[1:-1], apply_kw=apply_kw[1:-1])
 
-def format_argspec_init(method, grouped=True):
+def format_argspec_init(method, grouped=True, debug=False):
     """format_argspec_plus with considerations for typical __init__ methods
 
     Wraps format_argspec_plus with error handling strategies for typical
@@ -362,7 +371,7 @@ def format_argspec_init(method, grouped=True):
 
     """
     try:
-        return format_argspec_plus(method, grouped=grouped)
+        return format_argspec_plus(method, grouped=grouped, debug=debug)
     except TypeError:
         self_arg = 'self'
         if method is object.__init__:
@@ -393,8 +402,8 @@ def getargspec_init(method):
 def unbound_method_to_callable(func_or_cls):
     """Adjust the incoming callable such that a 'self' argument is not required."""
 
-    if isinstance(func_or_cls, types.MethodType) and not func_or_cls.im_self:
-        return func_or_cls.im_func
+    if isinstance(func_or_cls, types.MethodType) and not func_or_cls.__self__:
+        return func_or_cls.__func__
     else:
         return func_or_cls
 
@@ -411,16 +420,16 @@ def class_hierarchy(cls):
     will not be descended.
 
     """
-    if isinstance(cls, types.ClassType):
+    if isinstance(cls, type):
         return list()
     hier = set([cls])
     process = list(cls.__mro__)
     while process:
         c = process.pop()
-        if isinstance(c, types.ClassType):
+        if isinstance(c, type):
             continue
         for b in (_ for _ in c.__bases__
-                  if _ not in hier and not isinstance(_, types.ClassType)):
+                  if _ not in hier and not isinstance(_, type)):
             process.append(b)
             hier.add(b)
         if c.__module__ == '__builtin__' or not hasattr(c, '__subclasses__'):
@@ -446,7 +455,7 @@ def iterate_attributes(cls):
 
 # from paste.deploy.converters
 def asbool(obj):
-    if isinstance(obj, (str, unicode)):
+    if isinstance(obj, (str, str)):
         obj = obj.strip().lower()
         if obj in ['true', 'yes', 'on', 'y', 't', '1']:
             return True
@@ -503,9 +512,9 @@ def dictlike_iteritems(dictlike):
     """Return a (key, value) iterator for almost any dict-like object."""
 
     if hasattr(dictlike, 'iteritems'):
-        return dictlike.iteritems()
-    elif hasattr(dictlike, 'items'):
         return iter(dictlike.items())
+    elif hasattr(dictlike, 'items'):
+        return iter(list(dictlike.items()))
 
     getter = getattr(dictlike, '__getitem__', getattr(dictlike, 'get', None))
     if getter is None:
@@ -514,11 +523,11 @@ def dictlike_iteritems(dictlike):
 
     if hasattr(dictlike, 'iterkeys'):
         def iterator():
-            for key in dictlike.iterkeys():
+            for key in dictlike.keys():
                 yield key, getter(key)
         return iterator()
     elif hasattr(dictlike, 'keys'):
-        return iter((key, getter(key)) for key in dictlike.keys())
+        return iter((key, getter(key)) for key in list(dictlike.keys()))
     else:
         raise TypeError(
             "Object '%r' is not dict-like" % dictlike)
@@ -585,9 +594,9 @@ def monkeypatch_proxied_specials(into_cls, from_cls, skip=None, only=None,
               "return %(name)s.%(method)s%(d_args)s" % locals())
 
         env = from_instance is not None and {name: from_instance} or {}
-        exec py in env
+        exec(py, env)
         try:
-            env[method].func_defaults = fn.func_defaults
+            env[method].__defaults__ = fn.__defaults__
         except AttributeError:
             pass
         setattr(into_cls, method, env[method])
@@ -611,7 +620,7 @@ class OrderedProperties(object):
         return len(self._data)
 
     def __iter__(self):
-        return self._data.itervalues()
+        return iter(self._data.values())
 
     def __add__(self, other):
         return list(self) + list(other)
@@ -653,10 +662,10 @@ class OrderedProperties(object):
             return default
 
     def keys(self):
-        return self._data.keys()
+        return list(self._data.keys())
 
     def has_key(self, key):
-        return self._data.has_key(key)
+        return key in self._data
 
     def clear(self):
         self._data.clear()
@@ -683,7 +692,7 @@ class OrderedDict(dict):
     def update(self, ____sequence=None, **kwargs):
         if ____sequence is not None:
             if hasattr(____sequence, 'keys'):
-                for key in ____sequence.keys():
+                for key in list(____sequence.keys()):
                     self.__setitem__(key, ____sequence[key])
             else:
                 for key, value in ____sequence:
@@ -705,19 +714,19 @@ class OrderedDict(dict):
         return [self[key] for key in self._list]
 
     def itervalues(self):
-        return iter(self.values())
+        return iter(list(self.values()))
 
     def keys(self):
         return list(self._list)
 
     def iterkeys(self):
-        return iter(self.keys())
+        return iter(list(self.keys()))
 
     def items(self):
-        return [(key, self[key]) for key in self.keys()]
+        return [(key, self[key]) for key in list(self.keys())]
 
     def iteritems(self):
-        return iter(self.items())
+        return iter(list(self.items()))
 
     def __setitem__(self, key, object):
         if key not in self:
@@ -901,8 +910,8 @@ class IdentitySet(object):
 
         if len(self) > len(other):
             return False
-        for m in itertools.ifilterfalse(other._members.has_key,
-                                        self._members.iterkeys()):
+        for m in itertools.filterfalse(other._members.has_key,
+                                        iter(self._members.keys())):
             return False
         return True
 
@@ -922,8 +931,8 @@ class IdentitySet(object):
         if len(self) < len(other):
             return False
 
-        for m in itertools.ifilterfalse(self._members.has_key,
-                                        other._members.iterkeys()):
+        for m in itertools.filterfalse(self._members.has_key,
+                                        iter(other._members.keys())):
             return False
         return True
 
@@ -1008,7 +1017,7 @@ class IdentitySet(object):
         return result
     
     def _member_id_tuples(self):
-        return ((id(v), v) for v in self._members.itervalues())
+        return ((id(v), v) for v in self._members.values())
         
     def __xor__(self, other):
         if not isinstance(other, IdentitySet):
@@ -1025,7 +1034,7 @@ class IdentitySet(object):
         return self
 
     def copy(self):
-        return type(self)(self._members.itervalues())
+        return type(self)(iter(self._members.values()))
 
     __copy__ = copy
 
@@ -1033,13 +1042,13 @@ class IdentitySet(object):
         return len(self._members)
 
     def __iter__(self):
-        return self._members.itervalues()
+        return iter(self._members.values())
 
     def __hash__(self):
         raise TypeError('set objects are unhashable')
 
     def __repr__(self):
-        return '%s(%r)' % (type(self).__name__, self._members.values())
+        return '%s(%r)' % (type(self).__name__, list(self._members.values()))
 
 
 class OrderedIdentitySet(IdentitySet):
@@ -1307,7 +1316,7 @@ def as_interface(obj, cls=None, methods=None, required=None):
     for method, impl in dictlike_iteritems(obj):
         if method not in interface:
             raise TypeError("%r: unknown in this interface" % method)
-        if not callable(impl):
+        if not hasattr(impl, '__call__'):
             raise TypeError("%r=%r is not callable" % (method, impl))
         setattr(AnonymousInterface, method, staticmethod(impl))
         found.add(method)
@@ -1328,8 +1337,8 @@ def function_named(fn, name):
     try:
         fn.__name__ = name
     except TypeError:
-        fn = types.FunctionType(fn.func_code, fn.func_globals, name,
-                          fn.func_defaults, fn.func_closure)
+        fn = types.FunctionType(fn.__code__, fn.__globals__, name,
+                          fn.__defaults__, fn.__closure__)
     return fn
 
 class memoized_property(object):
@@ -1464,7 +1473,7 @@ class WeakIdentityMapping(weakref.WeakKeyDictionary):
 
 
 def warn(msg):
-    if isinstance(msg, basestring):
+    if isinstance(msg, str):
         warnings.warn(msg, exc.SAWarning, stacklevel=3)
     else:
         warnings.warn(msg, stacklevel=3)

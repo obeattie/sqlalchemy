@@ -318,9 +318,9 @@ class TypesTest(TestBase, AssertsExecutionResults):
                     try:
                         self.assert_(list(row) == expected)
                     except:
-                        print "Storing %s" % store
-                        print "Expected %s" % expected
-                        print "Found %s" % list(row)
+                        print("Storing %s" % store)
+                        print("Expected %s" % expected)
+                        print("Found %s" % list(row))
                         raise
                     table.delete().execute()
 
@@ -371,9 +371,9 @@ class TypesTest(TestBase, AssertsExecutionResults):
                         if isinstance(val, bool):
                             self.assert_(val is row[i])
                 except:
-                    print "Storing %s" % store
-                    print "Expected %s" % expected
-                    print "Found %s" % list(row)
+                    print("Storing %s" % store)
+                    print("Expected %s" % expected)
+                    print("Found %s" % list(row))
                     raise
                 table.delete().execute()
 
@@ -498,9 +498,9 @@ class TypesTest(TestBase, AssertsExecutionResults):
                     try:
                         self.assert_(list(row) == expected)
                     except:
-                        print "Storing %s" % store
-                        print "Expected %s" % expected
-                        print "Found %s" % list(row)
+                        print("Storing %s" % store)
+                        print("Expected %s" % expected)
+                        print("Found %s" % list(row))
                         raise
                     table.delete().execute()
 
@@ -669,13 +669,13 @@ class TypesTest(TestBase, AssertsExecutionResults):
             reflected = Table('mysql_case', MetaData(testing.db),
                               autoload=True, include_columns=['c1', 'C2'])
             for t in case_table, reflected:
-                assert 'c1' in t.c.keys()
-                assert 'C2' in t.c.keys()
+                assert 'c1' in list(t.c.keys())
+                assert 'C2' in list(t.c.keys())
             reflected2 = Table('mysql_case', MetaData(testing.db),
                               autoload=True, include_columns=['c1', 'c2'])
-            assert 'c1' in reflected2.c.keys()
+            assert 'c1' in list(reflected2.c.keys())
             for c in ['c2', 'C2', 'C3']:
-                assert c not in reflected2.c.keys()
+                assert c not in list(reflected2.c.keys())
         finally:
             case_table.drop()
 
@@ -810,8 +810,8 @@ class TypesTest(TestBase, AssertsExecutionResults):
 
     def assert_eq(self, got, wanted):
         if got != wanted:
-            print "Expected %s" % wanted
-            print "Found %s" % got
+            print("Expected %s" % wanted)
+            print("Found %s" % got)
         self.assertEqual(got, wanted)
 
 

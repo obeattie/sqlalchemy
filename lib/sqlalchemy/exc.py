@@ -122,7 +122,7 @@ class DBAPIError(SQLAlchemyError):
             text = str(orig)
         except (KeyboardInterrupt, SystemExit):
             raise
-        except Exception, e:
+        except Exception as e:
             text = 'Error in str() of DB-API-generated exception: ' + str(e)
         SQLAlchemyError.__init__(
             self, '(%s) %s' % (orig.__class__.__name__, text))

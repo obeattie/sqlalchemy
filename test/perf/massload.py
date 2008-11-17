@@ -46,7 +46,7 @@ class LoadTest(TestBase, AssertsExecutionResults):
             #gc.collect()
             l = query.filter(items.c.item_id.between(x*100 - 100 + 1, x*100)).all()
             assert len(l) == 100
-            print "loaded ", len(l), " items "
+            print("loaded ", len(l), " items ")
             # modifying each object will ensure that the objects get placed in the "dirty" list
             # and will hang around until expunged
             #for a in l:
@@ -58,7 +58,7 @@ class LoadTest(TestBase, AssertsExecutionResults):
             #print len(objectstore.get_session().identity_map)
             #objectstore.expunge(*l)
         total = time.time() -now
-        print "total time ", total
+        print("total time ", total)
 
 
 if __name__ == "__main__":

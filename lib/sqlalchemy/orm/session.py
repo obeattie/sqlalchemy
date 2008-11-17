@@ -567,7 +567,7 @@ class Session(object):
         self._mapper_flush_opts = {}
 
         if binds is not None:
-            for mapperortable, value in binds.iteritems():
+            for mapperortable, value in binds.items():
                 if isinstance(mapperortable, type):
                     mapperortable = _class_mapper(mapperortable).base_mapper
                 self.__binds[mapperortable] = value
@@ -775,7 +775,7 @@ class Session(object):
     def close_all(cls):
         """Close *all* sessions in memory."""
 
-        for sess in _sessions.values():
+        for sess in list(_sessions.values()):
             sess.close()
     close_all = classmethod(close_all)
 
@@ -786,7 +786,9 @@ class Session(object):
         ``Session``.
 
         """
-        for state in self.identity_map.all_states() + list(self._new):
+        
+        # PY3K: all_states() needs to be wrapped in list()
+        for state in list(self.identity_map.all_states()) + list(self._new):
             state.detach()
 
         self.identity_map = self._identity_cls()
@@ -1318,7 +1320,7 @@ class Session(object):
     def __iter__(self):
         """Iterate over all pending or persistent instances within this Session."""
 
-        return iter(list(self._new.values()) + self.identity_map.values())
+        return iter(list(self._new.values()) + list(self.identity_map.values()))
 
     def _contains_state(self, state):
         return state in self._new or self.identity_map.contains_state(state)
@@ -1517,13 +1519,13 @@ class Session(object):
     def deleted(self):
         "The set of all instances marked as 'deleted' within this ``Session``"
 
-        return util.IdentitySet(self._deleted.values())
+        return util.IdentitySet(list(self._deleted.values()))
 
     @property
     def new(self):
         "The set of all instances marked as 'new' within this ``Session``."
 
-        return util.IdentitySet(self._new.values())
+        return util.IdentitySet(list(self._new.values()))
 
 _expire_state = attributes.InstanceState.expire_attributes
 register_attribute = unitofwork.register_attribute

@@ -71,7 +71,7 @@ class ConcreteTest(ORMTest):
         session.flush()
         session.clear()
 
-        print set([repr(x) for x in session.query(Employee).all()])
+        print(set([repr(x) for x in session.query(Employee).all()]))
         assert set([repr(x) for x in session.query(Employee).all()]) == set(["Engineer Kurt knows how to hack", "Manager Tom knows how to manage things"])
         assert set([repr(x) for x in session.query(Manager).all()]) == set(["Manager Tom knows how to manage things"])
         assert set([repr(x) for x in session.query(Engineer).all()]) == set(["Engineer Kurt knows how to hack"])
@@ -220,12 +220,12 @@ class ColKeysTest(ORMTest):
     
     def insert_data(self):
         refugees_table.insert().execute(
-            dict(refugee_fid=1, name=u"refugee1"),
-            dict(refugee_fid=2, name=u"refugee2")
+            dict(refugee_fid=1, name="refugee1"),
+            dict(refugee_fid=2, name="refugee2")
         )
         offices_table.insert().execute(
-            dict(office_fid=1, name=u"office1"),
-            dict(office_fid=2, name=u"office2")
+            dict(office_fid=1, name="office1"),
+            dict(office_fid=2, name="office2")
         )
         
     def test_keys(self):

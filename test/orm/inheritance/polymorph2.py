@@ -11,7 +11,7 @@ from testlib import fixtures
 
 class AttrSettable(object):
     def __init__(self, **kwargs):
-        [setattr(self, k, v) for k, v in kwargs.iteritems()]
+        [setattr(self, k, v) for k, v in kwargs.items()]
     def __repr__(self):
         return self.__class__.__name__ + "(%s)" % (hex(id(self)))
 
@@ -65,7 +65,7 @@ class RelationTest1(ORMTest):
 
         p = session.query(Person).get(p.person_id)
         m = session.query(Manager).get(m.person_id)
-        print p, m, p.manager
+        print(p, m, p.manager)
         assert p.manager is m
 
     def testdescendantrefsparent(self):
@@ -92,7 +92,7 @@ class RelationTest1(ORMTest):
 
         p = session.query(Person).get(p.person_id)
         m = session.query(Manager).get(m.person_id)
-        print p, m, m.employee
+        print(p, m, m.employee)
         assert m.employee is p
 
 class RelationTest2(ORMTest):
@@ -184,8 +184,8 @@ class RelationTest2(ORMTest):
         sess.clear()
         p = sess.query(Person).get(p.person_id)
         m = sess.query(Manager).get(m.person_id)
-        print p
-        print m
+        print(p)
+        print(m)
         assert m.colleague is p
         if usedata:
             assert m.data.data == 'ms data'
@@ -277,7 +277,7 @@ def generate_test(jointype="join1", usedata=False):
         p2 = sess.query(Person).get(p2.person_id)
         p3 = sess.query(Person).get(p3.person_id)
         m = sess.query(Person).get(m.person_id)
-        print p, p2, p.colleagues, m.colleagues
+        print(p, p2, p.colleagues, m.colleagues)
         assert len(p.colleagues) == 1
         assert p.colleagues == [p2]
         assert m.colleagues == [p3]
@@ -324,7 +324,7 @@ class RelationTest4(ORMTest):
         # class definitions
         class Person(object):
             def __init__(self, **kwargs):
-                for key, value in kwargs.iteritems():
+                for key, value in kwargs.items():
                     setattr(self, key, value)
             def __repr__(self):
                 return "Ordinary person %s" % self.name
@@ -336,7 +336,7 @@ class RelationTest4(ORMTest):
                 return "Manager %s, status %s" % (self.name, self.longer_status)
         class Car(object):
             def __init__(self, **kwargs):
-                for key, value in kwargs.iteritems():
+                for key, value in kwargs.items():
                     setattr(self, key, value)
             def __repr__(self):
                 return "Car number %d" % self.car_id
@@ -380,22 +380,22 @@ class RelationTest4(ORMTest):
             assert str(testcar.employee) == "Engineer E4, status X"
         self.assert_sql_count(testing.db, go, 1)
 
-        print "----------------------------"
+        print("----------------------------")
         car1 = session.query(Car).get(car1.car_id)
-        print "----------------------------"
+        print("----------------------------")
         usingGet = session.query(person_mapper).get(car1.owner)
-        print "----------------------------"
+        print("----------------------------")
         usingProperty = car1.employee
-        print "----------------------------"
+        print("----------------------------")
 
         # All print should output the same person (engineer E4)
         assert str(engineer4) == "Engineer E4, status X"
-        print str(usingGet)
+        print(str(usingGet))
         assert str(usingGet) == "Engineer E4, status X"
         assert str(usingProperty) == "Engineer E4, status X"
 
         session.clear()
-        print "-----------------------------------------------------------------"
+        print("-----------------------------------------------------------------")
         # and now for the lightning round, eager !
 
         def go():
@@ -433,7 +433,7 @@ class RelationTest5(ORMTest):
         works when there are no child objects present"""
         class Person(object):
             def __init__(self, **kwargs):
-                for key, value in kwargs.iteritems():
+                for key, value in kwargs.items():
                     setattr(self, key, value)
             def __repr__(self):
                 return "Ordinary person %s" % self.name
@@ -445,7 +445,7 @@ class RelationTest5(ORMTest):
                 return "Manager %s, status %s" % (self.name, self.longer_status)
         class Car(object):
             def __init__(self, **kwargs):
-                for key, value in kwargs.iteritems():
+                for key, value in kwargs.items():
                     setattr(self, key, value)
             def __repr__(self):
                 return "Car number %d" % self.car_id
@@ -539,7 +539,7 @@ class RelationTest7(ORMTest):
         """test that lazy load clause to a polymorphic child mapper generates correctly [ticket:493]"""
         class PersistentObject(object):
             def __init__(self, **kwargs):
-                for key, value in kwargs.iteritems():
+                for key, value in kwargs.items():
                     setattr(self, key, value)
 
         class Status(PersistentObject):
@@ -659,7 +659,7 @@ class GenerativeTest(TestBase, AssertsExecutionResults):
         # class definitions
         class PersistentObject(object):
             def __init__(self, **kwargs):
-                for key, value in kwargs.iteritems():
+                for key, value in kwargs.items():
                     setattr(self, key, value)
         class Status(PersistentObject):
             def __repr__(self):
@@ -759,7 +759,7 @@ class MultiLevelTest(ORMTest):
     def test_threelevels(self):
         class Employee( object):
             def set( me, **kargs):
-                for k,v in kargs.iteritems(): setattr( me, k, v)
+                for k,v in kargs.items(): setattr( me, k, v)
                 return me
             def __str__(me): return str(me.__class__.__name__)+':'+str(me.name)
             __repr__ = __str__
@@ -894,7 +894,7 @@ class CustomPKTest(ORMTest):
 
         mapper(T1, t1, polymorphic_on=t1.c.type, polymorphic_identity='t1', select_table=pjoin, primary_key=[pjoin.c.id])
         mapper(T2, t2, inherits=T1, polymorphic_identity='t2')
-        print [str(c) for c in class_mapper(T1).primary_key]
+        print([str(c) for c in class_mapper(T1).primary_key])
         ot1 = T1()
         ot2 = T2()
         sess = create_session()
@@ -931,7 +931,7 @@ class CustomPKTest(ORMTest):
         mapper(T2, t2, inherits=T1, polymorphic_identity='t2')
         assert len(class_mapper(T1).primary_key) == 1
 
-        print [str(c) for c in class_mapper(T1).primary_key]
+        print([str(c) for c in class_mapper(T1).primary_key])
         ot1 = T1()
         ot2 = T2()
         sess = create_session()

@@ -869,7 +869,7 @@ func = _FunctionGenerator()
 # TODO: use UnaryExpression for this instead ?
 modifier = _FunctionGenerator(group=False)
 
-class _generated_label(unicode):
+class _generated_label(str):
     """A unicode subclass used to identify dynamically generated names."""
     
 def _clone(element):
@@ -909,7 +909,7 @@ def _literal_as_text(element):
     if hasattr(element, '__clause_element__'):
         return element.__clause_element__()
     elif not isinstance(element, Visitable):
-        return _TextClause(unicode(element))
+        return _TextClause(str(element))
     else:
         return element
 
@@ -1198,7 +1198,8 @@ class ClauseElement(Visitable):
         return compiler
 
     def __str__(self):
-        return unicode(self.compile()).encode('ascii', 'backslashreplace')
+        # PY3K - remove encode !
+        return str(self.compile())
 
     def __and__(self, other):
         return and_(self, other)
@@ -1319,8 +1320,10 @@ class ColumnOperators(Operators):
     def __rmul__(self, other):
         return self.reverse_operate(operators.mul, other)
 
-    def __rdiv__(self, other):
-        return self.reverse_operate(operators.div, other)
+    # PY3K: conditionally implement __rdiv__
+    if not util.py3k:
+        def __rdiv__(self, other):
+            return self.reverse_operate(operators.div, other)
 
     def between(self, cleft, cright):
         return self.operate(operators.between_op, cleft, cright)
@@ -1337,8 +1340,10 @@ class ColumnOperators(Operators):
     def __mul__(self, other):
         return self.operate(operators.mul, other)
 
-    def __div__(self, other):
-        return self.operate(operators.div, other)
+    # PY3K: conditionally implement __div__
+    if not util.py3k:
+        def __div__(self, other):
+            return self.operate(operators.div, other)
 
     def __mod__(self, other):
         return self.operate(operators.mod, other)
@@ -1381,7 +1386,6 @@ class _CompareMixin(ColumnOperators):
         operators.add : (__operate,),
         operators.mul : (__operate,),
         operators.sub : (__operate,),
-        operators.div : (__operate,),
         operators.mod : (__operate,),
         operators.truediv : (__operate,),
         operators.lt : (__compare, operators.ge),
@@ -1393,6 +1397,10 @@ class _CompareMixin(ColumnOperators):
         operators.like_op : (__compare, operators.notlike_op),
         operators.ilike_op : (__compare, operators.notilike_op),
     }
+    
+    # PY3K: conditionally add operators.div to the operators dict
+    if not util.py3k:
+        operators.update({operators.div : (__operate,)})
 
     def operate(self, op, *other, **kwargs):
         o = _CompareMixin.operators[op]
@@ -1711,7 +1719,7 @@ class ColumnCollection(util.OrderedProperties):
         return and_(*l)
 
     def __contains__(self, other):
-        if not isinstance(other, basestring):
+        if not isinstance(other, str):
             raise exc.ArgumentError("__contains__ requires a string argument")
         return util.OrderedProperties.__contains__(self, other)
 
@@ -2031,7 +2039,7 @@ class _TextClause(ClauseElement):
         self.typemap = typemap
         self._autocommit = autocommit
         if typemap is not None:
-            for key in typemap.keys():
+            for key in list(typemap.keys()):
                 typemap[key] = sqltypes.to_instance(typemap[key])
 
         def repl(m):
@@ -2054,10 +2062,10 @@ class _TextClause(ClauseElement):
 
     def _copy_internals(self, clone=_clone):
         self.bindparams = dict((b.key, clone(b))
-                               for b in self.bindparams.values())
+                               for b in list(self.bindparams.values()))
 
     def get_children(self, **kwargs):
-        return self.bindparams.values()
+        return list(self.bindparams.values())
 
     
 class _Null(ColumnElement):
@@ -2552,7 +2560,8 @@ class Alias(FromClause):
 
     @property
     def description(self):
-        return self.name.encode('ascii', 'backslashreplace')
+        # PY3K remove encode
+        return self.name
 
     def is_derived_from(self, fromclause):
         if fromclause in self._cloned_set:
@@ -2742,7 +2751,8 @@ class _ColumnClause(_Immutable, ColumnElement):
 
     @util.memoized_property
     def description(self):
-        return self.name.encode('ascii', 'backslashreplace')
+        # PY3K remove encode
+        return self.name
 
     @util.memoized_property
     def _label(self):
@@ -2822,7 +2832,8 @@ class TableClause(_Immutable, FromClause):
 
     @util.memoized_property
     def description(self):
-        return self.name.encode('ascii', 'backslashreplace')
+        # PY3K remove encode
+        return self.name
 
     def append_column(self, c):
         self._columns[c.name] = c

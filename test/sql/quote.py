@@ -41,11 +41,11 @@ class QuoteTest(TestBase, AssertsCompiledSQL):
                 {'d123':4,'u123':3,'MixedCase':2})
 
         res1 = select([table1.c.lowercase, table1.c.UPPERCASE, table1.c.MixedCase, table1.c.a123]).execute().fetchall()
-        print res1
+        print(res1)
         assert(res1==[(1,2,3,4),(2,2,3,4),(4,3,2,1)])
 
         res2 = select([table2.c.d123, table2.c.u123, table2.c.MixedCase]).execute().fetchall()
-        print res2
+        print(res2)
         assert(res2==[(1,2,3),(2,2,3),(4,3,2)])
 
     def testreflect(self):
@@ -62,11 +62,11 @@ class QuoteTest(TestBase, AssertsCompiledSQL):
                 {'d123':4,'u123':3,'MixedCase':2})
 
         res1 = select([table1.c.lowercase, table1.c.UPPERCASE, table1.c.MixedCase, table1.c.a123], use_labels=True).execute().fetchall()
-        print res1
+        print(res1)
         assert(res1==[(1,2,3,4),(2,2,3,4),(4,3,2,1)])
 
         res2 = select([table2.c.d123, table2.c.u123, table2.c.MixedCase], use_labels=True).execute().fetchall()
-        print res2
+        print(res2)
         assert(res2==[(1,2,3),(2,2,3),(4,3,2)])
 
     def test_quote_flag(self):
@@ -166,8 +166,8 @@ class PreparerTest(TestBase):
 
         def a_eq(have, want):
             if have != want:
-                print "Wanted %s" % want
-                print "Received %s" % have
+                print("Wanted %s" % want)
+                print("Received %s" % have)
             self.assert_(have == want)
 
         a_eq(unformat('foo'), ['foo'])
@@ -194,13 +194,13 @@ class PreparerTest(TestBase):
 
         def a_eq(have, want):
             if have != want:
-                print "Wanted %s" % want
-                print "Received %s" % have
+                print("Wanted %s" % want)
+                print("Received %s" % have)
             self.assert_(have == want)
 
         a_eq(unformat('foo'), ['foo'])
         a_eq(unformat('`foo`'), ['foo'])
-        a_eq(unformat(`'foo'`), ["'foo'"])
+        a_eq(unformat(repr('foo')), ["'foo'"])
         a_eq(unformat('foo.bar'), ['foo', 'bar'])
         a_eq(unformat('`foo`.`bar`'), ['foo', 'bar'])
         a_eq(unformat('foo.`bar`'), ['foo', 'bar'])

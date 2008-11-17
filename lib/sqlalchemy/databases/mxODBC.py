@@ -35,7 +35,7 @@ class Connection:
         if int(err1) == 109:
             # Ignore "Null value eliminated in aggregate function", this is not an error
             return
-        raise errorclass, errorvalue
+        raise errorclass(errorvalue)
 
     def __init__(self, conn):
         self.conn = conn

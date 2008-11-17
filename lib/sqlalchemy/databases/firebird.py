@@ -541,7 +541,7 @@ class FBDialect(default.DefaultDialect):
             fk[0].append(fname)
             fk[1].append(refspec)
 
-        for name, value in fks.iteritems():
+        for name, value in fks.items():
             table.append_constraint(schema.ForeignKeyConstraint(value[0], value[1], name=name))
 
     def do_execute(self, cursor, statement, parameters, **kwargs):

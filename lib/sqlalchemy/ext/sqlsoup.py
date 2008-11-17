@@ -444,7 +444,7 @@ def _selectable_name(selectable):
 def class_for_table(selectable, **mapper_kwargs):
     selectable = expression._selectable(selectable)
     mapname = 'Mapped' + _selectable_name(selectable)
-    if isinstance(mapname, unicode): 
+    if isinstance(mapname, str): 
         engine_encoding = selectable.metadata.bind.dialect.encoding 
         mapname = mapname.encode(engine_encoding)
     if isinstance(selectable, Table):
@@ -453,7 +453,7 @@ def class_for_table(selectable, **mapper_kwargs):
         klass = SelectableClassType(mapname, (object,), {})
     
     def __cmp__(self, o):
-        L = self.__class__.c.keys()
+        L = list(self.__class__.c.keys())
         L.sort()
         t1 = [getattr(self, k) for k in L]
         try:
@@ -464,7 +464,7 @@ def class_for_table(selectable, **mapper_kwargs):
 
     def __repr__(self):
         L = ["%s=%r" % (key, getattr(self, key, ''))
-             for key in self.__class__.c.keys()]
+             for key in list(self.__class__.c.keys())]
         return '%s(%s)' % (self.__class__.__name__, ','.join(L))
 
     for m in ['__cmp__', '__repr__']:
@@ -540,7 +540,7 @@ class SqlSoup:
         except KeyError:
             table = Table(attr, self._metadata, autoload=True, schema=self.schema)
             if not table.primary_key.columns:
-                raise PKNotFoundError('table %r does not have a primary key defined [columns: %s]' % (attr, ','.join(table.c.keys())))
+                raise PKNotFoundError('table %r does not have a primary key defined [columns: %s]' % (attr, ','.join(list(table.c.keys()))))
             if table.columns:
                 t = class_for_table(table)
             else:

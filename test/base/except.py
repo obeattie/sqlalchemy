@@ -5,7 +5,7 @@ import exceptions as stdlib_exceptions
 from sqlalchemy import exc as sa_exceptions
 
 
-class Error(stdlib_exceptions.StandardError):
+class Error(stdlib_exceptions.Exception):
     """This class will be old-style on <= 2.4 and new-style on >= 2.5."""
 class DatabaseError(Error):
     pass
@@ -30,7 +30,7 @@ class WrapTest(unittest.TestCase):
         try:
             raise sa_exceptions.DBAPIError.instance(
                 '', [], ProgrammingError())
-        except sa_exceptions.DBAPIError, e:
+        except sa_exceptions.DBAPIError as e:
             self.assert_(True)
             self.assert_('Error in str() of DB-API' in e.args[0])
 
@@ -38,7 +38,7 @@ class WrapTest(unittest.TestCase):
         try:
             raise sa_exceptions.DBAPIError.instance(
                 '', [], OutOfSpec())
-        except sa_exceptions.DBAPIError, e:
+        except sa_exceptions.DBAPIError as e:
             self.assert_(e.__class__ is sa_exceptions.DBAPIError)
         except OutOfSpec:
             self.assert_(False)
@@ -48,7 +48,7 @@ class WrapTest(unittest.TestCase):
         try:
             raise sa_exceptions.DBAPIError.instance(
                 '', [], sa_exceptions.ArgumentError())
-        except sa_exceptions.DBAPIError, e:
+        except sa_exceptions.DBAPIError as e:
             self.assert_(e.__class__ is sa_exceptions.DBAPIError)
         except sa_exceptions.ArgumentError:
             self.assert_(False)

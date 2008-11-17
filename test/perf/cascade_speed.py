@@ -70,24 +70,24 @@ class TimeTrial(object):
 
         ctime = 0.0
         timer = Timer("create_it()", "from __main__ import create_it")
-        for n in xrange(number):
+        for n in range(number):
             t = timer.timeit(1)
-            print "Time to create item %i: %.5f sec" % (n, t)
+            print("Time to create item %i: %.5f sec" % (n, t))
             ctime += t
 
         assert len(order.items) == 10
         assert sum(len(item.attributes) for item in order.items) == 100
         assert sum(len(attr.values) for item in order.items for attr in item.attributes) == 500
         assert len(s.new) == 611
-        print "Created 610 objects in %.5f sec" % ctime
+        print("Created 610 objects in %.5f sec" % ctime)
 
 if __name__ == "__main__":
     tt = TimeTrial()
 
-    print "\nCreate forward associations"
+    print("\nCreate forward associations")
     create_it = tt.create_fwd_assoc
     tt.run(10)
 
-    print "\nCreate backward associations"
+    print("\nCreate backward associations")
     create_it = tt.create_back_assoc
     tt.run(10)

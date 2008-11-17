@@ -65,11 +65,11 @@ def config():
 
     if options.filter_list:
         if options.quiet:
-            print '\n'.join(filters.__all__)
+            print('\n'.join(filters.__all__))
         else:
-            print 'Available filters:'
+            print('Available filters:')
             for name in filters.__all__:
-                print '\t%s' % name
+                print('\t%s' % name)
         sys.exit(0)
 
     if not options.update and not options.create:
@@ -98,14 +98,14 @@ def setup():
 
     if options.create:
         if not options.quiet:
-            print "mkdir %s" % clone_path
+            print("mkdir %s" % clone_path)
         if not options.dryrun:
             os.mkdir(clone_path)
 
         if options.filter and not options.dryrun:
             if not options.quiet:
-                print 'storing filter "%s" in %s/.filter' % (
-                    options.filter, clone)
+                print('storing filter "%s" in %s/.filter' % (
+                    options.filter, clone))
             stash = open(path.join(clone_path, '.filter'), 'w')
             stash.write(options.filter)
             stash.close()
@@ -118,8 +118,8 @@ def setup():
             if options.filter:
                 if (options.filter != stashed and stashed in filters.__all__ and
                     not options.quiet):
-                    print (('Warning: --filter=%s overrides %s specified in '
-                            '%s/.filter') % (options.filter, stashed, clone))
+                    print((('Warning: --filter=%s overrides %s specified in '
+                            '%s/.filter') % (options.filter, stashed, clone)))
             else:
                 if stashed not in filters.__all__:
                     sys.stderr.write(
@@ -144,7 +144,7 @@ def sync():
 
         if not path.exists(dest_path):
             if not options.quiet:
-                print "mkdir %s/%s" % (clone, rel_path)
+                print("mkdir %s/%s" % (clone, rel_path))
             if not options.dryrun:
                 os.mkdir(dest_path)
 
@@ -156,10 +156,10 @@ def sync():
                 (not path.exists(dest_file) or
                  os.stat(source_file)[-1] > os.stat(dest_file)[-1])):
                 if not options.quiet:
-                    print "syncing %s" % path.join(rel_path, filename)
+                    print("syncing %s" % path.join(rel_path, filename))
 
                 raw = open(source_file)
-                filtered = filter(raw.readlines())
+                filtered = list(filter(raw.readlines()))
                 raw.close()
 
                 if not options.dryrun:

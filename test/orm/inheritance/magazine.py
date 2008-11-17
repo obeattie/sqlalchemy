@@ -6,7 +6,7 @@ from testlib import *
 
 class BaseObject(object):
     def __init__(self, *args, **kwargs):
-        for key, value in kwargs.iteritems():
+        for key, value in kwargs.items():
             setattr(self, key, value)
 class Publication(BaseObject):
     pass
@@ -196,15 +196,15 @@ def generate_round_trip_test(use_unions=False, use_joins=False):
         session.save(pub)
 
         session.flush()
-        print [x for x in session]
+        print([x for x in session])
         session.clear()
 
         session.flush()
         session.clear()
         p = session.query(Publication).filter(Publication.name=="Test").one()
 
-        print p.issues[0].locations[0].magazine.pages
-        print [page, page2, page3]
+        print(p.issues[0].locations[0].magazine.pages)
+        print([page, page2, page3])
         assert repr(p.issues[0].locations[0].magazine.pages) == repr([page, page2, page3]), repr(p.issues[0].locations[0].magazine.pages)
 
     test_roundtrip = _function_named(

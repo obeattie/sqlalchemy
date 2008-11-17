@@ -12,7 +12,7 @@ higher-level statement-construction, connection-management, execution
 and result contexts.
 """
 
-import inspect, StringIO
+import inspect, io
 from sqlalchemy import exc, schema, util, types, log
 from sqlalchemy.sql import expression
 
@@ -705,7 +705,7 @@ class Connection(Connectable):
             self.engine.logger.info("BEGIN")
         try:
             self.engine.dialect.do_begin(self.connection)
-        except Exception, e:
+        except Exception as e:
             self._handle_dbapi_exception(e, None, None, None)
             raise
 
@@ -716,7 +716,7 @@ class Connection(Connectable):
             try:
                 self.engine.dialect.do_rollback(self.connection)
                 self.__transaction = None
-            except Exception, e:
+            except Exception as e:
                 self._handle_dbapi_exception(e, None, None, None)
                 raise
         else:
@@ -728,7 +728,7 @@ class Connection(Connectable):
         try:
             self.engine.dialect.do_commit(self.connection)
             self.__transaction = None
-        except Exception, e:
+        except Exception as e:
             self._handle_dbapi_exception(e, None, None, None)
             raise
 
@@ -845,7 +845,7 @@ class Connection(Connectable):
     def execute_clauseelement(self, elem, multiparams=None, params=None):
         params = self.__distill_params(multiparams, params)
         if params:
-            keys = params[0].keys()
+            keys = list(params[0].keys())
         else:
             keys = None
 
@@ -913,7 +913,7 @@ class Connection(Connectable):
     def __create_execution_context(self, **kwargs):
         try:
             return self.engine.dialect.create_execution_context(connection=self, **kwargs)
-        except Exception, e:
+        except Exception as e:
             self._handle_dbapi_exception(e, kwargs.get('statement', None), kwargs.get('parameters', None), None)
             raise
 
@@ -923,7 +923,7 @@ class Connection(Connectable):
             self.engine.logger.info(repr(parameters))
         try:
             self.dialect.do_execute(cursor, statement, parameters, context=context)
-        except Exception, e:
+        except Exception as e:
             self._handle_dbapi_exception(e, statement, parameters, cursor)
             raise
 
@@ -933,7 +933,7 @@ class Connection(Connectable):
             self.engine.logger.info(repr(parameters))
         try:
             self.dialect.do_executemany(cursor, statement, parameters, context=context)
-        except Exception, e:
+        except Exception as e:
             self._handle_dbapi_exception(e, statement, parameters, cursor)
             raise
 
@@ -944,7 +944,7 @@ class Connection(Connectable):
         Compiled: _execute_compiled,
         schema.SchemaItem: _execute_default,
         schema.DDL: _execute_ddl,
-        basestring: _execute_text
+        str: _execute_text
     }
 
     def create(self, entity, **kwargs):
@@ -1295,7 +1295,7 @@ class RowProxy(object):
         return len(self.__row)
 
     def __iter__(self):
-        for i in xrange(len(self.__row)):
+        for i in range(len(self.__row)):
             yield self.__parent._get_col(self.__row, i)
 
     __hash__ = None
@@ -1303,7 +1303,7 @@ class RowProxy(object):
     def __eq__(self, other):
         return ((other is self) or
                 (other == tuple(self.__parent._get_col(self.__row, key)
-                                for key in xrange(len(self.__row)))))
+                                for key in range(len(self.__row)))))
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -1322,13 +1322,13 @@ class RowProxy(object):
     def __getattr__(self, name):
         try:
             return self.__parent._get_col(self.__row, name)
-        except KeyError, e:
+        except KeyError as e:
             raise AttributeError(e.args[0])
 
     def items(self):
         """Return a list of tuples, each tuple containing a key/value pair."""
 
-        return [(key, getattr(self, key)) for key in self.iterkeys()]
+        return [(key, getattr(self, key)) for key in self.keys()]
 
     def keys(self):
         """Return the list of keys as strings represented by this RowProxy."""
@@ -1348,7 +1348,7 @@ class RowProxy(object):
 
 class BufferedColumnRow(RowProxy):
     def __init__(self, parent, row):
-        row = [ResultProxy._get_col(parent, row, i) for i in xrange(len(row))]
+        row = [ResultProxy._get_col(parent, row, i) for i in range(len(row))]
         super(BufferedColumnRow, self).__init__(parent, row)
 
 
@@ -1418,7 +1418,7 @@ class ResultProxy(object):
         typemap = self.dialect.dbapi_type_map
 
         for i, item in enumerate(metadata):
-            colname = item[0].decode(self.dialect.encoding)
+            colname = item[0]
 
             if '.' in colname:
                 # sqlite will in some circumstances prepend table name to colnames, so strip
@@ -1460,7 +1460,7 @@ class ResultProxy(object):
         props = self._props
         
         def fallback(key):
-            if isinstance(key, basestring):
+            if isinstance(key, str):
                 key = key.lower()
                 if key in props:
                     return props[key]
@@ -1582,7 +1582,7 @@ class ResultProxy(object):
             # so we use an exception catch to reduce conditionals in _get_col
             if isinstance(key, slice):
                 indices = key.indices(len(row))
-                return tuple(self._get_col(row, i) for i in xrange(*indices))
+                return tuple(self._get_col(row, i) for i in range(*indices))
             else:
                 raise
 
@@ -1608,7 +1608,7 @@ class ResultProxy(object):
             l = [process_row(self, row) for row in self._fetchall_impl()]
             self.close()
             return l
-        except Exception, e:
+        except Exception as e:
             self.connection._handle_dbapi_exception(e, None, None, self.cursor)
             raise
 
@@ -1621,7 +1621,7 @@ class ResultProxy(object):
             if len(l) == 0:
                 self.close()
             return l
-        except Exception, e:
+        except Exception as e:
             self.connection._handle_dbapi_exception(e, None, None, self.cursor)
             raise
 
@@ -1634,7 +1634,7 @@ class ResultProxy(object):
             else:
                 self.close()
                 return None
-        except Exception, e:
+        except Exception as e:
             self.connection._handle_dbapi_exception(e, None, None, self.cursor)
             raise
 
@@ -1642,7 +1642,7 @@ class ResultProxy(object):
         """Fetch the first column of the first row, and close the result set."""
         try:
             row = self._fetchone_impl()
-        except Exception, e:
+        except Exception as e:
             self.connection._handle_dbapi_exception(e, None, None, self.cursor)
             raise
             
@@ -1736,7 +1736,7 @@ class BufferedColumnResultProxy(ResultProxy):
             # so we use an exception catch to reduce conditionals in _get_col
             if isinstance(key, slice):
                 indices = key.indices(len(row))
-                return tuple(self._get_col(row, i) for i in xrange(*indices))
+                return tuple(self._get_col(row, i) for i in range(*indices))
             else:
                 raise
 
@@ -1753,7 +1753,7 @@ class BufferedColumnResultProxy(ResultProxy):
         if size is None:
             return self.fetchall()
         l = []
-        for i in xrange(size):
+        for i in range(size):
             row = self.fetchone()
             if row is None:
                 break
@@ -1768,7 +1768,7 @@ class SchemaIterator(schema.SchemaVisitor):
         """Construct a new SchemaIterator."""
         
         self.connection = connection
-        self.buffer = StringIO.StringIO()
+        self.buffer = io.StringIO()
 
     def append(self, s):
         """Append content to the SchemaIterator's query buffer."""
@@ -1826,7 +1826,7 @@ class DefaultRunner(schema.SchemaVisitor):
         """execute a string statement, using the raw cursor, and return a scalar result."""
         
         conn = self.context._connection
-        if isinstance(stmt, unicode) and not self.dialect.supports_unicode_statements:
+        if isinstance(stmt, str) and not self.dialect.supports_unicode_statements:
             stmt = stmt.encode(self.dialect.encoding)
         conn._cursor_execute(self.cursor, stmt, params)
         return self.cursor.fetchone()[0]

@@ -54,12 +54,12 @@ class Base(object):
                 a = self
                 b = other
 
-            for attr in a.__dict__.keys():
+            for attr in list(a.__dict__.keys()):
                 if attr[0] == '_':
                     continue
                 value = getattr(a, attr)
                 #print "looking at attr:", attr, "start value:", value
-                if hasattr(value, '__iter__') and not isinstance(value, basestring):
+                if hasattr(value, '__iter__') and not isinstance(value, str):
                     try:
                         # catch AttributeError so that lazy loaders trigger
                         battr = getattr(b, attr)

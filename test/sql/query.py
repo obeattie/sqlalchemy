@@ -301,13 +301,13 @@ class QueryTest(TestBase):
 
         def a_eq(got, wanted):
             if got != wanted:
-                print "Wanted %s" % wanted
-                print "Received %s" % got
+                print("Wanted %s" % wanted)
+                print("Received %s" % got)
             self.assert_(got == wanted, got)
 
         a_eq(prep('select foo'), 'select foo')
         a_eq(prep("time='12:30:00'"), "time='12:30:00'")
-        a_eq(prep(u"time='12:30:00'"), u"time='12:30:00'")
+        a_eq(prep("time='12:30:00'"), "time='12:30:00'")
         a_eq(prep(":this:that"), ":this:that")
         a_eq(prep(":this :that"), "? ?")
         a_eq(prep("(:this),(:that :other)"), "(?),(? ?)")
@@ -329,11 +329,11 @@ class QueryTest(TestBase):
     def test_delete(self):
         users.insert().execute(user_id = 7, user_name = 'jack')
         users.insert().execute(user_id = 8, user_name = 'fred')
-        print repr(users.select().execute().fetchall())
+        print(repr(users.select().execute().fetchall()))
 
         users.delete(users.c.user_name == 'fred').execute()
 
-        print repr(users.select().execute().fetchall())
+        print(repr(users.select().execute().fetchall()))
 
 
 
@@ -452,9 +452,9 @@ class QueryTest(TestBase):
         users.insert().execute(user_id=1, user_name='john')
         r = users.outerjoin(addresses).select().execute().fetchone()
         try:
-            print r['user_id']
+            print(r['user_id'])
             assert False
-        except exc.InvalidRequestError, e:
+        except exc.InvalidRequestError as e:
             assert str(e) == "Ambiguous column name 'user_id' in result set! try 'use_labels' option on select statement." or \
                    str(e) == "Ambiguous column name 'USER_ID' in result set! try 'use_labels' option on select statement."
 
@@ -473,12 +473,12 @@ class QueryTest(TestBase):
     def test_keys(self):
         users.insert().execute(user_id=1, user_name='foo')
         r = users.select().execute().fetchone()
-        self.assertEqual([x.lower() for x in r.keys()], ['user_id', 'user_name'])
+        self.assertEqual([x.lower() for x in list(r.keys())], ['user_id', 'user_name'])
 
     def test_items(self):
         users.insert().execute(user_id=1, user_name='foo')
         r = users.select().execute().fetchone()
-        self.assertEqual([(x[0].lower(), x[1]) for x in r.items()], [('user_id', 1), ('user_name', 'foo')])
+        self.assertEqual([(x[0].lower(), x[1]) for x in list(r.items())], [('user_id', 1), ('user_name', 'foo')])
 
     def test_len(self):
         users.insert().execute(user_id=1, user_name='foo')
@@ -495,7 +495,7 @@ class QueryTest(TestBase):
     def test_cant_execute_join(self):
         try:
             users.join(addresses).execute()
-        except exc.ArgumentError, e:
+        except exc.ArgumentError as e:
             assert str(e).startswith('Not an executable clause: ')
 
 
@@ -506,8 +506,8 @@ class QueryTest(TestBase):
         r = users.select(users.c.user_id==1).execute().fetchone()
         self.assertEqual(r[0], 1)
         self.assertEqual(r[1], 'foo')
-        self.assertEqual([x.lower() for x in r.keys()], ['user_id', 'user_name'])
-        self.assertEqual(r.values(), [1, 'foo'])
+        self.assertEqual([x.lower() for x in list(r.keys())], ['user_id', 'user_name'])
+        self.assertEqual(list(r.values()), [1, 'foo'])
 
     def test_column_order_with_text_query(self):
         # should return values in query order
@@ -515,8 +515,8 @@ class QueryTest(TestBase):
         r = testing.db.execute('select user_name, user_id from query_users', {}).fetchone()
         self.assertEqual(r[0], 'foo')
         self.assertEqual(r[1], 1)
-        self.assertEqual([x.lower() for x in r.keys()], ['user_name', 'user_id'])
-        self.assertEqual(r.values(), ['foo', 1])
+        self.assertEqual([x.lower() for x in list(r.keys())], ['user_name', 'user_id'])
+        self.assertEqual(list(r.values()), ['foo', 1])
 
     @testing.crashes('oracle', 'FIXME: unknown, varify not fails_on()')
     @testing.crashes('firebird', 'An identifier must begin with a letter')
@@ -542,7 +542,7 @@ class QueryTest(TestBase):
             self.assert_(r['__parent'] == 'Hidden parent')
             self.assert_(r['__row'] == 'Hidden row')
             try:
-                print r.__parent, r.__row
+                print(r.__parent, r.__row)
                 self.fail('Should not allow access to private attributes')
             except AttributeError:
                 pass # expected
@@ -1119,7 +1119,7 @@ class JoinTest(TestBase):
             expr = select(
                 [t1.c.t1_id, t2.c.t2_id, t3.c.t3_id],
                 from_obj=[(t1.join(t2).outerjoin(t3, criteria))])
-            print expr
+            print(expr)
             self.assertRows(expr, [(10, 20, 30), (11, 21, None)])
 
     def test_mixed_where(self):

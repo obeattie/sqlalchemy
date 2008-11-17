@@ -440,7 +440,7 @@ class MSSQLDialect(default.DefaultDialect):
             for dialect_cls in [MSSQLDialect_pyodbc, MSSQLDialect_pymssql, MSSQLDialect_adodbapi]:
                 try:
                     return dialect_cls.import_dbapi()
-                except ImportError, e:
+                except ImportError as e:
                     pass
             else:
                 raise ImportError('No DBAPI module detected for MSSQL - please install pyodbc, pymssql, or adodbapi')
@@ -526,7 +526,7 @@ class MSSQLDialect(default.DefaultDialect):
             c.execute(statement, parameters)
             self.context.rowcount = c.rowcount
             c.DBPROP_COMMITPRESERVE = "Y"
-        except Exception, e:
+        except Exception as e:
             raise exc.DBAPIError.instance(statement, parameters, e)
 
     def table_names(self, connection, schema):
@@ -829,7 +829,7 @@ class MSSQLDialect_pyodbc(MSSQLDialect):
             if odbc_options[0]=="'" and odbc_options[-1]=="'":
                 odbc_options=odbc_options[1:-1]
             connectors.append(odbc_options)
-        connectors.extend(['%s=%s' % (k,v) for k,v in keys.iteritems()])
+        connectors.extend(['%s=%s' % (k,v) for k,v in keys.items()])
         return [[";".join (connectors)], {}]
 
     def is_disconnect(self, e):
@@ -853,7 +853,7 @@ class MSSQLDialect_pyodbc(MSSQLDialect):
                 try:
                     row = cursor.fetchone()
                     break
-                except pyodbc.Error, e:
+                except pyodbc.Error as e:
                     cursor.nextset()
             context._last_inserted_ids = [int(row[0])]
 

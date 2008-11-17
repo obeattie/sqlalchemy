@@ -298,7 +298,7 @@ class _AssociationList(object):
     def __len__(self):
         return len(self.col)
 
-    def __nonzero__(self):
+    def __bool__(self):
         if self.col:
             return True
         else:
@@ -319,7 +319,7 @@ class _AssociationList(object):
                 stop = index.stop
             step = index.step or 1
 
-            rng = range(index.start or 0, stop, step)
+            rng = list(range(index.start or 0, stop, step))
             if step == 1:
                 for i in rng:
                     del self[index.start]
@@ -374,7 +374,7 @@ class _AssociationList(object):
 
     def count(self, value):
         return sum([1 for _ in
-                    itertools.ifilter(lambda v: v == value, iter(self))])
+                    filter(lambda v: v == value, iter(self))])
 
     def extend(self, values):
         for v in values:
@@ -473,8 +473,8 @@ class _AssociationList(object):
     def __hash__(self):
         raise TypeError("%s objects are unhashable" % type(self).__name__)
 
-    for func_name, func in locals().items():
-        if (util.callable(func) and func.func_name == func_name and
+    for func_name, func in list(locals().items()):
+        if (util.callable(func) and func.__name__ == func_name and
             not func.__doc__ and hasattr(list, func_name)):
             func.__doc__ = getattr(list, func_name).__doc__
     del func_name, func
@@ -526,7 +526,7 @@ class _AssociationDict(object):
     def __len__(self):
         return len(self.col)
 
-    def __nonzero__(self):
+    def __bool__(self):
         if self.col:
             return True
         else:
@@ -553,7 +553,7 @@ class _AssociationDict(object):
         return key in self.col
 
     def __iter__(self):
-        return self.col.iterkeys()
+        return iter(self.col.keys())
 
     def clear(self):
         self.col.clear()
@@ -580,7 +580,7 @@ class _AssociationDict(object):
         return cmp(dict(self), other)
 
     def __repr__(self):
-        return repr(dict(self.items()))
+        return repr(dict(list(self.items())))
 
     def get(self, key, default=None):
         try:
@@ -596,13 +596,13 @@ class _AssociationDict(object):
             return self[key]
 
     def keys(self):
-        return self.col.keys()
+        return list(self.col.keys())
 
     def iterkeys(self):
-        return self.col.iterkeys()
+        return iter(self.col.keys())
 
     def values(self):
-        return [ self._get(member) for member in self.col.values() ]
+        return [ self._get(member) for member in list(self.col.values()) ]
 
     def itervalues(self):
         for key in self.col:
@@ -644,13 +644,13 @@ class _AssociationDict(object):
             self[key] = value
 
     def copy(self):
-        return dict(self.items())
+        return dict(list(self.items()))
 
     def __hash__(self):
         raise TypeError("%s objects are unhashable" % type(self).__name__)
 
-    for func_name, func in locals().items():
-        if (util.callable(func) and func.func_name == func_name and
+    for func_name, func in list(locals().items()):
+        if (util.callable(func) and func.__name__ == func_name and
             not func.__doc__ and hasattr(dict, func_name)):
             func.__doc__ = getattr(dict, func_name).__doc__
     del func_name, func
@@ -700,7 +700,7 @@ class _AssociationSet(object):
     def __len__(self):
         return len(self.col)
 
-    def __nonzero__(self):
+    def __bool__(self):
         if self.col:
             return True
         else:
@@ -876,8 +876,8 @@ class _AssociationSet(object):
     def __hash__(self):
         raise TypeError("%s objects are unhashable" % type(self).__name__)
 
-    for func_name, func in locals().items():
-        if (util.callable(func) and func.func_name == func_name and
+    for func_name, func in list(locals().items()):
+        if (util.callable(func) and func.__name__ == func_name and
             not func.__doc__ and hasattr(set, func_name)):
             func.__doc__ = getattr(set, func_name).__doc__
     del func_name, func

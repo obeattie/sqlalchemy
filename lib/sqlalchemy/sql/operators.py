@@ -4,9 +4,13 @@
 """Defines operators used in SQL expressions."""
 
 from operator import (
-    and_, or_, inv, add, mul, sub, div, mod, truediv, lt, le, ne, gt, ge, eq
+    and_, or_, inv, add, mul, sub, mod, truediv, lt, le, ne, gt, ge, eq
     )
-from sqlalchemy.util import symbol
+from sqlalchemy.util import symbol, py3k
+
+# PY3K: conditionally import div
+if not py3k:
+    from operator import div
 
 
 def from_():
@@ -88,7 +92,6 @@ _largest = symbol('_largest')
 _PRECEDENCE = {
     from_: 15,
     mul: 7,
-    div: 7,
     mod: 7,
     add: 6,
     sub: 6,
@@ -120,6 +123,10 @@ _PRECEDENCE = {
     _smallest: -1000,
     _largest: 1000
 }
+
+# PY3K: conditionally add "div" to the list
+if not py3k:
+    _PRECEDENCE.update({div: 7})
 
 def is_precedent(operator, against):
     return (_PRECEDENCE.get(operator, _PRECEDENCE[_smallest]) <=

@@ -110,7 +110,7 @@ class QueryAlternativesTest(_base.MappedTest):
         session = sessionmaker(query_cls=MyQuery)()
         
         ad1 = session.query(Address).get(1)
-        assert ad1 in cache.values()
+        assert ad1 in list(cache.values())
     
     @testing.resolve_artifact_names
     def test_load(self):

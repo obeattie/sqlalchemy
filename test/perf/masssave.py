@@ -32,9 +32,9 @@ class SaveTest(TestBase, AssertsExecutionResults):
                 sess.save(Item())
             sess.flush()
             #self._profile()
-            print "ROWS:", x * 50
+            print("ROWS:", x * 50)
     def _profile(self):
-        print "------------------------"
+        print("------------------------")
         d = {}
         for o in gc.get_objects():
             t = type(o)
@@ -42,12 +42,12 @@ class SaveTest(TestBase, AssertsExecutionResults):
                 t = o.__class__
             d.setdefault(t, 0)
             d[t] += 1
-        rep = [(key, value) for key, value in d.iteritems()]
+        rep = [(key, value) for key, value in d.items()]
         def sorter(a, b):
             return cmp(b[1], a[1])
         rep.sort(sorter)
         for x in rep[0:30]:
-            print x
+            print(x)
 
 
 if __name__ == "__main__":

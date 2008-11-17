@@ -33,7 +33,7 @@ class MetaDataTest(TestBase, ComparesTables):
                 t2 = Table('table1', metadata, Column('col1', Integer, primary_key=True),
                     Column('col2', String(20)))
                 assert False
-            except tsa.exc.InvalidRequestError, e:
+            except tsa.exc.InvalidRequestError as e:
                 assert str(e) == "Table 'table1' is already defined for this MetaData instance.  Specify 'useexisting=True' to redefine options and columns on an existing Table object."
         finally:
             metadata.drop_all()

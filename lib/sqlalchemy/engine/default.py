@@ -149,9 +149,9 @@ class DefaultExecutionContext(base.ExecutionContext):
             self.result_map = compiled.result_map
 
             if not dialect.supports_unicode_statements:
-                self.statement = unicode(compiled).encode(self.dialect.encoding)
+                self.statement = str(compiled).encode(self.dialect.encoding)
             else:
-                self.statement = unicode(compiled)
+                self.statement = str(compiled)
 
             self.isinsert = compiled.isinsert
             self.isupdate = compiled.isupdate
@@ -176,7 +176,7 @@ class DefaultExecutionContext(base.ExecutionContext):
             self.result_map = None
             self.parameters = self.__encode_param_keys(parameters)
             self.executemany = len(parameters) > 1
-            if isinstance(statement, unicode) and not dialect.supports_unicode_statements:
+            if isinstance(statement, str) and not dialect.supports_unicode_statements:
                 self.statement = statement.encode(self.dialect.encoding)
             else:
                 self.statement = statement
@@ -308,19 +308,19 @@ class DefaultExecutionContext(base.ExecutionContext):
                     inputsizes.append(dbtype)
             try:
                 self.cursor.setinputsizes(*inputsizes)
-            except Exception, e:
+            except Exception as e:
                 self._connection._handle_dbapi_exception(e, None, None, None)
                 raise
         else:
             inputsizes = {}
-            for key in self.compiled.bind_names.values():
+            for key in list(self.compiled.bind_names.values()):
                 typeengine = types[key]
                 dbtype = typeengine.dialect_impl(self.dialect).get_dbapi_type(self.dialect.dbapi)
                 if dbtype is not None:
                     inputsizes[key.encode(self.dialect.encoding)] = dbtype
             try:
                 self.cursor.setinputsizes(**inputsizes)
-            except Exception, e:
+            except Exception as e:
                 self._connection._handle_dbapi_exception(e, None, None, None)
                 raise
 

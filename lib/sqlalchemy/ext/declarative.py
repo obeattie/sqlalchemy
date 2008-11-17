@@ -284,7 +284,7 @@ def _as_declarative(cls, classname, dict_):
                 table_kw['autoload'] = True
 
             cols = []
-            for key, c in our_stuff.iteritems():
+            for key, c in our_stuff.items():
                 if isinstance(c, ColumnProperty):
                     for col in c.columns:
                         if isinstance(col, Column) and col.table is None:
@@ -383,7 +383,7 @@ def _deferred_relation(cls, prop):
                     return x.cls
                 else:
                     return x
-            except NameError, n:
+            except NameError as n:
                 raise exceptions.InvalidRequestError(
                     "When compiling mapper %s, expression %r failed to locate a name (%r). "
                     "If this is a class name, consider adding this relation() to the %r "
@@ -394,12 +394,12 @@ def _deferred_relation(cls, prop):
     if isinstance(prop, PropertyLoader):
         for attr in ('argument', 'order_by', 'primaryjoin', 'secondaryjoin', 'secondary', '_foreign_keys', 'remote_side'):
             v = getattr(prop, attr)
-            if isinstance(v, basestring):
+            if isinstance(v, str):
                 setattr(prop, attr, resolve_arg(v))
 
         if prop.backref:
             for attr in ('primaryjoin', 'secondaryjoin'):
-               if attr in prop.backref.kwargs and isinstance(prop.backref.kwargs[attr], basestring):
+               if attr in prop.backref.kwargs and isinstance(prop.backref.kwargs[attr], str):
                    prop.backref.kwargs[attr] = resolve_arg(prop.backref.kwargs[attr])
 
 

@@ -13,7 +13,7 @@ def Table(*args, **kw):
     if schema is None:
         from sqlalchemy import schema
 
-    test_opts = dict([(k,kw.pop(k)) for k in kw.keys()
+    test_opts = dict([(k,kw.pop(k)) for k in list(kw.keys())
                       if k.startswith('test_')])
 
     kw.update(table_options)
@@ -69,7 +69,7 @@ def Column(*args, **kw):
     if schema is None:
         from sqlalchemy import schema
 
-    test_opts = dict([(k,kw.pop(k)) for k in kw.keys()
+    test_opts = dict([(k,kw.pop(k)) for k in list(kw.keys())
                       if k.startswith('test_')])
 
     c = schema.Column(*args, **kw)

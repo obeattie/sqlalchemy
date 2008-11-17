@@ -82,7 +82,7 @@ class WeakInstanceDict(IdentityMap):
         if o is None:
             o = state._is_really_none()
         if o is None:
-            raise KeyError, key
+            raise KeyError(key)
         return o
 
     def __contains__(self, key):
@@ -133,22 +133,18 @@ class WeakInstanceDict(IdentityMap):
             return default
             
     def items(self):
-        return list(self.iteritems())
-
-    def iteritems(self):
-        for state in dict.itervalues(self):
+        # PY3K - iteritems() moves into items()
+        for state in dict.values(self):
             value = state.obj()
             if value is not None:
                 yield state.key, value
 
-    def itervalues(self):
+    def values(self):
+        # PY3K - itervalues() moves into values()
         for state in dict.itervalues(self):
             instance = state.obj()
             if instance is not None:
                 yield instance
-
-    def values(self):
-        return list(self.itervalues())
 
     def all_states(self):
         return dict.values(self)
@@ -158,7 +154,7 @@ class WeakInstanceDict(IdentityMap):
         
 class StrongInstanceDict(IdentityMap):
     def all_states(self):
-        return [attributes.instance_state(o) for o in self.values()]
+        return [attributes.instance_state(o) for o in list(self.values())]
     
     def contains_state(self, state):
         return state.key in self and attributes.instance_state(self[state.key]) is state

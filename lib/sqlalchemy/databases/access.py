@@ -226,7 +226,7 @@ class AccessDialect(default.DefaultDialect):
                 parameters = ()
             c.execute(statement, parameters)
             self.context.rowcount = c.rowcount
-        except Exception, e:
+        except Exception as e:
             raise exc.DBAPIError.instance(statement, parameters, e)
 
     def has_table(self, connection, tablename, schema=None):
@@ -234,7 +234,7 @@ class AccessDialect(default.DefaultDialect):
         try:
             connection.execute('select top 1 * from [%s]' % tablename)
             return True
-        except Exception, e:
+        except Exception as e:
             return False
 
     def reflecttable(self, connection, table, include_columns):

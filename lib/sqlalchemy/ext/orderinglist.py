@@ -271,8 +271,8 @@ class OrderingList(list):
         super(OrderingList, self).__delslice__(start, end)
         self._reorder()
 
-    for func_name, func in locals().items():
-        if (util.callable(func) and func.func_name == func_name and
+    for func_name, func in list(locals().items()):
+        if (util.callable(func) and func.__name__ == func_name and
             not func.__doc__ and hasattr(list, func_name)):
             func.__doc__ = getattr(list, func_name).__doc__
     del func_name, func

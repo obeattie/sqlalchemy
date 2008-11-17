@@ -8,7 +8,7 @@
 
 from sqlalchemy.orm import unitofwork
 from sqlalchemy.orm import util as mapperutil
-import StringIO
+import io
 
 class UOWDumper(unitofwork.UOWExecutor):
     def __init__(self, tasks, buf):
@@ -19,7 +19,7 @@ class UOWDumper(unitofwork.UOWExecutor):
 
     @classmethod
     def dump(cls, tasks):
-        buf = StringIO.StringIO()
+        buf = io.StringIO()
         UOWDumper(tasks, buf)
         return buf.getvalue()
 

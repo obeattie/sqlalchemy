@@ -101,22 +101,22 @@ class UserDefinedTest(TestBase):
     """tests user-defined types."""
 
     def testbasic(self):
-        print users.c.goofy4.type
-        print users.c.goofy4.type.dialect_impl(testing.db.dialect)
-        print users.c.goofy4.type.dialect_impl(testing.db.dialect).get_col_spec()
+        print(users.c.goofy4.type)
+        print(users.c.goofy4.type.dialect_impl(testing.db.dialect))
+        print(users.c.goofy4.type.dialect_impl(testing.db.dialect).get_col_spec())
 
     def testprocessing(self):
 
         global users
         users.insert().execute(
-            user_id=2, goofy='jack', goofy2='jack', goofy4=u'jack',
-            goofy7=u'jack', goofy8=12, goofy9=12)
+            user_id=2, goofy='jack', goofy2='jack', goofy4='jack',
+            goofy7='jack', goofy8=12, goofy9=12)
         users.insert().execute(
-            user_id=3, goofy='lala', goofy2='lala', goofy4=u'lala',
-            goofy7=u'lala', goofy8=15, goofy9=15)
+            user_id=3, goofy='lala', goofy2='lala', goofy4='lala',
+            goofy7='lala', goofy8=15, goofy9=15)
         users.insert().execute(
-            user_id=4, goofy='fred', goofy2='fred', goofy4=u'fred',
-            goofy7=u'fred', goofy8=9, goofy9=9)
+            user_id=4, goofy='fred', goofy2='fred', goofy4='fred',
+            goofy7='fred', goofy8=9, goofy9=9)
 
         l = users.select().execute().fetchall()
         for assertstr, assertint, assertint2, row in zip(
@@ -130,7 +130,7 @@ class UserDefinedTest(TestBase):
             self.assertEquals(row[5], assertint)
             self.assertEquals(row[6], assertint2)
             for col in row[3], row[4]:
-                assert isinstance(col, unicode)
+                assert isinstance(col, str)
 
     def setUpAll(self):
         global users, metadata
@@ -255,7 +255,7 @@ class ColumnsTest(TestBase, AssertsExecutionResults):
             expectedResults['numeric_column'] = (
                 expectedResults['numeric_column'].replace('NUMERIC', 'FIXED'))
 
-        print db.engine.__module__
+        print(db.engine.__module__)
         testTable = Table('testColumns', MetaData(db),
             Column('int_column', Integer),
             Column('smallint_column', SmallInteger),
@@ -299,16 +299,16 @@ class UnicodeTest(TestBase, AssertsExecutionResults):
                                        unicode_text=unicodedata,
                                        plain_varchar=rawdata)
         x = unicode_table.select().execute().fetchone()
-        self.assert_(isinstance(x['unicode_varchar'], unicode) and x['unicode_varchar'] == unicodedata)
-        self.assert_(isinstance(x['unicode_text'], unicode) and x['unicode_text'] == unicodedata)
-        if isinstance(x['plain_varchar'], unicode):
+        self.assert_(isinstance(x['unicode_varchar'], str) and x['unicode_varchar'] == unicodedata)
+        self.assert_(isinstance(x['unicode_text'], str) and x['unicode_text'] == unicodedata)
+        if isinstance(x['plain_varchar'], str):
             # SQLLite and MSSQL return non-unicode data as unicode
             self.assert_(testing.against('sqlite', 'mssql'))
             if not testing.against('sqlite'):
                 self.assert_(x['plain_varchar'] == unicodedata)
-            print "it's %s!" % testing.db.name
+            print("it's %s!" % testing.db.name)
         else:
-            self.assert_(not isinstance(x['plain_varchar'], unicode) and x['plain_varchar'] == rawdata)
+            self.assert_(not isinstance(x['plain_varchar'], str) and x['plain_varchar'] == rawdata)
 
     def test_union(self):
         """ensure compiler processing works for UNIONs"""
@@ -322,13 +322,13 @@ class UnicodeTest(TestBase, AssertsExecutionResults):
                                        plain_varchar=rawdata)
                                        
         x = union(select([unicode_table.c.unicode_varchar]), select([unicode_table.c.unicode_varchar])).execute().fetchone()
-        self.assert_(isinstance(x['unicode_varchar'], unicode) and x['unicode_varchar'] == unicodedata)
+        self.assert_(isinstance(x['unicode_varchar'], str) and x['unicode_varchar'] == unicodedata)
 
     def test_assertions(self):
         try:
             unicode_table.insert().execute(unicode_varchar='not unicode')
             assert False
-        except exc.SAWarning, e:
+        except exc.SAWarning as e:
             assert str(e) == "Unicode type received non-unicode bind param value 'not unicode'", str(e)
 
         unicode_engine = engines.utf8_engine(options={'convert_unicode':True,
@@ -337,7 +337,7 @@ class UnicodeTest(TestBase, AssertsExecutionResults):
             try:
                 unicode_engine.execute(unicode_table.insert(), plain_varchar='im not unicode')
                 assert False
-            except exc.InvalidRequestError, e:
+            except exc.InvalidRequestError as e:
                 assert str(e) == "Unicode type received non-unicode bind param value 'im not unicode'"
 
             @testing.emits_warning('.*non-unicode bind')
@@ -352,8 +352,8 @@ class UnicodeTest(TestBase, AssertsExecutionResults):
 
     @testing.fails_on('oracle')
     def test_blank_strings(self):
-        unicode_table.insert().execute(unicode_varchar=u'')
-        assert select([unicode_table.c.unicode_varchar]).scalar() == u''
+        unicode_table.insert().execute(unicode_varchar='')
+        assert select([unicode_table.c.unicode_varchar]).scalar() == ''
 
     def test_engine_parameter(self):
         """tests engine-wide unicode conversion"""
@@ -370,14 +370,14 @@ class UnicodeTest(TestBase, AssertsExecutionResults):
                                            unicode_text=unicodedata,
                                            plain_varchar=rawdata)
             x = unicode_table.select().execute().fetchone()
-            print 0, repr(unicodedata)
-            print 1, repr(x['unicode_varchar'])
-            print 2, repr(x['unicode_text'])
-            print 3, repr(x['plain_varchar'])
-            self.assert_(isinstance(x['unicode_varchar'], unicode) and x['unicode_varchar'] == unicodedata)
-            self.assert_(isinstance(x['unicode_text'], unicode) and x['unicode_text'] == unicodedata)
+            print(0, repr(unicodedata))
+            print(1, repr(x['unicode_varchar']))
+            print(2, repr(x['unicode_text']))
+            print(3, repr(x['plain_varchar']))
+            self.assert_(isinstance(x['unicode_varchar'], str) and x['unicode_varchar'] == unicodedata)
+            self.assert_(isinstance(x['unicode_text'], str) and x['unicode_text'] == unicodedata)
             if not testing.against('sqlite'):
-                self.assert_(isinstance(x['plain_varchar'], unicode) and x['plain_varchar'] == unicodedata)
+                self.assert_(isinstance(x['plain_varchar'], str) and x['plain_varchar'] == unicodedata)
         finally:
             testing.db.engine.dialect.convert_unicode = prev_unicode
             testing.db.engine.dialect.convert_unicode = prev_assert
@@ -386,7 +386,7 @@ class UnicodeTest(TestBase, AssertsExecutionResults):
     @testing.fails_on('firebird') # "Data type unknown" on the parameter
     def test_length_function(self):
         """checks the database correctly understands the length of a unicode string"""
-        teststr = u'aaa\x1234'
+        teststr = 'aaa\x1234'
         self.assert_(testing.db.func.length(teststr).scalar() == len(teststr))
 
 class BinaryTest(TestBase, AssertsExecutionResults):
@@ -445,8 +445,8 @@ class BinaryTest(TestBase, AssertsExecutionResults):
             text("select * from binary_table order by binary_table.primary_id", typemap={'pickled':PickleType, 'mypickle':MyPickleType}, bind=testing.db)
         ):
             l = stmt.execute().fetchall()
-            print type(stream1), type(l[0]['data']), type(l[0]['data_slice'])
-            print len(stream1), len(l[0]['data']), len(l[0]['data_slice'])
+            print(type(stream1), type(l[0]['data']), type(l[0]['data_slice']))
+            print(len(stream1), len(l[0]['data']), len(l[0]['data_slice']))
             self.assertEquals(list(stream1), list(l[0]['data']))
             self.assertEquals(list(stream1[0:100]), list(l[0]['data_slice']))
             self.assertEquals(list(stream2), list(l[1]['data']))
@@ -608,7 +608,7 @@ class DateTest(TestBase, AssertsExecutionResults):
         users_with_date = Table('query_users_with_date',
                                 MetaData(testing.db), *collist)
         users_with_date.create()
-        insert_dicts = [dict(zip(fnames, d)) for d in insert_data]
+        insert_dicts = [dict(list(zip(fnames, d))) for d in insert_data]
 
         for idict in insert_dicts:
             users_with_date.insert().execute(**idict)
@@ -619,7 +619,7 @@ class DateTest(TestBase, AssertsExecutionResults):
     def testdate(self):
         global insert_data
 
-        l = map(tuple, users_with_date.select().execute().fetchall())
+        l = list(map(tuple, users_with_date.select().execute().fetchall()))
         self.assert_(l == insert_data,
                      'DateTest mismatch: got:%s expected:%s' % (l, insert_data))
 
@@ -628,14 +628,14 @@ class DateTest(TestBase, AssertsExecutionResults):
             "select user_datetime from query_users_with_date",
             typemap={'user_datetime':DateTime}).execute().fetchall()
 
-        print repr(x)
+        print(repr(x))
         self.assert_(isinstance(x[0][0], datetime.datetime))
 
         x = testing.db.text(
             "select * from query_users_with_date where user_datetime=:somedate",
             bindparams=[bindparam('somedate', type_=types.DateTime)]).execute(
             somedate=datetime.datetime(2005, 11, 10, 11, 52, 35)).fetchall()
-        print repr(x)
+        print(repr(x))
 
     def testdate2(self):
         meta = MetaData(testing.db)
@@ -711,7 +711,7 @@ class NumericTest(TestBase, AssertsExecutionResults):
             ncasdec=Decimal("12.4"), fcasdec=Decimal("15.75"))
 
         l = numeric_table.select().execute().fetchall()
-        print l
+        print(l)
         rounded = [
             (l[0][0], l[0][1], round(l[0][2], 5), l[0][3], l[0][4]),
             (l[1][0], l[1][1], round(l[1][2], 5), l[1][3], l[1][4]),
@@ -803,11 +803,11 @@ class BooleanTest(TestBase, AssertsExecutionResults):
         bool_table.insert().execute(id=5, value=True)
 
         res = bool_table.select(bool_table.c.value==True).execute().fetchall()
-        print res
+        print(res)
         assert(res==[(1, True),(3, True),(4, True),(5, True)])
 
         res2 = bool_table.select(bool_table.c.value==False).execute().fetchall()
-        print res2
+        print(res2)
         assert(res2==[(2, False)])
 
 try:

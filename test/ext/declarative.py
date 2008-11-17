@@ -855,7 +855,7 @@ def produce_test(inline, stringbased):
                     Address.user = relation(User, primaryjoin=User.id==Address.user_id, backref="addresses")
 
         def insert_data(self):
-            params = [dict(zip(('id', 'name'), column_values)) for column_values in 
+            params = [dict(list(zip(('id', 'name'), column_values))) for column_values in 
                 [(7, 'jack'),
                 (8, 'ed'),
                 (9, 'fred'),
@@ -864,7 +864,7 @@ def produce_test(inline, stringbased):
             User.__table__.insert().execute(params)
         
             Address.__table__.insert().execute(
-                [dict(zip(('id', 'user_id', 'email'), column_values)) for column_values in 
+                [dict(list(zip(('id', 'user_id', 'email'), column_values))) for column_values in 
                     [(1, 7, "jack@bean.com"),
                     (2, 8, "ed@wood.com"),
                     (3, 8, "ed@bettyboop.com"),

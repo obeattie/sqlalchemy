@@ -340,7 +340,7 @@ class InfoDialect(default.DefaultDialect):
             if refspec not in fk[1]:
                 fk[1].append(refspec)
 
-        for name, value in fks.iteritems():
+        for name, value in fks.items():
             table.append_constraint(schema.ForeignKeyConstraint(value[0], value[1] , None ))
 
         # PK

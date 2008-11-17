@@ -99,7 +99,6 @@ through the adapter, allowing for some very sophisticated behavior.
 import copy
 import inspect
 import operator
-import sets
 import sys
 import weakref
 
@@ -567,7 +566,7 @@ class CollectionAdapter(object):
         """Count entities in the collection."""
         return len(list(getattr(self._data(), '_sa_iterator')()))
 
-    def __nonzero__(self):
+    def __bool__(self):
         return True
 
     def fire_append_event(self, item, initiator=None):
@@ -779,7 +778,7 @@ def _instrument_class(cls):
             methods[name] = None, None, after
 
     # apply ABC auto-decoration to methods that need it
-    for method, decorator in decorators.items():
+    for method, decorator in list(decorators.items()):
         fn = getattr(cls, method, None)
         if (fn and method not in methods and
             not hasattr(fn, '_sa_instrumented')):
@@ -810,12 +809,12 @@ def _instrument_class(cls):
 
     # apply ad-hoc instrumentation from decorators, class-level defaults
     # and implicit role declarations
-    for method, (before, argument, after) in methods.items():
+    for method, (before, argument, after) in list(methods.items()):
         setattr(cls, method,
                 _instrument_membership_mutator(getattr(cls, method),
                                                before, argument, after))
     # intern the role map
-    for role, method in roles.items():
+    for role, method in list(roles.items()):
         setattr(cls, '_sa_%s' % role, getattr(cls, method))
 
     setattr(cls, '_sa_instrumented', id(cls))
@@ -945,7 +944,7 @@ def _list_decorators():
                 else:
                     stop = index.stop
                 step = index.step or 1
-                rng = range(index.start or 0, stop, step)
+                rng = list(range(index.start or 0, stop, step))
                 if step == 1:
                     for i in rng:
                         del self[index.start]
@@ -1099,7 +1098,7 @@ def _dict_decorators():
     if sys.version_info < (2, 4):
         def update(fn):
             def update(self, other):
-                for key in other.keys():
+                for key in list(other.keys()):
                     if key not in self or self[key] is not other[key]:
                         self[key] = other[key]
             _tidy(update)
@@ -1109,7 +1108,7 @@ def _dict_decorators():
             def update(self, __other=Unspecified, **kw):
                 if __other is not Unspecified:
                     if hasattr(__other, 'keys'):
-                        for key in __other.keys():
+                        for key in list(__other.keys()):
                             if (key not in self or
                                 self[key] is not __other[key]):
                                 self[key] = __other[key]
@@ -1128,15 +1127,15 @@ def _dict_decorators():
     l.pop('Unspecified')
     return l
 
-_set_binop_bases = (set, frozenset, sets.BaseSet)
+# PY3K - move _set_binop_bases to util as set_binop_bases
 
 def _set_binops_check_strict(self, obj):
     """Allow only set, frozenset and self.__class__-derived objects in binops."""
-    return isinstance(obj, _set_binop_bases + (self.__class__,))
+    return isinstance(obj, util.set_binop_bases + (self.__class__,))
 
 def _set_binops_check_loose(self, obj):
     """Allow anything set-like to participate in set binops."""
-    return (isinstance(obj, _set_binop_bases + (self.__class__,)) or
+    return (isinstance(obj, util.set_binop_bases + (self.__class__,)) or
             util.duck_type_collection(obj) == set)
 
 

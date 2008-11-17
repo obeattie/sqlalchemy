@@ -55,7 +55,7 @@ class O2MCascadeTest(_fixtures.FixtureTest):
         try:
             sess.flush()
             assert False
-        except orm_exc.FlushError, e:
+        except orm_exc.FlushError as e:
             assert "is an orphan" in str(e)
 
 
@@ -748,7 +748,7 @@ class UnsavedOrphansTest(_base.MappedTest):
         s.add(a)
         try:
             s.flush()
-        except orm_exc.FlushError, e:
+        except orm_exc.FlushError as e:
             pass
         assert a.address_id is None, "Error: address should not be persistent"
 
@@ -986,7 +986,7 @@ class DoubleParentOrphanTest(_base.MappedTest):
         try:
             session.flush()
             assert False
-        except orm_exc.FlushError, e:
+        except orm_exc.FlushError as e:
             assert True
 
 class CollectionAssignmentOrphanTest(_base.MappedTest):
