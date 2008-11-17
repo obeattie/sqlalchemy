@@ -20,8 +20,11 @@ except ImportError:
 
 py3k = getattr(sys, 'py3kwarning', False) or sys.version_info >= (3, 0)
 
-if sys.version_info < (2, 6):
+if py3k:
+    set_types = set
+elif sys.version_info < (2, 6):
     import sets
+    set_types = set, sets.Set
 else:
     # 2.6 deprecates sets.Set, but we still need to be able to detect them
     # in user code and as return values from DB-APIs
@@ -34,23 +37,21 @@ else:
         import sets
         warnings.filters.remove(ignore)
 
-set_types = set, sets.Set
+    set_types = set, sets.Set
 
 EMPTY_SET = frozenset()
 
-if not py3k:
+if py3k:
+    import pickle
+else:
     try:
         import cPickle as pickle
     except ImportError:
         import pickle
-else:
-    import pickle
 
 if py3k:
-    try:
-        import memoryview as buffer
-    except:
-        buffer = __builtin__.buffer
+    def buffer(x):
+        return x # no-op until we figure out what MySQLdb is going to use
 else:
     buffer = __builtin__.buffer
         
