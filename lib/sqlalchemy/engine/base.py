@@ -1334,12 +1334,17 @@ class RowProxy(object):
         """Return the list of keys as strings represented by this RowProxy."""
 
         return self.__parent.keys
-
+    
+    def iterkeys(self):
+        return iter(self.__parent.keys)
+        
     def values(self):
         """Return the values represented by this RowProxy as a list."""
 
         return list(self)
-
+    
+    def itervalues(self):
+        return iter(self)
 
 class BufferedColumnRow(RowProxy):
     def __init__(self, parent, row):
