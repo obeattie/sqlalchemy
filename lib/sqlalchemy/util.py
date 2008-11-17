@@ -38,11 +38,22 @@ set_types = set, sets.Set
 
 EMPTY_SET = frozenset()
 
-try:
-    import cPickle as pickle
-except ImportError:
+if not py3k:
+    try:
+        import cPickle as pickle
+    except ImportError:
+        import pickle
+else:
     import pickle
 
+if py3k:
+    try:
+        import memoryview as buffer
+    except:
+        buffer = __builtin__.buffer
+else:
+    buffer = __builtin__.buffer
+        
 if sys.version_info >= (2, 5):
     class PopulateDict(dict):
         """A dict which populates missing values via a creation function.

@@ -116,6 +116,7 @@ class HashOverride(object):
 class EqOverride(object):
     def __init__(self, value=None):
         self.value = value
+    __hash__ = object.__hash__
     def __eq__(self, other):
         if isinstance(other, EqOverride):
             return self.value == other.value

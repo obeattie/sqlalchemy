@@ -1045,7 +1045,7 @@ class _BinaryType(sqltypes.Binary):
             if value is None:
                 return None
             else:
-                return buffer(value)
+                return util.buffer(value)
         return process
 
 class MSVarBinary(_BinaryType):
@@ -1092,7 +1092,7 @@ class MSBinary(_BinaryType):
             if value is None:
                 return None
             else:
-                return buffer(value)
+                return util.buffer(value)
         return process
 
 class MSBlob(_BinaryType):
@@ -1120,7 +1120,7 @@ class MSBlob(_BinaryType):
             if value is None:
                 return None
             else:
-                return buffer(value)
+                return util.buffer(value)
         return process
 
     def __repr__(self):
