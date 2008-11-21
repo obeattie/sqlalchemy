@@ -163,6 +163,7 @@ from sqlalchemy.sql import compiler
 
 from sqlalchemy.engine import base as engine_base, default
 from sqlalchemy import types as sqltypes
+from sqlalchemy import Table, MetaData
 
 
 __all__ = (
@@ -1676,31 +1677,73 @@ class MySQLDialect(default.DefaultDialect):
                 version.append(n)
         return tuple(version)
 
+    def _get_reflector(self, connection):
+        """Return the cached reflector or create a new  one."""
+        # If this is a local call (no info_cache), return the local reflector.
+        if hasattr(self, 'reflector'):
+            return self.reflector
+        charset = self._detect_charset(connection)
+        # It hasn't been created yet.
+        self._autoset_identifier_style(connection)
+        preparer = self.identifier_preparer
+        if (self.server_version_info(connection) < (4, 1) and
+            self.use_ansiquotes):
+            # ANSI_QUOTES doesn't affect SHOW CREATE TABLE on < 4.1
+            preparer = MySQLIdentifierPreparer(self)
+
+        reflector = MySQLSchemaReflector(preparer)
+        self.reflector = reflector
+
+        return reflector
+
+    def _make_full_name(self, table_name, schema=None):
+        """Return a full, quoted name in the form of schema.table_name."""
+        preparer = self.identifier_preparer
+        result = preparer.quote(table_name, None)
+        if schema is not None:
+            result = preparer.quote(schema, None) + "." + result
+        return result
+
+    def _reflect(self, reflector_attr, connection, table_name, schema=None,
+                 info_cache=None):
+        """Call the appropriate method, reflector_attr on the reflector."""
+        charset = self._detect_charset(connection)
+        self._autoset_identifier_style(connection)
+        full_name = self._make_full_name(table_name, schema)
+        table_def = info_cache.get(full_name)
+        reflector = self._get_reflector(connection)
+        if not table_def:
+            table_def = self._show_table_def(connection, None, charset,
+                                             full_name=full_name)
+        info_cache[full_name] = table_def
+        f = getattr(self.reflector, reflector_attr)
+        return f(table_def, charset)
+
+    def get_columns(self, connection, table_name, schema=None, info_cache=None):
+        """Return column information for table_name and schema."""
+        return self._reflect('get_columns', connection, table_name, schema,
+                             info_cache)
+
+    def get_primary_keys(self, connection, table_name, schema=None,
+                         info_cache=None):
+        """Return primary key information for table_name and schema."""
+        return self._reflect('get_primary_keys', connection, table_name, schema,
+                             info_cache)
+
+    def get_foreign_keys(self, connection, table_name, schema=None,
+                         info_cache=None):
+        """Return foreign key information for table_name and schema."""
+        return self._reflect('get_foreign_keys', connection, table_name, schema,
+                             info_cache)
+
     def reflecttable(self, connection, table, include_columns):
         """Load column definitions from the server."""
 
         charset = self._detect_charset(connection)
         self._autoset_identifier_style(connection)
-
-        try:
-            reflector = self.reflector
-        except AttributeError:
-            preparer = self.identifier_preparer
-            if (self.server_version_info(connection) < (4, 1) and
-                self.use_ansiquotes):
-                # ANSI_QUOTES doesn't affect SHOW CREATE TABLE on < 4.1
-                preparer = MySQLIdentifierPreparer(self)
-
-            self.reflector = reflector = MySQLSchemaReflector(preparer)
-
-        sql = self._show_create_table(connection, table, charset)
-        if sql.startswith('CREATE ALGORITHM'):
-            # Adapt views to something table-like.
-            columns = self._describe_table(connection, table, charset)
-            sql = reflector._describe_to_create(table, columns)
-
+        reflector = self._get_reflector(connection)
+        sql = self._show_table_def(connection, table, charset)
         self._adjust_casing(connection, table)
-
         return reflector.reflect(connection, table, sql, charset,
                                  only=include_columns)
 
@@ -1856,8 +1899,8 @@ class MySQLDialect(default.DefaultDialect):
 
         if full_name is None:
             full_name = self.identifier_preparer.format_table(table)
-        st = "SHOW CREATE TABLE %s" % full_name
 
+        st = "SHOW CREATE TABLE %s" % full_name
         rp = None
         try:
             try:
@@ -1876,6 +1919,20 @@ class MySQLDialect(default.DefaultDialect):
                 rp.close()
 
         return sql
+
+    def _show_table_def(self, connection, table, charset=None,
+                        full_name=None):
+        reflector = self._get_reflector(connection)
+        sql = self._show_create_table(connection, table, charset, full_name)
+        if sql.startswith('CREATE ALGORITHM'):
+            # Adapt views to something table-like.
+            columns = self._describe_table(connection, table, charset,
+                                           full_name)
+            if full_name is None:
+                full_name = self.identifier_preparer.format_table(table)
+            sql = reflector._describe_to_create(full_name, columns)
+        return sql
+
 
     def _describe_table(self, connection, table, charset=None,
                              full_name=None):
@@ -2114,7 +2171,6 @@ class MySQLSchemaDropper(compiler.SchemaDropper):
                      self.preparer.format_constraint(constraint)))
         self.execute()
 
-
 class MySQLSchemaReflector(object):
     """Parses SHOW CREATE TABLE output."""
 
@@ -2128,6 +2184,73 @@ class MySQLSchemaReflector(object):
 
         self.preparer = identifier_preparer
         self._prep_regexes()
+
+    def get_columns(self, show_create, charset):
+        """Return column info formatted for the reflection API."""
+        parsed_info = self._parse_show_create(show_create, charset)
+        col_info = parsed_info['columns']
+        return [(c[0], c[1], c[3].get('nullable', True), c[2]) \
+                                                            for c in col_info]
+
+    def get_primary_keys(self, show_create, charset):
+        """Return primary key info formatted for the reflection API."""
+        parsed_info = self._parse_show_create(show_create, charset)
+        pkeys = []
+        for key in parsed_info['keys']:
+            if key['type'] == 'PRIMARY':
+                for col in key['columns']:
+                    column_name = col[0]
+                    pkeys.append((column_name, ))
+        return pkeys
+
+    def get_foreign_keys(self, show_create, charset):
+        """Return foreign key info formatted for the reflection API."""
+        parsed_info = self._parse_show_create(show_create, charset)
+        constraints = parsed_info['constraints']
+        fkeys = []
+        # This is largely duplicated in _set_constraints.
+        for spec in constraints:
+            referred_table = spec['table'][-1]
+            referred_schema = len(spec['table']) > 1 and spec['table'][-2] \
+                                                                        or None
+            constrained_columns = spec['local']
+            referred_columns = spec['foreign']
+            fkeys.append((constraint_name, constrained_columns,
+                          referred_schema, referred_table, referred_columns))
+        return fkeys
+
+    def _parse_show_create(self, show_create, charset):
+        """Parse MySQL SHOW CREATE TABLE."""
+        (columns, keys, constraints) = [], [], []
+        table_options = {}
+        read_table_name = None
+
+        for line in re.split(r'\r?\n', show_create):
+            if line.startswith('  ' + self.preparer.initial_quote):
+                columns.append(self._read_column(line, charset))
+            # a regular table options line
+            elif line.startswith(') '):
+                table_options.update(self.parse_table_options(line))
+            # an ANSI-mode table options line
+            elif line == ')':
+                pass
+            elif line.startswith('CREATE '):
+                read_table_name = self.parse_name(line)
+            # Not present in real reflection, but may be if loading from a file.
+            elif not line:
+                pass
+            else:
+                type_, spec = self.parse_constraints(line)
+                if type_ is None:
+                    util.warn("Unknown schema content: %r" % line)
+                elif type_ == 'key':
+                    keys.append(spec)
+                elif type_ == 'constraint':
+                    constraints.append(spec)
+                else:
+                    pass
+        return dict(columns=columns, keys=keys, constraints=constraints,
+                    table_options=table_options, table_name=read_table_name)
 
     def reflect(self, connection, table, show_create, charset, only=None):
         """Parse MySQL SHOW CREATE TABLE and fill in a ''Table''.
@@ -2152,54 +2275,30 @@ class MySQLSchemaReflector(object):
            2 part primary key, the entire primary key will be omitted.
         """
 
-        keys, constraints = [], []
-
         if only:
             only = set(only)
 
-        for line in re.split(r'\r?\n', show_create):
-            if line.startswith('  ' + self.preparer.initial_quote):
-                self._add_column(table, line, charset, only)
-            # a regular table options line
-            elif line.startswith(') '):
-                self._set_options(table, line)
-            # an ANSI-mode table options line
-            elif line == ')':
-                pass
-            elif line.startswith('CREATE '):
-                self._set_name(table, line)
-            # Not present in real reflection, but may be if loading from a file.
-            elif not line:
-                pass
-            else:
-                type_, spec = self.parse_constraints(line)
-                if type_ is None:
-                    util.warn("Unknown schema content: %r" % line)
-                elif type_ == 'key':
-                    keys.append(spec)
-                elif type_ == 'constraint':
-                    constraints.append(spec)
-                else:
-                    pass
+        parsed_info = self._parse_show_create(show_create, charset)
 
-        self._set_keys(table, keys, only)
-        self._set_constraints(table, constraints, connection, only)
+        for column_info in parsed_info['columns']:
+            self._add_column(table, column_info, only)
 
-    def _set_name(self, table, line):
-        """Override a Table name with the reflected name.
-
-        table
-          A ``Table``
-
-        line
-          The first line of SHOW CREATE TABLE output.
-        """
+        self._set_options(table, parsed_info['table_options'])
 
         # Don't override by default.
         if table.name is None:
-            table.name = self.parse_name(line)
+            table.name = parsed_info['table_name']
 
-    def _add_column(self, table, line, charset, only=None):
+        self._set_keys(table, parsed_info['keys'], only)
+        self._set_constraints(table, parsed_info['constraints'], connection,
+                              only)
+
+    def _read_column(self, line, charset):
+        """Parse column information from line.
+
+        Returns (name, type_instance, col_args, col_kw)
+
+        """
         spec = self.parse_column(line)
         if not spec:
             util.warn("Unknown column definition %r" % line)
@@ -2209,11 +2308,6 @@ class MySQLSchemaReflector(object):
 
         name, type_, args, notnull = \
               spec['name'], spec['coltype'], spec['arg'], spec['notnull']
-
-        if only and name not in only:
-            self.logger.info("Omitting reflected column %s.%s" %
-                             (table.name, name))
-            return
 
         # Convention says that TINYINT(1) columns == BOOLEAN
         if type_ == 'tinyint' and args == '1':
@@ -2273,6 +2367,21 @@ class MySQLSchemaReflector(object):
             else:
                 default = default[1:-1]
             col_args.append(schema.DefaultClause(default))
+
+        return (name, type_instance, col_args, col_kw)
+
+    def _add_column(self, table, col_info, only=None):
+        """Add a column to a table.
+       
+        Creates a ``Column`` from col_info and appends it to a ``Table``.
+        
+        """
+        (name, type_instance, col_args, col_kw) = col_info
+
+        if only and name not in only:
+            self.logger.info("Omitting reflected column %s.%s" %
+                             (table.name, name))
+            return
 
         table.append_column(schema.Column(name, type_instance,
                                           *col_args, **col_kw))
@@ -2376,7 +2485,7 @@ class MySQLSchemaReflector(object):
             for pair in zip(loc_names, ref_columns):
                 key.append_element(*pair)
 
-    def _set_options(self, table, line):
+    def _set_options(self, table, options):
         """Apply safe reflected table options to a ``Table``.
 
         table
@@ -2386,7 +2495,6 @@ class MySQLSchemaReflector(object):
           The final line of SHOW CREATE TABLE output.
         """
 
-        options = self.parse_table_options(line)
         for nope in ('auto_increment', 'data_directory', 'index_directory'):
             options.pop(nope, None)
 
@@ -2646,7 +2754,7 @@ class MySQLSchemaReflector(object):
 
         return options
 
-    def _describe_to_create(self, table, columns):
+    def _describe_to_create(self, table_name, columns):
         """Re-format DESCRIBE output as a SHOW CREATE TABLE string.
 
         DESCRIBE is a much simpler reflection and is sufficient for
@@ -2687,7 +2795,7 @@ class MySQLSchemaReflector(object):
             buffer.append(' '.join(line))
 
         return ''.join([('CREATE TABLE %s (\n' %
-                         self.preparer.quote_identifier(table.name)),
+                         self.preparer.quote_identifier(table_name)),
                         ',\n'.join(buffer),
                         '\n) '])
 
