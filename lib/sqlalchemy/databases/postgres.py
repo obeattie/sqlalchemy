@@ -368,24 +368,47 @@ class PGDialect(default.DefaultDialect):
         """ % locals()
         return [row[0].decode(self.encoding) for row in connection.execute(s)]
 
-    def server_version_info(self, connection):
-        v = connection.execute("select version()").scalar()
-        m = re.match('PostgreSQL (\d+)\.(\d+)\.(\d+)', v)
-        if not m:
-            raise AssertionError("Could not determine version from string '%s'" % v)
-        return tuple([int(x) for x in m.group(1, 2, 3)])
-
-    def reflecttable(self, connection, table, include_columns):
-        preparer = self.identifier_preparer
-        if table.schema is not None:
+    def __make_schema_where_clause(self, schema):
+        if schema is not None:
             schema_where_clause = "n.nspname = :schema"
-            schemaname = table.schema
+            schemaname = schema
             if isinstance(schemaname, str):
                 schemaname = schemaname.decode(self.encoding)
         else:
             schema_where_clause = "pg_catalog.pg_table_is_visible(c.oid)"
             schemaname = None
+        return schema_where_clause
 
+    def _get_table_oid(self, connection, table_name, schema=None):
+        schema_where_clause = self.__make_schema_where_clause(schema)
+        query = """
+            SELECT DISTINCT a.attrelid as table_oid
+            FROM pg_catalog.pg_attribute a
+            WHERE a.attrelid = (
+                SELECT c.oid
+                FROM pg_catalog.pg_class c
+                     LEFT JOIN pg_catalog.pg_namespace n
+                     ON n.oid = c.relnamespace
+                     WHERE (%s)
+                     AND c.relname = :table_name AND c.relkind in ('r','v')
+            ) AND a.attnum > 0 AND NOT a.attisdropped;
+        """ % schema_where_clause
+        if isinstance(table_name, str):
+            table_name = table_name.decode(self.encoding)
+        if isinstance(schema, str):
+            schema = schema.decode(self.encoding)
+        s = sql.text(query, bindparams=[sql.bindparam('table_name', type_=sqltypes.Unicode), sql.bindparam('schema', type_=sqltypes.Unicode)])
+        c = connection.execute(s, table_name=table_name, schema=schema)
+        rows = c.fetchall()
+        if not rows:
+            raise exc.NoSuchTableError(table_name)
+        return rows[0].table_oid
+
+    def get_columns(self, connection, table_name, schema=None, info_cache=None):
+        preparer = self.identifier_preparer
+        schema_where_clause = self.__make_schema_where_clause(schema)
+        schemaname = schema
+        # This could probably be simplified since we have _get_table_oid.
         SQL_COLS = """
             SELECT a.attname,
               pg_catalog.format_type(a.atttypid, a.atttypmod),
@@ -405,31 +428,27 @@ class PGDialect(default.DefaultDialect):
         """ % schema_where_clause
 
         s = sql.text(SQL_COLS, bindparams=[sql.bindparam('table_name', type_=sqltypes.Unicode), sql.bindparam('schema', type_=sqltypes.Unicode)], typemap={'attname':sqltypes.Unicode, 'default':sqltypes.Unicode})
-        tablename = table.name
+        tablename = table_name
         if isinstance(tablename, str):
             tablename = tablename.decode(self.encoding)
+        if isinstance(schemaname, str):
+            schemaname = schemaname.decode(self.encoding)
         c = connection.execute(s, table_name=tablename, schema=schemaname)
         rows = c.fetchall()
-
         if not rows:
             raise exc.NoSuchTableError(table.name)
-
         domains = self._load_domains(connection)
-
+        # Format the results.
+        columns = []
         for name, format_type, default, notnull, attnum, table_oid in rows:
-            if include_columns and name not in include_columns:
-                continue
-
             ## strip (30) from character varying(30)
             attype = re.search('([^\([]+)', format_type).group(1)
             nullable = not notnull
             is_array = format_type.endswith('[]')
-
             try:
                 charlen = re.search('\(([\d,]+)\)', format_type).group(1)
             except:
                 charlen = False
-
             numericprec = False
             numericscale = False
             if attype == 'numeric':
@@ -444,20 +463,17 @@ class PGDialect(default.DefaultDialect):
             if attype == 'integer':
                 numericprec, numericscale = (32, 0)
                 charlen = False
-
             args = []
             for a in (charlen, numericprec, numericscale):
                 if a is None:
                     args.append(None)
                 elif a is not False:
                     args.append(int(a))
-
             kwargs = {}
             if attype == 'timestamp with time zone':
                 kwargs['timezone'] = True
             elif attype == 'timestamp without time zone':
                 kwargs['timezone'] = False
-
             if attype in ischema_names:
                 coltype = ischema_names[attype]
             else:
@@ -466,14 +482,12 @@ class PGDialect(default.DefaultDialect):
                     if domain['attype'] in ischema_names:
                         # A table can't override whether the domain is nullable.
                         nullable = domain['nullable']
-
                         if domain['default'] and not default:
                             # It can, however, override the default value, but can't set it to null.
                             default = domain['default']
                         coltype = ischema_names[domain['attype']]
                 else:
                     coltype = None
-
             if coltype:
                 coltype = coltype(*args, **kwargs)
                 if is_array:
@@ -482,75 +496,98 @@ class PGDialect(default.DefaultDialect):
                 util.warn("Did not recognize type '%s' of column '%s'" %
                           (attype, name))
                 coltype = sqltypes.NULLTYPE
+            other_args = []
+            columns.append((name, coltype, nullable, default, other_args))
+        if table_oid is not None and info_cache is not None:
+            info_cache['table_oid'] = table_oid
+        return columns
 
-            colargs = []
-            if default is not None:
-                match = re.search(r"""(nextval\(')([^']+)('.*$)""", default)
-                if match is not None:
-                    # the default is related to a Sequence
-                    sch = table.schema
-                    if '.' not in match.group(2) and sch is not None:
-                        # unconditionally quote the schema name.  this could
-                        # later be enhanced to obey quoting rules / "quote schema"
-                        default = match.group(1) + ('"%s"' % sch) + '.' + match.group(2) + match.group(3)
-                colargs.append(schema.DefaultClause(sql.text(default)))
-            table.append_column(schema.Column(name, coltype, nullable=nullable, *colargs))
-
-
-        # Primary keys
+    def get_primary_keys(self, connection, table_name, schema=None,
+                         info_cache=None):
+        if info_cache is None:
+            info_cache = {}
         PK_SQL = """
-          SELECT attname FROM pg_attribute
+          SELECT attname AS colname FROM pg_attribute
           WHERE attrelid = (
              SELECT indexrelid FROM pg_index i
-             WHERE i.indrelid = :table
+             WHERE i.indrelid = :table_oid
              AND i.indisprimary = 't')
           ORDER BY attnum
         """
         t = sql.text(PK_SQL, typemap={'attname':sqltypes.Unicode})
-        c = connection.execute(t, table=table_oid)
-        for row in c.fetchall():
-            pk = row[0]
-            col = table.c[pk]
-            table.primary_key.add(col)
-            if col.default is None:
-                col.autoincrement = False
+        table_oid = info_cache.get('table_oid')
+        if table_oid is None:
+            table_oid = self._get_table_oid(connection, table_name, schema)
+        info_cache['table_oid'] = table_oid
+        c = connection.execute(t, table_oid=table_oid)
+        return [tuple(r) for r in c.fetchall()]
 
-        # Foreign keys
+    def get_foreign_keys(self, connection, table_name, schema=None,
+                         info_cache=None):
+        if info_cache is None:
+            info_cache = {}
+        preparer = self.identifier_preparer
         FK_SQL = """
           SELECT conname, pg_catalog.pg_get_constraintdef(oid, true) as condef
           FROM  pg_catalog.pg_constraint r
           WHERE r.conrelid = :table AND r.contype = 'f'
           ORDER BY 1
         """
-
         t = sql.text(FK_SQL, typemap={'conname':sqltypes.Unicode, 'condef':sqltypes.Unicode})
+        table_oid = info_cache.get('table_oid')
+        if table_oid is None:
+            table_oid = self._get_table_oid(connection, table_name, schema)
+        info_cache['table_oid'] = table_oid
         c = connection.execute(t, table=table_oid)
+        fkeys = []
         for conname, condef in c.fetchall():
             m = re.search('FOREIGN KEY \((.*?)\) REFERENCES (?:(.*?)\.)?(.*?)\((.*?)\)', condef).groups()
             (constrained_columns, referred_schema, referred_table, referred_columns) = m
             constrained_columns = [preparer._unquote_identifier(x) for x in re.split(r'\s*,\s*', constrained_columns)]
-            if referred_schema:
-                referred_schema = preparer._unquote_identifier(referred_schema)
-            elif table.schema is not None and table.schema == self.get_default_schema_name(connection):
-                # no schema (i.e. its the default schema), and the table we're
-                # reflecting has the default schema explicit, then use that.
-                # i.e. try to use the user's conventions
-                referred_schema = table.schema
-            referred_table = preparer._unquote_identifier(referred_table)
-            referred_columns = [preparer._unquote_identifier(x) for x in re.split(r'\s*,\s', referred_columns)]
+            referred_columns = [preparer._unquote_identifier(x) for x in re.split(r'\s*,\s*', referred_columns)]
+            fkeys.append((conname, constrained_columns, referred_schema,
+                          referred_table, referred_columns))
+        return fkeys 
 
-            refspec = []
-            if referred_schema is not None:
-                schema.Table(referred_table, table.metadata, autoload=True, schema=referred_schema,
-                            autoload_with=connection)
-                for column in referred_columns:
-                    refspec.append(".".join([referred_schema, referred_table, column]))
-            else:
-                schema.Table(referred_table, table.metadata, autoload=True, autoload_with=connection)
-                for column in referred_columns:
-                    refspec.append(".".join([referred_table, column]))
+    def server_version_info(self, connection):
+        v = connection.execute("select version()").scalar()
+        m = re.match('PostgreSQL (\d+)\.(\d+)\.(\d+)', v)
+        if not m:
+            raise AssertionError("Could not determine version from string '%s'" % v)
+        return tuple([int(x) for x in m.group(1, 2, 3)])
 
-            table.append_constraint(schema.ForeignKeyConstraint(constrained_columns, refspec, conname))
+    def reflecttable(self, connection, table, include_columns):
+        info_cache = {}
+        preparer = self.identifier_preparer
+        # Columns
+        columns = self.get_columns(connection, table.name, table.schema,
+                                   info_cache)
+        for (name, coltype, nullable, default, other_args) in columns:
+            if include_columns and name not in include_columns:
+                continue
+            colargs = []
+            if default is not None:
+                match = re.search(r"""(nextval\(')([^']+)('.*$)""", default)
+                if match is not None:
+                    # the default is related to a Sequence
+                    if '.' not in match.group(2) and table.schema is not None:
+                        # unconditionally quote the schema name.  this could
+                        # later be enhanced to obey quoting rules / "quote schema"
+                        default = match.group(1) + ('"%s"' % table.schema) + '.' + match.group(2) + match.group(3)
+                colargs.append(schema.DefaultClause(sql.text(default)))
+            table.append_column(schema.Column(name, coltype, nullable=nullable, 
+                                *colargs))
+        # Primary Keys
+        for row in self.get_primary_keys(connection, table.name, table.schema,
+                                         info_cache):
+            pk = row[0]
+            col = table.c[pk]
+            table.primary_key.add(col)
+            if col.default is None:
+                col.autoincrement = False
+        # Foreign keys
+        self._reflect_foreign_keys(connection, table, info_cache)
+        return None
 
     def _load_domains(self, connection):
         ## Load data types for domains:
