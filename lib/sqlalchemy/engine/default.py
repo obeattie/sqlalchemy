@@ -15,7 +15,7 @@ as the base class for their own corresponding classes.
 import re, random
 from sqlalchemy.engine import base
 from sqlalchemy.sql import compiler, expression
-from sqlalchemy import exc
+from sqlalchemy import exc, schema
 
 AUTOCOMMIT_REGEXP = re.compile(r'\s*(?:UPDATE|INSERT|CREATE|DELETE|DROP|ALTER)',
                                re.I | re.UNICODE)
@@ -124,6 +124,39 @@ class DefaultDialect(base.Dialect):
     def is_disconnect(self, e):
         return False
 
+    def _reflect_foreign_keys(self, connection, table, info_cache=None):
+        """Reflect foreign keys onto `table`.
+        
+        If there's no special behaviour required in a subclass, it can call
+        this method for foreign key reflection.
+
+        """
+        # Foreign keys (attempting same approache as postgresql.py)
+        preparer = self.identifier_preparer
+        fkeys = self.get_foreign_keys(connection, table.name, table.schema,
+                                      info_cache)
+        for (constraint_name, constrained_columns, referred_schema,
+                                    referred_table, referred_columns) in fkeys:
+            if referred_schema:
+                referred_schema = preparer._unquote_identifier(referred_schema)
+            elif table.schema is not None and table.schema == self.get_default_schema_name(connection):
+                # no schema (i.e. its the default schema), and the table we're
+                # reflecting has the default schema explicit, then use that.
+                # i.e. try to use the user's conventions
+                referred_schema = table.schema
+            referred_table = preparer._unquote_identifier(referred_table)
+            referred_columns = [preparer._unquote_identifier(x) for x in referred_columns]
+            refspec = []
+            if referred_schema is not None:
+                schema.Table(referred_table, table.metadata, autoload=True, schema=referred_schema,
+                            autoload_with=connection)
+                for column in referred_columns:
+                    refspec.append(".".join([referred_schema, referred_table, column]))
+            else:
+                schema.Table(referred_table, table.metadata, autoload=True, autoload_with=connection)
+                for column in referred_columns:
+                    refspec.append(".".join([referred_table, column]))
+            table.append_constraint(schema.ForeignKeyConstraint(constrained_columns, refspec, constraint_name))
 
 class DefaultExecutionContext(base.ExecutionContext):
     def __init__(self, dialect, connection, compiled=None, statement=None, parameters=None):
