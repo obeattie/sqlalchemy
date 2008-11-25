@@ -12,6 +12,18 @@ CHANGES
       that the given argument is a FromClause,
       or Text/Select/Union, respectively.
 
+    - Duplicate items in a list-based collection will
+      be maintained when issuing INSERTs to
+      a "secondary" table in a many-to-many relation.
+      Assuming the m2m table has a unique or primary key 
+      constraint on it, this will raise the expected 
+      constraint violation instead of silently
+      dropping the duplicate entries. Note that the 
+      old behavior remains for a one-to-many relation
+      since collection entries in that case
+      don't result in INSERT statements and SQLA doesn't
+      manually police collections. [ticket:1232]
+      
     - Query.add_column() can accept FromClause objects
       in the same manner as session.query() can.
 
@@ -22,7 +34,17 @@ CHANGES
       primaryjoin/secondaryjoin are ClauseElement 
       instances, to prevent more confusing errors later 
       on.
-       
+    
+    - comparator_factory argument is now documented
+      and supported by all MapperProperty types,
+      including column_property(), relation(), 
+      backref(), and synonym() [ticket:5051].
+      
+    - Changed the name of PropertyLoader to
+      RelationProperty, to be consistent
+      with all the other names.  PropertyLoader is 
+      still present as a synonym.
+      
 - sql
     - Fixed the import weirdness in sqlalchemy.sql
       to not export __names__ [ticket:1215].
@@ -37,7 +59,7 @@ CHANGES
       is correctly propagated to the attribute manager.
 
 - documentation
-    - Tickets [ticket:1200].
+    - Tickets [ticket:1200] [ticket:1149].
       
     - Added note about create_session() defaults.
     
@@ -48,7 +70,15 @@ CHANGES
     - Rewrote the "threadlocal" strategy section of 
       the docs due to recent confusion over this 
       feature.
+     
+    - Removed badly out of date 'polymorphic_fetch'
+      and 'select_table' docs from inheritance, 
+      reworked the second half of "joined table
+      inheritance".
       
+    - Documented `comparator_factory` kwarg, added
+      new doc section "Custom Comparators".
+    
 - postgres
     - Calling alias.execute() in conjunction with
       server_side_cursors won't raise AttributeError.
