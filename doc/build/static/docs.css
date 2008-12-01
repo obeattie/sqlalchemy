@@ -6,7 +6,7 @@
 .topnav {
 	background-color: #fbfbee;
 	border: solid 1px #ccc;
-	padding:10px 10px 0px 10px;
+	padding:10px;
 	margin:10px 0px 10px 0px;
 }
 
@@ -18,6 +18,10 @@ pre {
 .prevnext {
     padding: 5px 0px 0px 0px;
     font-size: 0.8em
+}
+
+#search {
+    float:right;
 }
 
 .codetitle {
@@ -36,60 +40,43 @@ pre {
 
 h1, h2, h3 {
     font-family:arial,helvetica,sans-serif;
+    font-weight:bold;
+}
+
+.document h1 {
+    display:none;
+    /*font-size: 1.6em;*/
+}
+
+.document h2 {
+    font-size: 1.4em;
+}
+
+.document h3 {
+    font-size: 1.4em;
 }
 
 h1 {
     font: normal 20px/22px arial,helvetica,sans-serif;
     color: #222;
     padding:0px;
-   margin:0px;   
-}
-
-h2 {
-    font-family:arial,helvetica,sans-serif;
-    font-size: 1.6em;
-    font-weight:normal;
-    line-height: 1.6em;
-    margin:0px;
-}
-
-h3 {
-    font-family: arial, sans-serif;
-    font-size: 1.4em;
-    font-weight:bold;
-}
-
-.topnav h3 {
-	font-weight: bold;
-	font-size: 1.4em;
-	margin:0px;
-	display:inline;
-        font-family:verdana,sans-serif;
+    margin:0px;   
 }
 
 .topnav h2 {
     margin:26px 4px 0px 5px;
+    font-family:arial,helvetica,sans-serif;
+    font-size:1.6em;
+    font-weight:normal;
+    line-height:1.6em;  
 }
 
-.sectionL1 {
-    line-height: 1.5em;
-    padding:8px 10px 20px 10px;
-    margin:10px 0px 0px;
-}
-
-.sectionL2 {
-    margin:0px 0px 0px 0px;
-    line-height: 1.5em;
-}
-
-.sectionL3 {
-    margin:0px 0px 0px 20px;
-    line-height: 1.5em;
-}
-
-.sectionL4 {
-    margin:0px 0px 0px 20px;
-    line-height: 1.5em;
+.topnav h3 {
+    font-weight: bold;
+    font-size: 1.4em;
+    margin:0px;
+    display:inline;
+    font-family:verdana,sans-serif;
 }
 
 
@@ -111,6 +98,26 @@ h3 {
 .topnav ul ul li li li {
    font-size: 1em;
 }
+
+.section {
+    line-height: 1.5em;
+    padding:8px 10px 20px 10px;
+    margin:10px 0px 0px;
+}
+
+.section .section {
+    margin:0px 0px 0px 0px;
+    padding: 0px;
+}
+
+.section .section .section {
+    margin:0px 0px 0px 20px;
+}
+
+.section .section .section .section {
+    margin:0px 0px 0px 20px;
+}
+
 
 .bottomnav {
     background-color:#FBFBEE;
@@ -142,15 +149,8 @@ h3 {
 	margin-top:5px;
 }
 
-.darkcell {
-	margin:0px 0px 10px 0px;
-	padding:4px 4px 4px 4px;
-	background-color: #f0f0f0;	
-	border: solid 1px #ccc;
-}
-
-.sliding_code {
-        font-family: "Deja Vu Sans Mono", "Vera Sans Mono", "Monaco", Courier, "Courier New", fixed;
+pre {
+    /*    font-family: "Deja Vu Sans Mono", "Vera Sans Mono", "Monaco", Courier, "Courier New", fixed;*/
 	background-color: #f0f0f0;	
 	border: solid 1px #ccc;
 	padding:10px;
@@ -164,32 +164,18 @@ code {
     color: #222;
 }
 
-.code {
-        font-family: "Deja Vu Sans Mono", "Vera Sans Mono", Courier, "Courier New", fixed;
-	background-color: #f0f0f0;	
-	border: solid 1px #ccc;
-	padding:10px; /*2px 2px 2px 10px;*/
-	margin: 5px 5px 5px 5px;
-	line-height:1.2em;
-}
-
-.codepop
+.popup_sql, .show_sql
 {
-        font-family: "Deja Vu Sans Mono", "Vera Sans Mono", Courier, "Courier New", fixed;
-        font-size: 0.75em;
-	color:#000;
-	background-color: #fbfbee;
-	border: 1px solid #d9d9d9;
-	border-right: 1px solid #999;
-	border-bottom: 1px solid #999;
-	padding:10px;
-	width:95%;
-	/*margin:5px 10px 5px 0px;*/
-	/*clear:right;*/
+    /*color:#000;*/
+    background-color: #fbfbee;
+    /*border: 1px solid #d9d9d9;*/
+    /*border-right: 1px solid #999;
+    border-bottom: 1px solid #999;
+    padding:10px;
+    width:95%;*/
 }
 
-.codepoplink,
-#docs a.codepoplink
+.sql_link
 {
 	font-weight:normal;
 	font-family: arial, sans-serif;
@@ -200,11 +186,16 @@ code {
 	padding:1px 2px 1px 2px;
 	margin:0px 10px 0px 15px;
 	float:right;
+	line-height:1.2em;
 }
-#docs a.codepoplink {
+
+#docs a.sql_link, .sql_link
+{
     text-decoration: none;
+    padding:1px 2px;
 }
-#docs a.codepoplink:hover {
+
+#docs a.sql_link:hover {
     text-decoration: none;
     color:#fff;
     border:1px solid #900;
@@ -227,6 +218,50 @@ code {
     padding: 0.05em 0.2em;
 }
 
+dt:target {
+    background-color:#FBE54E;
+}
+
+a.headerlink {
+    font-size: 0.8em;
+    padding: 0 4px 0 4px;
+    text-decoration: none;
+    visibility: hidden;
+}
+
+h1:hover > a.headerlink,
+h2:hover > a.headerlink,
+h3:hover > a.headerlink,
+h4:hover > a.headerlink,
+h5:hover > a.headerlink,
+h6:hover > a.headerlink,
+dt:hover > a.headerlink {
+    visibility: visible;
+}
+
+a.headerlink:hover {
+    background-color: #00f;
+    color: white;
+}
+
+
+.clearboth {
+    clear:both;
+}
+
+tt.descname {
+    background-color:transparent;
+    font-size:1.2em;
+    font-weight:bold;
+}
+tt.descclassname {
+    background-color:transparent;
+}
+tt {
+    background-color:#ECF0F3;
+    font-size:0.95em;
+    padding:0 1px;
+}
 @media print {
   #nav { display: none; }
   #pagecontrol { display: none; }
