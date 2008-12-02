@@ -14,6 +14,7 @@ Table of Contents
     types
     pooling
     plugins
+    reference/index
 
 Module Listing
 --------------
