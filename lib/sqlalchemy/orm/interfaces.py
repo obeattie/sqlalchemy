@@ -9,7 +9,7 @@
 Semi-private implementation objects which form the basis of ORM-mapped
 attributes, query options and mapper extension.
 
-Defines the [sqlalchemy.orm.interfaces#MapperExtension] class, which can be
+Defines the :class:`~sqlalchemy.orm.interfaces.MapperExtension` class, which can be
 end-user subclassed to add event-based functionality to mappers.  The
 remainder of this module is generally private to the ORM.
 
@@ -135,7 +135,7 @@ class MapperExtension(object):
 
         \**flags
           extra information about the row, same as criterion in
-          ``create_row_processor()`` method of [sqlalchemy.orm.interfaces#MapperProperty]
+          ``create_row_processor()`` method of :class:`~sqlalchemy.orm.interfaces.MapperProperty`
         """
 
         return EXT_CONTINUE

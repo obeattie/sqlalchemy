@@ -3,16 +3,12 @@
 ==========================
 Object Relational Tutorial
 ==========================
-
 In this tutorial we will cover a basic SQLAlchemy object-relational mapping scenario, where we store and retrieve Python objects from a database representation.  The tutorial is in doctest format, meaning each ``>>>`` line represents something you can type at a Python command prompt, and the following text represents the expected return value.
 
 Version Check
 =============
 
-
-A quick check to verify that we are on at least **version 0.5** of SQLAlchemy:
-
-.. sourcecode:: python+sql
+A quick check to verify that we are on at least **version 0.5** of SQLAlchemy::
 
     >>> import sqlalchemy
     >>> sqlalchemy.__version__ # doctest:+SKIP
@@ -21,10 +17,7 @@ A quick check to verify that we are on at least **version 0.5** of SQLAlchemy:
 Connecting
 ==========
 
-
-For this tutorial we will use an in-memory-only SQLite database.  To connect we use ``create_engine()``:
-
-.. sourcecode:: python+sql
+For this tutorial we will use an in-memory-only SQLite database.  To connect we use ``create_engine()``::
 
     >>> from sqlalchemy import create_engine
     >>> engine = create_engine('sqlite:///:memory:', echo=True)
@@ -33,11 +26,7 @@ The ``echo`` flag is a shortcut to setting up SQLAlchemy logging, which is accom
     
 Define and Create a Table 
 ==========================
-
-
-Next we want to tell SQLAlchemy about our tables.  We will start with just a single table called ``users``, which will store records for the end-users using our application (lets assume it's a website).  We define our tables within a catalog called ``MetaData``, using the ``Table`` construct, which is used in a manner similar to SQL's CREATE TABLE syntax:
-
-.. sourcecode:: python+sql
+Next we want to tell SQLAlchemy about our tables.  We will start with just a single table called ``users``, which will store records for the end-users using our application (lets assume it's a website).  We define our tables within a catalog called ``MetaData``, using the ``Table`` construct, which is used in a manner similar to SQL's CREATE TABLE syntax::
 
     >>> from sqlalchemy import Table, Column, Integer, String, MetaData, ForeignKey    
     >>> metadata = MetaData()
@@ -48,7 +37,7 @@ Next we want to tell SQLAlchemy about our tables.  We will start with just a sin
     ...     Column('password', String)
     ... )
 
-All about how to define ``Table`` objects, as well as how to load their definition from an existing database (known as **reflection**), is described in `metadata`.
+All about how to define ``Table`` objects, as well as how to load their definition from an existing database (known as **reflection**), is described in :ref:`metadata`.
 
 Next, we can issue CREATE TABLE statements derived from our table metadata, by calling ``create_all()`` and passing it the ``engine`` instance which points to our database.  This will check for the presence of a table first before creating, so it's safe to call multiple times:
 
@@ -67,9 +56,7 @@ Next, we can issue CREATE TABLE statements derived from our table metadata, by c
     {}
     COMMIT
 
-Users familiar with the syntax of CREATE TABLE may notice that the VARCHAR columns were generated without a length; on SQLite, this is a valid datatype, but on most databases it's not allowed.  So if running this tutorial on a database such as Postgres or MySQL, and you wish to use SQLAlchemy to generate the tables, a "length" may be provided to the ``String`` type as below:
-
-.. sourcecode:: python+sql
+Users familiar with the syntax of CREATE TABLE may notice that the VARCHAR columns were generated without a length; on SQLite, this is a valid datatype, but on most databases it's not allowed.  So if running this tutorial on a database such as Postgres or MySQL, and you wish to use SQLAlchemy to generate the tables, a "length" may be provided to the ``String`` type as below::
 
     Column('name', String(50))
     
@@ -77,11 +64,7 @@ The length field on ``String``, as well as similar precision/scale fields availa
 
 Define a Python Class to be Mapped 
 ===================================
-
-
-While the ``Table`` object defines information about our database, it does not say anything about the definition or behavior of the business objects used by our application;  SQLAlchemy views this as a separate concern.  To correspond to our ``users`` table, let's create a rudimentary ``User`` class.  It only need subclass Python's built-in ``object`` class (i.e. it's a new style class):
-
-.. sourcecode:: python+sql
+While the ``Table`` object defines information about our database, it does not say anything about the definition or behavior of the business objects used by our application;  SQLAlchemy views this as a separate concern.  To correspond to our ``users`` table, let's create a rudimentary ``User`` class.  It only need subclass Python's built-in ``object`` class (i.e. it's a new style class)::
 
     >>> class User(object):
     ...     def __init__(self, name, fullname, password):
@@ -96,19 +79,13 @@ The class has an ``__init__()`` and a ``__repr__()`` method for convenience.  Th
 
 Setting up the Mapping
 ======================
-
-
-With our ``users_table`` and ``User`` class, we now want to map the two together.  That's where the SQLAlchemy ORM package comes in.  We'll use the ``mapper`` function to create a **mapping** between ``users_table`` and ``User``:
-
-.. sourcecode:: python+sql
+With our ``users_table`` and ``User`` class, we now want to map the two together.  That's where the SQLAlchemy ORM package comes in.  We'll use the ``mapper`` function to create a **mapping** between ``users_table`` and ``User``::
 
     >>> from sqlalchemy.orm import mapper
     >>> mapper(User, users_table) # doctest:+ELLIPSIS,+NORMALIZE_WHITESPACE
     <Mapper at 0x...; User>
     
-The ``mapper()`` function creates a new ``Mapper`` object and stores it away for future reference, associated with our class.  Let's now create and inspect a ``User`` object:
-
-.. sourcecode:: python+sql
+The ``mapper()`` function creates a new ``Mapper`` object and stores it away for future reference, associated with our class.  Let's now create and inspect a ``User`` object::
 
     >>> ed_user = User('ed', 'Ed Jones', 'edspassword')
     >>> ed_user.name
@@ -124,11 +101,7 @@ Since we have not yet told SQLAlchemy to persist ``Ed Jones`` within the databas
 
 Creating Table, Class and Mapper All at Once Declaratively 
 ===========================================================
-
-
-The preceding approach to configuration involving a ``Table``, user-defined class, and ``mapper()`` call illustrate classical SQLAlchemy usage, which values the highest separation of concerns possible.  A large number of applications don't require this degree of separation, and for those SQLAlchemy offers an alternate "shorthand" configurational style called **declarative**.  For many applications, this is the only style of configuration needed.  Our above example using this style is as follows:
-
-.. sourcecode:: python+sql
+The preceding approach to configuration involving a ``Table``, user-defined class, and ``mapper()`` call illustrate classical SQLAlchemy usage, which values the highest separation of concerns possible.  A large number of applications don't require this degree of separation, and for those SQLAlchemy offers an alternate "shorthand" configurational style called **declarative**.  For many applications, this is the only style of configuration needed.  Our above example using this style is as follows::
 
     >>> from sqlalchemy.ext.declarative import declarative_base
     
@@ -151,23 +124,18 @@ The preceding approach to configuration involving a ``Table``, user-defined clas
 
 Above, the ``declarative_base()`` function defines a new class which we name ``Base``, from which all of our ORM-enabled classes will derive.  Note that we define ``Column`` objects with no "name" field, since it's inferred from the given attribute name.
 
-The underlying ``Table`` object created by our ``declarative_base()`` version of ``User`` is accessible via the ``__table__`` attribute:
-
-.. sourcecode:: python+sql
+The underlying ``Table`` object created by our ``declarative_base()`` version of ``User`` is accessible via the ``__table__`` attribute::
 
     >>> users_table = User.__table__
     
-and the owning ``MetaData`` object is available as well:
-
-.. sourcecode:: python+sql
+and the owning ``MetaData`` object is available as well::
 
     >>> metadata = Base.metadata
 
-Yet another "declarative" method is available for SQLAlchemy as a third party library called [Elixir](http://elixir.ematia.de/).  This is a full-featured configurational product which also includes many higher level mapping configurations built in.  Like declarative, once classes and mappings are defined, ORM usage is the same as with a classical SQLAlchemy configuration.
+Yet another "declarative" method is available for SQLAlchemy as a third party library called `Elixir <http://elixir.ematia.de/>`_.  This is a full-featured configurational product which also includes many higher level mapping configurations built in.  Like declarative, once classes and mappings are defined, ORM usage is the same as with a classical SQLAlchemy configuration.
 
 Creating a Session
 ==================
-
 
 We're now ready to start talking to the database.  The ORM's "handle" to the database is the ``Session``.  When we first set up the application, at the same level as our ``create_engine()`` statement, we define a ``Session`` class which will serve as a factory for new ``Session`` objects:
 
@@ -199,10 +167,7 @@ The above ``Session`` is associated with our SQLite ``engine``, but it hasn't op
 Adding new Objects
 ==================
 
-
-To persist our ``User`` object, we ``add()`` it to our ``Session``:
-
-.. sourcecode:: python+sql
+To persist our ``User`` object, we ``add()`` it to our ``Session``::
 
     >>> ed_user = User('ed', 'Ed Jones', 'edspassword')
     >>> session.add(ed_user)
@@ -225,9 +190,7 @@ For example, below we create a new ``Query`` object which loads instances of ``U
     {stop}>>> our_user
     <User('ed','Ed Jones', 'edspassword')>
 
-In fact, the ``Session`` has identified that the row returned is the **same** row as one already represented within its internal map of objects, so we actually got back the identical instance as that which we just added:
-
-.. sourcecode:: python+sql
+In fact, the ``Session`` has identified that the row returned is the **same** row as one already represented within its internal map of objects, so we actually got back the identical instance as that which we just added::
 
     >>> ed_user is our_user
     True
@@ -298,8 +261,6 @@ After the ``Session`` inserts new rows in the database, all newly generated iden
 
 Rolling Back
 ============
-
-
 Since the ``Session`` works within a transaction, we can roll back changes made too.   Let's make two changes that we'll revert; ``ed_user``'s user name gets set to ``Edwardo``:
 
 .. sourcecode:: python+sql
@@ -359,7 +320,6 @@ issuing a SELECT illustrates the changes made to the database:
 
 Querying
 ========
-
 
 A ``Query`` is created using the ``query()`` function on ``Session``.  This function takes a variable number of arguments, which can be any combination of classes and class-instrumented descriptors.  Below, we indicate a ``Query`` which loads ``User`` instances.  When evaluated in an iterative context, the list of ``User`` objects present is returned:
 
@@ -471,42 +431,29 @@ The ``Query`` object is fully *generative*, meaning that most method calls retur
 Common Filter Operators
 =======================
 
-
 Here's a rundown of some of the most common operators used in ``filter()``:
 
-  * equals
-
-.. sourcecode:: python+sql
+ * equals::
 
         query.filter(User.name == 'ed')
     
-  * not equals
-
-.. sourcecode:: python+sql
+ * not equals::
 
         query.filter(User.name != 'ed')
     
-  * LIKE
-
-.. sourcecode:: python+sql
+ * LIKE::
 
         query.filter(User.name.like('%ed%'))
         
-  * IN
-
-.. sourcecode:: python+sql
+ * IN::
 
         query.filter(User.name.in_(['ed', 'wendy', 'jack']))
         
-  * IS NULL
-
-.. sourcecode:: python+sql
+ * IS NULL::
 
         filter(User.name == None)
         
-  * AND
-
-.. sourcecode:: python+sql
+ * AND::
 
         from sqlalchemy import and_
         filter(and_(User.name == 'ed', User.fullname == 'Ed Jones'))
@@ -514,16 +461,12 @@ Here's a rundown of some of the most common operators used in ``filter()``:
         # or call filter()/filter_by() multiple times
         filter(User.name == 'ed').filter(User.fullname == 'Ed Jones')
     
-  * OR
-
-.. sourcecode:: python+sql
+ * OR::
 
         from sqlalchemy import or_
         filter(or_(User.name == 'ed', User.name == 'wendy'))
 
-  * match
-
-.. sourcecode:: python+sql
+ * match::
 
         query.filter(User.name.match('wendy'))
 
@@ -531,7 +474,6 @@ Here's a rundown of some of the most common operators used in ``filter()``:
         
 Returning Lists and Scalars 
 ============================
-
 
 The ``all()``, ``one()``, and ``first()`` methods of ``Query`` immediately issue SQL and return a non-iterator value.  ``all()`` returns a list:
 
@@ -587,7 +529,6 @@ The ``all()``, ``one()``, and ``first()`` methods of ``Query`` immediately issue
 
 Using Literal SQL 
 ==================
-{@naqme=literal}
 
 Literal strings can be used flexibly with ``Query``.  Most methods accept strings in addition to SQLAlchemy clause constructs.  For example, ``filter()`` and ``order_by()``:
 
@@ -628,7 +569,6 @@ To use an entirely string-based statement, using ``from_statement()``; just ensu
 
 Building a Relation 
 ====================
-
 
 Now let's consider a second table to be dealt with.  Users in our system also can store any number of email addresses associated with their username.  This implies a basic one to many association from the ``users_table`` to a new table which stores email addresses, which we will call ``addresses``.  Using declarative, we define this table along with its mapped class, ``Address``:
 
@@ -693,7 +633,6 @@ We'll need to create the ``addresses`` table in the database, so we will issue a
 
 Working with Related Objects 
 =============================
-
 
 Now when we create a ``User``, a blank ``addresses`` collection will be present.  By default, the collection is a Python list.  Other collection types, such as sets and dictionaries, are available as well:
 
@@ -790,7 +729,6 @@ SQLAlchemy has the ability to control exactly which attributes and how many leve
 Querying with Joins 
 ====================
 
-
 While the eager load created a JOIN specifically to populate a collection, we can also work explicitly with joins in many ways.  For example, to construct a simple inner join between ``User`` and ``Address``, we can just ``filter()`` their related columns together.  Below we load the ``User`` and ``Address`` entities at once using this method:
 
 .. sourcecode:: python+sql
@@ -856,7 +794,6 @@ The above would produce SQL something like ``foo JOIN bars ON <onclause> JOIN ba
 Using Aliases 
 ==============
 
-
 When querying across multiple tables, if the same table needs to be referenced more than once, SQL typically requires that the table be *aliased* with another name, so that it can be distinguished against other occurrences of that table.  The ``Query`` supports this most explicitly using the ``aliased`` construct.  Below we join to the ``Address`` entity twice, to locate a user who has two distinct email addresses at the same time:
 
 .. sourcecode:: python+sql
@@ -880,17 +817,13 @@ When querying across multiple tables, if the same table needs to be referenced m
 Using Subqueries 
 =================
 
+The ``Query`` is suitable for generating statements which can be used as subqueries.  Suppose we wanted to load ``User`` objects along with a count of how many ``Address`` records each user has.  The best way to generate SQL like this is to get the count of addresses grouped by user ids, and JOIN to the parent.  In this case we use a LEFT OUTER JOIN so that we get rows back for those users who don't have any addresses, e.g.::
 
-The ``Query`` is suitable for generating statements which can be used as subqueries.  Suppose we wanted to load ``User`` objects along with a count of how many ``Address`` records each user has.  The best way to generate SQL like this is to get the count of addresses grouped by user ids, and JOIN to the parent.  In this case we use a LEFT OUTER JOIN so that we get rows back for those users who don't have any addresses, e.g.:
-
-    {code}
     SELECT users.*, adr_count.address_count FROM users LEFT OUTER JOIN
         (SELECT user_id, count(*) AS address_count FROM addresses GROUP BY user_id) AS adr_count
         ON users.id=adr_count.user_id
 
-Using the ``Query``, we build a statement like this from the inside out.  The ``statement`` accessor returns a SQL expression representing the statement generated by a particular ``Query`` - this is an instance of a ``select()`` construct, which are described in `sql`:
-
-.. sourcecode:: python+sql
+Using the ``Query``, we build a statement like this from the inside out.  The ``statement`` accessor returns a SQL expression representing the statement generated by a particular ``Query`` - this is an instance of a ``select()`` construct, which are described in `sql`::
 
     >>> from sqlalchemy.sql import func
     >>> stmt = session.query(Address.user_id, func.count('*').label('address_count')).group_by(Address.user_id).subquery()
@@ -919,7 +852,6 @@ Once we have our statement, it behaves like a ``Table`` construct, such as the o
 
 Using EXISTS
 ============
-
 
 The EXISTS keyword in SQL is a boolean operator which returns True if the given expression contains any rows.  It may be used in many scenarios in place of joins, and is also useful for locating rows which do not have a corresponding row in a related table.
 
@@ -984,57 +916,41 @@ The ``Query`` features several operators which make usage of EXISTS automaticall
 Common Relation Operators 
 ==========================
 
-
 Here's all the operators which build on relations:
 
-  * equals (used for many-to-one)
-
-.. sourcecode:: python+sql
+ * equals (used for many-to-one)::
 
         query.filter(Address.user == someuser)
-    
-  * not equals (used for many-to-one)
 
-.. sourcecode:: python+sql
+ * not equals (used for many-to-one)::
 
         query.filter(Address.user != someuser)
 
-  * IS NULL (used for many-to-one)
-
-.. sourcecode:: python+sql
+ * IS NULL (used for many-to-one)::
 
         query.filter(Address.user == None)
-        
-  * contains (used for one-to-many and many-to-many collections)
 
-.. sourcecode:: python+sql
+ * contains (used for one-to-many and many-to-many collections)::
 
         query.filter(User.addresses.contains(someaddress))
-    
-  * any (used for one-to-many and many-to-many collections)
 
-.. sourcecode:: python+sql
+ * any (used for one-to-many and many-to-many collections)::
 
         query.filter(User.addresses.any(Address.email_address == 'bar'))
         
         # also takes keyword arguments:
         query.filter(User.addresses.any(email_address='bar'))
-    
-  * has (used for many-to-one)
 
-.. sourcecode:: python+sql
+ * has (used for many-to-one)::
 
         query.filter(Address.user.has(name='ed'))
-    
-  * with_parent (used for any relation)
 
-.. sourcecode:: python+sql
+ * with_parent (used for any relation)::
 
         session.query(Address).with_parent(someuser, 'addresses')
 
 Deleting
 ========
-
 
 Let's try to delete ``jack`` and see how that goes.  We'll mark as deleted in the session, then we'll issue a ``count`` query to see that no rows remain:
 
@@ -1071,7 +987,6 @@ Uh oh, they're still there !  Analyzing the flush SQL, we can see that the ``use
 
 Configuring delete/delete-orphan Cascade 
 =========================================
-
 
 We will configure **cascade** options on the ``User.addresses`` relation to change the behavior.  While SQLAlchemy allows you to add new attributes and relations to mappings at any point in time, in this case the existing relation needs to be removed, so we need to tear down the mappings completely and start again.  This is not a typical operation and is here just for illustrative purposes.
 
@@ -1157,7 +1072,6 @@ Deleting Jack will delete both Jack and his remaining ``Address``:
 
 Building a Many To Many Relation 
 =================================
-
 
 We're moving into the bonus round here, but lets show off a many-to-many relationship.  We'll sneak in some other features too, just to take a tour.  We'll make our application a blog application, where users can write ``BlogPost``s, which have ``Keywords`` associated with them.
 
@@ -1326,7 +1240,6 @@ Or we can use Wendy's own ``posts`` relation, which is a "dynamic" relation, to 
 
 Further Reference 
 ==================
-
 
 Generated Documentation for Query: `sqlalchemy.orm.query_Query`
 

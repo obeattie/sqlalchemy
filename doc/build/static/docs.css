@@ -2,6 +2,7 @@
 
 body, td {
 	font-family: verdana, sans-serif;
+	font-size:.95em;
 }
 
 body {
@@ -88,7 +89,6 @@ h1 {
 #table-of-contents li, .topnav li {
     list-style-type:none;
     margin:0px;
-    font-size:1em;
     padding:3px 8px;
 }
 
@@ -96,7 +96,7 @@ h1 {
     padding:0px 0px 0px 20px;
 }
 
-.topnav li ul li li, #table-of-contents li ul li li{
+.topnav li ul li li, #table-of-contents li ul li li, {
     font-size:.90em;
 }
 

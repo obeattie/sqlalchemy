@@ -6,11 +6,11 @@
 
 """The Query class and support.
 
-Defines the [sqlalchemy.orm.query#Query] class, the central construct used by
+Defines the :class:`~sqlalchemy.orm.query.Query` class, the central construct used by
 the ORM to construct database queries.
 
 The ``Query`` class should not be confused with the
-[sqlalchemy.sql.expression#Select] class, which defines database SELECT
+:class:`~sqlalchemy.sql.expression.Select` class, which defines database SELECT
 operations at the SQL (non-ORM) level.  ``Query`` differs from ``Select`` in
 that it returns ORM-mapped objects and interacts with an ORM session, whereas
 the ``Select`` construct interacts directly with the database to return

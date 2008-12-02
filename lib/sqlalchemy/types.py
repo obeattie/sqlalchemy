@@ -5,7 +5,7 @@
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
 """defines genericized SQL types, each represented by a subclass of
-[sqlalchemy.types#AbstractType].  Dialects define further subclasses of these
+:class:`~sqlalchemy.types.AbstractType`.  Dialects define further subclasses of these
 types.
 
 For more information see the SQLAlchemy documentation on types.

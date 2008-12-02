@@ -456,10 +456,10 @@ def column_property(*args, **kwargs):
           when True, the column property is "deferred", meaning that
           it does not load immediately, and is instead loaded when the
           attribute is first accessed on an instance.  See also
-          [sqlalchemy.orm#deferred()].
+          :func:`~sqlalchemy.orm.deferred`.
 
       extension
-        an [sqlalchemy.orm.interfaces#AttributeExtension] instance, 
+        an :class:`~sqlalchemy.orm.interfaces.AttributeExtension` instance, 
         or list of extensions, which will be prepended to the list of 
         attribute listeners for the resulting descriptor placed on the class.
         These listeners will receive append and set events before the 
@@ -525,14 +525,14 @@ def composite(class_, *cols, **kwargs):
     deferred
       When True, the column property is "deferred", meaning that it does not
       load immediately, and is instead loaded when the attribute is first
-      accessed on an instance.  See also [sqlalchemy.orm#deferred()].
+      accessed on an instance.  See also :func:`~sqlalchemy.orm.deferred`.
 
     comparator_factory
       a class which extends ``sqlalchemy.orm.properties.CompositeProperty.Comparator``
       which provides custom SQL clause generation for comparison operations.
 
     extension
-      an [sqlalchemy.orm.interfaces#AttributeExtension] instance, 
+      an :class:`~sqlalchemy.orm.interfaces.AttributeExtension` instance, 
       or list of extensions, which will be prepended to the list of 
       attribute listeners for the resulting descriptor placed on the class.
       These listeners will receive append and set events before the 
@@ -564,7 +564,7 @@ def deferred(*columns, **kwargs):
     return ColumnProperty(deferred=True, *columns, **kwargs)
 
 def mapper(class_, local_table=None, *args, **params):
-    """Return a new [sqlalchemy.orm#Mapper] object.
+    """Return a new :class:`~sqlalchemy.orm.Mapper` object.
 
       class\_
         The class to be mapped.
@@ -579,7 +579,7 @@ def mapper(class_, local_table=None, *args, **params):
         erasing any in-memory changes with whatever information was loaded
         from the database.  Usage of this flag is highly discouraged; as an
         alternative, see the method `populate_existing()` on
-        [sqlalchemy.orm.query#Query].
+        :class:`~sqlalchemy.orm.query.Query`.
 
       allow_column_override
         If True, allows the usage of a ``relation()`` which has the
@@ -610,7 +610,7 @@ def mapper(class_, local_table=None, *args, **params):
         with its parent mapper.
 
       extension
-        A [sqlalchemy.orm#MapperExtension] instance or list of
+        A :class:`~sqlalchemy.orm.MapperExtension` instance or list of
         ``MapperExtension`` instances which will be applied to all
         operations by this ``Mapper``.
 
@@ -723,7 +723,7 @@ def mapper(class_, local_table=None, *args, **params):
 def synonym(name, map_column=False, descriptor=None, comparator_factory=None, proxy=False):
     """Set up `name` as a synonym to another mapped property.
 
-    Used with the ``properties`` dictionary sent to  [sqlalchemy.orm#mapper()].
+    Used with the ``properties`` dictionary sent to  :func:`~sqlalchemy.orm.mapper`.
 
     Any existing attributes on the class which map the key name sent
     to the ``properties`` dictionary will be used by the synonym to provide
@@ -785,7 +785,7 @@ def comparable_property(comparator_factory, descriptor=None):
       mapper(MyClass, mytable, properties=dict(
                'myprop': comparable_property(MyComparator)))
 
-    Used with the ``properties`` dictionary sent to  [sqlalchemy.orm#mapper()].
+    Used with the ``properties`` dictionary sent to  :func:`~sqlalchemy.orm.mapper`.
 
     comparator_factory
       A PropComparator subclass or factory that defines operator behavior
