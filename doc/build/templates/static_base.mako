@@ -6,7 +6,6 @@
         <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
         ${metatags and metatags or ''}
         <title>${capture(self.show_title)|util.striptags} &mdash; ${docstitle|h}</title>
-        <link rel="stylesheet" href="${pathto('_static/style.css', 1)}" type="text/css" />
         <link rel="stylesheet" href="${pathto('_static/docs.css', 1)}" type="text/css" />
         <link rel="stylesheet" href="${pathto('_static/pygments.css', 1)}" type="text/css" />
 

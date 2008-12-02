@@ -18,7 +18,6 @@
 ${capture(next.body) | backslash_to_text}
 
 <%text><%def name="style()"></%text>
-        <link rel="stylesheet" href="${pathto('_static/style.css', 1)}" type="text/css" />
         <link rel="stylesheet" href="${pathto('_static/docs.css', 1)}" type="text/css" />
         <link rel="stylesheet" href="${pathto('_static/pygments.css', 1)}" type="text/css" />
 

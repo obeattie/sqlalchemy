@@ -1,7 +1,34 @@
 /* documentation section styles */
 
-#topanchor {position:absolute;left:0px;top:0px;width:0px;height:0px;}
-#pagecontrol {float:right;}
+body, td {
+	font-family: verdana, sans-serif;
+}
+
+body {
+	background-color: #FDFBFC;
+	margin:20px 20px 20px 20px;
+}
+
+
+p {
+	margin-top:10px;
+	margin-bottom:10px;
+}
+
+a {font-weight:normal; text-decoration:underline;}
+a:link {color:#0000FF;}
+a:visited {color:#0000FF;}
+a:active {color:#0000FF;}
+a:hover {color:#700000;}
+
+
+strong a {
+    font-weight: bold;
+}
+
+#search {
+    float:right;
+}
 
 .topnav {
 	background-color: #fbfbee;
@@ -10,32 +37,9 @@
 	margin:10px 0px 10px 0px;
 }
 
-pre {
-    margin:0px;
-    padding:0px;
-}
-
 .prevnext {
     padding: 5px 0px 0px 0px;
     font-size: 0.8em
-}
-
-#search {
-    float:right;
-}
-
-.codetitle {
-	font-family: verdana, sans-serif;
-	font-weight: bold;
-	text-decoration:underline;
-	padding:5px;
-}
-
-.codeline {
-	font-family: courier, "courier new", serif;
-  font-family: "Deja Vu Sans Mono", "Vera Sans Mono", Courier, "Courier New", fixed;
-	font-size: 1em;
-    color: #960;
 }
 
 h1, h2, h3 {
@@ -127,20 +131,8 @@ h1 {
     padding:10px;
 }
 
-.toclink {
-    font-weight: bold;
-	font-size: 1em;
-	padding:0px 0px 3px 8px;
-	/*border:1px solid;*/
-}
-
 .totoc {
     font-size: smaller;
-}
-
-.smalltoclink {
-	font-size: 0.9em;
-	padding:0px 0px 3px 0px;
 }
 
 .docstring {
@@ -156,12 +148,6 @@ pre {
 	padding:10px;
 	margin: 5px 5px 5px 5px;
 	overflow:auto;
-}
-
-code {
-    font-family: "Deja Vu Sans Mono", "Vera Sans Mono", Courier, "Courier New", fixed;
-    font-size: 0.95em;
-    color: #222;
 }
 
 .popup_sql, .show_sql
@@ -259,7 +245,7 @@ tt.descclassname {
 }
 tt {
     background-color:#ECF0F3;
-    font-size:0.95em;
+    /*font-size:0.95em;*/
     padding:0 1px;
 }
 @media print {

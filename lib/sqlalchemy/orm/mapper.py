@@ -1137,11 +1137,11 @@ class Mapper(object):
         """Iterate each element and its mapper in an object graph,
         for all relations that meet the given cascade rule.
 
-        type\_
+        ``type\_``:
           The name of the cascade rule (i.e. save-update, delete,
           etc.)
 
-        state
+        ``state``:
           The lead InstanceState.  child items will be processed per
           the relations defined for this object's mapper.
 
