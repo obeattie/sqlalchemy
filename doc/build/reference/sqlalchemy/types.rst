@@ -1,5 +1,5 @@
-sqlalchemy.types
-=========================
+Column and Data Types
+=====================
 
 .. automodule:: sqlalchemy.types
     :members:

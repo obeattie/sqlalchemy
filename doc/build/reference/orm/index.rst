@@ -6,5 +6,7 @@ sqlalchemy.orm
 
     mapping
     sessions
+    interfaces
+    utilities
 
 

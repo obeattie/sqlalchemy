@@ -1,5 +1,5 @@
-Database Dialects
-=================
+sqlalchemy.databases
+====================
 
 .. toctree::
     :glob:

@@ -3,7 +3,7 @@ Table of Contents
 
 .. toctree::
     :glob:
-   
+
     intro
     ormtutorial
     sqlexpression
@@ -14,16 +14,17 @@ Table of Contents
     types
     pooling
     plugins
-    reference/index
 
-Module Listing
---------------
+SQLAlchemy Reference
+--------------------
 
 .. toctree::
-    :maxdepth: 2
+    :maxdepth: 3
 
-    modules/index
-    
+    reference/sqlalchemy/index
+    reference/orm/index
+    reference/dialects/index
+
 Indices and tables
 ------------------
 

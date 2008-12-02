@@ -1,5 +1,5 @@
-sqlalchemy.schema
-=========================
+Database Schema
+===============
 
 .. automodule:: sqlalchemy.schema
     :members:

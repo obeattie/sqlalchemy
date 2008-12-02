@@ -1,5 +1,5 @@
-sqlalchemy.sql.expression
-=========================
+SQL Statements and Expressions
+==============================
 
 .. automodule:: sqlalchemy.sql.expression
     :members:
