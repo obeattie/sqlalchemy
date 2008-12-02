@@ -20,7 +20,7 @@ ${'</%text>'}
     <link href="/css/site_docs.css" rel="stylesheet" type="text/css"></link>
 <%text></%def></%text>
 
-<%text><%def name="title()"></%text>${self.title()}<%text></%def></%text>
+<%text><%def name="title()"></%text>${capture(self.show_title)|util.striptags} &mdash; ${docstitle|h}<%text></%def></%text>
 
 <%!
     local_script_files = []

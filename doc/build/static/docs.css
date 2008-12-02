@@ -263,6 +263,6 @@ tt {
 }
 
 /* syntax highlighting overrides */
-.k {color:#0908CE;}
+.k, .kn {color:#0908CE;}
 .o {color:#BF0005;}
 .go {color:#804049;}
