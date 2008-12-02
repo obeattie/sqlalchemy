@@ -1,5 +1,8 @@
-Connection Pooling  {@name=pooling}
-======================
+.. _pooling:
+
+==================
+Connection Pooling
+==================
 
 This section describes the connection pool module of SQLAlchemy.  The `Pool` object it provides is normally embedded within an `Engine` instance.  For most cases, explicit access to the pool module is not required.  However, the `Pool` object can be used on its own, without the rest of SA, to manage DBAPI connections; this section describes that usage.  Also, this section will describe in more detail how to customize the pooling strategy used by an `Engine`.
 

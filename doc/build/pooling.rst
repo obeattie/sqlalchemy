@@ -1,5 +1,8 @@
-Connection Pooling  {@name=pooling}
-======================
+.. _pooling:
+
+==================
+Connection Pooling
+==================
 
 This section describes the connection pool module of SQLAlchemy.  The ``Pool`` object it provides is normally embedded within an ``Engine`` instance.  For most cases, explicit access to the pool module is not required.  However, the ``Pool`` object can be used on its own, without the rest of SA, to manage DBAPI connections; this section describes that usage.  Also, this section will describe in more detail how to customize the pooling strategy used by an ``Engine``.
 
@@ -9,9 +12,7 @@ Establishing a Transparent Connection Pool
 ===========================================
 
 
-Any DBAPI module can be "proxied" through the connection pool using the following technique (note that the usage of 'psycopg2' is **just an example**; substitute whatever DBAPI module you'd like):
-
-.. sourcecode:: python+sql
+Any DBAPI module can be "proxied" through the connection pool transparently.  Usage of the DBAPI is exactly as before, except the ``connect()`` method will consult the pool.  Below we illustrate this with ``psycopg2``::
 
     import sqlalchemy.pool as pool
     import psycopg2 as psycopg
@@ -20,7 +21,7 @@ Any DBAPI module can be "proxied" through the connection pool using the followin
     # then connect normally
     connection = psycopg.connect(database='test', username='scott', password='tiger')
 
-This produces a ``sqlalchemy.pool.DBProxy`` object which supports the same ``connect()`` function as the original DBAPI module.  Upon connection, a connection proxy object is returned, which delegates its calls to a real DBAPI connection object.  This connection object is stored persistently within a connection pool (an instance of ``sqlalchemy.pool.Pool``) that corresponds to the exact connection arguments sent to the ``connect()`` function.  
+This produces a :class:``sqlalchemy.pool.DBProxy`` object which supports the same ``connect()`` function as the original DBAPI module.  Upon connection, a connection proxy object is returned, which delegates its calls to a real DBAPI connection object.  This connection object is stored persistently within a connection pool (an instance of :class:``sqlalchemy.pool.Pool``) that corresponds to the exact connection arguments sent to the ``connect()`` function.  
 
 The connection proxy supports all of the methods on the original connection object, most of which are proxied via ``__getattr__()``.  The ``close()`` method will return the connection to the pool, and the ``cursor()`` method will return a proxied cursor object.  Both the connection proxy and the cursor proxy will also return the underlying connection to the pool after they have both been garbage collected, which is detected via the ``__del__()`` method.
 
@@ -38,45 +39,33 @@ For a description of all pool classes, see the `sqlalchemy.pool`.
 
 Common options include:
 
- * echo=False : if set to True, connections being pulled and retrieved from/to the pool will
-   be logged to the standard output, as well as pool sizing information.  Echoing can also
-   be achieved by enabling logging for the "sqlalchemy.pool" namespace.  When using create_engine(), 
-   this option is specified as ``echo_pool``.
- * use_threadlocal=False : if set to True, repeated calls to connect() within the same
-   application thread will be guaranteed to return the same connection object, if one has
-   already been retrieved from the pool and has not been returned yet. This allows code to
-   retrieve a connection from the pool, and then while still holding on to that connection,
-   to call other functions which also ask the pool for a connection of the same arguments;
-   those functions will act upon the same connection that the calling method is using.
-   This option is overridden during ``create_engine()``, corresponding to the "plain" or 
-   "threadlocal" connection strategy.
- * recycle=-1 : if set to non -1, a number of seconds between connection recycling, which
-   means upon checkout, if this timeout is surpassed the connection will be closed and replaced
-   with a newly opened connection.
+ * ``echo=False`` : if set to True, connections being pulled and retrieved from/to the pool will be logged to the standard output, as well as pool sizing
+   information. Echoing can also be achieved by enabling logging for the "sqlalchemy.pool" namespace. When using create_engine(), this option is
+   specified as ``echo_pool``.
+ * ``use_threadlocal=False`` : if set to True, repeated calls to connect() within the same application thread will be guaranteed to return the same
+   connection object, if one has already been retrieved from the pool and has not been returned yet. This allows code to retrieve a connection from the
+   pool, and then while still holding on to that connection, to call other functions which also ask the pool for a connection of the same arguments;
+   those functions will act upon the same connection that the calling method is using. This option is overridden during ``create_engine()``,
+   corresponding to the "plain" or "threadlocal" connection strategy.
+ * ``recycle=-1`` : if set a positive integer value, connection recycling is enabled.  The value represents a number of seconds between connection recycles, which means upon checkout, if this timeout is surpassed the connection will be closed and replaced with a newly opened connection.  This is used for databases which disconnect "stale" connections after a fixed period of inactivity.
 
 QueuePool options include:
 
- * pool_size=5 : the size of the pool to be maintained. This is the
- largest number of connections that will be kept persistently in the pool. Note that the
- pool begins with no connections; once this number of connections is requested, that
- number of connections will remain.
- * max_overflow=10 : the maximum overflow size of the pool. When the number of checked-out
- connections reaches the size set in pool_size, additional connections will be returned up
- to this limit. When those additional connections are returned to the pool, they are
- disconnected and discarded. It follows then that the total number of simultaneous
- connections the pool will allow is pool_size + max_overflow, and the total number of
- "sleeping" connections the pool will allow is pool_size. max_overflow can be set to -1 to
- indicate no overflow limit; no limit will be placed on the total number of concurrent
- connections.
- * timeout=30 : the number of seconds to wait before giving up on returning a connection
- 
+ * ``pool_size=5`` : the size of the pool to be maintained. This is the largest number of connections that will be kept persistently in the pool. Note
+   that the pool begins with no connections; once this number of connections is requested, that number of connections will remain.
+ * ``max_overflow=10`` : the maximum overflow size of the pool. When the number of checked-out connections reaches the size set in pool_size, additional
+   connections will be returned up to this limit. When those additional connections are returned to the pool, they are disconnected and discarded. It
+   follows then that the total number of simultaneous connections the pool will allow is pool_size + max_overflow, and the total number of "sleeping"
+   connections the pool will allow is pool_size. max_overflow can be set to -1 to indicate no overflow limit; no limit will be placed on the total
+   number of concurrent connections.
+ * ``timeout=30`` : the number of seconds to wait before giving up on returning a connection
+
 Custom Pool Construction 
 =========================
 
 
-Besides using the transparent proxy, instances of ``sqlalchemy.pool.Pool`` can be created directly.  Constructing your own pool involves passing a callable used to create a connection.  Through this method, custom connection schemes can be made, such as a connection that automatically executes some initialization commands to start.  
+Besides using the transparent proxy, instances of ``sqlalchemy.pool.Pool`` can be created directly.  Constructing your own pool involves passing a callable used to create a connection.  Through this method, custom connection schemes can be made, such as a connection that automatically executes some initialization commands to start::
 
-    {python title="Constructing a QueuePool"}
     import sqlalchemy.pool as pool
     import psycopg2
     
@@ -88,9 +77,8 @@ Besides using the transparent proxy, instances of ``sqlalchemy.pool.Pool`` can b
         
     p = pool.QueuePool(getconn, max_overflow=10, pool_size=5, use_threadlocal=True)
     
-Or with SingletonThreadPool:
+Or with SingletonThreadPool::
 
-    {python title="Constructing a SingletonThreadPool"}
     import sqlalchemy.pool as pool
     import sqlite
     
@@ -99,4 +87,3 @@ Or with SingletonThreadPool:
     
     # SQLite connections require the SingletonThreadPool    
     p = pool.SingletonThreadPool(getconn)
-    
