@@ -9,6 +9,9 @@ body {
 	margin:20px 20px 20px 20px;
 }
 
+form {
+    display:inline;
+}
 
 p {
 	margin-top:10px;
@@ -41,7 +44,7 @@ strong a {
 	margin:10px 0px 10px 0px;
 }
 
-.prevnext {
+.topnav .prevnext {
     padding: 5px 0px 0px 0px;
     font-size: 0.8em
 }
@@ -51,6 +54,10 @@ h1, h2, h3, h4 {
     font-weight:bold;
 }
 
+.doc_copyright {
+    font-size:.85em;
+    padding:10px 0px 10px 0px;
+}
 .document h1 {
     display:none;
     /*font-size: 1.6em;*/
@@ -87,25 +94,21 @@ h1 {
     font-family:verdana,sans-serif;
 }
 
-
-
-.topnav li, li .toctree-l1 {
-   font-size: 1.1em;
-   list-style-type:none;
-   padding: 0px 0px 3px 8px;
-   margin:0px;
+#table-of-contents li, .topnav li {
+    list-style-type:none;
+    margin:0px;
+    font-size:1em;
+    padding:0 0 3px 8px;
 }
 
-.topnav li li, li .toctree-l2 {
-   font-size: .9em;
+.topnav li ul, #table-of-contents li ul {
+    padding:0px 0px 0px 20px;
 }
 
-.topnav li li li, li .toctree-l3 {
+.topnav li ul li li, #table-of-contents li ul li li{
+    font-size:.90em;
 }
 
-.topnav li li li li, li .toctree-l4 {
-   font-size: 0.9em;
-}
 
 .section {
     line-height: 1.5em;
@@ -136,7 +139,7 @@ h1 {
 }
 
 .totoc {
-    font-size: smaller;
+    
 }
 
 .docstring {
@@ -156,13 +159,9 @@ pre {
 
 .popup_sql, .show_sql
 {
-    /*color:#000;*/
     background-color: #fbfbee;
-    /*border: 1px solid #d9d9d9;*/
-    /*border-right: 1px solid #999;
-    border-bottom: 1px solid #999;
-    padding:10px;
-    width:95%;*/
+    padding:0px 10px;
+    margin:0px -10px;
 }
 
 .sql_link
@@ -198,6 +197,7 @@ pre {
 .versionnum {
     font-weight: bold;
 }
+
 .prerelease {
     border: solid #c25757 2px;
     border-radius: 4px;
@@ -234,7 +234,6 @@ a.headerlink:hover {
     color: white;
 }
 
-
 .clearboth {
     clear:both;
 }
@@ -244,14 +243,16 @@ tt.descname {
     font-size:1.2em;
     font-weight:bold;
 }
+
 tt.descclassname {
     background-color:transparent;
 }
+
 tt {
     background-color:#ECF0F3;
-    /*font-size:0.95em;*/
     padding:0 1px;
 }
+
 @media print {
   #nav { display: none; }
   #pagecontrol { display: none; }
@@ -260,3 +261,8 @@ tt {
   .totoc { display: none; }
   .topnav ul li a { text-decoration: none; color: #000; }
 }
+
+/* syntax highlighting overrides */
+.k {color:#0908CE;}
+.o {color:#BF0005;}
+.go {color:#804049;}
