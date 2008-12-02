@@ -79,15 +79,15 @@ And ``Table`` provides an interface to the table's properties as well as that of
     
     # iterate through all columns
     for c in employees.c:
-        # ...
+        print c
         
     # get the table's primary key columns
     for primary_key in employees.primary_key:
-        # ...
+        print primary_key
     
     # get the table's foreign key objects:
     for fkey in employees.foreign_keys:
-        # ...
+        print fkey
         
     # access the table's MetaData:
     employees.metadata
@@ -108,14 +108,12 @@ And ``Table`` provides an interface to the table's properties as well as that of
     
     # access a column's table:
     employees.c.employee_id.table is employees
-    >>> True
     
     # get the table related by a foreign key
     fcolumn = employees.c.employee_dept.foreign_key.column.table
 
 Binding MetaData to an Engine or Connection 
 --------------------------------------------
-
 
 A ``MetaData`` object can be associated with an ``Engine`` or an individual ``Connection``; this process is called **binding**.  The term used to describe "an engine or a connection" is often referred to as a **connectable**.  Binding allows the ``MetaData`` and the elements which it contains to perform operations against the database directly, using the connection resources to which it's bound.   Common operations which are made more convenient through binding include being able to generate SQL constructs which know how to execute themselves, creating ``Table`` objects which query the database for their column and constraint information, and issuing CREATE or DROP statements.
 
