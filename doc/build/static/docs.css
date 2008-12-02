@@ -30,7 +30,11 @@ strong a {
     float:right;
 }
 
-.topnav {
+#pagecontrol {
+    float:right;
+}
+
+.topnav, .document #table-of-contents {
 	background-color: #fbfbee;
 	border: solid 1px #ccc;
 	padding:10px;
@@ -42,7 +46,7 @@ strong a {
     font-size: 0.8em
 }
 
-h1, h2, h3 {
+h1, h2, h3, h4 {
     font-family:arial,helvetica,sans-serif;
     font-weight:bold;
 }
@@ -56,7 +60,7 @@ h1, h2, h3 {
     font-size: 1.4em;
 }
 
-.document h3 {
+.document h3, .document h4 {
     font-size: 1.4em;
 }
 
@@ -84,23 +88,23 @@ h1 {
 }
 
 
-.topnav li {
-   font-size: 1em;
+
+.topnav li, li .toctree-l1 {
+   font-size: 1.1em;
    list-style-type:none;
-   padding:0px 0px 3px 8px;
+   padding: 0px 0px 3px 8px;
    margin:0px;
 }
 
-.topnav ul ul {
-   padding:0px 0px 0px 8px;
+.topnav li li, li .toctree-l2 {
+   font-size: .9em;
 }
 
-.topnav ul ul li {
+.topnav li li li, li .toctree-l3 {
+}
+
+.topnav li li li li, li .toctree-l4 {
    font-size: 0.9em;
-}
-
-.topnav ul ul li li li {
-   font-size: 1em;
 }
 
 .section {

@@ -1,21 +1,18 @@
 <%text>#coding:utf-8
 <%inherit file="/base.html"/>
+<%page cache_type="file" cached="True"/>
 <%!
     in_docs=True
 %>
 </%text>
 
-<%!
-    import re
-    def backslash_to_text(t):
-        return re.sub(r'\\', '<%text>\</%text>', t)
-%>
-
 <div style="text-align:right">
 <b>Quick Select:</b> <a href="/docs/05/">0.5</a> | <a href="/docs/04/">0.4</a> | <a href="/docs/03/">0.3</a>
 </div>
 
-${capture(next.body) | backslash_to_text}
+${'<%text>'}
+${next.body()}
+${'</%text>'}
 
 <%text><%def name="style()"></%text>
         <link rel="stylesheet" href="${pathto('_static/docs.css', 1)}" type="text/css" />
