@@ -4,6 +4,7 @@
    :maxdepth: 2
 
    sqlalchemy_orm
+   sqlalchemy_orm_interfaces
    sqlalchemy_orm_mapper
    sqlalchemy_orm_util
    sqlalchemy_sql_expression

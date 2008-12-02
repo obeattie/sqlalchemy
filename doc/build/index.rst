@@ -5,9 +5,15 @@ Table of Contents
     :glob:
    
     intro
+    ormtutorial
     sqlexpression
+    mappers
+    session
+    dbengine
     metadata
-    types 
+    types
+    pooling
+    plugins
 
 Module Listing
 --------------
