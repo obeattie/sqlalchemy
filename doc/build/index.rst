@@ -27,6 +27,7 @@ API Reference
     reference/sqlalchemy/index
     reference/orm/index
     reference/dialects/index
+    reference/ext/index
 
 Indices and tables
 ------------------
