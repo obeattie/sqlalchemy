@@ -1091,13 +1091,13 @@ class Session(object):
         self._cascade_save_or_update(state)
 
     def add(self, instance):
-        """Add the given instance into this ``Session``.
+        """Place an object in the ``Session``.
 
-        TODO: rephrase the below in user terms; possibly tie into future
-        function that downgrades persistent to transient. [ticket:1052]
+        Its state will be persisted to the database on the next flush
+        operation.
 
-        The non-None state `key` on the instance's state determines whether
-        to ``save()`` or ``update()`` the instance.
+        Repeated calls to ``add()`` will be ignored. The opposite of ``add()``
+        is ``expunge()``.
 
         """
         state = _state_for_unknown_persistence_instance(instance)
@@ -1172,6 +1172,9 @@ class Session(object):
             # TODO: this should be an IdentityDict for instances, but will
             # need a separate dict for PropertyLoader tuples
             _recursive = {}
+            # Autoflush only on the topmost call
+            self._autoflush()
+
         mapper = _object_mapper(instance)
         if instance in _recursive:
             return _recursive[instance]
@@ -1204,7 +1207,7 @@ class Session(object):
                 self._update_impl(merged_state)
                 new_instance = True
             else:
-                merged = self.query(mapper.class_).get(key[1])
+                merged = self.query(mapper.class_).autoflush(False).get(key[1])
 
         if merged is None:
             merged = mapper.class_manager.new_instance()
