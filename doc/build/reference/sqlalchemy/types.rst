@@ -1,4 +1,4 @@
-:: _types:
+.. _types:
 
 Column and Data Types
 =====================
