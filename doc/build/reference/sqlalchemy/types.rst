@@ -34,94 +34,79 @@ type is emitted in ``CREATE TABLE``, such as ``VARCHAR`` see `SQL
 Standard Types`_ and the other sections of this chapter.
 
 .. autoclass:: String
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 .. autoclass:: Text
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 .. autoclass:: Integer
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 .. autoclass:: SmallInteger
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 .. autoclass:: Numeric
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 .. autoclass:: Float
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 .. autoclass:: DateTime
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 .. autoclass:: Date
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 .. autoclass:: Time
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 .. autoclass:: Binary
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 .. autoclass:: Boolean
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 .. autoclass:: Unicode
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 .. autoclass:: UnicodeText
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 .. autoclass:: PickleType
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 .. autoclass:: Interval
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 SQL Standard Types
 ------------------
@@ -130,100 +115,84 @@ The SQL standard types always create database column types of the same
 name when ``CREATE TABLE`` is issued.
 
 .. autoclass:: INT
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 .. autoclass:: CHAR
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 .. autoclass:: VARCHAR
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 .. autoclass:: NCHAR
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 .. autoclass:: TEXT
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 .. autoclass:: FLOAT
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 .. autoclass:: NUMERIC
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 .. autoclass:: DECIMAL
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 .. autoclass:: TIMESTAMP
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 .. autoclass:: DATETIME
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 .. autoclass:: CLOB
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 .. autoclass:: BLOB
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 .. autoclass:: BOOLEAN
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 .. autoclass:: SMALLINT
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 .. autoclass:: DATE
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 .. autoclass:: TIME
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members: __init__
+   :show-inheritance:
+
 
 Vendor-Specific Types
 ---------------------
@@ -237,38 +206,35 @@ Custom Types
 
 
 .. autoclass:: TypeDecorator
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members:
+   :undoc-members:
+   :inherited-members:
+   :show-inheritance:
 
 .. autoclass:: TypeEngine
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members:
+   :undoc-members:
+   :inherited-members:
+   :show-inheritance:
 
 .. autoclass:: AbstractType
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members:
+   :undoc-members:
+   :inherited-members:
+   :show-inheritance:
 
 .. autoclass:: MutableType
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members:
+   :undoc-members:
+   :inherited-members:
+   :show-inheritance:
 
 .. autoclass:: Concatenable
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :members:
+   :undoc-members:
+   :inherited-members:
+   :show-inheritance:
 
 .. autoclass:: NullType
-    :members:
-    :undoc-members:
-    :inherited-members:
-    :show-inheritance:
+   :show-inheritance:
 

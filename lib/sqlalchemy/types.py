@@ -49,17 +49,22 @@ class AbstractType(object):
         return None
 
     def compare_values(self, x, y):
-        """compare two values for equality."""
+        """Compare two values for equality."""
 
         return x == y
 
     def is_mutable(self):
-        """return True if the target Python type is 'mutable'.
+        """Return True if the target Python type is 'mutable'.
 
-        This allows systems like the ORM to know if an object
-        can be considered 'not changed' by identity alone.
+        This allows systems like the ORM to know if a column value can
+        be considered 'not changed' by comparing the identity of
+        objects alone.
+
+        Use the :class:`MutableType` mixin or override this method to
+        return True in custom types that hold mutable values such as
+        ``dict``, ``list`` and custom objects.
+
         """
-
         return False
 
     def get_dbapi_type(self, dbapi):
@@ -67,14 +72,14 @@ class AbstractType(object):
 
         This can be useful for calling ``setinputsizes()``, for example.
         """
-
         return None
 
     def adapt_operator(self, op):
-        """given an operator from the sqlalchemy.sql.operators package,
+        """Given an operator from the sqlalchemy.sql.operators package,
         translate it to a new operator based on the semantics of this type.
 
-        By default, returns the operator unchanged."""
+        By default, returns the operator unchanged.
+        """
         return op
 
     def __repr__(self):
@@ -84,6 +89,8 @@ class AbstractType(object):
                       for k in inspect.getargspec(self.__init__)[0][1:]))
 
 class TypeEngine(AbstractType):
+    """Base for built-in types."""
+
     def dialect_impl(self, dialect, **kwargs):
         try:
             return self._impl_dict[dialect]
@@ -120,25 +127,29 @@ class TypeEngine(AbstractType):
 
 class TypeDecorator(AbstractType):
     """Allows the creation of types which add additional functionality
-    to an existing type.  Typical usage::
-    
+    to an existing type.
+
+    Typical usage::
+
       class MyCustomType(TypeDecorator):
           impl = String
-          
+
           def process_bind_param(self, value, dialect):
               return value + "incoming string"
-              
+
           def process_result_value(self, value, dialect):
               return value[0:-16]
-    
+
+      Table('mytable', metadata, Column('foo', MyCustomType()))
+
     The class-level "impl" variable is required, and can reference any
-    TypeEngine class.  Alternatively, the load_dialect_impl() method can
-    be used to provide different type classes based on the dialect given; 
-    in this case, the "impl" variable can reference ``TypeEngine`` as a 
-    placeholder.
-        
+    TypeEngine class.  Alternatively, the load_dialect_impl() method
+    can be used to provide different type classes based on the dialect
+    given; in this case, the "impl" variable can reference
+    ``TypeEngine`` as a placeholder.
+
     """
-    
+
     def __init__(self, *args, **kwargs):
         if not hasattr(self.__class__, 'impl'):
             raise AssertionError("TypeDecorator implementations require a class-level variable 'impl' which refers to the class of type being decorated")
@@ -275,13 +286,27 @@ def adapt_type(typeobj, colspecs):
     return typeobj.adapt(impltype)
 
 class NullType(TypeEngine):
+    """An unknown type.
+
+    NullTypes will stand in if :class:`~sqlalchemy.Table` reflection
+    encounters a column data type unknown to SQLAlchemy.  The
+    resulting columns are nearly fully usable: the DB-API adapter will
+    handle all translation to and from the database data type.
+
+    NullType does not have sufficient information to particpate in a
+    ``CREATE TABLE`` statement and will raise an exception if
+    encountered during a :meth:`~sqlalchemy.Table.create` operation.
+
+    """
+
     def get_col_spec(self):
         raise NotImplementedError()
 
 NullTypeEngine = NullType
 
 class Concatenable(object):
-    """marks a type as supporting 'concatenation'"""
+    """Marks a type as supporting 'concatenation', typically strings."""
+
     def adapt_operator(self, op):
         from sqlalchemy.sql import operators
         if op == operators.add:
@@ -290,18 +315,30 @@ class Concatenable(object):
             return op
 
 class String(Concatenable, TypeEngine):
-    """A sized string type.
+    """A variably sized string type.
 
     In SQL, corresponds to VARCHAR.  Can also take Python unicode objects
     and encode to the database's encoding in bind params (and the reverse for
     result sets.)
 
-    The `length` field is usually required when the `String` type is used within a 
-    CREATE TABLE statement, since VARCHAR requires a length on most databases.
-    Currently SQLite is an exception to this.
-    
+    The `length` field is usually required when the `String` type is
+    used within a CREATE TABLE statement, as VARCHAR requires a length
+    on most databases.
+
     """
+
     def __init__(self, length=None, convert_unicode=False, assert_unicode=None):
+        """Create a string-holding type.
+
+        :param length: optional, a length for the column.  Whether the
+          value is interpreted as bytes or characters is database
+          specific.
+
+        :param convert_unicode: TODO
+
+        :param assert_unicode: TODO
+
+        """
         self.length = length
         self.convert_unicode = convert_unicode
         self.assert_unicode = assert_unicode
@@ -346,6 +383,13 @@ class String(Concatenable, TypeEngine):
         return dbapi.STRING
 
 class Text(String):
+    """A variably sized string type.
+
+    In SQL, usually corresponds to CLOB or TEXT. Can also take Python
+    unicode objects and encode to the database's encoding in bind
+    params (and the reverse for result sets.)
+
+    """
     def dialect_impl(self, dialect, **kwargs):
         return TypeEngine.dialect_impl(self, dialect, **kwargs)
 
