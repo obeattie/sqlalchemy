@@ -101,13 +101,16 @@ __all__ = (
 def scoped_session(session_factory, scopefunc=None):
     """Provides thread-local management of Sessions.
 
-    This is a front-end function to :class:`ScopedSession`.
+    This is a front-end function to
+    :class:`~sqlalchemy.orm.scoping.ScopedSession`.
 
     :param session_factory: a callable function that produces
       :class:`Session` instances, such as :func:`sessionmaker` or
       :func:`create_session`.
 
     :param scopefunc: optional, TODO
+
+    :returns: an :class:`~sqlalchemy.orm.scoping.ScopedSession` instance
 
     Usage::
 
@@ -138,16 +141,23 @@ def create_session(bind=None, **kwargs):
     """Create a new :class:`~sqlalchemy.orm.session.Session`.
 
     :param bind: optional, a single Connectable to use for all
-    database access in the created
-    :class:`~sqlalchemy.orm.session.Session`.
+      database access in the created
+      :class:`~sqlalchemy.orm.session.Session`.
 
     :param \*\*kwargs: optional, passed through to the
-    :class:`Session` constructor.
+      :class:`Session` constructor.
+
+    :returns: an :class:`~sqlalchemy.orm.session.Session` instance
 
     The defaults of create_session() are the opposite of that of
     :func:`sessionmaker`; ``autoflush`` and ``expire_on_commit`` are
     False, ``autocommit`` is True.  In this sense the session acts
-    more like the "classic" SQLAlchemy 0.3 session with these
+    more like the "classic" SQLAlchemy 0.3 session with these.
+
+    Usage::
+
+      >>> from sqlalchemy.orm import create_session
+      >>> session = create_session()
 
     It is recommended to use :func:`sessionmaker` instead of
     create_session().
