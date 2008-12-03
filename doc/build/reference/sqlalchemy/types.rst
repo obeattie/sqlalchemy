@@ -107,12 +107,10 @@ name when ``CREATE TABLE`` is issued.  Some types may not be supported
 on all databases.
 
 .. autoclass:: INT
-
    :members: __init__
    :show-inheritance:
 
 .. autoclass:: sqlalchemy.types.INTEGER
-
    :members: __init__
    :show-inheritance:
 
