@@ -197,9 +197,7 @@ Connection facts:
 Using Transactions with Connection 
 ===================================
 
-The ``Connection`` object provides a ``begin()`` method which returns a ``Transaction`` object.  This object is usually used within a try/except clause so that it is guaranteed to ``rollback()`` or ``commit()``:
-
-.. sourcecode:: python+sql
+The ``Connection`` object provides a ``begin()`` method which returns a ``Transaction`` object.  This object is usually used within a try/except clause so that it is guaranteed to ``rollback()`` or ``commit()``::
 
     trans = connection.begin()
     try:
@@ -313,7 +311,6 @@ In both "connectionless" examples, the ``Connection`` is created behind the scen
 
 Using the Threadlocal Execution Strategy 
 -----------------------------------------
-
 
 The "threadlocal" engine strategy is used by non-ORM applications which wish to bind a transaction to the current thread, such that all parts of the application can participate in that transaction implicitly without the need to explicitly reference a ``Connection``.   "threadlocal" is designed for a very specific pattern of use, and is not appropriate unless this very specfic pattern, described below, is what's desired.  It has **no impact** on the "thread safety" of SQLAlchemy components or one's application.  It also should not be used when using an ORM ``Session`` object, as the ``Session`` itself represents an ongoing transaction and itself handles the job of maintaining connection and transactional resources.
 

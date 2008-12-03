@@ -26,3 +26,5 @@ Pooling
 
 .. automodule:: sqlalchemy.pool
    :members:
+   :show-inheritance:
+   :undoc-members:

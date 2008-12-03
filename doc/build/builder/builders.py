@@ -97,7 +97,7 @@ class PythonWithSQLLexer(RegexLexer):
 def _strip_trailing_whitespace(iter_):
     buf = list(iter_)
     if buf:
-        buf[-1] = (buf[-1][0], buf[-1][1].strip())
+        buf[-1] = (buf[-1][0], buf[-1][1].rstrip())
     for t, v in buf:
         yield t, v
     

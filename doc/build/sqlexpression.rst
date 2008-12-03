@@ -84,9 +84,7 @@ Next, to tell the ``MetaData`` we'd actually like to create our selection of tab
     {}
     COMMIT
 
-Users familiar with the syntax of CREATE TABLE may notice that the VARCHAR columns were generated without a length; on SQLite, this is a valid datatype, but on most databases it's not allowed.  So if running this tutorial on a database such as PostgreSQL or MySQL, and you wish to use SQLAlchemy to generate the tables, a "length" may be provided to the ``String`` type as below:
-
-.. sourcecode:: pycon+sql
+Users familiar with the syntax of CREATE TABLE may notice that the VARCHAR columns were generated without a length; on SQLite, this is a valid datatype, but on most databases it's not allowed.  So if running this tutorial on a database such as PostgreSQL or MySQL, and you wish to use SQLAlchemy to generate the tables, a "length" may be provided to the ``String`` type as below::
 
     Column('name', String(50))
 
@@ -95,31 +93,22 @@ The length field on ``String``, as well as similar fields available on ``Integer
 Insert Expressions
 ==================
 
-
-The first SQL expression we'll create is the ``Insert`` construct, which represents an INSERT statement.   This is typically created relative to its target table:
-
-.. sourcecode:: pycon+sql
+The first SQL expression we'll create is the ``Insert`` construct, which represents an INSERT statement.   This is typically created relative to its target table::
 
     >>> ins = users.insert()
 
-To see a sample of the SQL this construct produces, use the ``str()`` function:
-
-.. sourcecode:: pycon+sql
+To see a sample of the SQL this construct produces, use the ``str()`` function::
 
     >>> str(ins)
     'INSERT INTO users (id, name, fullname) VALUES (:id, :name, :fullname)'
     
-Notice above that the INSERT statement names every column in the ``users`` table.  This can be limited by using the ``values`` keyword, which establishes the VALUES clause of the INSERT explicitly:
-
-.. sourcecode:: pycon+sql
+Notice above that the INSERT statement names every column in the ``users`` table.  This can be limited by using the ``values`` keyword, which establishes the VALUES clause of the INSERT explicitly::
 
     >>> ins = users.insert(values={'name':'jack', 'fullname':'Jack Jones'})
     >>> str(ins)
     'INSERT INTO users (name, fullname) VALUES (:name, :fullname)'
     
-Above, while the ``values`` keyword limited the VALUES clause to just two columns, the actual data we placed in ``values`` didn't get rendered into the string; instead we got named bind parameters.  As it turns out, our data *is* stored within our ``Insert`` construct, but it typically only comes out when the statement is actually executed; since the data consists of literal values, SQLAlchemy automatically generates bind parameters for them.  We can peek at this data for now by looking at the compiled form of the statement:
-
-.. sourcecode:: pycon+sql
+Above, while the ``values`` keyword limited the VALUES clause to just two columns, the actual data we placed in ``values`` didn't get rendered into the string; instead we got named bind parameters.  As it turns out, our data *is* stored within our ``Insert`` construct, but it typically only comes out when the statement is actually executed; since the data consists of literal values, SQLAlchemy automatically generates bind parameters for them.  We can peek at this data for now by looking at the compiled form of the statement::
 
     >>> ins.compile().params #doctest: +NORMALIZE_WHITESPACE
     {'fullname': 'Jack Jones', 'name': 'jack'}    
@@ -127,10 +116,7 @@ Above, while the ``values`` keyword limited the VALUES clause to just two column
 Executing 
 ==========
 
-
-The interesting part of an ``Insert`` is executing it.  In this tutorial, we will generally focus on the most explicit method of executing a SQL construct, and later touch upon some "shortcut" ways to do it.  The ``engine`` object we created is a repository for database connections capable of issuing SQL to the database.  To acquire a connection, we use the ``connect()`` method:
-
-.. sourcecode:: pycon+sql
+The interesting part of an ``Insert`` is executing it.  In this tutorial, we will generally focus on the most explicit method of executing a SQL construct, and later touch upon some "shortcut" ways to do it.  The ``engine`` object we created is a repository for database connections capable of issuing SQL to the database.  To acquire a connection, we use the ``connect()`` method::
 
     >>> conn = engine.connect()
     >>> conn #doctest: +ELLIPSIS
@@ -928,10 +914,7 @@ Alternatively, applying a ``label()`` to a select evaluates it as a scalar as we
 Correlated Subqueries 
 ---------------------
 
-
-Notice in the examples on "scalar selects", the FROM clause of each embedded select did not contain the ``users`` table in its FROM clause.  This is because SQLAlchemy automatically attempts to correlate embedded FROM objects to that of an enclosing query.  To disable this, or to specify explicit FROM clauses to be correlated, use ``correlate()``:
-
-.. sourcecode:: pycon+sql
+Notice in the examples on "scalar selects", the FROM clause of each embedded select did not contain the ``users`` table in its FROM clause.  This is because SQLAlchemy automatically attempts to correlate embedded FROM objects to that of an enclosing query.  To disable this, or to specify explicit FROM clauses to be correlated, use ``correlate()``::
 
     >>> s = select([users.c.name], users.c.id==select([users.c.id]).correlate(None))
     >>> print s
@@ -939,8 +922,6 @@ Notice in the examples on "scalar selects", the FROM clause of each embedded sel
     FROM users 
     WHERE users.id = (SELECT users.id 
     FROM users)
-
-.. sourcecode:: pycon+sql
 
     >>> s = select([users.c.name, addresses.c.email_address], users.c.id==
     ...        select([users.c.id], users.c.id==addresses.c.user_id).correlate(addresses)
@@ -994,7 +975,7 @@ Finally, we're back to UPDATE.  Updates work a lot like INSERTS, except there is
 .. sourcecode:: pycon+sql
 
     >>> # change 'jack' to 'ed'
-    {sql}>>> conn.execute(users.update(users.c.name=='jack'), name='ed') #doctest: +ELLIPSIS
+    {sql}>>> conn.execute(users.update(users.c.name=='jack', values={'name':'ed'})) #doctest: +ELLIPSIS
     UPDATE users SET name=? WHERE users.name = ?
     ['ed', 'jack']
     COMMIT
