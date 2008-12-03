@@ -1,6 +1,9 @@
 Table of Contents
 =================
 
+Main Documentation
+------------------
+
 .. toctree::
     :glob:
 
@@ -17,8 +20,8 @@ Table of Contents
 
 .. _reference:
 
-SQLAlchemy Reference
---------------------
+API Reference
+-------------
 
 .. toctree::
     :maxdepth: 3
