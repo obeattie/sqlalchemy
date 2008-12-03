@@ -114,58 +114,10 @@ def create_engine(*args, **kwargs):
 
     `**kwargs` represents options to be sent to the Engine itself as
     well as the components of the Engine, including the Dialect, the
-    ConnectionProvider, and the Pool.  A list of common options is as
-    follows:
+    ConnectionProvider, and the Pool. 
 
-    poolclass
-      a subclass of ``sqlalchemy.pool.Pool`` which will be used to
-      instantiate a connection pool.
-
-    pool
-      an instance of ``sqlalchemy.pool.DBProxy`` or
-      ``sqlalchemy.pool.Pool`` to be used as the underlying source for
-      connections (DBProxy/Pool is described in the previous section).
-      This argument supercedes "poolclass".
-
-    echo
-      defaults to False: if True, the Engine will log all statements
-      as well as a repr() of their parameter lists to the engines
-      logger, which defaults to ``sys.stdout``.  A Engine instances'
-      `echo` data member can be modified at any time to turn logging
-      on and off.  If set to the string 'debug', result rows will be
-      printed to the standard output as well.
-
-    logger
-      defaults to None: a file-like object where logging output can be
-      sent, if `echo` is set to True.  This defaults to
-      ``sys.stdout``.
-
-    encoding
-      defaults to 'utf-8': the encoding to be used when
-      encoding/decoding Unicode strings.
-
-    convert_unicode
-      defaults to False: true if unicode conversion should be applied
-      to all str types.
-
-    module
-      defaults to None: this is a reference to a DB-API 2.0 module to
-      be used instead of the dialect's default module.
-
-    strategy
-      allows alternate Engine implementations to take effect.  Current
-      implementations include ``plain`` and ``threadlocal``.  The
-      default used by this function is ``plain``.
-
-      ``plain`` provides support for a Connection object which can be
-      used to execute SQL queries with a specific underlying DB-API
-      connection.
-
-      ``threadlocal`` is similar to ``plain`` except that it adds
-      support for a thread-local connection and transaction context,
-      which allows a group of engine operations to participate using
-      the same underlying connection and transaction without the need
-      for explicitly passing a single Connection.
+    Descriptions of arguments can be found at :ref:`create_engine_args`.
+      
     """
 
     strategy = kwargs.pop('strategy', default_strategy)

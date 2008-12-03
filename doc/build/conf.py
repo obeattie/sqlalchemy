@@ -136,7 +136,6 @@ html_last_updated_fmt = '%m/%d/%Y %H:%M:%S'
 
 # If false, no module index is generated.
 html_use_modindex = False
-html_use_modindex = False
 
 # If false, no index is generated.
 #html_use_index = True
@@ -146,7 +145,6 @@ html_use_modindex = False
 
 # If true, the reST sources are included in the HTML build as _sources/<name>.
 #html_copy_source = True
-html_copy_source = False
 
 # If true, an OpenSearch description file will be output, and all pages will
 # contain a <link> tag referring to it.  The value of this option must be the

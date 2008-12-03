@@ -1,7 +1,6 @@
 ================
 Database Engines
 ================
-
 The **Engine** is the starting point for any SQLAlchemy application.  It's "home base" for the actual database and its DBAPI, delivered to the SQLAlchemy application through a connection pool and a **Dialect**, which describes how to talk to a specific kind of database/DBAPI combination.
 
 The general structure is this::
@@ -14,7 +13,7 @@ The general structure is this::
                                      \---|  Dialect  |---/                   |__________|
                                          +-----------+                       (__________)
 
-Where above, a :class:`sqlalchemy.engine.Engine` references both a  :class:`sqlalchemy.engine.Dialect` and :class:`sqlalchemy.pool.Pool`, which together interpret the DBAPI's module functions as well as the behavior of the database.
+Where above, a :class:`~sqlalchemy.engine.Engine` references both a  :class:`~sqlalchemy.engine.Dialect` and :class:`~sqlalchemy.pool.Pool`, which together interpret the DBAPI's module functions as well as the behavior of the database.
 
 Creating an engine is just a matter of issuing a single call, :func:`create_engine()`::
 
@@ -30,7 +29,7 @@ The engine can be used directly to issue SQL to the database.  The most generic 
         print "username:", row['username']
     connection.close()
     
-The connection is an instance of :class:`sqlalchemy.engine.Connection`, which is a **proxy** object for an actual DBAPI connection.  The returned result is an instance of :class:`sqlalchemy.engine.ResultProxy`, which acts very much like a DBAPI cursor.
+The connection is an instance of :class:`~sqlalchemy.engine.Connection`, which is a **proxy** object for an actual DBAPI connection.  The returned result is an instance of :class:`~sqlalchemy.engine.ResultProxy`, which acts very much like a DBAPI cursor.
 
 When you say ``engine.connect()``, a new ``Connection`` object is created, and a DBAPI connection is retrieved from the connection pool.  Later, when you call ``connection.close()``, the DBAPI connection is returned to the pool; nothing is actually "closed" from the perspective of the database.
 
@@ -49,8 +48,7 @@ The ``Engine`` and ``Connection`` can do a lot more than what we illustrated abo
 
 Supported Databases 
 ====================
-
-Recall that the ``Dialect`` is used to describe how to talk to a specific kind of database.  Dialects are included with SQLAlchemy for SQLite, Postgres, MySQL, MS-SQL, Firebird, Informix, and Oracle; these can each be seen as a Python module present in the :mod:``sqlalchemy.databases`` package.  Each dialect requires the appropriate DBAPI drivers to be installed separately.
+Recall that the ``Dialect`` is used to describe how to talk to a specific kind of database.  Dialects are included with SQLAlchemy for SQLite, Postgres, MySQL, MS-SQL, Firebird, Informix, and Oracle; these can each be seen as a Python module present in the :mod:``~sqlalchemy.databases`` package.  Each dialect requires the appropriate DBAPI drivers to be installed separately.
 
 Downloads for each DBAPI at the time of this writing are as follows:
 
@@ -66,7 +64,6 @@ The SQLAlchemy Wiki contains a page of database notes, describing whatever quirk
 
 create_engine() URL Arguments 
 ==============================
-
 
 SQLAlchemy indicates the source of an Engine strictly via `RFC-1738 <http://rfc.net/rfc1738.html>`_ style URLs, combined with optional keyword arguments to specify options for the Engine.  The form of the URL is:
 
@@ -128,10 +125,11 @@ The most customizable connection method of all is to pass a ``creator`` argument
         return psycopg.connect(user='scott', host='localhost')
 
     db = create_engine('postgres://', creator=connect)
-        
+
+.. _create_engine_args:
+
 Database Engine Options 
 ========================
-
 
 Keyword options can also be specified to ``create_engine()``, following the string URL as follows:
 
@@ -139,28 +137,27 @@ Keyword options can also be specified to ``create_engine()``, following the stri
 
     db = create_engine('postgres://...', encoding='latin1', echo=True)
 
-A list of all standard options, as well as several that are used by particular database dialects, is as follows:
+Options common to all database dialects are as follows:
 
-* **assert_unicode=False** - When set to ``True`` alongside convert_unicode=``True``, asserts that incoming string bind parameters are instances of ``unicode``, otherwise raises an error.  Only takes effect when ``convert_unicode==True``.  This flag is also available on the ``String`` type and its descendants. New in 0.4.2.  
-* **connect_args** - a dictionary of options which will be passed directly to the DBAPI's ``connect()`` method as additional keyword arguments.
-* **convert_unicode=False** - if set to True, all String/character based types will convert Unicode values to raw byte values going into the database, and all raw byte values to Python Unicode coming out in result sets.  This is an engine-wide method to provide unicode conversion across the board.  For unicode conversion on a column-by-column level, use the ``Unicode`` column type instead, described in `types`.
-* **creator** - a callable which returns a DBAPI connection.  This creation function will be passed to the underlying connection pool and will be used to create all new database connections.  Usage of this function causes connection parameters specified in the URL argument to be bypassed.
-* **echo=False** - if True, the Engine will log all statements as well as a repr() of their parameter lists to the engines logger, which defaults to sys.stdout.  The ``echo`` attribute of ``Engine`` can be modified at any time to turn logging on and off.  If set to the string ``"debug"``, result rows will be printed to the standard output as well.  This flag ultimately controls a Python logger; see `dbengine_logging` at the end of this chapter for information on how to configure logging directly.
-* **echo_pool=False** - if True, the connection pool will log all checkouts/checkins to the logging stream, which defaults to sys.stdout.  This flag ultimately controls a Python logger; see `dbengine_logging` for information on how to configure logging directly.
-* **encoding='utf-8'** - the encoding to use for all Unicode translations, both by engine-wide unicode conversion as well as the ``Unicode`` type object.
-* **label_length=None** - optional integer value which limits the size of dynamically generated column labels to that many characters.  If less than 6, labels are generated as "_(counter)".  If ``None``, the value of ``dialect.max_identifier_length`` is used instead.
-* **module=None** - used by database implementations which support multiple DBAPI modules, this is a reference to a DBAPI2 module to be used instead of the engine's default module.  For Postgres, the default is psycopg2.  For Oracle, it's cx_Oracle.
-* **pool=None** - an already-constructed instance of ``sqlalchemy.pool.Pool``, such as a ``QueuePool`` instance.  If non-None, this pool will be used directly as the underlying connection pool for the engine, bypassing whatever connection parameters are present in the URL argument.  For information on constructing connection pools manually, see `pooling`.
-* **poolclass=None** - a ``sqlalchemy.pool.Pool`` subclass, which will be used to create a connection pool instance using the connection parameters given in the URL.  Note this differs from ``pool`` in that you don't actually instantiate the pool in this case, you just indicate what type of pool to be used.
-* **max_overflow=10** - the number of connections to allow in connection pool "overflow", that is connections that can be opened above and beyond the pool_size setting, which defaults to five.  this is only used with ``QueuePool``.
-* **pool_size=5** - the number of connections to keep open inside the connection pool.  This used with ``QueuePool`` as well as ``SingletonThreadPool``.
-* **pool_recycle=-1** - this setting causes the pool to recycle connections after the given number of seconds has passed.  It defaults to -1, or no timeout.  For example, setting to 3600 means connections will be recycled after one hour.  Note that MySQL in particular will **disconnect automatically** if no activity is detected on a connection for eight hours (although this is configurable with the MySQLDB connection itself and the  server configuration as well).
-* **pool_timeout=30** - number of seconds to wait before giving up on getting a connection from the pool.  This is only used with ``QueuePool``.
-* **strategy='plain'** - used to invoke alternate ``Engine`` implementations.  Currently available is the ``threadlocal`` strategy, which is described in  `dbengine_implicit_strategies`.
+* ``assert_unicode=False`` - When set to ``True`` alongside convert_unicode=``True``, asserts that incoming string bind parameters are instances of ``unicode``, otherwise raises an error.  Only takes effect when ``convert_unicode==True``.  This flag is also available on the ``String`` type and its descendants. New in 0.4.2.  
+* ``connect_args`` - a dictionary of options which will be passed directly to the DBAPI's ``connect()`` method as additional keyword arguments.
+* ``convert_unicode=False`` - if set to True, all String/character based types will convert Unicode values to raw byte values going into the database, and all raw byte values to Python Unicode coming out in result sets.  This is an engine-wide method to provide unicode conversion across the board.  For unicode conversion on a column-by-column level, use the ``Unicode`` column type instead, described in `types`.
+* ``creator`` - a callable which returns a DBAPI connection.  This creation function will be passed to the underlying connection pool and will be used to create all new database connections.  Usage of this function causes connection parameters specified in the URL argument to be bypassed.
+* ``echo=False`` - if True, the Engine will log all statements as well as a repr() of their parameter lists to the engines logger, which defaults to sys.stdout.  The ``echo`` attribute of ``Engine`` can be modified at any time to turn logging on and off.  If set to the string ``"debug"``, result rows will be printed to the standard output as well.  This flag ultimately controls a Python logger; see `dbengine_logging` at the end of this chapter for information on how to configure logging directly.
+* ``echo_pool=False`` - if True, the connection pool will log all checkouts/checkins to the logging stream, which defaults to sys.stdout.  This flag ultimately controls a Python logger; see `dbengine_logging` for information on how to configure logging directly.
+* ``encoding='utf-8'`` - the encoding to use for all Unicode translations, both by engine-wide unicode conversion as well as the ``Unicode`` type object.
+* ``label_length=None`` - optional integer value which limits the size of dynamically generated column labels to that many characters.  If less than 6, labels are generated as "_(counter)".  If ``None``, the value of ``dialect.max_identifier_length`` is used instead.
+* ``module=None`` - used by database implementations which support multiple DBAPI modules, this is a reference to a DBAPI2 module to be used instead of the engine's default module.  For Postgres, the default is psycopg2.  For Oracle, it's cx_Oracle.
+* ``pool=None`` - an already-constructed instance of :class:`~sqlalchemy.pool.Pool`, such as a :class:`~sqlalchemy.pool.QueuePool` instance.  If non-None, this pool will be used directly as the underlying connection pool for the engine, bypassing whatever connection parameters are present in the URL argument.  For information on constructing connection pools manually, see `pooling`.
+* ``poolclass=None`` - a :class:`~sqlalchemy.pool.Pool` subclass, which will be used to create a connection pool instance using the connection parameters given in the URL.  Note this differs from ``pool`` in that you don't actually instantiate the pool in this case, you just indicate what type of pool to be used.
+* ``max_overflow=10`` - the number of connections to allow in connection pool "overflow", that is connections that can be opened above and beyond the pool_size setting, which defaults to five.  this is only used with ``QueuePool``.
+* ``pool_size=5`` - the number of connections to keep open inside the connection pool.  This used with ``QueuePool`` as well as ``SingletonThreadPool``.
+* ``pool_recycle=-1`` - this setting causes the pool to recycle connections after the given number of seconds has passed.  It defaults to -1, or no timeout.  For example, setting to 3600 means connections will be recycled after one hour.  Note that MySQL in particular will ``disconnect automatically`` if no activity is detected on a connection for eight hours (although this is configurable with the MySQLDB connection itself and the  server configuration as well).
+* ``pool_timeout=30`` - number of seconds to wait before giving up on getting a connection from the pool.  This is only used with ``QueuePool``.
+* ``strategy='plain'`` - used to invoke alternate ``Engine`` implementations.  Currently available is the ``threadlocal`` strategy, which is described in  :ref:`threadlocal_strategy`.
 
 More On Connections 
 ====================
-
 
 Recall from the beginning of this section that the Engine provides a ``connect()`` method which returns a ``Connection`` object.  ``Connection`` is a *proxy* object which maintains a reference to a DBAPI connection instance.  The ``close()`` method on ``Connection`` does not actually close the DBAPI connection, but instead returns it to the connection pool referenced by the ``Engine``.  ``Connection`` will also automatically return its resources to the connection pool when the object is garbage collected, i.e. its ``__del__()`` method is called.  When using the standard C implementation of Python, this method is usually called immediately as soon as the object is dereferenced.  With other Python implementations such as Jython, this is not so guaranteed.  
     
@@ -199,7 +196,6 @@ Connection facts:
  
 Using Transactions with Connection 
 ===================================
-
 
 The ``Connection`` object provides a ``begin()`` method which returns a ``Transaction`` object.  This object is usually used within a try/except clause so that it is guaranteed to ``rollback()`` or ``commit()``:
 
@@ -267,7 +263,6 @@ The above transaction example illustrates how to use ``Transaction`` so that sev
 Connectionless Execution, Implicit Execution 
 =============================================
 
-
 Recall from the first section we mentioned executing with and without a ``Connection``.  ``Connectionless`` execution refers to calling the ``execute()`` method on an object which is not a ``Connection``, which could be on the ``Engine`` itself, or could be a constructed SQL object.  When we say "implicit", we mean that we are calling the ``execute()`` method on an object which is neither a ``Connection`` nor an ``Engine`` object; this can only be used with constructed SQL objects which have their own ``execute()`` method, and can be "bound" to an ``Engine``.  A description of "constructed SQL objects" may be found in `sql`.
 
 A summary of all three methods follows below.  First, assume the usage of the following ``MetaData`` and ``Table`` objects; while we haven't yet introduced these concepts, for now you only need to know that we are representing a database table, and are creating an "executable" SQL construct which issues a statement to the database.  These objects are described in `metadata`.
@@ -313,6 +308,8 @@ Implicit execution is also connectionless, and calls the ``execute()`` method on
     result.close()
     
 In both "connectionless" examples, the ``Connection`` is created behind the scenes; the ``ResultProxy`` returned by the ``execute()`` call references the ``Connection`` used to issue the SQL statement.   When we issue ``close()`` on the ``ResultProxy``, or if the result set object falls out of scope and is garbage collected, the underlying ``Connection`` is closed for us, resulting in the DBAPI connection being returned to the pool.
+
+.. _threadlocal_strategy:
 
 Using the Threadlocal Execution Strategy 
 -----------------------------------------
@@ -405,7 +402,6 @@ So remember - if you're not sure if you need to use ``strategy="threadlocal"`` o
 
 Configuring Logging 
 ====================
-
 
 Python's standard `logging <http://www.python.org/doc/lib/module-logging.html>`_ module is used to implement informational and debug log output with SQLAlchemy.  This allows SQLAlchemy's logging to integrate in a standard way with other applications and libraries.  The ``echo`` and ``echo_pool`` flags that are present on ``create_engine()``, as well as the ``echo_uow`` flag used on ``Session``, all interact with regular loggers.
 

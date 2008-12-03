@@ -39,9 +39,9 @@ def manage(module, **params):
 
     poolclass
       The class used by the pool module to provide pooling.  Defaults
-      to ``QueuePool``.
+      to :class:`QueuePool`.
 
-    See the ``Pool`` class for options.
+    See the :class:`Pool` class for options.
     """
     try:
         return proxies[module]
@@ -64,16 +64,16 @@ class Pool(object):
     This is an abstract class, implemented by various subclasses
     including:
 
-    QueuePool
+    :class:`QueuePool`
       Pools multiple connections using ``Queue.Queue``.
 
-    SingletonThreadPool
+    :class:`SingletonThreadPool`
       Stores a single connection per execution thread.
 
-    NullPool
+    :class:`NullPool`
       Doesn't do any pooling; opens and closes connections.
 
-    AssertionPool
+    :class:`AssertionPool`
       Stores only one connection, and asserts that only one connection
       is checked out at a time.
 
@@ -82,38 +82,32 @@ class Pool(object):
 
     Options that are understood by Pool are:
 
-    echo
-      If set to True, connections being pulled and retrieved from/to
+    :param echo: If set to True, connections being pulled and retrieved from/to
       the pool will be logged to the standard output, as well as pool
       sizing information.  Echoing can also be achieved by enabling
       logging for the "sqlalchemy.pool" namespace. Defaults to False.
 
-    use_threadlocal
-      If set to True, repeated calls to ``connect()`` within the same
-      application thread will be guaranteed to return the same
-      connection object, if one has already been retrieved from the
-      pool and has not been returned yet. This allows code to retrieve
-      a connection from the pool, and then while still holding on to
-      that connection, to call other functions which also ask the pool
-      for a connection of the same arguments; those functions will act
-      upon the same connection that the calling method is using.
-      Defaults to False.
+    :param listeners: A list of :class:`~sqlalchemy.interfaces.PoolListener`-like 
+      objects or dictionaries of callables
+      that receive events when DB-API connections are created, checked out and
+      checked in to the pool.
 
-    recycle
-      If set to non -1, a number of seconds between connection
+    :param recycle: If set to non -1, a number of seconds between connection
       recycling, which means upon checkout, if this timeout is
       surpassed the connection will be closed and replaced with a
       newly opened connection. Defaults to -1.
 
-    listeners
-      A list of ``PoolListener``-like objects or dictionaries of callables
-      that receive events when DB-API connections are created, checked out and
-      checked in to the pool.
-
-    reset_on_return
-      Defaults to True.  Reset the database state of connections returned to
+    :param reset_on_return: Defaults to True.  Reset the database state of connections returned to
       the pool.  This is typically a ROLLBACK to release locks and transaction
       resources.  Disable at your own peril.
+
+    :param use_threadlocal: If set to True, repeated calls to :meth:`connect` within the same
+      application thread will be guaranteed to return the same
+      connection object, if one has already been retrieved from the
+      pool and has not been returned yet.  Offers a slight performance 
+      advantage at the cost of individual transactions by default.
+      The :meth:`unique_connection` method is provided to bypass the threadlocal
+      behavior installed into :meth:`connect`.
 
     """
     def __init__(self, creator, recycle=-1, echo=None, use_threadlocal=False,

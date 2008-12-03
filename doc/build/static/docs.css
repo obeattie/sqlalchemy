@@ -113,6 +113,11 @@ li.toctree-l1 ul li li
     /*font-size:.90em;*/
 }
 
+.sourcelink {
+    font-size:.8em;
+    text-align:right;
+    padding-top:10px;
+}
 
 .section {
     line-height: 1.5em;

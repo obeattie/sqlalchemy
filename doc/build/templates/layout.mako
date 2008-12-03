@@ -56,15 +56,21 @@
 
         <div class="topnav">
             <div id="pagecontrol">
-                <a href="${pathto('index')}#sqlalchemy-reference">API Reference</a>
+                <a href="${pathto('index')}#api-reference">API Reference</a>
                 |
                 <a href="${pathto('genindex')}">Index</a>
+            
+                % if sourcename:
+                <div class="sourcelink">(<a href="${pathto('_sources/' + sourcename, True)|h}">${_('view source')})</div>
+                % endif
             </div>
             
             <div class="navbanner">
                 <a class="totoc" href="${pathto(master_doc)}">Table of Contents</a>
                 ${prevnext()}
-                <h2>${self.show_title()}</h2>
+                <h2>
+                    ${self.show_title()} 
+                </h2>
             </div>
             % if display_toc:
                 ${toc}

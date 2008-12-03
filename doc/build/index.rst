@@ -17,7 +17,7 @@ Main Documentation
     pooling
     plugins
 
-.. _reference:
+.. _api_reference:
 
 API Reference
 -------------
