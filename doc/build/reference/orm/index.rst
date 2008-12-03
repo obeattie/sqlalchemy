@@ -1,3 +1,5 @@
+.. _sqlalchemy_orm:
+
 sqlalchemy.orm
 ==============
 

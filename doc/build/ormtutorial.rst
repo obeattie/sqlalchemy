@@ -295,7 +295,7 @@ Rolling back, we can see that ``ed_user``'s name is back to ``ed``, and ``fake_u
 
     {sql}>>> session.rollback()
     ROLLBACK
-
+    {stop}
 
     {sql}>>> ed_user.name
     BEGIN
@@ -801,7 +801,8 @@ When querying across multiple tables, if the same table needs to be referenced m
     >>> from sqlalchemy.orm import aliased
     >>> adalias1 = aliased(Address)
     >>> adalias2 = aliased(Address)
-    {sql}>>> for username, email1, email2 in session.query(User.name, adalias1.email_address, adalias2.email_address).\
+    {sql}>>> for username, email1, email2 in \
+    ...     session.query(User.name, adalias1.email_address, adalias2.email_address).\
     ...     join((adalias1, User.addresses), (adalias2, User.addresses)).\
     ...     filter(adalias1.email_address=='jack@google.com').\
     ...     filter(adalias2.email_address=='j25@yahoo.com'):
@@ -889,7 +890,8 @@ The ``Query`` features several operators which make usage of EXISTS automaticall
 
 .. sourcecode:: python+sql
 
-    {sql}>>> for name, in session.query(User.name).filter(User.addresses.any(Address.email_address.like('%google%'))):   # doctest: +NORMALIZE_WHITESPACE
+    {sql}>>> for name, in session.query(User.name).\
+    ...     filter(User.addresses.any(Address.email_address.like('%google%'))):   # doctest: +NORMALIZE_WHITESPACE
     ...     print name
     SELECT users.name AS users_name 
     FROM users 
@@ -1241,10 +1243,10 @@ Or we can use Wendy's own ``posts`` relation, which is a "dynamic" relation, to 
 Further Reference 
 ==================
 
-Generated Documentation for Query: `sqlalchemy.orm.query_Query`
+Generated Documentation for Query: :class:`sqlalchemy.orm.query.Query`
 
-ORM Generated Docs: `sqlalchemy.orm`
+ORM Generated Docs: :ref:`sqlalchemy_orm`
 
-Further information on mapping setups are in `advdatamapping`.
+Further information on mapping setups are in :ref:`advdatamapping`.
 
-Further information on working with Sessions: `unitofwork`.
+Further information on working with Sessions: :ref:`unitofwork`.
