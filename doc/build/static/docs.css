@@ -38,11 +38,16 @@ strong a {
     float:right;
 }
 
-.topnav, .document #table-of-contents {
+.topnav
+{
 	background-color: #fbfbee;
 	border: solid 1px #ccc;
 	padding:10px;
 	margin:10px 0px 10px 0px;
+}
+
+.document {
+	border: solid 1px #ccc;
 }
 
 .topnav .prevnext {
@@ -86,17 +91,25 @@ h1 {
     font-family:verdana,sans-serif;
 }
 
-#table-of-contents li, .topnav li {
+.topnav li,
+li.toctree-l1,
+li.toctree-l1 li
+{
     list-style-type:none;
     margin:0px;
     padding:3px 8px;
 }
 
-.topnav li ul, #table-of-contents li ul {
+
+.topnav li ul, 
+li.toctree-l1 ul
+{
     padding:0px 0px 0px 20px;
 }
 
-.topnav li ul li li, #table-of-contents li ul li li, {
+.topnav li ul li li, 
+li.toctree-l1 ul li li
+{
     font-size:.90em;
 }
 
