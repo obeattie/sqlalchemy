@@ -110,7 +110,7 @@ li.toctree-l1 ul
 .topnav li ul li li, 
 li.toctree-l1 ul li li
 {
-    font-size:.90em;
+    /*font-size:.90em;*/
 }
 
 
