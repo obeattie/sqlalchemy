@@ -913,9 +913,10 @@ listen for.  ``MapperExtension``s can also listen for a
 ``reconstruct_instance`` event, analogous to the ``reconstructor``
 decorator above.
 
+.. _extending_mapper:
+
 Extending Mapper 
 -----------------
-
 
 Mappers can have functionality augmented or replaced at many points in its execution via the usage of the MapperExtension class.  This class is just a series of "hooks" where various functionality takes place.  An application can make its own MapperExtension objects, overriding only the methods it needs.  Methods that are not overridden return the special value ``sqlalchemy.orm.EXT_CONTINUE`` to allow processing to continue to the next MapperExtension or simply proceed normally if there are no more extensions.
 

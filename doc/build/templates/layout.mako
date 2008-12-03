@@ -56,7 +56,7 @@
 
         <div class="topnav">
             <div id="pagecontrol">
-                <a href="${pathto('modindex')}">Modules</a>
+                <a href="${pathto('index')}#sqlalchemy-reference">API Reference</a>
                 |
                 <a href="${pathto('genindex')}">Index</a>
             </div>

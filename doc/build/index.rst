@@ -15,6 +15,8 @@ Table of Contents
     pooling
     plugins
 
+.. _reference:
+
 SQLAlchemy Reference
 --------------------
 
