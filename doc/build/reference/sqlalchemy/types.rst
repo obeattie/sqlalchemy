@@ -3,7 +3,7 @@
 Column and Data Types
 =====================
 
-.. module:: sqlalchemy.types
+.. module:: sqlalchemy
 
 SQLAlchemy provides abstractions for most common database data types,
 and a mechanism for specifying your own custom data types.
@@ -23,10 +23,10 @@ the database driver returns an incorrect type.
 
 SQLAlchemy will use the ``Integer`` and ``String(32)`` type
 information when issuing a ``CREATE TABLE`` statement and will use it
-again when reading back rows `SELECTed` from the database.  Functions
-that accept a type (such as :func:`~sqlalchemy.Column`) will typically
-accept a type class or instance; ``Integer`` is equivalent to
-``Integer()`` with no construction arguments in this case.
+again when reading back rows ``SELECTed`` from the database.
+Functions that accept a type (such as :func:`~sqlalchemy.Column`) will
+typically accept a type class or instance; ``Integer`` is equivalent
+to ``Integer()`` with no construction arguments in this case.
 
 Generic Types
 -------------
@@ -111,7 +111,7 @@ on all databases.
    :members: __init__
    :show-inheritance:
 
-.. autoclass:: INTEGER
+.. autoclass:: sqlalchemy.types.INTEGER
 
    :members: __init__
    :show-inheritance:
@@ -203,6 +203,8 @@ Or some PostgreSQL types::
         Column('elements', PGArray(str))
         )
 
+
+.. module:: sqlalchemy.types
 
 Custom Types
 ------------
