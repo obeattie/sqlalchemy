@@ -14,7 +14,6 @@ Main Documentation
     session
     dbengine
     metadata
-    types
     pooling
     plugins
 
