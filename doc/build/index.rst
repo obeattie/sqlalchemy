@@ -14,7 +14,6 @@ Main Documentation
     session
     dbengine
     metadata
-    pooling
     plugins
 
 .. _api_reference:

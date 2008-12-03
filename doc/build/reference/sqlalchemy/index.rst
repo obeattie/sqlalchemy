@@ -5,6 +5,7 @@ sqlalchemy
     :glob:
 
     connections
+    pooling
     expressions
     schema
     types

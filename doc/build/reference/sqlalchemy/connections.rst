@@ -21,10 +21,3 @@ Connectables
 .. autoclass:: sqlalchemy.engine.base.Connectable
    :members:
 
-Pooling
--------
-
-.. automodule:: sqlalchemy.pool
-   :members:
-   :show-inheritance:
-   :undoc-members:
