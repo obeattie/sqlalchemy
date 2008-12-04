@@ -72,7 +72,7 @@
                     ${self.show_title()} 
                 </h2>
             </div>
-            % if display_toc:
+            % if display_toc and not current_page_name.startswith('index'):
                 ${toc}
             % endif
             <div class="clearboth"></div>

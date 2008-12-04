@@ -429,7 +429,7 @@ The ``Query`` object is fully *generative*, meaning that most method calls retur
 
 
 Common Filter Operators
-=======================
+-----------------------
 
 Here's a rundown of some of the most common operators used in ``filter()``:
 
@@ -473,7 +473,7 @@ Here's a rundown of some of the most common operators used in ``filter()``:
     The contents of the match parameter are database backend specific.
         
 Returning Lists and Scalars 
-============================
+---------------------------
 
 The ``all()``, ``one()``, and ``first()`` methods of ``Query`` immediately issue SQL and return a non-iterator value.  ``all()`` returns a list:
 
@@ -528,7 +528,7 @@ The ``all()``, ``one()``, and ``first()`` methods of ``Query`` immediately issue
     {stop}No row was found for one()
 
 Using Literal SQL 
-==================
+-----------------
 
 Literal strings can be used flexibly with ``Query``.  Most methods accept strings in addition to SQLAlchemy clause constructs.  For example, ``filter()`` and ``order_by()``:
 
@@ -792,7 +792,7 @@ Multiple joins can be created by passing a list of arguments:
 The above would produce SQL something like ``foo JOIN bars ON <onclause> JOIN bats ON <onclause> JOIN widgets ON <onclause>``.
     
 Using Aliases 
-==============
+-------------
 
 When querying across multiple tables, if the same table needs to be referenced more than once, SQL typically requires that the table be *aliased* with another name, so that it can be distinguished against other occurrences of that table.  The ``Query`` supports this most explicitly using the ``aliased`` construct.  Below we join to the ``Address`` entity twice, to locate a user who has two distinct email addresses at the same time:
 
@@ -816,7 +816,7 @@ When querying across multiple tables, if the same table needs to be referenced m
     {stop}jack jack@google.com j25@yahoo.com
 
 Using Subqueries 
-=================
+----------------
 
 The ``Query`` is suitable for generating statements which can be used as subqueries.  Suppose we wanted to load ``User`` objects along with a count of how many ``Address`` records each user has.  The best way to generate SQL like this is to get the count of addresses grouped by user ids, and JOIN to the parent.  In this case we use a LEFT OUTER JOIN so that we get rows back for those users who don't have any addresses, e.g.::
 
@@ -852,7 +852,7 @@ Once we have our statement, it behaves like a ``Table`` construct, such as the o
     <User('jack','Jack Bean', 'gjffdd')> 2
 
 Using EXISTS
-============
+------------
 
 The EXISTS keyword in SQL is a boolean operator which returns True if the given expression contains any rows.  It may be used in many scenarios in place of joins, and is also useful for locating rows which do not have a corresponding row in a related table.
 
@@ -916,7 +916,7 @@ The ``Query`` features several operators which make usage of EXISTS automaticall
     {stop}[]
     
 Common Relation Operators 
-==========================
+-------------------------
 
 Here's all the operators which build on relations:
 
@@ -988,7 +988,7 @@ So far, so good.  How about Jack's ``Address`` objects ?
 Uh oh, they're still there !  Analyzing the flush SQL, we can see that the ``user_id`` column of each address was set to NULL, but the rows weren't deleted.  SQLAlchemy doesn't assume that deletes cascade, you have to tell it to do so.
 
 Configuring delete/delete-orphan Cascade 
-=========================================
+----------------------------------------
 
 We will configure **cascade** options on the ``User.addresses`` relation to change the behavior.  While SQLAlchemy allows you to add new attributes and relations to mappings at any point in time, in this case the existing relation needs to be removed, so we need to tear down the mappings completely and start again.  This is not a typical operation and is here just for illustrative purposes.
 
