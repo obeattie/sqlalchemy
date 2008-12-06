@@ -1,2 +1,2 @@
 <%inherit file="layout.mako"/>
-${body}
+${body| util.strip_toplevel_anchors}

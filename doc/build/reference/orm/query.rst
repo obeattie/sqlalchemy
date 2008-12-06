@@ -1,4 +1,4 @@
-.. _query_api:
+.. _query_api_toplevel:
 
 Querying
 ========

@@ -1,4 +1,4 @@
-.. _sqlexpression:
+.. _sqlexpression_toplevel:
 
 ================================
 SQL Expression Language Tutorial
@@ -55,7 +55,7 @@ We define our tables all within a catalog called ``MetaData``, using the ``Table
     ...   Column('email_address', String, nullable=False)
     ...  )
 
-All about how to define ``Table`` objects, as well as how to create them from an existing database automatically, is described in :ref:`metadata`.
+All about how to define ``Table`` objects, as well as how to create them from an existing database automatically, is described in :ref:`metadata_toplevel`.
 
 Next, to tell the ``MetaData`` we'd actually like to create our selection of tables for real inside the SQLite database, we use ``create_all()``, passing it the ``engine`` instance which points to our database.  This will check for the presence of each table first before creating, so it's safe to call multiple times:
 
@@ -1041,9 +1041,9 @@ Further Reference
 
 API docs: :mod:`sqlalchemy.sql.expression`
 
-Table Metadata Reference: :ref:`metadata`
+Table Metadata Reference: :ref:`metadata_toplevel`
 
-Engine/Connection/Execution Reference: :ref:`dbengine`
+Engine/Connection/Execution Reference: :ref:`engines_toplevel`
 
 SQL Types: :ref:`types`
 

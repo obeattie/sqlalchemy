@@ -1,4 +1,4 @@
-.. _sqlalchemy_orm:
+.. _sqlalchemy_orm_toplevel:
 
 sqlalchemy.orm
 ==============

@@ -1,4 +1,4 @@
-.. _metadata:
+.. _metadata_toplevel:
 
 ==================
 Database Meta Data
@@ -188,7 +188,7 @@ Reflecting All Tables at Once
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
-The ``MetaData`` object can also get a listing of tables and reflect the full set.  This is achieved by using the ``reflect()`` method.  After calling it, all located tables are present within the ``MetaData``s dictionary of tables::
+The ``MetaData`` object can also get a listing of tables and reflect the full set.  This is achieved by using the ``reflect()`` method.  After calling it, all located tables are present within the ``MetaData`` object's dictionary of tables::
 
     meta = MetaData()
     meta.reflect(bind=someengine)

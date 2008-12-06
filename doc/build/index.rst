@@ -14,7 +14,6 @@ Main Documentation
     session
     dbengine
     metadata
-    plugins
     reference/index
     
 Indices and tables

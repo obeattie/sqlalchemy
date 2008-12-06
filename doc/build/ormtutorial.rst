@@ -1,4 +1,4 @@
-.. _ormtutorial:
+.. _ormtutorial_toplevel:
 
 ==========================
 Object Relational Tutorial
@@ -37,7 +37,7 @@ Next we want to tell SQLAlchemy about our tables.  We will start with just a sin
     ...     Column('password', String)
     ... )
 
-All about how to define ``Table`` objects, as well as how to load their definition from an existing database (known as **reflection**), is described in :ref:`metadata`.
+All about how to define ``Table`` objects, as well as how to load their definition from an existing database (known as **reflection**), is described in :ref:`metadata_toplevel`.
 
 Next, we can issue CREATE TABLE statements derived from our table metadata, by calling ``create_all()`` and passing it the ``engine`` instance which points to our database.  This will check for the presence of a table first before creating, so it's safe to call multiple times:
 
@@ -156,9 +156,7 @@ Later, when you create your engine with ``create_engine()``, connect it to the `
 
     >>> Session.configure(bind=engine)  # once engine is available
     
-This custom-made ``Session`` class will create new ``Session`` objects which are bound to our database.  Other transactional characteristics may be defined when calling ``sessionmaker()`` as well; these are described in a later chapter.  Then, whenever you need to have a conversation with the database, you instantiate a ``Session``:
-
-.. sourcecode:: python+sql
+This custom-made ``Session`` class will create new ``Session`` objects which are bound to our database.  Other transactional characteristics may be defined when calling ``sessionmaker()`` as well; these are described in a later chapter.  Then, whenever you need to have a conversation with the database, you instantiate a ``Session``::
 
     >>> session = Session()
     
@@ -1243,8 +1241,8 @@ Or we can use Wendy's own ``posts`` relation, which is a "dynamic" relation, to 
 Further Reference 
 ==================
 
-Query Reference: :ref:`query_api`
+Query Reference: :ref:`query_api_toplevel`
 
-Further information on mapping setups are in :ref:`datamapping`.
+Further information on mapping setups are in :ref:`datamapping_toplevel`.
 
-Further information on working with Sessions: :ref:`session`.
+Further information on working with Sessions: :ref:`session_toplevel`.

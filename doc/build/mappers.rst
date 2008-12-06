@@ -1,9 +1,9 @@
-.. _datamapping:
+.. _datamapping_toplevel:
 
 ====================
 Mapper Configuration
 ====================
-This section references most major configurational patterns involving the :func:`~sqlalchemy.orm.mapper` and :func:`~sqlalchemy.orm.relation` functions.  It assumes you've worked through :ref:`datamapping` and know how to construct and use rudimentary mappers and relations.
+This section references most major configurational patterns involving the :func:`~sqlalchemy.orm.mapper` and :func:`~sqlalchemy.orm.relation` functions.  It assumes you've worked through :ref:`ormtutorial_toplevel` and know how to construct and use rudimentary mappers and relations.
 
 Mapper Configuration
 ====================

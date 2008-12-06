@@ -1,4 +1,4 @@
-.. _engines:
+.. _engines_toplevel:
 
 ================
 Database Engines

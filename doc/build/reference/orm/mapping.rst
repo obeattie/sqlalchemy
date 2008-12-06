@@ -1,7 +1,6 @@
 Class Mapping
 =============
 
-
 .. module:: sqlalchemy.orm
 
 Defining Mappings

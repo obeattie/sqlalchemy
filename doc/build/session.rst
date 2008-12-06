@@ -1,4 +1,4 @@
-.. _session:
+.. _session_toplevel:
 
 =================
 Using the Session
@@ -280,8 +280,7 @@ Rolling Back
 
 ``rollback()`` rolls back the current transaction.   With a default configured session, the post-rollback state of the session is as follows:
 
-  * All connections are rolled back and returned to the connection pool, unless the Session was bound directly to 
-  a Connection, in which case the connection is still maintained (but still rolled back).
+  * All connections are rolled back and returned to the connection pool, unless the Session was bound directly to a Connection, in which case the connection is still maintained (but still rolled back).
   * Objects which were initially in the *pending* state when they were added to the ``Session`` within the lifespan of the transaction are expunged, corresponding to their INSERT statement being rolled back.  The state of their attributes remains unchanged.
   * Objects which were marked as *deleted* within the lifespan of the transaction are promoted back to the *persistent* state, corresponding to their DELETE statement being rolled back.  Note that if those objects were first *pending* within the transaction, that operation takes precedence instead.
   * All objects not expunged are fully expired.  
