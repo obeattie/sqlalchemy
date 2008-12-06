@@ -26,7 +26,7 @@ import sqlalchemy
 
 # Add any Sphinx extension module names here, as strings. They can be extensions
 # coming with Sphinx (named 'sphinx.ext.*') or your custom ones.
-extensions = ['sphinx.ext.autodoc', 'builder.builders']
+extensions = ['sphinx.ext.autodoc', 'sphinx.ext.doctest', 'builder.builders']
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['templates']
@@ -70,7 +70,7 @@ release = sqlalchemy.__version__
 
 # List of directories, relative to source directory, that shouldn't be searched
 # for source files.
-exclude_trees = ['build']
+exclude_trees = ['build', 'doctest']
 
 # The reST default role (used for this markup: `text`) to use for all documents.
 #default_role = None
