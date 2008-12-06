@@ -431,44 +431,44 @@ Common Filter Operators
 
 Here's a rundown of some of the most common operators used in ``filter()``:
 
- * equals::
+* equals::
 
-        query.filter(User.name == 'ed')
+    query.filter(User.name == 'ed')
+
+* not equals::
+
+    query.filter(User.name != 'ed')
+
+* LIKE::
+
+    query.filter(User.name.like('%ed%'))
     
- * not equals::
+* IN::
 
-        query.filter(User.name != 'ed')
+    query.filter(User.name.in_(['ed', 'wendy', 'jack']))
     
- * LIKE::
+* IS NULL::
 
-        query.filter(User.name.like('%ed%'))
-        
- * IN::
-
-        query.filter(User.name.in_(['ed', 'wendy', 'jack']))
-        
- * IS NULL::
-
-        filter(User.name == None)
-        
- * AND::
-
-        from sqlalchemy import and_
-        filter(and_(User.name == 'ed', User.fullname == 'Ed Jones'))
-        
-        # or call filter()/filter_by() multiple times
-        filter(User.name == 'ed').filter(User.fullname == 'Ed Jones')
+    filter(User.name == None)
     
- * OR::
+* AND::
 
-        from sqlalchemy import or_
-        filter(or_(User.name == 'ed', User.name == 'wendy'))
+    from sqlalchemy import and_
+    filter(and_(User.name == 'ed', User.fullname == 'Ed Jones'))
+    
+    # or call filter()/filter_by() multiple times
+    filter(User.name == 'ed').filter(User.fullname == 'Ed Jones')
 
- * match::
+* OR::
 
-        query.filter(User.name.match('wendy'))
+    from sqlalchemy import or_
+    filter(or_(User.name == 'ed', User.name == 'wendy'))
 
-    The contents of the match parameter are database backend specific.
+* match::
+
+    query.filter(User.name.match('wendy'))
+
+ The contents of the match parameter are database backend specific.
         
 Returning Lists and Scalars 
 ---------------------------
@@ -918,36 +918,36 @@ Common Relation Operators
 
 Here's all the operators which build on relations:
 
- * equals (used for many-to-one)::
+* equals (used for many-to-one)::
 
-        query.filter(Address.user == someuser)
+    query.filter(Address.user == someuser)
 
- * not equals (used for many-to-one)::
+* not equals (used for many-to-one)::
 
-        query.filter(Address.user != someuser)
+    query.filter(Address.user != someuser)
 
- * IS NULL (used for many-to-one)::
+* IS NULL (used for many-to-one)::
 
-        query.filter(Address.user == None)
+    query.filter(Address.user == None)
 
- * contains (used for one-to-many and many-to-many collections)::
+* contains (used for one-to-many and many-to-many collections)::
 
-        query.filter(User.addresses.contains(someaddress))
+    query.filter(User.addresses.contains(someaddress))
 
- * any (used for one-to-many and many-to-many collections)::
+* any (used for one-to-many and many-to-many collections)::
 
-        query.filter(User.addresses.any(Address.email_address == 'bar'))
-        
-        # also takes keyword arguments:
-        query.filter(User.addresses.any(email_address='bar'))
+    query.filter(User.addresses.any(Address.email_address == 'bar'))
+    
+    # also takes keyword arguments:
+    query.filter(User.addresses.any(email_address='bar'))
 
- * has (used for many-to-one)::
+* has (used for many-to-one)::
 
-        query.filter(Address.user.has(name='ed'))
+    query.filter(Address.user.has(name='ed'))
 
- * with_parent (used for any relation)::
+* with_parent (used for any relation)::
 
-        session.query(Address).with_parent(someuser, 'addresses')
+    session.query(Address).with_parent(someuser, 'addresses')
 
 Deleting
 ========

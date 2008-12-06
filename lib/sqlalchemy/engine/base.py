@@ -1064,8 +1064,9 @@ class TwoPhaseTransaction(Transaction):
 
 class Engine(Connectable):
     """
-    Connects a Pool, a Dialect and a CompilerFactory together to
-    provide a default implementation of SchemaEngine.
+    Connects a :class:`~sqlalchemy.pool.Pool` and :class:`~sqlalchemy.engine.base.Dialect` 
+    together to provide a source of database connectivity and behavior.
+
     """
 
     def __init__(self, pool, dialect, url, echo=None, proxy=None):

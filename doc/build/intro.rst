@@ -28,30 +28,29 @@ Above, the two most significant front-facing portions of SQLAlchemy are the **Ob
 Tutorials
 =========
 
- * :ref:`ormtutorial_toplevel` - This describes the richest feature of SQLAlchemy, its object relational mapper.  If you want to work with higher-level SQL which is constructed automatically for you, as well as management of Python objects, proceed to this tutorial.
- * :ref:`sqlexpression_toplevel` - The core of SQLAlchemy is its SQL expression language.  The SQL Expression Language is a toolkit all its own, independent of the ORM package, which can be used to construct manipulable SQL expressions which can be programmatically constructed, modified, and executed, returning cursor-like result sets.  It's a lot more lightweight than the ORM and is appropriate for higher scaling SQL operations.  It's also heavily present within the ORM's public facing API, so advanced ORM users will want to master this language as well.
+* :ref:`ormtutorial_toplevel` - This describes the richest feature of SQLAlchemy, its object relational mapper.  If you want to work with higher-level SQL which is constructed automatically for you, as well as management of Python objects, proceed to this tutorial.
+* :ref:`sqlexpression_toplevel` - The core of SQLAlchemy is its SQL expression language.  The SQL Expression Language is a toolkit all its own, independent of the ORM package, which can be used to construct manipulable SQL expressions which can be programmatically constructed, modified, and executed, returning cursor-like result sets.  It's a lot more lightweight than the ORM and is appropriate for higher scaling SQL operations.  It's also heavily present within the ORM's public facing API, so advanced ORM users will want to master this language as well.
 
 Main Documentation
 ==================
 
- * :ref:`datamapping_toplevel` - A comprehensive walkthrough of major ORM patterns and techniques.
- * :ref:`session_toplevel` - A detailed description of SQLAlchemy's Session object
- * :ref:`engines_toplevel` - Describes SQLAlchemy's database-connection facilities, including connection documentation and working with connections and transactions. 
- * :ref:`metadata_toplevel` - All about schema management using ``MetaData`` and ``Table`` objects; reading database schemas into your application, creating and dropping tables, constraints, defaults, sequences, indexes.
- * :ref:`pooling` - Further detail about SQLAlchemy's connection pool library.
- * :ref:`types` - Datatypes included with SQLAlchemy, their functions, as well as how to create your own types.
- * :ref:`plugins` - Included addons for SQLAlchemy
+* :ref:`datamapping_toplevel` - A comprehensive walkthrough of major ORM patterns and techniques.
+* :ref:`session_toplevel` - A detailed description of SQLAlchemy's Session object
+* :ref:`engines_toplevel` - Describes SQLAlchemy's database-connection facilities, including connection documentation and working with connections and transactions. 
+* :ref:`metadata_toplevel` - All about schema management using ``MetaData`` and ``Table`` objects; reading database schemas into your application, creating and dropping tables, constraints, defaults, sequences, indexes.
+* :ref:`pooling_toplevel` - Further detail about SQLAlchemy's connection pool library.
+* :ref:`types` - Datatypes included with SQLAlchemy, their functions, as well as how to create your own types.
+* :ref:`plugins` - Included addons for SQLAlchemy
 
 API Reference
 =============
 
 An organized section of all SQLAlchemy APIs is at :ref:`api_reference_toplevel`.
 
-Installing SQLAlchemy 
+Installing SQLAlchemy
 ======================
 
-
-Installing SQLAlchemy from scratch is most easily achieved with [setuptools][].  ([setuptools installation][install setuptools]). Just run this from the command-line:
+Installing SQLAlchemy from scratch is most easily achieved with `setuptools <http://pypi.python.org/pypi/setuptools/>`_. Assuming it's installed, just run this from the command-line:
     
 .. sourcecode:: none
 
@@ -72,23 +71,11 @@ Otherwise, you can install from the distribution using the ``setup.py`` script:
 Installing a Database API 
 ==========================
 
-SQLAlchemy is designed to operate with a `DB-API <http://www.python.org/doc/peps/pep-0249/>`_ implementation built for a particular database, and includes support for the most popular databases:
-
-* Postgres:  `psycopg2 <http://www.initd.org/tracker/psycopg/wiki/PsycopgTwo>`_
-* SQLite:  `pysqlite <http://initd.org/tracker/pysqlite>`_, `sqlite3 <http://docs.python.org/lib/module-sqlite3.html>`_ (included with Python 2.5 or greater)
-* MySQL:   `MySQLdb <http://sourceforge.net/projects/mysql-python>`_
-* Oracle:  `cx_Oracle <http://www.cxtools.net/default.aspx?nav=home>`_
-* MS-SQL, MSAccess:  `pyodbc <http://pyodbc.sourceforge.net/>`_ (recommended), `adodbapi <http://adodbapi.sourceforge.net/>`_  or `pymssql <http://pymssql.sourceforge.net/>`_
-* Firebird:  `kinterbasdb <http://kinterbasdb.sourceforge.net/>`_
-* Informix:  `informixdb <http://informixdb.sourceforge.net/>`_
-* DB2/Informix IDS: `ibm-db <http://code.google.com/p/ibm-db/>`_
-* Sybase:   TODO
-* MAXDB:    TODO
+SQLAlchemy is designed to operate with a `DB-API <http://www.python.org/doc/peps/pep-0249/>`_ implementation built for a particular database, and includes support for the most popular databases.  The current list is at :ref:`supported_dbapis`.
 
 Checking the Installed SQLAlchemy Version
 =========================================
 
- 
 This documentation covers SQLAlchemy version 0.5.  If you're working on a system that already has SQLAlchemy installed, check the version from your Python prompt like this:
 
 .. sourcecode:: python+sql
@@ -99,6 +86,5 @@ This documentation covers SQLAlchemy version 0.5.  If you're working on a system
 
 0.4 to 0.5 Migration 
 =====================
-
 
 Notes on what's changed from 0.4 to 0.5 is available on the SQLAlchemy wiki at `05Migration <http://www.sqlalchemy.org/trac/wiki/05Migration>`_.

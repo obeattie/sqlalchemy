@@ -112,6 +112,8 @@ And ``Table`` provides an interface to the table's properties as well as that of
     # get the table related by a foreign key
     fcolumn = employees.c.employee_dept.foreign_key.column.table
 
+.. _metadata_binding:
+
 Binding MetaData to an Engine or Connection 
 --------------------------------------------
 

@@ -4,7 +4,7 @@
 Using the Session
 =================
 
-The `Mapper` is the entrypoint to the configurational API of the SQLAlchemy object relational mapper.  But the primary object one works with when using the ORM is the `sqlalchemy.orm.session_Session`.
+The `Mapper` is the entrypoint to the configurational API of the SQLAlchemy object relational mapper.  But the primary object one works with when using the ORM is the :class:`~sqlalchemy.orm.session.Session`.
 
 What does the Session do ?
 ==========================
@@ -48,9 +48,7 @@ When you write your application, place the call to ``sessionmaker()`` somewhere 
 Binding Session to an Engine 
 ----------------------------
 
-In our previous example regarding ``sessionmaker()``, we specified a ``bind`` for a particular ``Engine``.  If we'd like to construct a ``sessionmaker()`` without an engine available and bind it later on, or to specify other options to an existing ``sessionmaker()``, we may use the ``configure()`` method:
-
-.. sourcecode:: python+sql
+In our previous example regarding ``sessionmaker()``, we specified a ``bind`` for a particular ``Engine``.  If we'd like to construct a ``sessionmaker()`` without an engine available and bind it later on, or to specify other options to an existing ``sessionmaker()``, we may use the ``configure()`` method::
 
     # configure Session class with desired options
     Session = sessionmaker()
@@ -64,7 +62,7 @@ In our previous example regarding ``sessionmaker()``, we specified a ``bind`` fo
     # work with the session
     session = Session()
 
-It's actually entirely optional to bind a Session to an engine.  If the underlying mapped ``Table`` objects use "bound" metadata, the ``Session`` will make use of the bound engine instead (or will even use multiple engines if multiple binds are present within the mapped tables).  "Bound" metadata is described at `metadata_tables_binding`.
+It's actually entirely optional to bind a Session to an engine.  If the underlying mapped ``Table`` objects use "bound" metadata, the ``Session`` will make use of the bound engine instead (or will even use multiple engines if multiple binds are present within the mapped tables).  "Bound" metadata is described at :ref:`metadata_binding`.
 
 The ``Session`` also has the ability to be bound to multiple engines explicitly.   Descriptions of these scenarios are described in :ref:`session_partitioning`.
 
@@ -100,7 +98,7 @@ Note that ``create_session()`` disables all optional "automation" by default.  C
 Configurational Arguments 
 -------------------------
 
-Configurational arguments accepted by ``sessionmaker()`` and ``create_session()`` are the same as that of the ``Session`` class itself, and are described at `sqlalchemy.orm_modfunc_sessionmaker`.
+Configurational arguments accepted by ``sessionmaker()`` and ``create_session()`` are the same as that of the ``Session`` class itself, and are described at :func:`sqlalchemy.orm.sessionmaker`.
 
 Note that the defaults of ``create_session()`` are the opposite of that of ``sessionmaker()``: autoflush and expire_on_commit are False, autocommit is True. It is recommended to use the ``sessionmaker()`` function instead of ``create_session()``. ``create_session()`` is used to get a session with no automation turned on and is useful for testing.
 
@@ -349,7 +347,7 @@ And presence may be tested for using regular "contains" semantics::
     if obj in session:
         print "Object is present"
 
-The session is also keeping track of all newly created (i.e. pending) objects, all objects which have had changes since they were last loaded or saved (i.e. "dirty"), and everything that's been marked as deleted:
+The session is also keeping track of all newly created (i.e. pending) objects, all objects which have had changes since they were last loaded or saved (i.e. "dirty"), and everything that's been marked as deleted::
 
     # pending objects recently added to the Session
     session.new
@@ -366,7 +364,7 @@ Note that objects within the session are by default *weakly referenced*.  This m
 Cascades
 ========
 
-Mappers support the concept of configurable *cascade* behavior on ``relation()``s.  This behavior controls how the Session should treat the instances that have a parent-child relationship with another instance that is operated upon by the Session.  Cascade is indicated as a comma-separated list of string keywords, with the possible values ``all``, ``delete``, ``save-update``, ``refresh-expire``, ``merge``, ``expunge``, and ``delete-orphan``.
+Mappers support the concept of configurable *cascade* behavior on :func:`~sqlalchemy.orm.relation()` constructs.  This behavior controls how the Session should treat the instances that have a parent-child relationship with another instance that is operated upon by the Session.  Cascade is indicated as a comma-separated list of string keywords, with the possible values ``all``, ``delete``, ``save-update``, ``refresh-expire``, ``merge``, ``expunge``, and ``delete-orphan``.
 
 Cascading is configured by setting the ``cascade`` keyword argument on a ``relation()``::
 
@@ -379,7 +377,7 @@ The above mapper specifies two relations, ``items`` and ``customer``.  The ``ite
 
 The ``customer`` relationship specifies only the "save-update" cascade value, indicating most operations will not be cascaded from a parent ``Order`` instance to a child ``User`` instance except for the ``add()`` operation.  "save-update" cascade indicates that an ``add()`` on the parent will cascade to all child items, and also that items added to a parent which is already present in the session will also be added.
 
-The default value for ``cascade`` on ``relation()``s is ``save-update, merge``.
+The default value for ``cascade`` on :func:`~sqlalchemy.orm.relation()` is ``save-update, merge``.
 
 Managing Transactions
 =====================
@@ -627,11 +625,11 @@ A (really, really) common question is when does the contextual session get creat
 
 The above example illustrates an explicit call to ``Session.remove()``.  This has the effect such that each web request starts fresh with a brand new session.   When integrating with a web framework, there's actually many options on how to proceed for this step, particularly as of version 0.5:
 
- * Session.remove() - this is the most cut and dry approach; the ``Session`` is thrown away, all of its transactional/connection resources are closed out, everything within it is explicitly gone.  A new ``Session`` will be used on the next request.
- * Session.close() - Similar to calling ``remove()``, in that all objects are explicitly expunged and all transactional/connection resources closed, except the actual ``Session`` object hangs around.  It doesn't make too much difference here unless the start of the web request would like to pass specific options to the initial construction of ``Session()``, such as a specific ``Engine`` to bind to.
- * Session.commit() - In this case, the behavior is that any remaining changes pending are flushed, and the transaction is committed.  The full state of the session is expired, so that when the next web request is started, all data will be reloaded.  In reality, the contents of the ``Session`` are weakly referenced anyway so its likely that it will be empty on the next request in any case.
- * Session.rollback() - Similar to calling commit, except we assume that the user would have called commit explicitly if that was desired; the ``rollback()`` ensures that no transactional state remains and expires all data, in the case that the request was aborted and did not roll back itself.
- * do nothing - this is a valid option as well.  The controller code is responsible for doing one of the above steps at the end of the request.
+* Session.remove() - this is the most cut and dry approach; the ``Session`` is thrown away, all of its transactional/connection resources are closed out, everything within it is explicitly gone.  A new ``Session`` will be used on the next request.
+* Session.close() - Similar to calling ``remove()``, in that all objects are explicitly expunged and all transactional/connection resources closed, except the actual ``Session`` object hangs around.  It doesn't make too much difference here unless the start of the web request would like to pass specific options to the initial construction of ``Session()``, such as a specific ``Engine`` to bind to.
+* Session.commit() - In this case, the behavior is that any remaining changes pending are flushed, and the transaction is committed.  The full state of the session is expired, so that when the next web request is started, all data will be reloaded.  In reality, the contents of the ``Session`` are weakly referenced anyway so its likely that it will be empty on the next request in any case.
+* Session.rollback() - Similar to calling commit, except we assume that the user would have called commit explicitly if that was desired; the ``rollback()`` ensures that no transactional state remains and expires all data, in the case that the request was aborted and did not roll back itself.
+* do nothing - this is a valid option as well.  The controller code is responsible for doing one of the above steps at the end of the request.
 
 Scoped Session API docs: :func:`sqlalchemy.orm.scoped_session`
 

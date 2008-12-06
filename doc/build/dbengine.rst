@@ -48,6 +48,8 @@ To summarize the above two examples, when you use a ``Connection`` object, it's 
 
 The ``Engine`` and ``Connection`` can do a lot more than what we illustrated above; SQL strings are only its most rudimentary function.  Later chapters will describe how "constructed SQL" expressions can be used with engines; in many cases, you don't have to deal with the ``Engine`` at all after it's created.  The Object Relational Mapper (ORM), an optional feature of SQLAlchemy, also uses the ``Engine`` in order to get at connections; that's also a case where you can often create the engine once, and then forget about it.
 
+.. _supported_dbapis:
+
 Supported Databases 
 ====================
 Recall that the ``Dialect`` is used to describe how to talk to a specific kind of database.  Dialects are included with SQLAlchemy for SQLite, Postgres, MySQL, MS-SQL, Firebird, Informix, and Oracle; these can each be seen as a Python module present in the :mod:``~sqlalchemy.databases`` package.  Each dialect requires the appropriate DBAPI drivers to be installed separately.
@@ -55,12 +57,15 @@ Recall that the ``Dialect`` is used to describe how to talk to a specific kind o
 Downloads for each DBAPI at the time of this writing are as follows:
 
 * Postgres:  `psycopg2 <http://www.initd.org/tracker/psycopg/wiki/PsycopgTwo>`_
-* SQLite:  `sqlite3 <http://www.python.org/doc/2.5.2/lib/module-sqlite3.html>`_ `pysqlite <http://initd.org/tracker/pysqlite>`_
+* SQLite:  `sqlite3 <http://www.python.org/doc/2.5.2/lib/module-sqlite3.html>`_ (included in Python 2.5 or greater) `pysqlite <http://initd.org/tracker/pysqlite>`_
 * MySQL:   `MySQLDB <http://sourceforge.net/projects/mysql-python>`_
-* Oracle:  `cx_Oracle <http://www.cxtools.net/default.aspx?nav=home>`_
-* MS-SQL:  `pyodbc <http://pyodbc.sourceforge.net/>`_ (recommended) `adodbapi <http://adodbapi.sourceforge.net/>`_  `pymssql <http://pymssql.sourceforge.net/>`_
+* Oracle:  `cx_Oracle <http://cx-oracle.sourceforge.net/>`_
+* MS-SQL, MSAccess:  `pyodbc <http://pyodbc.sourceforge.net/>`_ (recommended) `adodbapi <http://adodbapi.sourceforge.net/>`_  `pymssql <http://pymssql.sourceforge.net/>`_
 * Firebird:  `kinterbasdb <http://kinterbasdb.sourceforge.net/>`_
 * Informix:  `informixdb <http://informixdb.sourceforge.net/>`_
+* DB2/Informix IDS: `ibm-db <http://code.google.com/p/ibm-db/>`_
+* Sybase:   TODO
+* MAXDB:    TODO
 
 The SQLAlchemy Wiki contains a page of database notes, describing whatever quirks and behaviors have been observed.  Its a good place to check for issues with specific databases.  `Database Notes <http://www.sqlalchemy.org/trac/wiki/DatabaseNotes>`_
 
@@ -99,7 +104,7 @@ Available drivernames are ``sqlite``, ``mysql``, ``postgres``, ``oracle``, ``mss
     # mssql via a DSN connection
     mssql_db = create_engine('mssql://username:password@/?dsn=mydsn') 
 
-The ``Engine`` will ask the connection pool for a connection when the ``connect()`` or ``execute()`` methods are called.  The default connection pool, ``QueuePool``, as well as the default connection pool used with SQLite, ``SingletonThreadPool``, will open connections to the database on an as-needed basis.  As concurrent statements are executed, ``QueuePool`` will grow its pool of connections to a default size of five, and will allow a default "overflow" of ten.   Since the ``Engine`` is essentially "home base" for the connection pool, it follows that you should keep a single ``Engine`` per database established within an application, rather than creating a new one for each connection.
+The :class:`~sqlalchemy.engine.base.Engine` will ask the connection pool for a connection when the ``connect()`` or ``execute()`` methods are called.  The default connection pool, :class:`~sqlalchemy.pool.QueuePool`, as well as the default connection pool used with SQLite, :class:`~sqlalchemy.pool.SingletonThreadPool`, will open connections to the database on an as-needed basis.  As concurrent statements are executed, :class:`~sqlalchemy.pool.QueuePool` will grow its pool of connections to a default size of five, and will allow a default "overflow" of ten.   Since the ``Engine`` is essentially "home base" for the connection pool, it follows that you should keep a single :class:`~sqlalchemy.engine.base.Engine` per database established within an application, rather than creating a new one for each connection.
 
 Custom DBAPI connect() arguments
 --------------------------------
@@ -139,33 +144,14 @@ Keyword options can also be specified to ``create_engine()``, following the stri
 
     db = create_engine('postgres://...', encoding='latin1', echo=True)
 
-Options common to all database dialects are as follows:
-
-* ``assert_unicode=False`` - When set to ``True`` alongside convert_unicode=``True``, asserts that incoming string bind parameters are instances of ``unicode``, otherwise raises an error.  Only takes effect when ``convert_unicode==True``.  This flag is also available on the ``String`` type and its descendants. New in 0.4.2.  
-* ``connect_args`` - a dictionary of options which will be passed directly to the DBAPI's ``connect()`` method as additional keyword arguments.
-* ``convert_unicode=False`` - if set to True, all String/character based types will convert Unicode values to raw byte values going into the database, and all raw byte values to Python Unicode coming out in result sets.  This is an engine-wide method to provide unicode conversion across the board.  For unicode conversion on a column-by-column level, use the ``Unicode`` column type instead, described in `types`.
-* ``creator`` - a callable which returns a DBAPI connection.  This creation function will be passed to the underlying connection pool and will be used to create all new database connections.  Usage of this function causes connection parameters specified in the URL argument to be bypassed.
-* ``echo=False`` - if True, the Engine will log all statements as well as a repr() of their parameter lists to the engines logger, which defaults to sys.stdout.  The ``echo`` attribute of ``Engine`` can be modified at any time to turn logging on and off.  If set to the string ``"debug"``, result rows will be printed to the standard output as well.  This flag ultimately controls a Python logger; see `dbengine_logging` at the end of this chapter for information on how to configure logging directly.
-* ``echo_pool=False`` - if True, the connection pool will log all checkouts/checkins to the logging stream, which defaults to sys.stdout.  This flag ultimately controls a Python logger; see `dbengine_logging` for information on how to configure logging directly.
-* ``encoding='utf-8'`` - the encoding to use for all Unicode translations, both by engine-wide unicode conversion as well as the ``Unicode`` type object.
-* ``label_length=None`` - optional integer value which limits the size of dynamically generated column labels to that many characters.  If less than 6, labels are generated as "_(counter)".  If ``None``, the value of ``dialect.max_identifier_length`` is used instead.
-* ``module=None`` - used by database implementations which support multiple DBAPI modules, this is a reference to a DBAPI2 module to be used instead of the engine's default module.  For Postgres, the default is psycopg2.  For Oracle, it's cx_Oracle.
-* ``pool=None`` - an already-constructed instance of :class:`~sqlalchemy.pool.Pool`, such as a :class:`~sqlalchemy.pool.QueuePool` instance.  If non-None, this pool will be used directly as the underlying connection pool for the engine, bypassing whatever connection parameters are present in the URL argument.  For information on constructing connection pools manually, see `pooling`.
-* ``poolclass=None`` - a :class:`~sqlalchemy.pool.Pool` subclass, which will be used to create a connection pool instance using the connection parameters given in the URL.  Note this differs from ``pool`` in that you don't actually instantiate the pool in this case, you just indicate what type of pool to be used.
-* ``max_overflow=10`` - the number of connections to allow in connection pool "overflow", that is connections that can be opened above and beyond the pool_size setting, which defaults to five.  this is only used with ``QueuePool``.
-* ``pool_size=5`` - the number of connections to keep open inside the connection pool.  This used with ``QueuePool`` as well as ``SingletonThreadPool``.
-* ``pool_recycle=-1`` - this setting causes the pool to recycle connections after the given number of seconds has passed.  It defaults to -1, or no timeout.  For example, setting to 3600 means connections will be recycled after one hour.  Note that MySQL in particular will ``disconnect automatically`` if no activity is detected on a connection for eight hours (although this is configurable with the MySQLDB connection itself and the  server configuration as well).
-* ``pool_timeout=30`` - number of seconds to wait before giving up on getting a connection from the pool.  This is only used with ``QueuePool``.
-* ``strategy='plain'`` - used to invoke alternate ``Engine`` implementations.  Currently available is the ``threadlocal`` strategy, which is described in  :ref:`threadlocal_strategy`.
+Options common to all database dialects are described at :func:`~sqlalchemy.create_engine`.
 
 More On Connections 
 ====================
 
-Recall from the beginning of this section that the Engine provides a ``connect()`` method which returns a ``Connection`` object.  ``Connection`` is a *proxy* object which maintains a reference to a DBAPI connection instance.  The ``close()`` method on ``Connection`` does not actually close the DBAPI connection, but instead returns it to the connection pool referenced by the ``Engine``.  ``Connection`` will also automatically return its resources to the connection pool when the object is garbage collected, i.e. its ``__del__()`` method is called.  When using the standard C implementation of Python, this method is usually called immediately as soon as the object is dereferenced.  With other Python implementations such as Jython, this is not so guaranteed.  
+Recall from the beginning of this section that the Engine provides a ``connect()`` method which returns a ``Connection`` object.  ``Connection`` is a *proxy* object which maintains a reference to a DBAPI connection instance.  The ``close()`` method on ``Connection`` does not actually close the DBAPI connection, but instead returns it to the connection pool referenced by the ``Engine``.  ``Connection`` will also automatically return its resources to the connection pool when the object is garbage collected, i.e. its ``__del__()`` method is called.  When using the standard C implementation of Python, this method is usually called immediately as soon as the object is dereferenced.  With other Python implementations such as Jython, this is not so guaranteed.
     
-The ``execute()`` methods on both ``Engine`` and ``Connection`` can also receive SQL clause constructs as well:
-
-.. sourcecode:: python+sql
+The ``execute()`` methods on both ``Engine`` and ``Connection`` can also receive SQL clause constructs as well::
 
     connection = engine.connect()
     result = connection.execute(select([table1], table1.c.col1==5))
@@ -175,9 +161,8 @@ The ``execute()`` methods on both ``Engine`` and ``Connection`` can also receive
 
 The above SQL construct is known as a ``select()``.  The full range of SQL constructs available are described in `sql`.
 
-Both ``Connection`` and ``Engine`` fulfill an interface known as ``Connectable`` which specifies common functionality between the two objects, namely being able to call ``connect()`` to return a ``Connection`` object (``Connection`` just returns itself), and being able to call ``execute()`` to get a result set.   Following this, most SQLAlchemy functions and objects which accept an ``Engine`` as a parameter or attribute with which to execute SQL will also accept a ``Connection``.  As of SQLAlchemy 0.3.9, this argument is named ``bind``.
+Both ``Connection`` and ``Engine`` fulfill an interface known as ``Connectable`` which specifies common functionality between the two objects, namely being able to call ``connect()`` to return a ``Connection`` object (``Connection`` just returns itself), and being able to call ``execute()`` to get a result set.   Following this, most SQLAlchemy functions and objects which accept an ``Engine`` as a parameter or attribute with which to execute SQL will also accept a ``Connection``.  As of SQLAlchemy 0.3.9, this argument is named ``bind``::
 
-    {python title="Specify Engine or Connection"}
     engine = create_engine('sqlite:///:memory:')
     
     # specify some Table metadata
@@ -193,8 +178,8 @@ Both ``Connection`` and ``Engine`` fulfill an interface known as ``Connectable``
 
 Connection facts:
 
- * the Connection object is **not threadsafe**.  While a Connection can be shared among threads using properly synchronized access, this is also not recommended as many DBAPIs have issues with, if not outright disallow, sharing of connection state between threads.
- * The Connection object represents a single dbapi connection checked out from the connection pool.  In this state, the connection pool has no affect upon the connection, including its expiration or timeout state.  For the connection pool to properly manage connections, **connections should be returned to the connection pool (i.e. ``connection.close()``) whenever the connection is not in use**.  If your application has a need for management of multiple connections or is otherwise long running (this includes all web applications, threaded or not), don't hold a single connection open at the module level.
+* the Connection object is **not threadsafe**.  While a Connection can be shared among threads using properly synchronized access, this is also not recommended as many DBAPIs have issues with, if not outright disallow, sharing of connection state between threads.
+* The Connection object represents a single dbapi connection checked out from the connection pool.  In this state, the connection pool has no affect upon the connection, including its expiration or timeout state.  For the connection pool to properly manage connections, **connections should be returned to the connection pool (i.e. ``connection.close()``) whenever the connection is not in use**.  If your application has a need for management of multiple connections or is otherwise long running (this includes all web applications, threaded or not), don't hold a single connection open at the module level.
  
 Using Transactions with Connection 
 ===================================
@@ -246,8 +231,8 @@ Note that SQLAlchemy's Object Relational Mapper also provides a way to control t
 
 Transaction Facts:
 
- * the Transaction object, just like its parent Connection, is **not threadsafe**.
- * SQLAlchemy 0.4 will feature transactions with two-phase commit capability as well as SAVEPOINT capability.
+* the Transaction object, just like its parent Connection, is **not threadsafe**.
+* SQLAlchemy 0.4 will feature transactions with two-phase commit capability as well as SAVEPOINT capability.
 
 Understanding Autocommit
 ------------------------

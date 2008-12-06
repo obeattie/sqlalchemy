@@ -1,4 +1,4 @@
-.. _pooling:
+.. _pooling_toplevel:
 
 Connection Pooling
 ==================
