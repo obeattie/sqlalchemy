@@ -1,4 +1,4 @@
-.. _unitofwork:
+.. _session:
 
 =================
 Using the Session

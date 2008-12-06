@@ -597,10 +597,10 @@ The ``relation()`` function is extremely flexible, and could just have easily be
 .. sourcecode:: python+sql
 
     class User(Base):
-        ....
+        # ....
         addresses = relation(Address, order_by=Address.id, backref="user")
 
-We are also free to not define a backref, and to define the ``relation()`` only on one class and not the other.   It is also possible to define two separate ``relation()``s for either direction, which is generally safe for many-to-one and one-to-many relations, but not for many-to-many relations.
+We are also free to not define a backref, and to define the func:`relation()` only on one class and not the other.   It is also possible to define two separate :func:`relation` constructs for either direction, which is generally safe for many-to-one and one-to-many relations, but not for many-to-many relations.
 
 When using the ``declarative`` extension, ``relation()`` gives us the option to use strings for most arguments that concern the target class, in the case that the target class has not yet been defined.  This **only** works in conjunction with ``declarative``:
 
@@ -1117,7 +1117,7 @@ The declarative setup is as follows:
     ...     def __init__(self, keyword):
     ...         self.keyword = keyword
 
-Above, the many-to-many relation above is ``BlogPost.keywords``.  The defining feature of a many to many relation is the ``secondary`` keyword argument which references a ``Table`` object representing the association table.  This table only contains columns which reference the two sides of the relation; if it has *any* other columns, such as its own primary key, or foreign keys to other tables, SQLAlchemy requires a different usage pattern called the "association object", described at `advdatamapping_relation_patterns_association`.
+Above, the many-to-many relation above is ``BlogPost.keywords``.  The defining feature of a many to many relation is the ``secondary`` keyword argument which references a ``Table`` object representing the association table.  This table only contains columns which reference the two sides of the relation; if it has *any* other columns, such as its own primary key, or foreign keys to other tables, SQLAlchemy requires a different usage pattern called the "association object", described at `association_pattern`.
 
 The many-to-many relation is also bi-directional using the ``backref`` keyword.  This is the one case where usage of ``backref`` is generally required, since if a separate ``posts`` relation were added to the ``Keyword`` entity, both relations would independently add and remove rows from the ``post_keywords`` table and produce conflicts.
 
@@ -1243,10 +1243,8 @@ Or we can use Wendy's own ``posts`` relation, which is a "dynamic" relation, to 
 Further Reference 
 ==================
 
-Generated Documentation for Query: :class:`sqlalchemy.orm.query.Query`
+Query Reference: :ref:`query_api`
 
-ORM Generated Docs: :ref:`sqlalchemy_orm`
+Further information on mapping setups are in :ref:`datamapping`.
 
-Further information on mapping setups are in :ref:`advdatamapping`.
-
-Further information on working with Sessions: :ref:`unitofwork`.
+Further information on working with Sessions: :ref:`session`.

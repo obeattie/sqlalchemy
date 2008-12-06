@@ -27,8 +27,6 @@ call::
      'children': relation(Children)
   }
 
-.. autofunction:: aliased
-
 .. autofunction:: backref
 
 .. autofunction:: column_property
@@ -45,24 +43,12 @@ call::
 
 .. autofunction:: synonym
 
-Query Options
--------------
+Decorators
+----------
 
-Options which are passed to ``query.options()``, to affect the behavior of loading.
+.. autofunction:: reconstructor
 
-.. autofunction:: contains_eager
-
-.. autofunction:: defer
-
-.. autofunction:: eagerload
-
-.. autofunction:: eagerload_all
-
-.. autofunction:: extension
-
-.. autofunction:: lazyload
-
-.. autofunction:: undefer
+.. autofunction:: validates
 
 Utilities
 ---------

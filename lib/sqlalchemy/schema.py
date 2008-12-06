@@ -408,7 +408,7 @@ class Table(SchemaItem, expression.TableClause):
                 args.append(c.copy(schema=schema))
             return Table(self.name, metadata, schema=schema, *args)
 
-class Column(SchemaItem, expression._ColumnClause):
+class Column(SchemaItem, expression.ColumnClause):
     """Represent a column in a database table.
 
     This is a subclass of ``expression.ColumnClause`` and represents an actual
@@ -719,7 +719,7 @@ class Column(SchemaItem, expression._ColumnClause):
             return [x for x in (self.default, self.onupdate) if x is not None] + \
                 list(self.foreign_keys) + list(self.constraints)
         else:
-            return expression._ColumnClause.get_children(self, **kwargs)
+            return expression.ColumnClause.get_children(self, **kwargs)
 
 
 class ForeignKey(SchemaItem):
@@ -1727,8 +1727,6 @@ class ThreadLocalMetaData(MetaData):
     ``connect()``.  You can also re-bind dynamically multiple times per
     thread, just like a regular ``MetaData``.
 
-    Use this type of MetaData when your tables are present in more than one
-    database and you need to address them simultanesouly.
     """
 
     __visit_name__ = 'metadata'

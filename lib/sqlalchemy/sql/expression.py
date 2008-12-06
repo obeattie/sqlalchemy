@@ -697,7 +697,7 @@ def label(name, obj):
 def column(text, type_=None):
     """Return a textual column clause, as would be in the columns clause of a ``SELECT`` statement.
 
-    The object returned is an instance of :class:`~sqlalchemy.sql.expression._ColumnClause`,
+    The object returned is an instance of :class:`~sqlalchemy.sql.expression.ColumnClause`,
     which represents the "syntactical" portion of the schema-level
     :class:`~sqlalchemy.schema.Column` object.
 
@@ -712,7 +712,7 @@ def column(text, type_=None):
       provide result-set translation for this column.
 
     """
-    return _ColumnClause(text, type_=type_)
+    return ColumnClause(text, type_=type_)
 
 def literal_column(text, type_=None):
     """Return a textual column expression, as would be in the columns
@@ -736,7 +736,7 @@ def literal_column(text, type_=None):
       column.  If left as None the type will be NullType.
 
     """
-    return _ColumnClause(text, type_=type_, is_literal=True)
+    return ColumnClause(text, type_=type_, is_literal=True)
 
 def table(name, *columns):
     """Return a :class:`~sqlalchemy.sql.expression.Table` object.
@@ -767,7 +767,7 @@ def bindparam(key, value=None, shortname=None, type_=None, unique=False):
       mostly useful with value-based bind params.
 
     """
-    if isinstance(key, _ColumnClause):
+    if isinstance(key, ColumnClause):
         return _BindParamClause(key.name, value, type_=key.type, unique=unique, shortname=shortname)
     else:
         return _BindParamClause(key, value, type_=type_, unique=unique, shortname=shortname)
@@ -1605,10 +1605,10 @@ class ColumnElement(ClauseElement, _CompareMixin):
         """
 
         if name:
-            co = _ColumnClause(name, selectable, type_=getattr(self, 'type', None))
+            co = ColumnClause(name, selectable, type_=getattr(self, 'type', None))
         else:
             name = str(self)
-            co = _ColumnClause(self.anon_label, selectable, type_=getattr(self, 'type', None))
+            co = ColumnClause(self.anon_label, selectable, type_=getattr(self, 'type', None))
 
         co.proxies = [self]
         selectable.columns[name] = co
@@ -2706,12 +2706,12 @@ class _Label(ColumnElement):
         e.proxies.append(self)
         return e
 
-class _ColumnClause(_Immutable, ColumnElement):
+class ColumnClause(_Immutable, ColumnElement):
     """Represents a generic column expression from any textual string.
 
     This includes columns associated with tables, aliases and select
     statements, but also any arbitrary text.  May or may not be bound
-    to an underlying ``Selectable``.  ``_ColumnClause`` is usually
+    to an underlying ``Selectable``.  ``ColumnClause`` is usually
     created publically via the ``column()`` function or the
     ``literal_column()`` function.
 
@@ -2722,15 +2722,15 @@ class _ColumnClause(_Immutable, ColumnElement):
       parent selectable.
 
     type
-      ``TypeEngine`` object which can associate this ``_ColumnClause``
+      ``TypeEngine`` object which can associate this ``ColumnClause``
       with a type.
 
     is_literal
-      if True, the ``_ColumnClause`` is assumed to be an exact
+      if True, the ``ColumnClause`` is assumed to be an exact
       expression that will be delivered to the output with no quoting
       rules applied regardless of case sensitive settings.  the
       ``literal_column()`` function is usually used to create such a
-      ``_ColumnClause``.
+      ``ColumnClause``.
       
     """
     def __init__(self, text, selectable=None, type_=None, is_literal=False):
@@ -2771,7 +2771,7 @@ class _ColumnClause(_Immutable, ColumnElement):
         if name is None:
             return self
         else:
-            return super(_ColumnClause, self).label(name)
+            return super(ColumnClause, self).label(name)
 
     @property
     def _from_objects(self):
@@ -2787,7 +2787,7 @@ class _ColumnClause(_Immutable, ColumnElement):
         # propagate the "is_literal" flag only if we are keeping our name,
         # otherwise its considered to be a label
         is_literal = self.is_literal and (name is None or name == self.name)
-        c = _ColumnClause(name or self.name, selectable=selectable, type_=self.type, is_literal=is_literal)
+        c = ColumnClause(name or self.name, selectable=selectable, type_=self.type, is_literal=is_literal)
         c.proxies = [self]
         if attach:
             selectable.columns[c.name] = c
@@ -3016,6 +3016,8 @@ class _ScalarSelect(_Grouping):
         return list(self.inner_columns)[0]._make_proxy(selectable, name)
 
 class CompoundSelect(_SelectBaseMixin, FromClause):
+    """Forms the basis of ``UNION``, ``UNION ALL``, and other SELECT-based set operations."""
+    
     def __init__(self, keyword, *selects, **kwargs):
         self._should_correlate = kwargs.pop('correlate', False)
         self.keyword = keyword

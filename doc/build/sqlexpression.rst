@@ -834,7 +834,9 @@ If we wanted to use our ``calculate`` statement twice with different bind parame
 
     >>> s.compile().params
     {'x_2': 5, 'y_2': 12, 'y_1': 45, 'x_1': 17}
-    
+
+See also :attr:`sqlalchemy.sql.expression.func`.
+
 Unions and Other Set Operations 
 -------------------------------
 

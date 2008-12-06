@@ -15,20 +15,8 @@ Main Documentation
     dbengine
     metadata
     plugins
-
-.. _api_reference:
-
-API Reference
--------------
-
-.. toctree::
-    :maxdepth: 3
-
-    reference/sqlalchemy/index
-    reference/orm/index
-    reference/dialects/index
-    reference/ext/index
-
+    reference/index
+    
 Indices and tables
 ------------------
 

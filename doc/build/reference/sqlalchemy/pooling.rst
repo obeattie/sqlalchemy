@@ -1,8 +1,9 @@
 .. _pooling:
-.. module:: sqlalchemy.pool
 
 Connection Pooling
 ==================
+
+.. module:: sqlalchemy.pool
 
 SQLAlchemy ships with a connection pooling framework that integrates
 with the Engine system and can also be used on its own to manage plain

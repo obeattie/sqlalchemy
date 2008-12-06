@@ -1,3 +1,4 @@
+## coding: utf-8
 <%inherit file="${context['mako_layout']}"/>
 
 <%def name="headers()">
@@ -56,7 +57,7 @@
 
         <div class="topnav">
             <div id="pagecontrol">
-                <a href="${pathto('index')}#api-reference">API Reference</a>
+                <a href="${pathto('reference/index')}">API Reference</a>
                 |
                 <a href="${pathto('genindex')}">Index</a>
             
@@ -67,6 +68,15 @@
             
             <div class="navbanner">
                 <a class="totoc" href="${pathto(master_doc)}">Table of Contents</a>
+                % if parents:
+                    % for parent in parents:
+                        » <a href="${parent['link']|h}" title="${parent['title']}">${parent['title']}</a>
+                    % endfor
+                % endif
+                % if current_page_name != master_doc:
+                » ${self.show_title()} 
+                % endif
+                
                 ${prevnext()}
                 <h2>
                     ${self.show_title()} 

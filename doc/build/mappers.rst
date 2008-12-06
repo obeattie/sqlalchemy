@@ -1,17 +1,12 @@
-.. _advdatamapping:
+.. _datamapping:
 
 ====================
 Mapper Configuration
 ====================
-
-This section references most major configurational patterns involving the :func:`sqlalchemy.orm.mapper` and :func:`sqlalchemy.orm.relation` functions.  It assumes you've worked through :ref:`datamapping` and know how to construct and use rudimentary mappers and relations.
+This section references most major configurational patterns involving the :func:`~sqlalchemy.orm.mapper` and :func:`~sqlalchemy.orm.relation` functions.  It assumes you've worked through :ref:`datamapping` and know how to construct and use rudimentary mappers and relations.
 
 Mapper Configuration
 ====================
-
-Full API documentation for the ORM: :mod:`sqlalchemy.orm`
-
-Options for the ``mapper()`` function: :func:`sqlalchemy.orm.mapper`
 
 Customizing Column Properties 
 ------------------------------
@@ -139,7 +134,7 @@ Simple Validators
 ~~~~~~~~~~~~~~~~~~
 
 
-A quick way to add a "validation" routine to an attribute is to use the ``@validates`` decorator.  This is a shortcut for using the :class:`sqlalchemy.orm.util.Validator` attribute extension with individual column or relation based attributes.   An attribute validator can raise an exception, halting the process of mutating the attribute's value, or can change the given value into something different.   Validators, like all attribute extensions, are only called by normal userland code; they are not issued when the ORM is populating the object.
+A quick way to add a "validation" routine to an attribute is to use the :func:`~sqlalchemy.orm.validates` decorator.  This is a shortcut for using the :class:`sqlalchemy.orm.util.Validator` attribute extension with individual column or relation based attributes.   An attribute validator can raise an exception, halting the process of mutating the attribute's value, or can change the given value into something different.   Validators, like all attribute extensions, are only called by normal userland code; they are not issued when the ORM is populating the object.
 
 .. sourcecode:: python+sql
 
@@ -168,7 +163,6 @@ Validators also receive collection events, when items are added to a collection:
     
 Using Descriptors 
 ~~~~~~~~~~~~~~~~~~
-
 
 A more comprehensive way to produce modified behavior for an attribute is to use descriptors.   These are commonly used in Python using the ``property()`` function.   The standard SQLAlchemy technique for descriptors is to create a plain descriptor, and to have it read/write from a mapped attribute with a different name.  To have the descriptor named the same as a column, map the column under a different name, i.e.:
 
@@ -206,11 +200,12 @@ The ``email`` attribute is now usable in the same way as any other mapped attrib
 
 If the mapped class does not provide a property, the ``synonym()`` construct will create a default getter/setter object automatically.
 
+.. _custom_comparators:
+
 Custom Comparators 
 ~~~~~~~~~~~~~~~~~~~
 
-
-The expressions returned by comparison operations, such as ``User.name=='ed'``, can be customized.  SQLAlchemy attributes generate these expressions using `sqlalchemy.orm.interfaces_PropComparator` objects, which provide common Python expression overrides including ``__eq__()``, ``__ne__()``, ``__lt__()``, and so on.  Any mapped attribute can be passed a user-defined class via the ``comparator_factory`` keyword argument, which subclasses the appropriate ``PropComparator`` in use, which can provide any or all of these methods:
+The expressions returned by comparison operations, such as ``User.name=='ed'``, can be customized.  SQLAlchemy attributes generate these expressions using :class:`~sqlalchemy.orm.interfaces.PropComparator` objects, which provide common Python expression overrides including ``__eq__()``, ``__ne__()``, ``__lt__()``, and so on.  Any mapped attribute can be passed a user-defined class via the ``comparator_factory`` keyword argument, which subclasses the appropriate ``PropComparator`` in use, which can provide any or all of these methods:
 
 .. sourcecode:: python+sql
 
@@ -230,7 +225,7 @@ Above, comparisons on the ``email`` column are wrapped in the SQL lower() functi
     >>> str(EmailAddress.email == 'SomeAddress@foo.com')
     lower(addresses.email) = lower(:lower_1)
 
-The ``__clause_element__()`` method is provided by the base ``Comparator`` class in use, and represents the SQL element which best matches what this attribute represents.  For a column-based attribute, it's the mapped column.  For a composite attribute, it's a ``sqlalchemy.sql.expression.ClauseList`` consisting of each column represented.  For a relation, it's the table mapped by the local mapper (not the remote mapper).  ``__clause_element__()`` should be honored by the custom comparator class in most cases since the resulting element will be applied any translations which are in effect, such as the correctly aliased member when using an ``aliased()`` construct or certain ``with_polymorphic()`` scenarios.
+The ``__clause_element__()`` method is provided by the base ``Comparator`` class in use, and represents the SQL element which best matches what this attribute represents.  For a column-based attribute, it's the mapped column.  For a composite attribute, it's a :class:`~sqlalchemy.sql.expression.ClauseList` consisting of each column represented.  For a relation, it's the table mapped by the local mapper (not the remote mapper).  ``__clause_element__()`` should be honored by the custom comparator class in most cases since the resulting element will be applied any translations which are in effect, such as the correctly aliased member when using an ``aliased()`` construct or certain ``with_polymorphic()`` scenarios.
 
 There are four kinds of ``Comparator`` classes which may be subclassed, as according to the type of mapper property configured:
 
@@ -246,7 +241,6 @@ The ``comparator_factory`` argument is accepted by all ``MapperProperty``-produc
 Composite Column Types 
 -----------------------
 
-
 Sets of columns can be associated with a single datatype.  The ORM treats the group of columns like a single column which accepts and returns objects using the custom datatype you provide.  In this example, we'll create a table ``vertices`` which stores a pair of x/y coordinates, and a custom datatype ``Point`` which is a composite type of an x and y column:
 
 .. sourcecode:: python+sql
@@ -259,9 +253,7 @@ Sets of columns can be associated with a single datatype.  The ORM treats the gr
         Column('y2', Integer),
         )
 
-The requirements for the custom datatype class are that it have a constructor which accepts positional arguments corresponding to its column format, and also provides a method ``__composite_values__()`` which returns the state of the object as a list or tuple, in order of its column-based attributes.  It also should supply adequate ``__eq__()`` and ``__ne__()`` methods which test the equality of two instances, and may optionally provide a ``__set_composite_values__`` method which is used to set internal state in some cases (typically when default values have been generated during a flush):
-
-.. sourcecode:: python+sql
+The requirements for the custom datatype class are that it have a constructor which accepts positional arguments corresponding to its column format, and also provides a method ``__composite_values__()`` which returns the state of the object as a list or tuple, in order of its column-based attributes.  It also should supply adequate ``__eq__()`` and ``__ne__()`` methods which test the equality of two instances, and may optionally provide a ``__set_composite_values__`` method which is used to set internal state in some cases (typically when default values have been generated during a flush)::
 
     class Point(object):
         def __init__(self, x, y):
@@ -279,9 +271,7 @@ The requirements for the custom datatype class are that it have a constructor wh
 
 If ``__set_composite_values__()`` is not provided, the names of the mapped columns are taken as the names of attributes on the object, and ``setattr()`` is used to set data.
 
-Setting up the mapping uses the ``composite()`` function:
-
-.. sourcecode:: python+sql
+Setting up the mapping uses the :func:`~sqlalchemy.orm.composite()` function::
 
     class Vertex(object):
         pass
@@ -291,9 +281,7 @@ Setting up the mapping uses the ``composite()`` function:
         'end': composite(Point, vertices.c.x2, vertices.c.y2)
     })
 
-We can now use the ``Vertex`` instances as well as querying as though the ``start`` and ``end`` attributes are regular scalar attributes:
-
-.. sourcecode:: python+sql
+We can now use the ``Vertex`` instances as well as querying as though the ``start`` and ``end`` attributes are regular scalar attributes::
 
     session = Session()
     v = Vertex(Point(3, 4), Point(5, 6))
@@ -301,9 +289,7 @@ We can now use the ``Vertex`` instances as well as querying as though the ``star
 
     v2 = session.query(Vertex).filter(Vertex.start == Point(3, 4))
 
-The "equals" comparison operation by default produces an AND of all corresponding columns equated to one another.  This can be changed using the ``comparator_factory``, described in `advdatamapping_mapper_attributes_comparators`
-
-.. sourcecode:: python+sql
+The "equals" comparison operation by default produces an AND of all corresponding columns equated to one another.  This can be changed using the ``comparator_factory``, described in :ref:`custom_comparators`::
 
     from sqlalchemy.orm.properties import CompositeProperty
     from sqlalchemy import sql
@@ -324,12 +310,9 @@ The "equals" comparison operation by default produces an AND of all correspondin
 Controlling Ordering 
 ---------------------
 
-
 As of version 0.5, the ORM does not generate ordering for any query unless explicitly configured.
 
-The "default" ordering for a collection, which applies to list-based collections, can be configured using the ``order_by`` keyword argument on ``relation()``:
-
-.. sourcecode:: python+sql
+The "default" ordering for a collection, which applies to list-based collections, can be configured using the ``order_by`` keyword argument on ``relation()``::
 
     mapper(Address, addresses_table)
 
@@ -338,15 +321,11 @@ The "default" ordering for a collection, which applies to list-based collections
         'addresses': relation(Address, order_by=addresses_table.c.address_id)
     })
 
-Note that when using eager loaders with relations, the tables used by the eager load's join are anonymously aliased.  You can only order by these columns if you specify it at the ``relation()`` level.  To control ordering at the query level based on a related table, you ``join()`` to that relation, then order by it:
-
-.. sourcecode:: python+sql
+Note that when using eager loaders with relations, the tables used by the eager load's join are anonymously aliased.  You can only order by these columns if you specify it at the ``relation()`` level.  To control ordering at the query level based on a related table, you ``join()`` to that relation, then order by it::
 
     session.query(User).join('addresses').order_by(Address.street)
 
-Ordering for rows loaded through ``Query`` is usually specified using the ``order_by()`` generative method.  There is also an option to set a default ordering for Queries which are against a single mapped entity and where there was no explicit ``order_by()`` stated, which is the ``order_by`` keyword argument to ``mapper()``:
-
-.. sourcecode:: python+sql
+Ordering for rows loaded through ``Query`` is usually specified using the ``order_by()`` generative method.  There is also an option to set a default ordering for Queries which are against a single mapped entity and where there was no explicit ``order_by()`` stated, which is the ``order_by`` keyword argument to ``mapper()``::
 
     # order by a column
     mapper(User, users_table, order_by=users_table.c.user_id)
@@ -358,7 +337,6 @@ Above, a ``Query`` issued for the ``User`` class will use the value of the mappe
 
 Mapping Class Inheritance Hierarchies 
 --------------------------------------
-
 
 SQLAlchemy supports three forms of inheritance:  *single table inheritance*, where several types of classes are stored in one table, *concrete table inheritance*, where each type of class is stored in its own table, and *joined table inheritance*, where the parent/child classes are stored in their own tables that are joined together in a select.  Whereas support for single and joined table inheritance is strong, concrete table inheritance is a less common scenario with some particular problems so is not quite as flexible.
 
@@ -391,10 +369,7 @@ For the following sections, assume this class relationship:
 Joined Table Inheritance 
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
-
-In joined table inheritance, each class along a particular classes' list of parents is represented by a unique table.  The total set of attributes for a particular instance is represented as a join along all tables in its inheritance path.  Here, we first define a table to represent the ``Employee`` class.  This table will contain a primary key column (or columns), and a column for each attribute that's represented by ``Employee``.  In this case it's just ``name``:
-
-.. sourcecode:: python+sql
+In joined table inheritance, each class along a particular classes' list of parents is represented by a unique table.  The total set of attributes for a particular instance is represented as a join along all tables in its inheritance path.  Here, we first define a table to represent the ``Employee`` class.  This table will contain a primary key column (or columns), and a column for each attribute that's represented by ``Employee``.  In this case it's just ``name``::
 
     employees = Table('employees', metadata,
        Column('employee_id', Integer, primary_key=True),
@@ -404,9 +379,7 @@ In joined table inheritance, each class along a particular classes' list of pare
 
 The table also has a column called ``type``.  It is strongly advised in both single- and joined- table inheritance scenarios that the root table contains a column whose sole purpose is that of the **discriminator**; it stores a value which indicates the type of object represented within the row.  The column may be of any desired datatype.  While there are some "tricks" to work around the requirement that there be a discriminator column, they are more complicated to configure when one wishes to load polymorphically.
 
-Next we define individual tables for each of ``Engineer`` and ``Manager``, which contain columns that represent the attributes unique to the subclass they represent.  Each table also must contain a primary key column (or columns), and in most cases a foreign key reference to the parent table.  It is  standard practice that the same column is used for both of these roles, and that the column is also named the same as that of the parent table.  However this is optional in SQLAlchemy; separate columns may be used for primary key and parent-relation, the column may be named differently than that of the parent, and even a custom join condition can be specified between parent and child tables instead of using a foreign key. 
-
-.. sourcecode:: python+sql
+Next we define individual tables for each of ``Engineer`` and ``Manager``, which contain columns that represent the attributes unique to the subclass they represent.  Each table also must contain a primary key column (or columns), and in most cases a foreign key reference to the parent table.  It is  standard practice that the same column is used for both of these roles, and that the column is also named the same as that of the parent table.  However this is optional in SQLAlchemy; separate columns may be used for primary key and parent-relation, the column may be named differently than that of the parent, and even a custom join condition can be specified between parent and child tables instead of using a foreign key::
 
     engineers = Table('engineers', metadata,
        Column('employee_id', Integer, ForeignKey('employees.employee_id'), primary_key=True),
@@ -432,7 +405,6 @@ And that's it.  Querying against ``Employee`` will return a combination of ``Emp
 
 Controlling Which Tables are Queried 
 +++++++++++++++++++++++++++++++++++++
-
 
 The ``with_polymorphic()`` method of ``Query`` affects the specific subclass tables which the Query selects from.  Normally, a query such as this:
 
@@ -526,7 +498,6 @@ Using ``with_polymorphic()`` with ``Query`` will override the mapper-level ``wit
 Creating Joins to Specific Subtypes 
 ++++++++++++++++++++++++++++++++++++
 
-
 The ``of_type()`` method is a helper which allows the construction of joins along ``relation`` paths while narrowing the criterion to specific subclasses.  Suppose the ``employees`` table represents a collection of employees which are associated with a ``Company`` object.  We'll add a ``company_id`` column to the ``employees`` table and a new table ``companies``:
 
 .. sourcecode:: python+sql
@@ -591,7 +562,6 @@ The EXISTS subquery above selects from the join of ``employees`` to ``engineers`
 Single Table Inheritance
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-
 Single table inheritance is where the attributes of the base class as well as all subclasses are represented within a single table.  A column is present in the table for every attribute mapped to the base class and all subclasses; the columns which correspond to a single subclass are nullable.  This configuration looks much like joined-table inheritance except there's only one table.  In this case, a ``type`` column is required, as there would be no other way to discriminate between classes.  The table is specified in the base mapper only; for the inheriting classes, leave their ``table`` parameter blank:
 
 .. sourcecode:: python+sql
@@ -613,7 +583,6 @@ Note that the mappers for the derived classes Manager and Engineer omit the spec
 
 Concrete Table Inheritance
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
-
 
 This form of inheritance maps each class to a distinct table, as below:
 
@@ -687,7 +656,6 @@ Upon select, the polymorphic union produces a query like this:
 Using Relations with Inheritance 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-
 Both joined-table and single table inheritance scenarios produce mappings which are usable in relation() functions; that is, it's possible to map a parent object to a child object which is polymorphic.  Similarly, inheriting mappers can have ``relation()``s of their own at any level, which are inherited to each child class.  The only requirement for relations is that there is a table relationship between parent and child.  An example is the following modification to the joined table inheritance example, which sets a bi-directional relationship between ``Employee`` and ``Company``:
 
 .. sourcecode:: python+sql
@@ -711,7 +679,7 @@ Both joined-table and single table inheritance scenarios produce mappings which 
 
 SQLAlchemy has a lot of experience in this area; the optimized "outer join" approach can be used freely for parent and child relationships, eager loads are fully useable, query aliasing and other tricks are fully supported as well.
 
-In a concrete inheritance scenario, mapping ``relation()``s is more difficult since the distinct classes do not share a table.  In this case, you *can* establish a relationship from parent to child if a join condition can be constructed from parent to child, if each child table contains a foreign key to the parent:
+In a concrete inheritance scenario, mapping relations is more difficult since the distinct classes do not share a table.  In this case, you *can* establish a relationship from parent to child if a join condition can be constructed from parent to child, if each child table contains a foreign key to the parent:
 
 .. sourcecode:: python+sql
 
@@ -856,27 +824,16 @@ Versions of SQLAlchemy previous to 0.5 included another mapper flag called "enti
 Constructors and Object Initialization 
 ---------------------------------------
 
+Mapping imposes no restrictions or requirements on the constructor (``__init__``) method for the class. You are free to require any arguments for the function
+that you wish, assign attributes to the instance that are unknown to the ORM, and generally do anything else you would normally do when writing a constructor
+for a Python class.
 
-Mapping imposes no restrictions or requirements on the constructor
-(``__init__``) method for the class.  You are free to require any
-arguments for the function that you wish, assign attributes to the
-instance that are unknown to the ORM, and generally do anything else
-you would normally do when writing a constructor for a Python class.
+The SQLAlchemy ORM does not call ``__init__`` when recreating objects from database rows. The ORM's process is somewhat akin to the Python standard library's
+``pickle`` module, invoking the low level ``__new__`` method and then quietly restoring attributes directly on the instance rather than calling ``__init__``.
 
-The SQLAlchemy ORM does not call ``__init__`` when recreating objects
-from database rows.  The ORM's process is somewhat akin to the Python
-standard library's ``pickle`` module, invoking the low level ``__new__``
-method and then quietly restoring attributes directly on the instance
-rather than calling ``__init__``.
-
-If you need to do some setup on database-loaded instances before
-they're ready to use, you can use the ``@reconstructor`` decorator to
-tag a method as the ORM counterpart to ``__init__``.  SQLAlchemy will
-call this method with no arguments every time it loads or reconstructs
-one of your instances.  This is useful for recreating transient
-properties that are normally assigned in your ``__init__``.
-
-.. sourcecode:: python+sql
+If you need to do some setup on database-loaded instances before they're ready to use, you can use the ``@reconstructor`` decorator to tag a method as the ORM
+counterpart to ``__init__``. SQLAlchemy will call this method with no arguments every time it loads or reconstructs one of your instances. This is useful for
+recreating transient properties that are normally assigned in your ``__init__``::
 
     from sqlalchemy import orm
 
@@ -890,28 +847,17 @@ properties that are normally assigned in your ``__init__``.
         def init_on_load(self):
             self.stuff = []
 
-When ``obj = MyMappedClass()`` is executed, Python calls the ``__init__``
-method as normal and the ``data`` argument is required.  When instances
-are loaded during a ``Query`` operation as in
-``query(MyMappedClass).one()``, ``init_on_load`` is called instead.
+When ``obj = MyMappedClass()`` is executed, Python calls the ``__init__`` method as normal and the ``data`` argument is required. When instances are loaded
+during a ``Query`` operation as in ``query(MyMappedClass).one()``, ``init_on_load`` is called instead.
 
-Any method may be tagged as the ``reconstructor``, even the ``__init__``
-method.  SQLAlchemy will call the reconstructor method with no
-arguments.  Scalar (non-collection) database-mapped attributes of the
-instance will be available for use within the function.
-Eagerly-loaded collections are generally not yet available and will
-usually only contain the first element.  ORM state changes made to
-objects at this stage will not be recorded for the next flush()
-operation, so the activity within a reconstructor should be
-conservative.
+Any method may be tagged as the ``reconstructor``, even the ``__init__`` method. SQLAlchemy will call the reconstructor method with no arguments. Scalar
+(non-collection) database-mapped attributes of the instance will be available for use within the function. Eagerly-loaded collections are generally not yet
+available and will usually only contain the first element. ORM state changes made to objects at this stage will not be recorded for the next flush()
+operation, so the activity within a reconstructor should be conservative.
 
-While the ORM does not call your ``__init__`` method, it will modify the
-class's ``__init__`` slightly.  The method is lightly wrapped to act as
-a trigger for the ORM, allowing mappers to be compiled automatically
-and will fire a ``init_instance`` event that ``MapperExtension``s may
-listen for.  ``MapperExtension``s can also listen for a
-``reconstruct_instance`` event, analogous to the ``reconstructor``
-decorator above.
+While the ORM does not call your ``__init__`` method, it will modify the class's ``__init__`` slightly. The method is lightly wrapped to act as a trigger for
+the ORM, allowing mappers to be compiled automatically and will fire a ``init_instance`` event that ``MapperExtension`` objectss may listen for.
+``MapperExtension`` objects can also listen for a ``reconstruct_instance`` event, analogous to the ``reconstructor`` decorator above.
 
 .. _extending_mapper:
 
@@ -932,9 +878,6 @@ Multiple extensions will be chained together and processed in order; they are sp
 
 Relation Configuration 
 =======================
-
-The full list of options for the ``relation()`` function: :func:`sqlalchemy.orm.relation`
-
 Basic Relational Patterns 
 --------------------------
 
@@ -942,7 +885,6 @@ A quick walkthrough of the basic relational patterns.
 
 One To Many 
 ~~~~~~~~~~~~
-
 
 A one to many relationship places a foreign key in the child table referencing the parent.   SQLAlchemy creates the relationship as a collection on the parent object containing instances of the child object.
 
@@ -1062,9 +1004,10 @@ For a bi-directional relationship, both sides of the relation contain a collecti
         'children': relation(Child, secondary=association_table, backref='parents')
     })
 
+.. _association_pattern:
+
 Association Object
 ~~~~~~~~~~~~~~~~~~
-
 
 The association object pattern is a variant on many-to-many:  it specifically is used when your association table contains additional columns beyond those which are foreign keys to the left and right tables.  Instead of using the ``secondary`` argument, you map a new class directly to the association table.  The left side of the relation references the association object via one-to-many, and the association class references the right side via many-to-one.
 
@@ -1122,7 +1065,7 @@ Working with the association pattern in its direct form requires that child obje
         print assoc.data
         print assoc.child
 
-To enhance the association object pattern such that direct access to the ``Association`` object is optional, SQLAlchemy provides the `plugins_associationproxy`.
+To enhance the association object pattern such that direct access to the ``Association`` object is optional, SQLAlchemy provides the :ref:`associationproxy`.
 
 **Important Note**:  it is strongly advised that the ``secondary`` table argument not be combined with the Association Object pattern, unless the ``relation()`` which contains the ``secondary`` argument is marked ``viewonly=True``.  Otherwise, SQLAlchemy may persist conflicting data to the underlying association table since it is represented by two conflicting mappings.  The Association Proxy pattern should be favored in the case where access to the underlying association data is only sometimes needed.
 
@@ -1132,9 +1075,7 @@ Adjacency List Relationships
 
 The **adjacency list** pattern is a common relational pattern whereby a table contains a foreign key reference to itself.  This is the most common and simple way to represent hierarchical data in flat tables.  The other way is the "nested sets" model, sometimes called "modified preorder".  Despite what many online articles say about modified preorder, the adjacency list model is probably the most appropriate pattern for the large majority of hierarchical storage needs, for reasons of concurrency, reduced complexity, and that modified preorder has little advantage over an application which can fully load subtrees into the application space.
 
-SQLAlchemy commonly refers to an adjacency list relation as a **self-referential mapper**.  In this example, we'll work with a single table called ``treenodes`` to represent a tree structure:
-
-.. sourcecode:: python+sql
+SQLAlchemy commonly refers to an adjacency list relation as a **self-referential mapper**.  In this example, we'll work with a single table called ``treenodes`` to represent a tree structure::
 
     nodes = Table('treenodes', metadata,
         Column('id', Integer, primary_key=True),
@@ -1142,17 +1083,15 @@ SQLAlchemy commonly refers to an adjacency list relation as a **self-referential
         Column('data', String(50)),
         )
 
-A graph such as the following:
+A graph such as the following::
 
-    {diagram}
     root --+---> child1
            +---> child2 --+--> subchild1
            |              +--> subchild2
            +---> child3
 
-Would be represented with data such as:
+Would be represented with data such as::
 
-    {diagram}
     id       parent_id     data
     ---      -------       ----
     1        NULL          root
@@ -1190,7 +1129,7 @@ And the bi-directional version combines both:
         'children': relation(Node, backref=backref('parent', remote_side=[nodes.c.id]))
     })
 
-There are several examples included with SQLAlchemy illustrating self-referential strategies; these include [basic_tree.py](http://www.sqlalchemy.org/trac/browser/sqlalchemy/trunk/examples/adjacencytree/basic_tree.py) and [optimized_al.py](http://www.sqlalchemy.org/trac/browser/sqlalchemy/trunk/examples/elementtree/optimized_al.py), the latter of which illustrates how to persist and search XML documents in conjunction with [ElementTree](http://effbot.org/zone/element-index.htm).
+There are several examples included with SQLAlchemy illustrating self-referential strategies; these include `basic_tree.py <http://www.sqlalchemy.org/trac/browser/sqlalchemy/trunk/examples/adjacencytree/basic_tree.py>`_ and `optimized_al.py <http://www.sqlalchemy.org/trac/browser/sqlalchemy/trunk/examples/elementtree/optimized_al.py>`_, the latter of which illustrates how to persist and search XML documents in conjunction with `ElementTree <http://effbot.org/zone/element-index.htm>`_.
 
 Self-Referential Query Strategies 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1596,17 +1535,14 @@ or more simply just use ``eagerload_all()``:
 
     session.query(A).options(eagerload_all('atob.btoc')).all()
 
-There are two other loader strategies available, **dynamic loading** and **no loading**; these are described in `advdatamapping_relation_largecollections`.
+There are two other loader strategies available, **dynamic loading** and **no loading**; these are described in :ref:`largecollections`.
 
 Routing Explicit Joins/Statements into Eagerly Loaded Collections 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+The behavior of :func:`eagerload()` is such that joins are created automatically, the results of which are routed into collections and scalar references on loaded objects.  It is often the case that a query already includes the necessary joins which represent a particular collection or scalar reference, and the joins added by the eagerload feature are redundant - yet you'd still like the collections/references to be populated.
 
-When full statement loads are used with ``Query``, the user defined SQL is used verbatim and the ``Query`` does not play any role in generating it.  In this scenario, if eager loading is desired, the ``Query`` should be informed as to what collections should also be loaded from the result set.  Similarly, Queries which compile their statement in the usual way may also have user-defined joins built in which are synonymous with what eager loading would normally produce, and it improves performance to utilize those same JOINs for both purposes, instead of allowing the eager load mechanism to generate essentially the same JOIN redundantly.   Yet another use case for such a feature is a Query which returns instances with a filtered view of their collections loaded, in which case the default eager load mechanisms need to be bypassed.
-
-The single option ``Query`` provides to control this is the ``contains_eager()`` option, which specifies the path of a single relationship to be eagerly loaded.  Like all relation-oriented options, it takes a string or Python descriptor as an argument.  Below it's used with a ``from_statement`` load:
-
-.. sourcecode:: python+sql
+For this SQLAlchemy supplies the :func:`contains_eager()` option.  This option is used in the same manner as the :func:`eagerload()` option except it is assumed that the ``Query`` will specify the appropriate joins explicitly.  Below it's used with a ``from_statement`` load::
 
     # mapping is the users->addresses mapping
     mapper(User, users_table, properties={
@@ -1622,9 +1558,7 @@ The single option ``Query`` provides to control this is the ``contains_eager()``
     # get results normally
     r = query.from_statement(statement)
 
-It works just as well with an inline ``Query.join()`` or ``Query.outerjoin()``:
-
-.. sourcecode:: python+sql
+It works just as well with an inline ``Query.join()`` or ``Query.outerjoin()``::
 
     session.query(User).outerjoin(User.addresses).options(contains_eager(User.addresses)).all()
 
@@ -1644,21 +1578,15 @@ If the "eager" portion of the statement is "aliased", the ``alias`` keyword argu
     adalias.user_id AS adalias_user_id, adalias.email_address AS adalias_email_address, (...other columns...)
     FROM users LEFT OUTER JOIN email_addresses AS email_addresses_1 ON users.user_id = email_addresses_1.user_id
 
-The path given as the argument to ``contains_eager()`` needs to be a full path from the starting entity.  For example if we were loading ``Users->orders->Order->items->Item``, the string version would look like:
-
-.. sourcecode:: python+sql
+The path given as the argument to ``contains_eager()`` needs to be a full path from the starting entity.  For example if we were loading ``Users->orders->Order->items->Item``, the string version would look like::
 
     query(User).options(contains_eager('orders', 'items'))
 
-The descriptor version like:
-
-.. sourcecode:: python+sql
+Or using the class-bound descriptor::
 
     query(User).options(contains_eager(User.orders, Order.items))
 
-A variant on ``contains_eager()`` is the ``contains_alias()`` option, which is used in the rare case that the parent object is loaded from an alias within a user-defined SELECT statement:
-
-.. sourcecode:: python+sql
+A variant on ``contains_eager()`` is the ``contains_alias()`` option, which is used in the rare case that the parent object is loaded from an alias within a user-defined SELECT statement::
 
     # define an aliased UNION called 'ulist'
     statement = users.select(users.c.user_id==7).union(users.select(users.c.user_id>7)).alias('ulist')
@@ -1673,9 +1601,10 @@ A variant on ``contains_eager()`` is the ``contains_alias()`` option, which is u
     # results
     r = query.from_statement(statement)
 
+.. _largecollections:
+
 Working with Large Collections 
 -------------------------------
-
 
 The default behavior of ``relation()`` is to fully load the collection of items in, as according to the loading strategy of the relation.  Additionally, the Session by default only knows how to delete objects which are actually present within the session.  When a parent instance is marked for deletion and flushed, the Session loads its full list of child items in so that they may either be deleted as well, or have their foreign key value set to null; this is to avoid constraint violations.  For large collections of child items, there are several strategies to bypass full loading of child items both at load time as well as deletion time.
 

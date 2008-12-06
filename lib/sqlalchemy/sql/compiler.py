@@ -455,7 +455,7 @@ class DefaultCompiler(engine.Compiled):
 
         if \
             asfrom and \
-            isinstance(column, sql._ColumnClause) and \
+            isinstance(column, sql.ColumnClause) and \
             not column.is_literal and \
             column.table is not None and \
             not isinstance(column.table, sql.Select):

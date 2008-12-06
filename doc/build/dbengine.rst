@@ -1,3 +1,5 @@
+.. _engines:
+
 ================
 Database Engines
 ================
