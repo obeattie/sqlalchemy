@@ -25,7 +25,7 @@ from sqlalchemy.orm.interfaces import (
     )
 
 __all__ = ('ColumnProperty', 'CompositeProperty', 'SynonymProperty',
-           'ComparableProperty', 'PropertyLoader', 'BackRef')
+           'ComparableProperty', 'RelationProperty', 'BackRef')
 
 
 class ColumnProperty(StrategizedProperty):
@@ -41,7 +41,7 @@ class ColumnProperty(StrategizedProperty):
         self.columns = [expression._labeled(c) for c in columns]
         self.group = kwargs.pop('group', None)
         self.deferred = kwargs.pop('deferred', False)
-        self.comparator_factory = kwargs.pop('comparator_factory', ColumnProperty.ColumnComparator)
+        self.comparator_factory = kwargs.pop('comparator_factory', self.__class__.Comparator)
         self.extension = kwargs.pop('extension', None)
         util.set_creation_order(self)
         if self.deferred:
@@ -82,7 +82,7 @@ class ColumnProperty(StrategizedProperty):
     def get_col_value(self, column, value):
         return value
 
-    class ColumnComparator(PropComparator):
+    class Comparator(PropComparator):
         @util.memoized_instancemethod
         def __clause_element__(self):
             if self.adapter:
@@ -96,7 +96,9 @@ class ColumnProperty(StrategizedProperty):
         def reverse_operate(self, op, other, **kwargs):
             col = self.__clause_element__()
             return op(col._bind_param(other), col, **kwargs)
-
+    
+    ColumnComparator = Comparator
+    
     def __str__(self):
         return str(self.parent.class_.__name__) + "." + self.key
 
@@ -106,10 +108,12 @@ class CompositeProperty(ColumnProperty):
     """subclasses ColumnProperty to provide composite type support."""
     
     def __init__(self, class_, *columns, **kwargs):
+        if 'comparator' in kwargs:
+            util.warn_deprecated("The 'comparator' argument to CompositeProperty is deprecated.  Use comparator_factory.")
+            kwargs['comparator_factory'] = kwargs['comparator']
         super(CompositeProperty, self).__init__(*columns, **kwargs)
         self._col_position_map = util.column_dict((c, i) for i, c in enumerate(columns))
         self.composite_class = class_
-        self.comparator_factory = kwargs.pop('comparator', CompositeProperty.Comparator)
         self.strategy_class = strategies.CompositeColumnLoader
 
     def do_init(self):
@@ -246,7 +250,7 @@ class ComparableProperty(MapperProperty):
         pass
 
 
-class PropertyLoader(StrategizedProperty):
+class RelationProperty(StrategizedProperty):
     """Describes an object property that holds a single item or list
     of items that correspond to a related database table.
     """
@@ -265,6 +269,7 @@ class PropertyLoader(StrategizedProperty):
         collection_class=None, passive_deletes=False,
         passive_updates=True, remote_side=None,
         enable_typechecks=True, join_depth=None,
+        comparator_factory=None,
         strategy_class=None, _local_remote_pairs=None):
 
         self.uselist = uselist
@@ -282,12 +287,13 @@ class PropertyLoader(StrategizedProperty):
         self.passive_updates = passive_updates
         self.remote_side = remote_side
         self.enable_typechecks = enable_typechecks
-        self.comparator = PropertyLoader.Comparator(self, None)
+        
         self.join_depth = join_depth
         self.local_remote_pairs = _local_remote_pairs
         self.extension = extension
         self.__join_cache = {}
-        self.comparator_factory = PropertyLoader.Comparator
+        self.comparator_factory = comparator_factory or RelationProperty.Comparator
+        self.comparator = self.comparator_factory(self, None)
         util.set_creation_order(self)
 
         if strategy_class:
@@ -339,7 +345,7 @@ class PropertyLoader(StrategizedProperty):
             on the local side of generated expressions.
 
             """
-            return PropertyLoader.Comparator(self.prop, self.mapper, getattr(self, '_of_type', None), adapter)
+            return self.__class__(self.prop, self.mapper, getattr(self, '_of_type', None), adapter)
             
         @property
         def parententity(self):
@@ -359,7 +365,7 @@ class PropertyLoader(StrategizedProperty):
             return op(self, *other, **kwargs)
 
         def of_type(self, cls):
-            return PropertyLoader.Comparator(self.prop, self.mapper, cls)
+            return RelationProperty.Comparator(self.prop, self.mapper, cls)
 
         def in_(self, other):
             raise NotImplementedError("in_() not yet supported for relations.  For a "
@@ -605,6 +611,7 @@ class PropertyLoader(StrategizedProperty):
         for attr in ('primaryjoin', 'secondaryjoin'):
             val = getattr(self, attr)
             if val:
+                util.assert_arg_type(val, sql.ClauseElement, attr)
                 setattr(self, attr, _orm_deannotate(val))
         
         if self.order_by:
@@ -846,7 +853,7 @@ class PropertyLoader(StrategizedProperty):
                 "added to the primary mapper, i.e. the very first "
                 "mapper created for class '%s' " % (self.key, self.parent.class_.__name__, self.parent.class_.__name__))
 
-        super(PropertyLoader, self).do_init()
+        super(RelationProperty, self).do_init()
 
     def _refers_to_parent_table(self):
         return self.parent.mapped_table is self.target or self.parent.mapped_table is self.target
@@ -949,12 +956,13 @@ class PropertyLoader(StrategizedProperty):
         if not self.viewonly:
             self._dependency_processor.register_dependencies(uowcommit)
 
-log.class_logger(PropertyLoader)
+PropertyLoader = RelationProperty
+log.class_logger(RelationProperty)
 
 class BackRef(object):
-    """Attached to a PropertyLoader to indicate a complementary reverse relationship.
+    """Attached to a RelationProperty to indicate a complementary reverse relationship.
 
-    Can optionally create the complementing PropertyLoader if one does not exist already."""
+    Can optionally create the complementing RelationProperty if one does not exist already."""
 
     def __init__(self, key, _prop=None, **kwargs):
         self.key = key
@@ -985,7 +993,7 @@ class BackRef(object):
             self.kwargs.setdefault('viewonly', prop.viewonly)
             self.kwargs.setdefault('post_update', prop.post_update)
 
-            relation = PropertyLoader(parent, prop.secondary, pj, sj,
+            relation = RelationProperty(parent, prop.secondary, pj, sj,
                                       backref=BackRef(prop.key, _prop=prop),
                                       _is_backref=True,
                                       **self.kwargs)

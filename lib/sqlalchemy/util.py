@@ -49,6 +49,7 @@ else:
     except ImportError:
         import pickle
 
+import pickle
 if py3k:
     def buffer(x):
         return x # no-op until we figure out what MySQLdb is going to use

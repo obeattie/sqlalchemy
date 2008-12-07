@@ -24,6 +24,8 @@ class TraversalTest(TestBase, AssertsExecutionResults):
             def is_other(self, other):
                 return other is self
 
+            __hash__ = ClauseElement.__hash__
+            
             def __eq__(self, other):
                 return other.expr == self.expr
 
@@ -44,6 +46,8 @@ class TraversalTest(TestBase, AssertsExecutionResults):
                     if i1 is not i2:
                         return False
                 return True
+
+            __hash__ = ClauseElement.__hash__
 
             def __eq__(self, other):
                 for i1, i2 in zip(self.items, other.items):
@@ -458,6 +462,32 @@ class ClauseAdapterTest(TestBase, AssertsCompiledSQL):
 
         assert str(e) == "a_1.id = a.xxx_id"
 
+    def test_recursive_equivalents(self):
+        m = MetaData()
+        a = Table('a', m, Column('x', Integer), Column('y', Integer))
+        b = Table('b', m, Column('x', Integer), Column('y', Integer))
+        c = Table('c', m, Column('x', Integer), Column('y', Integer))
+        
+        # force a recursion overflow, by linking a.c.x<->c.c.x, and
+        # asking for a nonexistent col.  corresponding_column should prevent
+        # endless depth.
+        adapt = sql_util.ClauseAdapter( b, equivalents= {a.c.x: set([ c.c.x]), c.c.x:set([a.c.x])})
+        assert adapt._corresponding_column(a.c.x, False) is None
+
+    def test_multilevel_equivalents(self):
+        m = MetaData()
+        a = Table('a', m, Column('x', Integer), Column('y', Integer))
+        b = Table('b', m, Column('x', Integer), Column('y', Integer))
+        c = Table('c', m, Column('x', Integer), Column('y', Integer))
+
+        alias = select([a]).select_from(a.join(b, a.c.x==b.c.x)).alias()
+        
+        # two levels of indirection from c.x->b.x->a.x, requires recursive 
+        # corresponding_column call
+        adapt = sql_util.ClauseAdapter(alias, equivalents= {b.c.x: set([ a.c.x]), c.c.x:set([b.c.x])})
+        assert adapt._corresponding_column(a.c.x, False) is alias.c.x
+        assert adapt._corresponding_column(c.c.x, False) is alias.c.x
+        
     def test_join_to_alias(self):
         metadata = MetaData()
         a = Table('a', metadata,

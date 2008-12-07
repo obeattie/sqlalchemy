@@ -46,7 +46,12 @@ class CascadeOptions(object):
 
 
 class Validator(AttributeExtension):
-    """Runs a validation method on an attribute value to be set or appended."""
+    """Runs a validation method on an attribute value to be set or appended.
+    
+    The Validator class is used by the :func:`~sqlalchemy.orm.validates`
+    decorator, and direct access is usually not needed.
+    
+    """
     
     def __init__(self, key, validator):
         """Construct a new Validator.
@@ -258,7 +263,7 @@ class ORMAdapter(sql_util.ColumnAdapter):
 class AliasedClass(object):
     """Represents an 'alias'ed form of a mapped class for usage with Query.
     
-    The ORM equivalent of a sqlalchemy.sql.expression.Alias 
+    The ORM equivalent of a :class:`~sqlalchemy.sql.expression.Alias`
     object, this object mimics the mapped class using a 
     __getattr__ scheme and maintains a reference to a
     real Alias object.   It indicates to Query that the 
@@ -402,7 +407,7 @@ def join(left, right, onclause=None, isouter=False):
     """Produce an inner join between left and right clauses.
     
     In addition to the interface provided by 
-    sqlalchemy.sql.join(), left and right may be mapped 
+    :func:`~sqlalchemy.sql.expression.join()`, left and right may be mapped 
     classes or AliasedClass instances. The onclause may be a 
     string name of a relation(), or a class-bound descriptor 
     representing a relation.
@@ -414,7 +419,7 @@ def outerjoin(left, right, onclause=None):
     """Produce a left outer join between left and right clauses.
     
     In addition to the interface provided by 
-    sqlalchemy.sql.outerjoin(), left and right may be mapped 
+    :func:`~sqlalchemy.sql.expression.outerjoin()`, left and right may be mapped 
     classes or AliasedClass instances. The onclause may be a 
     string name of a relation(), or a class-bound descriptor 
     representing a relation.

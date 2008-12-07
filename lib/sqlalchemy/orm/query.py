@@ -6,11 +6,11 @@
 
 """The Query class and support.
 
-Defines the [sqlalchemy.orm.query#Query] class, the central construct used by
+Defines the :class:`~sqlalchemy.orm.query.Query` class, the central construct used by
 the ORM to construct database queries.
 
 The ``Query`` class should not be confused with the
-[sqlalchemy.sql.expression#Select] class, which defines database SELECT
+:class:`~sqlalchemy.sql.expression.Select` class, which defines database SELECT
 operations at the SQL (non-ORM) level.  ``Query`` differs from ``Select`` in
 that it returns ORM-mapped objects and interacts with an ORM session, whereas
 the ``Select`` construct interacts directly with the database to return
@@ -83,14 +83,18 @@ class Query(object):
         self._only_load_props = None
         self._refresh_state = None
         self._from_obj = None
-        self._entities = []
         self._polymorphic_adapters = {}
         self._filter_aliases = None
         self._from_obj_alias = None
         self.__currenttables = set()
+        self._set_entities(entities)
 
+    def _set_entities(self, entities, entity_wrapper=None):
+        if entity_wrapper is None:
+            entity_wrapper = _QueryEntity
+        self._entities = []
         for ent in util.to_list(entities):
-            _QueryEntity(self, ent)
+            entity_wrapper(self, ent)
 
         self.__setup_aliasizers(self._entities)
 
@@ -354,7 +358,7 @@ class Query(object):
         self._current_path = path
 
     @_generative(__no_clauseelement_condition)
-    def with_polymorphic(self, cls_or_mappers, selectable=None):
+    def with_polymorphic(self, cls_or_mappers, selectable=None, discriminator=None):
         """Load columns for descendant mappers of this Query's mapper.
 
         Using this method will ensure that each descendant mapper's
@@ -363,24 +367,30 @@ class Query(object):
         instances will also have those columns already loaded so that
         no "post fetch" of those columns will be required.
 
-        ``cls_or_mappers`` is a single class or mapper, or list of class/mappers,
-        which inherit from this Query's mapper.  Alternatively, it
-        may also be the string ``'*'``, in which case all descending
-        mappers will be added to the FROM clause.
+        :param cls_or_mappers: a single class or mapper, or list of class/mappers,
+            which inherit from this Query's mapper.  Alternatively, it
+            may also be the string ``'*'``, in which case all descending
+            mappers will be added to the FROM clause.
 
-        ``selectable`` is a table or select() statement that will
-        be used in place of the generated FROM clause.  This argument
-        is required if any of the desired mappers use concrete table
-        inheritance, since SQLAlchemy currently cannot generate UNIONs
-        among tables automatically.  If used, the ``selectable``
-        argument must represent the full set of tables and columns mapped
-        by every desired mapper.  Otherwise, the unaccounted mapped columns
-        will result in their table being appended directly to the FROM
-        clause which will usually lead to incorrect results.
+        :param selectable: a table or select() statement that will
+            be used in place of the generated FROM clause.  This argument
+            is required if any of the desired mappers use concrete table
+            inheritance, since SQLAlchemy currently cannot generate UNIONs
+            among tables automatically.  If used, the ``selectable``
+            argument must represent the full set of tables and columns mapped
+            by every desired mapper.  Otherwise, the unaccounted mapped columns
+            will result in their table being appended directly to the FROM
+            clause which will usually lead to incorrect results.
 
+        :param discriminator: a column to be used as the "discriminator"
+            column for the given selectable.  If not given, the polymorphic_on
+            attribute of the mapper will be used, if any.   This is useful
+            for mappers that don't have polymorphic loading behavior by default,
+            such as concrete table mappers.
+        
         """
         entity = self._generate_mapper_zero()
-        entity.set_with_polymorphic(self, cls_or_mappers, selectable=selectable)
+        entity.set_with_polymorphic(self, cls_or_mappers, selectable=selectable, discriminator=discriminator)
 
     @_generative()
     def yield_per(self, count):
@@ -528,10 +538,7 @@ class Query(object):
         self._limit = self._offset = None
         self.__set_select_from(fromclause)
         if entities:
-            self._entities = []
-            for ent in entities:
-                _QueryEntity(self, ent)
-            self.__setup_aliasizers(self._entities)
+            self._set_entities(entities)
 
     _from_self = from_self
 
@@ -541,10 +548,7 @@ class Query(object):
         if not columns:
             return iter(())
         q = self._clone()
-        q._entities = []
-        for column in columns:
-            _ColumnEntity(q, column)
-        q.__setup_aliasizers(q._entities)
+        q._set_entities(columns, entity_wrapper=_ColumnEntity)
         if not q._yield_per:
             q._yield_per = 10
         return iter(q)
@@ -1656,6 +1660,7 @@ class _MapperEntity(_QueryEntity):
         self.adapter = adapter
         self.selectable  = from_obj
         self._with_polymorphic = with_polymorphic
+        self._polymorphic_discriminator = None
         self.is_aliased_class = is_aliased_class
         if is_aliased_class:
             self.path_entity = self.entity = self.entity_zero = entity
@@ -1663,13 +1668,14 @@ class _MapperEntity(_QueryEntity):
             self.path_entity = mapper.base_mapper
             self.entity = self.entity_zero = mapper
 
-    def set_with_polymorphic(self, query, cls_or_mappers, selectable):
+    def set_with_polymorphic(self, query, cls_or_mappers, selectable, discriminator):
         if cls_or_mappers is None:
             query._reset_polymorphic_adapter(self.mapper)
             return
 
         mappers, from_obj = self.mapper._with_polymorphic_args(cls_or_mappers, selectable)
         self._with_polymorphic = mappers
+        self._polymorphic_discriminator = discriminator
 
         # TODO: do the wrapped thing here too so that with_polymorphic() can be
         # applied to aliases
@@ -1720,10 +1726,12 @@ class _MapperEntity(_QueryEntity):
 
         if self.primary_entity:
             _instance = self.mapper._instance_processor(context, (self.path_entity,), adapter,
-                extension=self.extension, only_load_props=query._only_load_props, refresh_state=context.refresh_state
+                extension=self.extension, only_load_props=query._only_load_props, refresh_state=context.refresh_state,
+                polymorphic_discriminator=self._polymorphic_discriminator
             )
         else:
-            _instance = self.mapper._instance_processor(context, (self.path_entity,), adapter)
+            _instance = self.mapper._instance_processor(context, (self.path_entity,), adapter,
+                             polymorphic_discriminator=self._polymorphic_discriminator)
 
         if custom_rows:
             def main(context, row, result):
@@ -1761,7 +1769,14 @@ class _MapperEntity(_QueryEntity):
                 only_load_props=query._only_load_props,
                 column_collection=context.primary_columns
             )
-
+        
+        if self._polymorphic_discriminator:
+            if adapter:
+                pd = adapter.columns[self._polymorphic_discriminator]
+            else:
+                pd = self._polymorphic_discriminator
+            context.primary_columns.append(pd)
+            
     def __str__(self):
         return str(self.mapper)
 

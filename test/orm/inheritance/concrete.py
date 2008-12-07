@@ -4,15 +4,55 @@ from sqlalchemy.orm import *
 from sqlalchemy.orm import exc as orm_exc
 from testlib import *
 from sqlalchemy.orm import attributes
+from testlib.testing import eq_
+
+class Employee(object):
+    def __init__(self, name):
+        self.name = name
+    def __repr__(self):
+        return self.__class__.__name__ + " " + self.name
+
+class Manager(Employee):
+    def __init__(self, name, manager_data):
+        self.name = name
+        self.manager_data = manager_data
+    def __repr__(self):
+        return self.__class__.__name__ + " " + self.name + " " +  self.manager_data
+
+class Engineer(Employee):
+    def __init__(self, name, engineer_info):
+        self.name = name
+        self.engineer_info = engineer_info
+    def __repr__(self):
+        return self.__class__.__name__ + " " + self.name + " " +  self.engineer_info
+
+class Hacker(Engineer):
+    def __init__(self, name, nickname, engineer_info):
+        self.name = name
+        self.nickname = nickname
+        self.engineer_info = engineer_info
+    def __repr__(self):
+        return self.__class__.__name__ + " " + self.name + " '" + \
+               self.nickname + "' " +  self.engineer_info
+
+class Company(object):
+   pass
+
 
 class ConcreteTest(ORMTest):
     def define_tables(self, metadata):
-        global managers_table, engineers_table, hackers_table, companies
+        global managers_table, engineers_table, hackers_table, companies, employees_table
 
         companies = Table('companies', metadata,
            Column('id', Integer, primary_key=True),
            Column('name', String(50)))
 
+        employees_table = Table('employees', metadata,
+            Column('employee_id', Integer, primary_key=True),
+            Column('name', String(50)),
+            Column('company_id', Integer, ForeignKey('companies.id'))
+        )
+        
         managers_table = Table('managers', metadata,
             Column('employee_id', Integer, primary_key=True),
             Column('name', String(50)),
@@ -36,34 +76,16 @@ class ConcreteTest(ORMTest):
         )
 
     def test_basic(self):
-        class Employee(object):
-            def __init__(self, name):
-                self.name = name
-            def __repr__(self):
-                return self.__class__.__name__ + " " + self.name
-
-        class Manager(Employee):
-            def __init__(self, name, manager_data):
-                self.name = name
-                self.manager_data = manager_data
-            def __repr__(self):
-                return self.__class__.__name__ + " " + self.name + " " +  self.manager_data
-
-        class Engineer(Employee):
-            def __init__(self, name, engineer_info):
-                self.name = name
-                self.engineer_info = engineer_info
-            def __repr__(self):
-                return self.__class__.__name__ + " " + self.name + " " +  self.engineer_info
-
         pjoin = polymorphic_union({
             'manager':managers_table,
             'engineer':engineers_table
         }, 'type', 'pjoin')
 
         employee_mapper = mapper(Employee, pjoin, polymorphic_on=pjoin.c.type)
-        manager_mapper = mapper(Manager, managers_table, inherits=employee_mapper, concrete=True, polymorphic_identity='manager')
-        engineer_mapper = mapper(Engineer, engineers_table, inherits=employee_mapper, concrete=True, polymorphic_identity='engineer')
+        manager_mapper = mapper(Manager, managers_table, inherits=employee_mapper, 
+            concrete=True, polymorphic_identity='manager')
+        engineer_mapper = mapper(Engineer, engineers_table, inherits=employee_mapper, 
+            concrete=True, polymorphic_identity='engineer')
 
         session = create_session()
         session.save(Manager('Tom', 'knows how to manage things'))
@@ -71,45 +93,15 @@ class ConcreteTest(ORMTest):
         session.flush()
         session.clear()
 
-        print set([repr(x) for x in session.query(Employee).all()])
-        assert set([repr(x) for x in session.query(Employee).all()]) == set(["Engineer Kurt knows how to hack", "Manager Tom knows how to manage things"])
-        assert set([repr(x) for x in session.query(Manager).all()]) == set(["Manager Tom knows how to manage things"])
-        assert set([repr(x) for x in session.query(Engineer).all()]) == set(["Engineer Kurt knows how to hack"])
+        assert set([repr(x) for x in session.query(Employee)]) == set(["Engineer Kurt knows how to hack", "Manager Tom knows how to manage things"])
+        assert set([repr(x) for x in session.query(Manager)]) == set(["Manager Tom knows how to manage things"])
+        assert set([repr(x) for x in session.query(Engineer)]) == set(["Engineer Kurt knows how to hack"])
 
         manager = session.query(Manager).one()
         session.expire(manager, ['manager_data'])
         self.assertEquals(manager.manager_data, "knows how to manage things")
 
-    def test_multi_level(self):
-        class Employee(object):
-            def __init__(self, name):
-                self.name = name
-            def __repr__(self):
-                return self.__class__.__name__ + " " + self.name
-
-        class Manager(Employee):
-            def __init__(self, name, manager_data):
-                self.name = name
-                self.manager_data = manager_data
-            def __repr__(self):
-                return self.__class__.__name__ + " " + self.name + " " +  self.manager_data
-
-        class Engineer(Employee):
-            def __init__(self, name, engineer_info):
-                self.name = name
-                self.engineer_info = engineer_info
-            def __repr__(self):
-                return self.__class__.__name__ + " " + self.name + " " +  self.engineer_info
-
-        class Hacker(Engineer):
-            def __init__(self, name, nickname, engineer_info):
-                self.name = name
-                self.nickname = nickname
-                self.engineer_info = engineer_info
-            def __repr__(self):
-                return self.__class__.__name__ + " " + self.name + " '" + \
-                       self.nickname + "' " +  self.engineer_info
-
+    def test_multi_level_no_base(self):
         pjoin = polymorphic_union({
             'manager': managers_table,
             'engineer': engineers_table,
@@ -157,31 +149,133 @@ class ConcreteTest(ORMTest):
         assert set([repr(x) for x in session.query(Employee).all()]) == set(["Engineer Jerry knows how to program", "Manager Tom knows how to manage things", "Hacker Kurt 'Badass' knows how to hack"])
         assert set([repr(x) for x in session.query(Manager).all()]) == set(["Manager Tom knows how to manage things"])
         assert set([repr(x) for x in session.query(Engineer).all()]) == set(["Engineer Jerry knows how to program", "Hacker Kurt 'Badass' knows how to hack"])
+        assert set([repr(x) for x in session.query(Hacker).all()]) == set(["Hacker Kurt 'Badass' knows how to hack"])
 
+    def test_multi_level_with_base(self):
+        pjoin = polymorphic_union({
+            'employee':employees_table,
+            'manager': managers_table,
+            'engineer': engineers_table,
+            'hacker': hackers_table
+        }, 'type', 'pjoin')
+
+        pjoin2 = polymorphic_union({
+            'engineer': engineers_table,
+            'hacker': hackers_table
+        }, 'type', 'pjoin2')
+
+        employee_mapper = mapper(Employee, employees_table, 
+                with_polymorphic=('*', pjoin), polymorphic_on=pjoin.c.type)
+        manager_mapper = mapper(Manager, managers_table, 
+                                inherits=employee_mapper, concrete=True, 
+                                polymorphic_identity='manager')
+        engineer_mapper = mapper(Engineer, engineers_table, 
+                                 with_polymorphic=('*', pjoin2), 
+                                 polymorphic_on=pjoin2.c.type,
+                                 inherits=employee_mapper, concrete=True,
+                                 polymorphic_identity='engineer')
+        hacker_mapper = mapper(Hacker, hackers_table, 
+                               inherits=engineer_mapper,
+                               concrete=True, polymorphic_identity='hacker')
+
+        session = create_session()
+        tom = Manager('Tom', 'knows how to manage things')
+        jerry = Engineer('Jerry', 'knows how to program')
+        hacker = Hacker('Kurt', 'Badass', 'knows how to hack')
+        session.add_all((tom, jerry, hacker))
+        session.flush()
+
+        def go():
+            self.assertEquals(jerry.name, "Jerry")
+            self.assertEquals(hacker.nickname, "Badass")
+        self.assert_sql_count(testing.db, go, 0)
+
+        session.clear()
+
+        # check that we aren't getting a cartesian product in the raw SQL.
+        # this requires that Engineer's polymorphic discriminator is not rendered
+        # in the statement which is only against Employee's "pjoin"
+        assert len(testing.db.execute(session.query(Employee).with_labels().statement).fetchall()) == 3
+        
+        assert set([repr(x) for x in session.query(Employee)]) == set(["Engineer Jerry knows how to program", "Manager Tom knows how to manage things", "Hacker Kurt 'Badass' knows how to hack"])
+        assert set([repr(x) for x in session.query(Manager)]) == set(["Manager Tom knows how to manage things"])
+        assert set([repr(x) for x in session.query(Engineer)]) == set(["Engineer Jerry knows how to program", "Hacker Kurt 'Badass' knows how to hack"])
+        assert set([repr(x) for x in session.query(Hacker)]) == set(["Hacker Kurt 'Badass' knows how to hack"])
+
+    
+    def test_without_default_polymorphic(self):
+        pjoin = polymorphic_union({
+            'employee':employees_table,
+            'manager': managers_table,
+            'engineer': engineers_table,
+            'hacker': hackers_table
+        }, 'type', 'pjoin')
+
+        pjoin2 = polymorphic_union({
+            'engineer': engineers_table,
+            'hacker': hackers_table
+        }, 'type', 'pjoin2')
+
+        employee_mapper = mapper(Employee, employees_table, 
+                                polymorphic_identity='employee')
+        manager_mapper = mapper(Manager, managers_table, 
+                                inherits=employee_mapper, concrete=True, 
+                                polymorphic_identity='manager')
+        engineer_mapper = mapper(Engineer, engineers_table, 
+                                 inherits=employee_mapper, concrete=True,
+                                 polymorphic_identity='engineer')
+        hacker_mapper = mapper(Hacker, hackers_table, 
+                               inherits=engineer_mapper,
+                               concrete=True, polymorphic_identity='hacker')
+
+        session = create_session()
+        jdoe = Employee('Jdoe')
+        tom = Manager('Tom', 'knows how to manage things')
+        jerry = Engineer('Jerry', 'knows how to program')
+        hacker = Hacker('Kurt', 'Badass', 'knows how to hack')
+        session.add_all((jdoe, tom, jerry, hacker))
+        session.flush()
+
+        eq_(
+            len(testing.db.execute(session.query(Employee).with_polymorphic('*', pjoin, pjoin.c.type).with_labels().statement).fetchall()),
+            4
+        )
+        
+        eq_(
+            session.query(Employee).get(jdoe.employee_id), jdoe
+        )
+        eq_(
+            session.query(Engineer).get(jerry.employee_id), jerry
+        )
+        eq_(
+            set([repr(x) for x in session.query(Employee).with_polymorphic('*', pjoin, pjoin.c.type)]),
+            set(["Employee Jdoe", "Engineer Jerry knows how to program", "Manager Tom knows how to manage things", "Hacker Kurt 'Badass' knows how to hack"])
+        )
+        eq_(
+            set([repr(x) for x in session.query(Manager)]),
+            set(["Manager Tom knows how to manage things"])
+        )
+        eq_(
+            set([repr(x) for x in session.query(Engineer).with_polymorphic('*', pjoin2, pjoin2.c.type)]),
+            set(["Engineer Jerry knows how to program", "Hacker Kurt 'Badass' knows how to hack"])
+        )
+        eq_(
+            set([repr(x) for x in session.query(Hacker)]),
+            set(["Hacker Kurt 'Badass' knows how to hack"])
+        )
+        # test adaption of the column by wrapping the query in a subquery
+        eq_(
+            len(testing.db.execute(
+                session.query(Engineer).with_polymorphic('*', pjoin2, pjoin2.c.type).from_self().statement
+            ).fetchall()),
+            2
+        )
+        eq_(
+            set([repr(x) for x in session.query(Engineer).with_polymorphic('*', pjoin2, pjoin2.c.type).from_self()]),
+            set(["Engineer Jerry knows how to program", "Hacker Kurt 'Badass' knows how to hack"])
+        )
+        
     def test_relation(self):
-        class Employee(object):
-            def __init__(self, name):
-                self.name = name
-            def __repr__(self):
-                return self.__class__.__name__ + " " + self.name
-
-        class Manager(Employee):
-            def __init__(self, name, manager_data):
-                self.name = name
-                self.manager_data = manager_data
-            def __repr__(self):
-                return self.__class__.__name__ + " " + self.name + " " +  self.manager_data
-
-        class Engineer(Employee):
-            def __init__(self, name, engineer_info):
-                self.name = name
-                self.engineer_info = engineer_info
-            def __repr__(self):
-                return self.__class__.__name__ + " " + self.name + " " +  self.engineer_info
-
-        class Company(object):
-            pass
-
         pjoin = polymorphic_union({
             'manager':managers_table,
             'engineer':engineers_table
@@ -250,11 +344,11 @@ class ColKeysTest(ORMTest):
                                 concrete=True, polymorphic_identity='refugee')
 
         sess = create_session()
-        assert sess.query(Refugee).get(1).name == "refugee1"
-        assert sess.query(Refugee).get(2).name == "refugee2"
+        eq_(sess.query(Refugee).get(1).name, "refugee1")
+        eq_(sess.query(Refugee).get(2).name, "refugee2")
 
-        assert sess.query(Office).get(1).name == "office1"
-        assert sess.query(Office).get(2).name == "office2"
+        eq_(sess.query(Office).get(1).name, "office1")
+        eq_(sess.query(Office).get(2).name, "office2")
 
 if __name__ == '__main__':
     testenv.main()

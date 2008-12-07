@@ -6,18 +6,159 @@ CHANGES
 =======
 0.5.0rc5
 ========
+- new features
+- orm
+    - Documentation has been converted to Sphinx.
+      In particular, the generated API documentation
+      has been constructed into a full blown 
+      "API Reference" section which organizes 
+      editorial documentation combined with 
+      generated docstrings.   Cross linking between
+      sections and API docs are vastly improved,
+      a javascript-powered search feature is
+      provided, and a full index of all
+      classes, functions and members is provided.
+      
+    - Query.with_polymorphic() now accepts a third
+      argument "discriminator" which will replace
+      the value of mapper.polymorphic_on for that
+      query.  Mappers themselves no longer require
+      polymorphic_on to be set, even if the mapper
+      has a polymorphic_identity.   When not set,
+      the mapper will load non-polymorphically 
+      by default. Together, these two features allow 
+      a non-polymorphic concrete inheritance setup 
+      to use polymorphic loading on a per-query basis,
+      since concrete setups are prone to many
+      issues when used polymorphically in all cases.
+      
 - bugfixes, behavioral changes
 - orm
     - Query.select_from(), from_statement() ensure
       that the given argument is a FromClause,
       or Text/Select/Union, respectively.
+      
+    - Fixed bug introduced in 0.5rc4 involving eager 
+      loading not functioning for properties which were
+      added to a mapper post-compile using 
+      add_property() or equivalent.
 
+    - Duplicate items in a list-based collection will
+      be maintained when issuing INSERTs to
+      a "secondary" table in a many-to-many relation.
+      Assuming the m2m table has a unique or primary key 
+      constraint on it, this will raise the expected 
+      constraint violation instead of silently
+      dropping the duplicate entries. Note that the 
+      old behavior remains for a one-to-many relation
+      since collection entries in that case
+      don't result in INSERT statements and SQLA doesn't
+      manually police collections. [ticket:1232]
+      
     - Query.add_column() can accept FromClause objects
       in the same manner as session.query() can.
+
+    - Comparison of many-to-one relation to NULL is
+      properly converted to IS NOT NULL based on not_().
+     
+    - Extra checks added to ensure explicit 
+      primaryjoin/secondaryjoin are ClauseElement 
+      instances, to prevent more confusing errors later 
+      on.
+
+    - Improved mapper() check for non-class classes.
+      [ticket:1236]
+    
+    - comparator_factory argument is now documented
+      and supported by all MapperProperty types,
+      including column_property(), relation(), 
+      backref(), and synonym() [ticket:5051].
       
+    - Changed the name of PropertyLoader to
+      RelationProperty, to be consistent
+      with all the other names.  PropertyLoader is 
+      still present as a synonym.
+    
+    - fixed "double iter()" call causing bus errors
+      in shard API, removed errant result.close()
+      left over from the 0.4 version. [ticket:1099]
+      [ticket:1228]
+
+    - made Session.merge cascades not trigger autoflush.
+      Fixes merged instances getting prematurely inserted
+      with missing values.
+
+    - Two fixes to help prevent out-of-band columns from
+      being rendered in polymorphic_union inheritance
+      scenarios (which then causes extra tables to be
+      rendered in the FROM clause causing cartesian 
+      products): 
+        - improvements to "column adaption" for
+          a->b->c inheritance situations to better
+          locate columns that are related to one
+          another via multiple levels of indirection,
+          rather than rendering the non-adapted
+          column.
+        - the "polymorphic discriminator" column is
+          only rendered for the actual mapper being
+          queried against. The column won't be
+          "pulled in" from a subclass or superclass
+          mapper since it's not needed.
+      
+- sql
+    - Fixed the import weirdness in sqlalchemy.sql
+      to not export __names__ [ticket:1215].
+    
+    - Using the same ForeignKey object repeatedly
+      raises an error instead of silently failing
+      later. [ticket:1238]
+      
+    - Added NotImplementedError for params() method
+      on Insert/Update/Delete constructs.  These items
+      currently don't support this functionality, which
+      also would be a little misleading compared to
+      values().
+
+    - the "passive" flag on session.is_modified()
+      is correctly propagated to the attribute manager.
+
+    - union() and union_all() will not whack 
+      any order_by() that has been applied to the 
+      select()s inside.  If you union() a 
+      select() with order_by() (presumably to support
+      LIMIT/OFFSET), you should also call self_group() 
+      on it to apply parenthesis.
+      
+- documentation
+    - Tickets [ticket:1200] [ticket:1149].
+      
+    - Added note about create_session() defaults.
+    
+    - Added section about metadata.reflect().
+    
+    - Updated `TypeDecorator` section.
+    
+    - Rewrote the "threadlocal" strategy section of 
+      the docs due to recent confusion over this 
+      feature.
+     
+    - Removed badly out of date 'polymorphic_fetch'
+      and 'select_table' docs from inheritance, 
+      reworked the second half of "joined table
+      inheritance".
+      
+    - Documented `comparator_factory` kwarg, added
+      new doc section "Custom Comparators".
+    
 - postgres
     - Calling alias.execute() in conjunction with
       server_side_cursors won't raise AttributeError.
+
+- oracle
+    - Adjusted the format of create_xid() to repair
+      two-phase commit.   We now have field reports
+      of Oracle two-phase commit working properly
+      with this change.
       
 0.5.0rc4
 ========
