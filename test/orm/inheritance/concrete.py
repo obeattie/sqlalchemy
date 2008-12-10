@@ -74,6 +74,8 @@ class ConcreteTest(ORMTest):
             Column('company_id', Integer, ForeignKey('companies.id')),
             Column('nickname', String(50))
         )
+        
+        
 
     def test_basic(self):
         pjoin = polymorphic_union({
@@ -81,7 +83,7 @@ class ConcreteTest(ORMTest):
             'engineer':engineers_table
         }, 'type', 'pjoin')
 
-        employee_mapper = mapper(Employee, pjoin, polymorphic_on=pjoin.c.type)
+        employee_mapper = mapper(Employee, pjoin, abstract=True, polymorphic_on=pjoin.c.type)
         manager_mapper = mapper(Manager, managers_table, inherits=employee_mapper, 
             concrete=True, polymorphic_identity='manager')
         engineer_mapper = mapper(Engineer, engineers_table, inherits=employee_mapper, 
@@ -113,7 +115,7 @@ class ConcreteTest(ORMTest):
             'hacker': hackers_table
         }, 'type', 'pjoin2')
 
-        employee_mapper = mapper(Employee, pjoin, polymorphic_on=pjoin.c.type)
+        employee_mapper = mapper(Employee, pjoin, abstract=True, polymorphic_on=pjoin.c.type)
         manager_mapper = mapper(Manager, managers_table, 
                                 inherits=employee_mapper, concrete=True, 
                                 polymorphic_identity='manager')
@@ -284,7 +286,7 @@ class ConcreteTest(ORMTest):
         mapper(Company, companies, properties={
             'employees':relation(Employee, lazy=False)
         })
-        employee_mapper = mapper(Employee, pjoin, polymorphic_on=pjoin.c.type)
+        employee_mapper = mapper(Employee, pjoin, abstract=True, polymorphic_on=pjoin.c.type)
         manager_mapper = mapper(Manager, managers_table, inherits=employee_mapper, concrete=True, polymorphic_identity='manager')
         engineer_mapper = mapper(Engineer, engineers_table, inherits=employee_mapper, concrete=True, polymorphic_identity='engineer')
 
@@ -337,7 +339,7 @@ class ColKeysTest(ORMTest):
            pass
 
         location_mapper = mapper(Location, pjoin, polymorphic_on=pjoin.c.type,
-                                polymorphic_identity='location')
+                                polymorphic_identity='location', abstract=True)
         office_mapper   = mapper(Office, offices_table, inherits=location_mapper,
                                 concrete=True, polymorphic_identity='office')
         refugee_mapper  = mapper(Refugee, refugees_table, inherits=location_mapper,

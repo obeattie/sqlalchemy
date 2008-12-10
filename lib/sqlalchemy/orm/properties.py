@@ -41,10 +41,13 @@ class ColumnProperty(StrategizedProperty):
         self.columns = [expression._labeled(c) for c in columns]
         self.group = kwargs.pop('group', None)
         self.deferred = kwargs.pop('deferred', False)
+        no_instrument = kwargs.pop('_no_instrument', False)
         self.comparator_factory = kwargs.pop('comparator_factory', self.__class__.Comparator)
         self.extension = kwargs.pop('extension', None)
         util.set_creation_order(self)
-        if self.deferred:
+        if no_instrument:
+            self.strategy_class = strategies.UninstrumentedColumnLoader
+        elif self.deferred:
             self.strategy_class = strategies.DeferredColumnLoader
         else:
             self.strategy_class = strategies.ColumnLoader
@@ -260,7 +263,7 @@ class RelationProperty(StrategizedProperty):
         uselist=None,
         order_by=False,
         backref=None,
-        _is_backref=False,
+        back_populates=None,
         post_update=False,
         cascade=False, extension=None,
         viewonly=False, lazy=True,
@@ -306,7 +309,7 @@ class RelationProperty(StrategizedProperty):
         else:
             self.strategy_class = strategies.LazyLoader
 
-        self._reverse_property = None
+        self._reverse_property = set()
 
         if cascade is not False:
             self.cascade = CascadeOptions(cascade)
@@ -318,7 +321,13 @@ class RelationProperty(StrategizedProperty):
 
         self.order_by = order_by
 
-        if isinstance(backref, str):
+        self.back_populates = back_populates
+
+        if self.back_populates:
+            if backref:
+                raise sa_exc.ArgumentError("backref and back_populates keyword arguments are mutually exclusive")
+            self.backref = None
+        elif isinstance(backref, str):
             # propagate explicitly sent primary/secondary join conditions to the BackRef object if
             # just a string was sent
             if secondary is not None:
@@ -328,7 +337,6 @@ class RelationProperty(StrategizedProperty):
                 self.backref = BackRef(backref, primaryjoin=primaryjoin, secondaryjoin=secondaryjoin, passive_updates=self.passive_updates)
         else:
             self.backref = backref
-        self._is_backref = _is_backref
 
     class Comparator(PropComparator):
         def __init__(self, prop, mapper, of_type=None, adapter=None):
@@ -504,8 +512,10 @@ class RelationProperty(StrategizedProperty):
         return str(self.parent.class_.__name__) + "." + self.key
 
     def merge(self, session, source, dest, dont_load, _recursive):
-        if not dont_load and self._reverse_property and (source, self._reverse_property) in _recursive:
-            return
+        if not dont_load:
+            for r in self._reverse_property:
+                if (source, r) in _recursive:
+                    return
 
         source_state = attributes.instance_state(source)
         dest_state = attributes.instance_state(dest)
@@ -522,7 +532,7 @@ class RelationProperty(StrategizedProperty):
         if self.uselist:
             dest_list = []
             for current in instances:
-                _recursive[(current, self)] = True
+                _recursive[(current, self.key)] = True
                 obj = session.merge(current, dont_load=dont_load, _recursive=_recursive)
                 if obj is not None:
                     dest_list.append(obj)
@@ -535,7 +545,7 @@ class RelationProperty(StrategizedProperty):
         else:
             current = instances[0]
             if current is not None:
-                _recursive[(current, self)] = True
+                _recursive[(current, self.key)] = True
                 obj = session.merge(current, dont_load=dont_load, _recursive=_recursive)
                 if obj is not None:
                     if dont_load:
@@ -566,6 +576,11 @@ class RelationProperty(StrategizedProperty):
                     instance_mapper = object_mapper(c)
                     yield (c, instance_mapper, attributes.instance_state(c))
 
+    def _add_reverse_property(self, key):
+        other = self.mapper._get_property(key)
+        self._reverse_property.add(other)
+        other._reverse_property.add(self)
+        
     def _get_target_class(self):
         """Return the target class of the relation, even if the
         property has not been initialized yet.
@@ -841,6 +856,11 @@ class RelationProperty(StrategizedProperty):
 
         # primary property handler, set up class attributes
         if self.is_primary():
+            if self.back_populates:
+                self.extension = util.to_list(self.extension) or []
+                self.extension.append(attributes.GenericBackrefExtension(self.back_populates))
+                self._add_reverse_property(self.back_populates)
+            
             if self.backref is not None:
                 self.backref.compile(self)
         elif not mapper.class_mapper(self.parent.class_, compile=False)._get_property(self.key, raiseerr=False):
@@ -991,13 +1011,11 @@ class BackRef(object):
 
             relation = RelationProperty(parent, prop.secondary, pj, sj,
                                       backref=BackRef(prop.key, _prop=prop),
-                                      _is_backref=True,
                                       **self.kwargs)
 
             mapper._compile_property(self.key, relation);
 
-            prop._reverse_property = mapper._get_property(self.key)
-            mapper._get_property(self.key)._reverse_property = prop
+            prop._add_reverse_property(self.key)
 
         else:
             raise sa_exc.ArgumentError("Error creating backref '%s' on relation '%s': "
@@ -1006,3 +1024,4 @@ class BackRef(object):
 mapper.ColumnProperty = ColumnProperty
 mapper.SynonymProperty = SynonymProperty
 mapper.ComparableProperty = ComparableProperty
+mapper.RelationProperty = RelationProperty

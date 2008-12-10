@@ -36,7 +36,6 @@ class DependencyProcessor(object):
         self.parent = prop.parent
         self.secondary = prop.secondary
         self.direction = prop.direction
-        self.is_backref = prop._is_backref
         self.post_update = prop.post_update
         self.passive_deletes = prop.passive_deletes
         self.passive_updates = prop.passive_updates
@@ -152,16 +151,21 @@ class DependencyProcessor(object):
 class OneToManyDP(DependencyProcessor):
     def register_dependencies(self, uowcommit):
         if self.post_update:
-            if not self.is_backref:
-                uowcommit.register_dependency(self.mapper, self.dependency_marker)
-                uowcommit.register_dependency(self.parent, self.dependency_marker)
-                uowcommit.register_processor(self.dependency_marker, self, self.parent)
+            for p in self.prop._reverse_property:
+                if (p._dependency_processor, "register") in uowcommit.attributes:
+                    return
+            
+            uowcommit.register_dependency(self.mapper, self.dependency_marker)
+            uowcommit.register_dependency(self.parent, self.dependency_marker)
+            uowcommit.register_processor(self.dependency_marker, self, self.parent)
+            
+            uowcommit.attributes[(self, "register")] = True
+            
         else:
             uowcommit.register_dependency(self.parent, self.mapper)
             uowcommit.register_processor(self.parent, self, self.parent)
 
     def process_dependencies(self, task, deplist, uowcommit, delete = False):
-        #print self.mapper.mapped_table.name + " " + self.key + " " + repr(len(deplist)) + " process_dep isdelete " + repr(delete) + " direction " + repr(self.direction)
         if delete:
             # head object is being deleted, and we manage its list of child objects
             # the child objects have to have their foreign key to the parent set to NULL
@@ -198,8 +202,6 @@ class OneToManyDP(DependencyProcessor):
                             self._synchronize(state, child, None, False, uowcommit)
 
     def preprocess_dependencies(self, task, deplist, uowcommit, delete = False):
-        #print self.mapper.mapped_table.name + " " + self.key + " " + repr(len(deplist)) + " preprocess_dep isdelete " + repr(delete) + " direction " + repr(self.direction)
-
         if delete:
             # head object is being deleted, and we manage its list of child objects
             # the child objects have to have their foreign key to the parent set to NULL
@@ -304,17 +306,21 @@ class ManyToOneDP(DependencyProcessor):
 
     def register_dependencies(self, uowcommit):
         if self.post_update:
-            if not self.is_backref:
-                uowcommit.register_dependency(self.mapper, self.dependency_marker)
-                uowcommit.register_dependency(self.parent, self.dependency_marker)
-                uowcommit.register_processor(self.dependency_marker, self, self.parent)
+            for p in self.prop._reverse_property:
+                if (p._dependency_processor, "register") in uowcommit.attributes:
+                    return
+                
+            uowcommit.register_dependency(self.mapper, self.dependency_marker)
+            uowcommit.register_dependency(self.parent, self.dependency_marker)
+            uowcommit.register_processor(self.dependency_marker, self, self.parent)
+            uowcommit.attributes[(self, "register")] = True
+            
         else:
             uowcommit.register_dependency(self.mapper, self.parent)
             uowcommit.register_processor(self.mapper, self, self.parent)
 
 
     def process_dependencies(self, task, deplist, uowcommit, delete=False):
-        #print self.mapper.mapped_table.name + " " + self.key + " " + repr(len(deplist)) + " process_dep isdelete " + repr(delete) + " direction " + repr(self.direction)
         if delete:
             if self.post_update and not self.cascade.delete_orphan and not self.passive_deletes == 'all':
                 # post_update means we have to update our row to not reference the child object
@@ -333,7 +339,6 @@ class ManyToOneDP(DependencyProcessor):
                     self._conditional_post_update(state, uowcommit, history.sum())
 
     def preprocess_dependencies(self, task, deplist, uowcommit, delete=False):
-        #print self.mapper.mapped_table.name + " " + self.key + " " + repr(len(deplist)) + " PRE process_dep isdelete " + repr(delete) + " direction " + repr(self.direction)
         if self.post_update:
             return
         if delete:
@@ -390,23 +395,23 @@ class ManyToManyDP(DependencyProcessor):
         uowcommit.register_processor(self.dependency_marker, self, self.parent)
 
     def process_dependencies(self, task, deplist, uowcommit, delete = False):
-        #print self.mapper.mapped_table.name + " " + self.key + " " + repr(len(deplist)) + " process_dep isdelete " + repr(delete) + " direction " + repr(self.direction)
         connection = uowcommit.transaction.connection(self.mapper)
         secondary_delete = []
         secondary_insert = []
         secondary_update = []
 
-        if self.prop._reverse_property:
-            reverse_dep = getattr(self.prop._reverse_property, '_dependency_processor', None)
-        else:
-            reverse_dep = None
-
+        def check_reverse_dep(child, state):
+            for r in self.prop._reverse_property:
+                if (r._dependency_processor, "manytomany", child, state) in uowcommit.attributes:
+                    return True
+            return False
+            
         if delete:
             for state in deplist:
                 history = uowcommit.get_attribute_history(state, self.key, passive=self.passive_deletes)
                 if history:
                     for child in history.non_added():
-                        if child is None or (reverse_dep and (reverse_dep, "manytomany", child, state) in uowcommit.attributes):
+                        if child is None or check_reverse_dep(child, state):
                             continue
                         associationrow = {}
                         self._synchronize(state, child, associationrow, False, uowcommit)
@@ -417,14 +422,14 @@ class ManyToManyDP(DependencyProcessor):
                 history = uowcommit.get_attribute_history(state, self.key)
                 if history:
                     for child in history.added:
-                        if child is None or (reverse_dep and (reverse_dep, "manytomany", child, state) in uowcommit.attributes):
+                        if child is None or check_reverse_dep(child, state):
                             continue
                         associationrow = {}
                         self._synchronize(state, child, associationrow, False, uowcommit)
                         uowcommit.attributes[(self, "manytomany", state, child)] = True
                         secondary_insert.append(associationrow)
                     for child in history.deleted:
-                        if child is None or (reverse_dep and (reverse_dep, "manytomany", child, state) in uowcommit.attributes):
+                        if child is None or check_reverse_dep(child, state):
                             continue
                         associationrow = {}
                         self._synchronize(state, child, associationrow, False, uowcommit)
@@ -461,7 +466,6 @@ class ManyToManyDP(DependencyProcessor):
             connection.execute(statement, secondary_insert)
 
     def preprocess_dependencies(self, task, deplist, uowcommit, delete = False):
-        #print self.mapper.mapped_table.name + " " + self.key + " " + repr(len(deplist)) + " preprocess_dep isdelete " + repr(delete) + " direction " + repr(self.direction)
         if not delete:
             for state in deplist:
                 history = uowcommit.get_attribute_history(state, self.key, passive=True)

@@ -58,6 +58,7 @@ _COMPILE_MUTEX = util.threading.RLock()
 ColumnProperty = None
 SynonymProperty = None
 ComparableProperty = None
+RelationProperty = None
 _expire_state = None
 _state_session = None
 
@@ -87,6 +88,7 @@ class Mapper(object):
                  polymorphic_identity=None,
                  polymorphic_fetch=None,
                  concrete=False,
+                 abstract=False,
                  select_table=None,
                  with_polymorphic=None,
                  allow_null_pks=False,
@@ -113,7 +115,8 @@ class Mapper(object):
             self.order_by = util.to_list(order_by)
         else:
             self.order_by = order_by
-
+        
+        self.abstract = abstract
         self.always_refresh = always_refresh
         self.version_id_col = version_id_col
         self.concrete = concrete
@@ -505,15 +508,19 @@ class Mapper(object):
         # do a special check for the "discriminiator" column, as it may only be present
         # in the 'with_polymorphic' selectable but we need it for the base mapper
         if self.polymorphic_on and self.polymorphic_on not in self._columntoproperty:
-            col = self.mapped_table.corresponding_column(self.polymorphic_on) or self.polymorphic_on
+            col = self.mapped_table.corresponding_column(self.polymorphic_on)
+            if not col:
+                dont_instrument = True
+                col = self.polymorphic_on
+            else:
+                dont_instrument = False
             if self._should_exclude(col.key, local=False):
                 raise sa_exc.InvalidRequestError("Cannot exclude or override the discriminator column %r" % col.key)
-            self._compile_property(col.key, ColumnProperty(col), init=False, setparent=True)
+            self._compile_property(col.key, ColumnProperty(col, _no_instrument=dont_instrument), init=False, setparent=True)
 
     def _adapt_inherited_property(self, key, prop):
         if not self.concrete:
             self._compile_property(key, prop, init=False, setparent=False)
-        # TODO: concrete properties dont adapt at all right now....will require copies of relations() etc.
 
     class _CompileOnAttr(PropComparator):
         """A placeholder descriptor which triggers compilation on access."""
