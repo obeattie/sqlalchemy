@@ -117,6 +117,7 @@ is not in use this flag should be left off.
 import datetime, random, re
 
 from sqlalchemy import util, sql, schema, log
+from sqlalchemy.schema import DefaultClause
 from sqlalchemy.engine import default, base
 from sqlalchemy.sql import compiler, visitors
 from sqlalchemy.sql import operators as sql_operators, functions as sql_functions
@@ -550,24 +551,15 @@ class OracleDialect(default.DefaultDialect):
             else:
                 return None, None, None, None
 
-    def reflecttable(self, connection, table, include_columns):
-        preparer = self.identifier_preparer
-
-        resolve_synonyms = table.kwargs.get('oracle_resolve_synonyms', False)
-
-        if resolve_synonyms:
-            actual_name, owner, dblink, synonym = self._resolve_synonym(connection, desired_owner=self._denormalize_name(table.schema), desired_synonym=self._denormalize_name(table.name))
-        else:
-            actual_name, owner, dblink, synonym = None, None, None, None
-
-        if not actual_name:
-            actual_name = self._denormalize_name(table.name)
+    def get_columns(self, connection, table_name, schema=None, info_cache=None,
+                    dblink=''):
+        table_name = self._denormalize_name(table_name)
         if not dblink:
             dblink = ''
-        if not owner:
-            owner = self._denormalize_name(table.schema or self.get_default_schema_name(connection))
-
-        c = connection.execute ("select COLUMN_NAME, DATA_TYPE, DATA_LENGTH, DATA_PRECISION, DATA_SCALE, NULLABLE, DATA_DEFAULT from ALL_TAB_COLUMNS%(dblink)s where TABLE_NAME = :table_name and OWNER = :owner" % {'dblink':dblink}, {'table_name':actual_name, 'owner':owner})
+        if not schema:
+            schema = self._denormalize_name(schema or self.get_default_schema_name(connection))
+        columns = []
+        c = connection.execute ("select COLUMN_NAME, DATA_TYPE, DATA_LENGTH, DATA_PRECISION, DATA_SCALE, NULLABLE, DATA_DEFAULT from ALL_TAB_COLUMNS%(dblink)s where TABLE_NAME = :table_name and OWNER = :owner" % {'dblink':dblink}, {'table_name':table_name, 'owner':schema})
 
         while True:
             row = c.fetchone()
@@ -575,9 +567,6 @@ class OracleDialect(default.DefaultDialect):
                 break
 
             (colname, coltype, length, precision, scale, nullable, default) = (self._normalize_name(row[0]), row[1], row[2], row[3], row[4], row[5]=='Y', row[6])
-
-            if include_columns and colname not in include_columns:
-                continue
 
             # INTEGER if the scale is 0 and precision is null
             # NUMBER if the scale and precision are both null
@@ -601,47 +590,70 @@ class OracleDialect(default.DefaultDialect):
                     util.warn("Did not recognize type '%s' of column '%s'" %
                               (coltype, colname))
                     coltype = sqltypes.NULLTYPE
-
             colargs = []
             if default is not None:
-                colargs.append(schema.DefaultClause(sql.text(default)))
+                colargs.append(DefaultClause(sql.text(default)))
+            columns.append((colname, coltype, nullable, colargs))
+        return columns
 
-            table.append_column(schema.Column(colname, coltype, nullable=nullable, *colargs))
+    def _get_constraint_data(self, connection, table_name, schema=None,
+                             info_cache=None, dblink=''):
+        if not dblink:
+            dblink = ''
+        schema = self._denormalize_name(schema or self.get_default_schema_name(connection))
+        if info_cache is None:
+            info_cache = {}
+        fullname = "%s.%s.%s" % (dblink, schema, table_name)
+        if not fullname in info_cache:
+            info_cache[fullname] = {}
+        constraint_data = info_cache[fullname].get('constraint_data')
+        if not constraint_data:
+            rp = connection.execute("""SELECT
+                 ac.constraint_name,
+                 ac.constraint_type,
+                 loc.column_name AS local_column,
+                 rem.table_name AS remote_table,
+                 rem.column_name AS remote_column,
+                 rem.owner AS remote_owner
+               FROM all_constraints%(dblink)s ac,
+                 all_cons_columns%(dblink)s loc,
+                 all_cons_columns%(dblink)s rem
+               WHERE ac.table_name = :table_name
+               AND ac.constraint_type IN ('R','P')
+               AND ac.owner = :owner
+               AND ac.owner = loc.owner
+               AND ac.constraint_name = loc.constraint_name
+               AND ac.r_owner = rem.owner(+)
+               AND ac.r_constraint_name = rem.constraint_name(+)
+               -- order multiple primary keys correctly
+               ORDER BY ac.constraint_name, loc.position, rem.position"""
+             % {'dblink':dblink}, {'table_name' : table_name, 'owner' : schema})
+            constraint_data = rp.fetchall()
+            info_cache[fullname]['constraint_data'] = constraint_data
+        return constraint_data
 
-        if not table.columns:
-            raise AssertionError("Couldn't find any column information for table %s" % actual_name)
-
-        c = connection.execute("""SELECT
-             ac.constraint_name,
-             ac.constraint_type,
-             loc.column_name AS local_column,
-             rem.table_name AS remote_table,
-             rem.column_name AS remote_column,
-             rem.owner AS remote_owner
-           FROM all_constraints%(dblink)s ac,
-             all_cons_columns%(dblink)s loc,
-             all_cons_columns%(dblink)s rem
-           WHERE ac.table_name = :table_name
-           AND ac.constraint_type IN ('R','P')
-           AND ac.owner = :owner
-           AND ac.owner = loc.owner
-           AND ac.constraint_name = loc.constraint_name
-           AND ac.r_owner = rem.owner(+)
-           AND ac.r_constraint_name = rem.constraint_name(+)
-           -- order multiple primary keys correctly
-           ORDER BY ac.constraint_name, loc.position, rem.position"""
-         % {'dblink':dblink}, {'table_name' : actual_name, 'owner' : owner})
-
-        fks = {}
-        while True:
-            row = c.fetchone()
-            if row is None:
-                break
+    def get_primary_keys(self, connection, table_name, schema=None,
+                         info_cache=None, dblink=''):
+        constraint_data = self._get_constraint_data(connection, table_name,
+                                        schema, info_cache, dblink)
+        pkeys = []
+        for row in constraint_data:
             #print "ROW:" , row
             (cons_name, cons_type, local_column, remote_table, remote_column, remote_owner) = row[0:2] + tuple([self._normalize_name(x) for x in row[2:]])
             if cons_type == 'P':
-                table.primary_key.add(table.c[local_column])
-            elif cons_type == 'R':
+                pkeys.append((local_column, ))
+        return pkeys
+
+    def get_foreign_keys(self, connection, table_name, schema=None,
+                         info_cache=None, dblink='', resolve_synonyms=False):
+        print table_name, schema, info_cache, dblink, resolve_synonyms
+        constraint_data = self._get_constraint_data(connection, table_name,
+                                        schema, info_cache, dblink)
+        fkeys = []
+        fks = {}
+        for row in constraint_data:
+            (cons_name, cons_type, local_column, remote_table, remote_column, remote_owner) = row[0:2] + tuple([self._normalize_name(x) for x in row[2:]])
+            if cons_type == 'R':
                 try:
                     fk = fks[cons_name]
                 except KeyError:
@@ -660,22 +672,72 @@ class OracleDialect(default.DefaultDialect):
                     if ref_synonym:
                         remote_table = self._normalize_name(ref_synonym)
                         remote_owner = self._normalize_name(ref_remote_owner)
-
-                if not table.schema and self._denormalize_name(remote_owner) == owner:
-                    refspec =  ".".join([remote_table, remote_column])
-                    t = schema.Table(remote_table, table.metadata, autoload=True, autoload_with=connection, oracle_resolve_synonyms=resolve_synonyms, useexisting=True)
-                else:
-                    refspec =  ".".join([x for x in [remote_owner, remote_table, remote_column] if x])
-                    t = schema.Table(remote_table, table.metadata, autoload=True, autoload_with=connection, schema=remote_owner, oracle_resolve_synonyms=resolve_synonyms, useexisting=True)
+                ##if not schema and self._denormalize_name(remote_owner) == owner:
+                ##    refspec =  ".".join([remote_table, remote_column])
+                ##else:
+                ##    refspec =  ".".join([x for x in [remote_owner, remote_table, remote_column] if x])
 
                 if local_column not in fk[0]:
                     fk[0].append(local_column)
-                if refspec not in fk[1]:
-                    fk[1].append(refspec)
+                if remote_column not in fk[1]:
+                    fk[1].append(remote_column)
+        for (name, value) in fks.items():
+            if remote_table and value[1]:
+                fkeys.append((name, value[0], remote_owner, remote_table, value[1]))
+        return fkeys
 
-        for name, value in fks.iteritems():
-            table.append_constraint(schema.ForeignKeyConstraint(value[0], value[1], name=name))
+    def reflecttable(self, connection, table, include_columns):
+        preparer = self.identifier_preparer
+        info_cache = {}
 
+        # columns
+        resolve_synonyms = table.kwargs.get('oracle_resolve_synonyms', False)
+
+        if resolve_synonyms:
+            actual_name, owner, dblink, synonym = self._resolve_synonym(connection, desired_owner=self._denormalize_name(table.schema), desired_synonym=self._denormalize_name(table.name))
+        else:
+            actual_name, owner, dblink, synonym = None, None, None, None
+        if not actual_name:
+            actual_name = self._denormalize_name(table.name)
+        if not dblink:
+            dblink = ''
+        if not owner:
+            owner = self._denormalize_name(table.schema or self.get_default_schema_name(connection))
+        columns = self.get_columns(connection, actual_name, owner, info_cache,
+                                   dblink)
+        for (colname, coltype, nullable, colargs) in columns:
+            if include_columns and colname not in include_columns:
+                continue
+            table.append_column(schema.Column(colname, coltype,
+                                              nullable=nullable, *colargs))
+        if not table.columns:
+            raise AssertionError("Couldn't find any column information for table %s" % actual_name)
+
+        for rset in self.get_primary_keys(connection, actual_name, owner,
+                                                           info_cache, dblink):
+            table.primary_key.add(table.c[rset[0]])
+
+        fks = {}
+        fkeys = []
+        fkeys = self.get_foreign_keys(connection, actual_name, owner,
+                                      info_cache, dblink, resolve_synonyms)
+        refspecs = []
+        for (conname, constrained_columns, referred_schema, referred_table,
+             referred_columns) in fkeys:
+            for (i, ref_col) in enumerate(referred_columns):
+                if not table.schema and self._denormalize_name(referred_schema) == self._denormalize_name(owner):
+                    t = schema.Table(referred_table, table.metadata, autoload=True, autoload_with=connection, oracle_resolve_synonyms=resolve_synonyms, useexisting=True)
+
+                    refspec =  ".".join([referred_table, ref_col])
+                else:
+                    refspec = '.'.join([x for x in [referred_schema,
+                                    referred_table, ref_col] if x is not None])
+
+                    t = schema.Table(referred_table, table.metadata, autoload=True, autoload_with=connection, schema=referred_schema, oracle_resolve_synonyms=resolve_synonyms, useexisting=True)
+                refspecs.append(refspec)
+            table.append_constraint(
+                schema.ForeignKeyConstraint(constrained_columns, refspecs,
+                                            name=conname))
 
 class _OuterJoinColumn(sql.ClauseElement):
     __visit_name__ = 'outer_join_column'
