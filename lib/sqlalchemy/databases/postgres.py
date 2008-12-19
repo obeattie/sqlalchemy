@@ -379,6 +379,23 @@ class PGDialect(default.DefaultDialect):
             schemaname = None
         return schema_where_clause
 
+    def _prepare_info_cache(self, info_cache, table_name, schema):
+        """Add index for schema.table_name if it does not exist.
+       
+        This is just to consolidate some boilerplate code.
+        
+        """
+        # First, make sure it has the fields we expect.
+        if not info_cache:
+            info_cache = dict(tables={})
+        elif 'tables' not in info_cache:
+            info_cache['tables'] = {}
+        # Now, add the table index if needed.
+        table_index = "%s.%s" % (schema, table_name)
+        if table_index not in info_cache['tables']:
+            info_cache['tables'][table_index] = {}
+        return info_cache
+
     def _get_table_oid(self, connection, table_name, schema=None):
         schema_where_clause = self.__make_schema_where_clause(schema)
         query = """
@@ -405,6 +422,7 @@ class PGDialect(default.DefaultDialect):
         return rows[0].table_oid
 
     def get_columns(self, connection, table_name, schema=None, info_cache=None):
+        info_cache = self._prepare_info_cache(info_cache, table_name, schema)
         preparer = self.identifier_preparer
         schema_where_clause = self.__make_schema_where_clause(schema)
         schemaname = schema
@@ -498,14 +516,14 @@ class PGDialect(default.DefaultDialect):
                 coltype = sqltypes.NULLTYPE
             other_args = []
             columns.append((name, coltype, nullable, default, other_args))
-        if table_oid is not None and info_cache is not None:
-            info_cache['table_oid'] = table_oid
+        if table_oid is not None:
+            table_index = "%s.%s" % (schema, table_name)
+            info_cache['tables'][table_index]['table_oid'] = table_oid
         return columns
 
     def get_primary_keys(self, connection, table_name, schema=None,
                          info_cache=None):
-        if info_cache is None:
-            info_cache = {}
+        info_cache = self._prepare_info_cache(info_cache, table_name, schema)
         PK_SQL = """
           SELECT attname AS colname FROM pg_attribute
           WHERE attrelid = (
@@ -515,17 +533,19 @@ class PGDialect(default.DefaultDialect):
           ORDER BY attnum
         """
         t = sql.text(PK_SQL, typemap={'attname':sqltypes.Unicode})
-        table_oid = info_cache.get('table_oid')
+        table_index = "%s.%s" % (schema, table_name)
+        # See if the oid is cached.
+        table_oid = info_cache['tables'][table_index].get('table_oid')
         if table_oid is None:
             table_oid = self._get_table_oid(connection, table_name, schema)
-        info_cache['table_oid'] = table_oid
+            info_cache['tables'][table_index]['table_oid'] = table_oid
         c = connection.execute(t, table_oid=table_oid)
         return [tuple(r) for r in c.fetchall()]
 
     def get_foreign_keys(self, connection, table_name, schema=None,
                          info_cache=None):
-        if info_cache is None:
-            info_cache = {}
+        info_cache = self._prepare_info_cache(info_cache, table_name, schema)
+        # the constraint query
         preparer = self.identifier_preparer
         FK_SQL = """
           SELECT conname, pg_catalog.pg_get_constraintdef(oid, true) as condef
@@ -534,10 +554,13 @@ class PGDialect(default.DefaultDialect):
           ORDER BY 1
         """
         t = sql.text(FK_SQL, typemap={'conname':sqltypes.Unicode, 'condef':sqltypes.Unicode})
-        table_oid = info_cache.get('table_oid')
+        # See if the oid is cached.
+        table_index = "%s.%s" % (schema, table_name)
+        table_oid = info_cache['tables'][table_index].get('table_oid')
         if table_oid is None:
             table_oid = self._get_table_oid(connection, table_name, schema)
-        info_cache['table_oid'] = table_oid
+            info_cache['tables'][table_index]['table_oid'] = table_oid
+        # Find the foreign keys.
         c = connection.execute(t, table=table_oid)
         fkeys = []
         for conname, condef in c.fetchall():
