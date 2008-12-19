@@ -27,7 +27,7 @@ class Inspector(object):
         else:
             self.engine = conn
 
-    def table_names(self, schema=None):
+    def get_table_names(self, schema=None):
         """
         schema:
           Optional, retrieve names from a non-default schema.
@@ -42,9 +42,9 @@ class Inspector(object):
         """Return information about columns in `table_name`.
 
         Given a string `table_name` and an optional string `schema`, return
-        column information as a list of tuples of the form:
+        column information as a list of dicts of the form:
 
-        (name, coltype, nullable, colattrs)
+        dict(name=name, coltype=coltype, nullable=nullable, colattrs=colattrs)
         
         name
           the column's name
@@ -60,35 +60,51 @@ class Inspector(object):
 
         """
 
-        return self.engine.dialect.get_columns(self.conn, table_name,
+        col_defs = self.engine.dialect.get_columns(self.conn, table_name,
                                                schema=schema,
                                                info_cache=self.info_cache)
+        cols = []
+        for col_def in col_defs:
+            cols.append(
+                {'name':col_def[0],
+                 'coltype':col_def[1],
+                 'nullable':col_def[2],
+                 'colattrs':col_def[3],
+                }
+            )
+        return cols
 
     def get_primary_keys(self, table_name, schema=None):
         """Return information about primary keys in `table_name`.
 
         Given a string `table_name`, and an optional string `schema`, return 
-        primary key information as a list of tuples of the form:
+        primary key information as a list of dicts of the form:
 
-        (colname, )
-
-        A tuple is used here to leave room for other data items should they be
-        added to the spec.
+        dict(colname=colname)
 
         """
 
-        return self.engine.dialect.get_primary_keys(self.conn, table_name,
+        pk_defs = self.engine.dialect.get_primary_keys(self.conn, table_name,
                                                schema=schema,
                                                info_cache=self.info_cache)
+        pks = []
+        for pk_def in pk_defs:
+            pks.append(
+                {'colname':pk_def[0]}
+            )
+        return pks
 
     def get_foreign_keys(self, table_name, schema=None):
         """Return information about foreign_keys in `table_name`.
 
         Given a string `table_name`, and an optional string `schema`, return 
-        foreign key information as a list of tuples of the form:
+        foreign key information as a list of dicts of the form:
 
-        (constraint_name, constrained_columns, referred_schema, referred_table, 
-         referred_columns)
+        dict(constraint_name=constraint_name,
+             constrained_columns=constrained_columns,
+             referred_schema=referred_schema,
+             referred_table=referred_table, 
+             referred_columns=referred_columns)
 
         constrained_columns
           a list of column names that make up the foreign key
@@ -105,14 +121,25 @@ class Inspector(object):
 
         """
 
-        return self.engine.dialect.get_foreign_keys(self.conn, table_name,
+        fk_defs = self.engine.dialect.get_foreign_keys(self.conn, table_name,
                                                schema=schema,
                                                info_cache=self.info_cache)
+        fks = []
+        for fk_def in fk_defs:
+            fks.append(
+                {'constraint_name':fk_def[0],
+                 'constrained_columns':fk_def[1],
+                 'referred_schema':fk_def[2],
+                 'referred_table':fk_def[3],
+                 'referred_columns':fk_def[4]
+                }
+            )
+        return fks
 
 if __name__ == '__main__':
     e = sqlalchemy.create_engine('postgres:///test1')
     insp = Inspector(e)
-    print insp.table_names()
+    print insp.get_table_names()
     print insp.get_columns('customers')
     print insp.get_primary_keys('customers')
     print insp.get_foreign_keys('orders', schema='public')
