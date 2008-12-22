@@ -11,9 +11,12 @@ attributes.
 import sqlalchemy
 
 class Inspector(object):
+    """performs database introspection
+
+    """
     
     def __init__(self, conn):
-        """performs database introspection for `conn`
+        """
 
         conn
           [sqlalchemy.engine.base.#Connectable]
