@@ -598,6 +598,7 @@ class OracleDialect(default.DefaultDialect):
 
     def _get_constraint_data(self, connection, table_name, schema=None,
                              info_cache=None, dblink=''):
+        table_name = self._denormalize_name(table_name)
         if not dblink:
             dblink = ''
         schema = self._denormalize_name(schema or self.get_default_schema_name(connection))
