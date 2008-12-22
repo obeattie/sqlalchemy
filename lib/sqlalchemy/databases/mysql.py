@@ -2210,6 +2210,7 @@ class MySQLSchemaReflector(object):
         fkeys = []
         # This is largely duplicated in _set_constraints.
         for spec in constraints:
+            constraint_name = spec.get('name')
             referred_table = spec['table'][-1]
             referred_schema = len(spec['table']) > 1 and spec['table'][-2] \
                                                                         or None
