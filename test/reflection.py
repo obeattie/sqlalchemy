@@ -27,7 +27,6 @@ def createTables(meta, schema=None):
             sa.ForeignKey('engine_users.user_id')
         )
 
-
     users = Table('engine_users', meta,
         Column('user_id', sa.INT, primary_key=True),
         Column('user_name', sa.VARCHAR(20), nullable=False),
@@ -69,7 +68,9 @@ class ReflectionTest(TestBase):
                 schema_name = schema
                 if schema:
                     # fixme.  issue with case on oracle
-                    schema_name = table.schema.upper()
+                    schema_name = table.schema
+                    if testing.against('oracle'):
+                        schema_name = table.schema.upper()
                 cols = insp.get_columns(table.name, schema=schema_name)
                 self.assert_(len(cols) > 0, len(cols))
                 # should be in order
@@ -125,11 +126,15 @@ class ReflectionTest(TestBase):
         meta.create_all()
         insp = Inspector(meta.bind)
         try:
+            expected_schema = schema
+            if schema is None:
+                expected_schema = meta.bind.dialect.get_default_schema_name(
+                                    meta.bind)
             # users
             users_fkeys = insp.get_foreign_keys(users.name, schema=schema)
             fkey1 = users_fkeys[0]
             self.assert_(fkey1['constraint_name'] is not None)
-            self.assertEqual(fkey1['referred_schema'], getSchema())
+            self.assertEqual(fkey1['referred_schema'], expected_schema)
             self.assertEqual(fkey1['referred_table'], users.name)
             self.assertEqual(fkey1['referred_columns'], ['user_id', ])
             self.assertEqual(fkey1['constrained_columns'], ['parent_user_id'])
@@ -137,7 +142,7 @@ class ReflectionTest(TestBase):
             addr_fkeys = insp.get_foreign_keys(addresses.name, schema=schema)
             fkey1 = addr_fkeys[0]
             self.assert_(fkey1['constraint_name'] is not None)
-            self.assertEqual(fkey1['referred_schema'], getSchema())
+            self.assertEqual(fkey1['referred_schema'], expected_schema)
             self.assertEqual(fkey1['referred_table'], users.name)
             self.assertEqual(fkey1['referred_columns'], ['user_id', ])
             self.assertEqual(fkey1['constrained_columns'], ['remote_user_id'])

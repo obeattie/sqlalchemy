@@ -454,7 +454,7 @@ class PGDialect(default.DefaultDialect):
         c = connection.execute(s, table_name=tablename, schema=schemaname)
         rows = c.fetchall()
         if not rows:
-            raise exc.NoSuchTableError(table.name)
+            raise exc.NoSuchTableError(tablename)
         domains = self._load_domains(connection)
         # Format the results.
         columns = []

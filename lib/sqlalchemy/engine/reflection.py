@@ -129,10 +129,14 @@ class Inspector(object):
                                                info_cache=self.info_cache)
         fks = []
         for fk_def in fk_defs:
+            referred_schema = fk_def[2]
+            if referred_schema is None and schema is None:
+                referred_schema = self.engine.dialect.get_default_schema_name(
+                                                                    self.conn)
             fks.append(
                 {'constraint_name':fk_def[0],
                  'constrained_columns':fk_def[1],
-                 'referred_schema':fk_def[2],
+                 'referred_schema':referred_schema,
                  'referred_table':fk_def[3],
                  'referred_columns':fk_def[4]
                 }
