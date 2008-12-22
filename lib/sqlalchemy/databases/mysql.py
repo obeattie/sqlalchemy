@@ -1733,8 +1733,20 @@ class MySQLDialect(default.DefaultDialect):
     def get_foreign_keys(self, connection, table_name, schema=None,
                          info_cache=None):
         """Return foreign key information for table_name and schema."""
-        return self._reflect('get_foreign_keys', connection, table_name, schema,
+        fks = self._reflect('get_foreign_keys', connection, table_name, schema,
                              info_cache)
+        for (i, fk) in enumerate(fks):
+            if fk[2] is None:
+                if schema is None:
+                    ref_schema = connection.dialect.get_default_schema_name(
+                                                                    connection)
+                else:
+                    ref_schema = schema
+                new_fk = list(fk) 
+                new_fk[2] = ref_schema
+                fks[i] = tuple(new_fk)
+        return fks
+
 
     def reflecttable(self, connection, table, include_columns):
         """Load column definitions from the server."""
