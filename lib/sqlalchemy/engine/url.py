@@ -1,7 +1,7 @@
-"""Provides the [sqlalchemy.engine.url#URL] class which encapsulates
+"""Provides the :class:`~sqlalchemy.engine.url.URL` class which encapsulates
 information about a database connection specification.
 
-The URL object is created automatically when [sqlalchemy.engine#create_engine()] is called
+The URL object is created automatically when :func:`~sqlalchemy.engine.create_engine` is called
 with a string argument; alternatively, the URL is a public-facing construct which can
 be used directly and is also accepted directly by ``create_engine()``.
 """
@@ -11,37 +11,33 @@ from sqlalchemy import exc
 
 
 class URL(object):
-    """Represent the components of a URL used to connect to a database.
+    """
+    Represent the components of a URL used to connect to a database.
 
     This object is suitable to be passed directly to a
     ``create_engine()`` call.  The fields of the URL are parsed from a
     string by the ``module-level make_url()`` function.  the string
     format of the URL is an RFC-1738-style string.
 
-    Attributes on URL include:
+    All initialization parameters are available as public attributes.
+    
+    :param drivername: the name of the database backend.  
+      This name will correspond to a module in sqlalchemy/databases 
+      or a third party plug-in.
 
-    drivername
-      the name of the database backend.  This name will correspond to
-      a module in sqlalchemy/databases or a third party plug-in.
+    :param username: The user name.
 
-    username
-      The user name for the connection.
+    :param password: database password.
 
-    password
-      database password.
+    :param host: The name of the host.
 
-    host
-      The name of the host.
+    :param port: The port number.
 
-    port
-      The port number.
+    :param database: The database name.
 
-    database
-      The database.
-
-    query
-      A dictionary containing key/value pairs representing the URL's
-      query string.
+    :param query: A dictionary of options to be passed to the 
+      dialect and/or the DBAPI upon connect.
+        
     """
 
     def __init__(self, drivername, username=None, password=None, host=None, port=None, database=None, query=None):
@@ -75,6 +71,9 @@ class URL(object):
             s += '?' + "&".join("%s=%s" % (k, self.query[k]) for k in keys)
         return s
     
+    def __hash__(self):
+        return hash(str(self))
+    
     def __eq__(self, other):
         return \
             isinstance(other, URL) and \
@@ -107,18 +106,11 @@ class URL(object):
         used as the keys by default.  Unset or false attributes are omitted
         from the final dictionary.
 
-        \**kw
-          Optional, alternate key names for url attributes::
-
-            # return 'username' as 'user'
-            username='user'
-
-            # omit 'database'
-            database=None
-          
-        names
-          Deprecated.  A list of key names. Equivalent to the keyword
-          usage, must be provided in the order above.
+        :param \**kw: Optional, alternate key names for url attributes.
+        
+        :param names: Deprecated.  Same purpose as the keyword-based alternate names,
+            but correlates the name to the original positionally.
+        
         """
 
         translated = {}
@@ -139,8 +131,8 @@ def make_url(name_or_url):
 
     The given string is parsed according to the RFC 1738 spec.  If an
     existing URL object is passed, just returns the object.
+    
     """
-
     if isinstance(name_or_url, basestring):
         return _parse_rfc1738_args(name_or_url)
     else:

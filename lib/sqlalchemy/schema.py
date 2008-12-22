@@ -10,19 +10,19 @@ Each element within this module describes a database entity which can be
 created and dropped, or is otherwise part of such an entity.  Examples include
 tables, columns, sequences, and indexes.
 
-All entities are subclasses of [sqlalchemy.schema#SchemaItem], and as defined
+All entities are subclasses of :class:`~sqlalchemy.schema.SchemaItem`, and as defined
 in this module they are intended to be agnostic of any vendor-specific
 constructs.
 
 A collection of entities are grouped into a unit called
-[sqlalchemy.schema#MetaData].  MetaData serves as a logical grouping of schema
+:class:`~sqlalchemy.schema.MetaData`.  MetaData serves as a logical grouping of schema
 elements, and can also be associated with an actual database connection such
 that operations involving the contained elements can contact the database as
 needed.
 
 Two of the elements here also build upon their "syntactic" counterparts, which
-are defined in [sqlalchemy.sql.expression#], specifically
-[sqlalchemy.schema#Table] and [sqlalchemy.schema#Column].  Since these objects
+are defined in :class:`~sqlalchemy.sql.expression.`, specifically
+:class:`~sqlalchemy.schema.Table` and :class:`~sqlalchemy.schema.Column`.  Since these objects
 are part of the SQL expression language, they are usable as components in SQL
 expressions.
 
@@ -37,12 +37,13 @@ __all__ = ['SchemaItem', 'Table', 'Column', 'ForeignKey', 'Sequence', 'Index',
            'ForeignKeyConstraint', 'PrimaryKeyConstraint', 'CheckConstraint',
            'UniqueConstraint', 'DefaultGenerator', 'Constraint', 'MetaData',
            'ThreadLocalMetaData', 'SchemaVisitor', 'PassiveDefault',
-           'DefaulClause', 'FetchedValue', 'ColumnDefault', 'DDL']
-
+           'DefaultClause', 'FetchedValue', 'ColumnDefault', 'DDL']
+__all__.sort()
 
 class SchemaItem(visitors.Visitable):
     """Base class for items that define a database schema."""
 
+    __visit_name__ = 'schema_item'
     quote = None
 
     def _init_items(self, *args):
@@ -117,88 +118,87 @@ class _TableSingleton(visitors.VisitableType):
 
 
 class Table(SchemaItem, expression.TableClause):
-    """Represent a relational database table."""
+    """Represent a table in a database."""
 
     __metaclass__ = _TableSingleton
+
+    __visit_name__ = 'table'
 
     ddl_events = ('before-create', 'after-create', 'before-drop', 'after-drop')
 
     def __init__(self, name, metadata, *args, **kwargs):
-        """Construct a Table.
+        """
+        Construct a Table.
 
-        Table objects can be constructed directly.  Arguments are:
+        :param name: The name of this table as represented in the database. 
 
-        name
-          The name of this table, exactly as it appears, or will appear, in
-          the database.
+            This property, along with the *schema*, indicates the *singleton
+            identity* of this table in relation to its parent :class:`MetaData`.
+            Additional calls to :class:`Table` with the same name, metadata,
+            and schema name will return the same :class:`Table` object.
 
-          This property, along with the *schema*, indicates the *singleton
-          identity* of this table.
+            Names which contain no upper case characters
+            will be treated as case insensitive names, and will not be quoted
+            unless they are a reserved word.  Names with any number of upper
+            case characters will be quoted and sent exactly.  Note that this
+            behavior applies even for databases which standardize upper 
+            case names as case insensitive such as Oracle.
 
-          Further tables constructed with the same name/schema combination
-          will return the same Table instance.
+        :param metadata: a :class:`MetaData` object which will contain this 
+            table.  The metadata is used as a point of association of this table
+            with other tables which are referenced via foreign key.  It also
+            may be used to associate this table with a particular 
+            :class:`~sqlalchemy.engine.base.Connectable`.
 
-        \*args
-          Should contain a listing of the Column objects for this table.
-
-        \**kwargs
-          kwargs include:
-
-          schema
-            The *schema name* for this table, which is required if the table
-            resides in a schema other than the default selected schema for the
-            engine's database connection.  Defaults to ``None``.
-
-          autoload
-            Defaults to False: the Columns for this table should be reflected
+        :param \*args: Additional positional arguments are used primarily
+            to add the list of :class:`Column` objects contained within this table.
+            Similar to the style of a CREATE TABLE statement, other :class:`SchemaItem`
+            constructs may be added here, including :class:`PrimaryKeyConstraint`,
+            and :class:`ForeignKeyConstraint`.
+            
+        :param autoload: Defaults to False: the Columns for this table should be reflected
             from the database.  Usually there will be no Column objects in the
             constructor if this property is set.
 
-          autoload_with
-            if autoload==True, this is an optional Engine or Connection
+        :param autoload_with: If autoload==True, this is an optional Engine or Connection
             instance to be used for the table reflection.  If ``None``, the
             underlying MetaData's bound connectable will be used.
 
-          include_columns
-            A list of strings indicating a subset of columns to be loaded via
+        :param include_columns: A list of strings indicating a subset of columns to be loaded via
             the ``autoload`` operation; table columns who aren't present in
             this list will not be represented on the resulting ``Table``
             object.  Defaults to ``None`` which indicates all columns should
             be reflected.
 
-          info
-            Defaults to {}: A space to store application specific data; this
-            must be a dictionary.
+        :param info: A dictionary which defaults to ``{}``.  A space to store application 
+            specific data. This must be a dictionary.
 
-          mustexist
-            Defaults to False: indicates that this Table must already have
-            been defined elsewhere in the application, else an exception is
-            raised.
+        :param mustexist: When ``True``, indicates that this Table must already 
+            be present in the given :class:`MetaData`` collection.
 
-          prefixes
+        :param prefixes:
             A list of strings to insert after CREATE in the CREATE TABLE
             statement.  They will be separated by spaces.
 
-          useexisting
-            Defaults to False: indicates that if this Table was already
-            defined elsewhere in the application, disregard the rest of the
-            constructor arguments.
+        :param quote: Force quoting of this table's name on or off, corresponding
+            to ``True`` or ``False``.  When left at its default of ``None``,
+            the column identifier will be quoted according to whether the name is
+            case sensitive (identifiers with at least one upper case character are 
+            treated as case sensitive), or if it's a reserved word.  This flag 
+            is only needed to force quoting of a reserved word which is not known
+            by the SQLAlchemy dialect.
 
-          owner
-            Deprecated; this is an oracle-only argument - "schema" should
-            be used in its place.
+        :param quote_schema: same as 'quote' but applies to the schema identifier.
 
-          quote
-            Force quoting of the identifier on or off, based on `True` or
-            `False`.  Defaults to `None`.  This flag is rarely needed,
-            as quoting is normally applied
-            automatically for known reserved words, as well as for
-            "case sensitive" identifiers.  An identifier is "case sensitive"
-            if it contains non-lowercase letters, otherwise it's
-            considered to be "case insensitive".
+        :param schema: The *schema name* for this table, which is required if the table
+            resides in a schema other than the default selected schema for the
+            engine's database connection.  Defaults to ``None``.
 
-          quote_schema
-            same as 'quote' but applies to the schema identifier.
+        :param useexisting: When ``True``, indicates that if this Table is already
+            present in the given :class:`MetaData`, apply further arguments within
+            the constructor to the existing :class:`Table`.  If this flag is not 
+            set, an error is raised when the parameters of an existing :class:`Table`
+            are overwritten.
 
         """
         super(Table, self).__init__(name)
@@ -408,128 +408,157 @@ class Table(SchemaItem, expression.TableClause):
                 args.append(c.copy(schema=schema))
             return Table(self.name, metadata, schema=schema, *args)
 
-class Column(SchemaItem, expression._ColumnClause):
-    """Represent a column in a database table.
+class Column(SchemaItem, expression.ColumnClause):
+    """Represents a column in a database table."""
 
-    This is a subclass of ``expression.ColumnClause`` and represents an actual
-    existing table in the database, in a similar fashion as
-    ``TableClause``/``Table``.
-    """
+    __visit_name__ = 'column'
 
     def __init__(self, *args, **kwargs):
-        """Construct a new ``Column`` object.
+        """
+        Construct a new ``Column`` object.
+        
+        :param name: The name of this column as represented in the database. 
+          This argument may be the first positional argument, or specified
+          via keyword.
+          
+          Names which contain no upper case characters
+          will be treated as case insensitive names, and will not be quoted
+          unless they are a reserved word.  Names with any number of upper
+          case characters will be quoted and sent exactly.  Note that this
+          behavior applies even for databases which standardize upper 
+          case names as case insensitive such as Oracle.
+          
+          The name field may be omitted at construction time and applied
+          later, at any time before the Column is associated with a 
+          :class:`Table`.  This is to support convenient
+          usage within the :mod:`~sqlalchemy.ext.declarative` extension.
+          
+        :param type\_: The column's type, indicated using an instance which 
+          subclasses :class:`~sqlalchemy.types.AbstractType`.  If no arguments
+          are required for the type, the class of the type can be sent
+          as well, e.g.::
+          
+            # use a type with arguments
+            Column('data', String(50))
+            
+            # use no arguments
+            Column('level', Integer)
+            
+          The ``type`` argument may be the second positional argument
+          or specified by keyword.
 
-        Arguments are:
-
-        name
-          The name of this column.  This should be the identical name as it
-          appears, or will appear, in the database.  Name may be omitted at
-          construction time but must be assigned before adding a Column
-          instance to a Table.
-
-        type\_
-          The ``TypeEngine`` for this column.  This can be any subclass of
-          ``types.AbstractType``, including the database-agnostic types
-          defined in the types module, database-specific types defined within
-          specific database modules, or user-defined types. If the column
-          contains a ForeignKey, the type can also be None, in which case the
+          If this column also contains a :class:`ForeignKey`,
+          the type argument may be left as ``None`` in which case the
           type assigned will be that of the referenced column.
 
-        \*args
-          Constraint, ForeignKey, ColumnDefault and Sequence objects should be
-          added as list values.
+        :param \*args: Additional positional arguments include various 
+          :class:`SchemaItem` derived constructs which will be applied 
+          as options to the column.  These include instances of 
+          :class:`Constraint`, :class:`ForeignKey`, :class:`ColumnDefault`, 
+          and :class:`Sequence`.  In some cases an equivalent keyword 
+          argument is available such as ``server_default``, ``default``
+          and ``unique``.
 
-        \**kwargs
-          Keyword arguments include:
+        :param autoincrement: This flag may be set to ``False`` to disable
+          SQLAlchemy indicating at the DDL level that an integer primary 
+          key column should have autoincrementing behavior.  This 
+          is an oft misunderstood flag and has no effect whatsoever unless
+          all of the following conditions are met:
+            
+          * The column is of the :class:`~sqlalchemy.types.Integer` datatype.
+          * The column has the ``primary_key`` flag set, or is otherwise
+            a member of a :class:`PrimaryKeyConstraint` on this table.
+          * a CREATE TABLE statement is being issued via :meth:`create()`
+            or :meth:`create_all()`.  The flag has no relevance at any
+            other time.
+          * The database supports autoincrementing behavior, such as 
+            Postgres or MySQL, and this behavior can be disabled (which does
+            not include SQLite).
 
-          key
-            Defaults to the column name: a Python-only *alias name* for this
-            column.
+        :param default: A scalar, Python callable, or :class:`~sqlalchemy.sql.expression.ClauseElement`
+          representing the *default value* for this column, which will be
+          invoked upon insert if this column is otherwise not specified
+          in the VALUES clause of the insert.  This is a shortcut
+          to using :class:`ColumnDefault` as a positional argument.
+          
+          Contrast this argument to ``server_default`` which creates a 
+          default generator on the database side.
 
-            The column will then be identified everywhere in an application,
-            including the column list on its Table, by this key, and not the
-            given name.  Generated SQL, however, will still reference the
-            column by its actual name.
+        :param key: An optional string identifier which will identify this ``Column`` 
+            object on the :class:`Table`.  When a key is provided, this is the
+            only identifier referencing the ``Column`` within the application,
+            including ORM attribute mapping; the ``name`` field is used only
+            when rendering SQL.
 
-          primary_key
-            Defaults to False: True if this column is a primary key column.
-            Multiple columns can have this flag set to specify composite
-            primary keys.  As an alternative, the primary key of a Table can
-            be specified via an explicit ``PrimaryKeyConstraint`` instance
-            appended to the Table's list of objects.
+        :param index: When ``True``, indicates that the column is indexed.
+          This is a shortcut for using a :class:`Index` construct on the table.
+          To specify indexes with explicit names or indexes that contain multiple 
+          columns, use the :class:`Index` construct instead.
 
-          nullable
-            Defaults to True : True if this column should allow nulls. True is
-            the default unless this column is a primary key column.
+        :param info: A dictionary which defaults to ``{}``.  A space to store application 
+          specific data. This must be a dictionary.
 
-          default
-            Defaults to None: a scalar, Python callable, or ``ClauseElement``
-            representing the *default value* for this column, which will be
-            invoked upon insert if this column is not present in the insert
-            list or is given a value of None.  The default expression will be
-            converted into a ``ColumnDefault`` object upon initialization.
+        :param nullable: If set to the default of ``True``, indicates the column
+            will be rendered as allowing NULL, else it's rendered as NOT NULL.
+            This parameter is only used when issuing CREATE TABLE statements.
 
-          server_default
-            Defaults to None: A FetchedValue instance, str, Unicode or
-            sqlalchemy.text() string representing the DDL DEFAULT value for
-            the column.
+        :param onupdate: A scalar, Python callable, or :class:`~sqlalchemy.sql.expression.ClauseElement`
+            representing a default value to be applied to the column within UPDATE
+            statements, which wil be invoked upon update if this column is not present
+            in the SET clause of the update.  This is a shortcut to using 
+            :class:`ColumnDefault` as a positional argument with ``for_update=True``.
+            
+        :param primary_key: If ``True``, marks this column as a primary key
+            column.  Multiple columns can have this flag set to specify composite
+            primary keys.  As an alternative, the primary key of a :class:`Table` can
+            be specified via an explicit :class:`PrimaryKeyConstraint` object.
 
-            String types will be emitted as-is, surrounded by single quotes::
+        :param server_default: A :class:`FetchedValue` instance, str, Unicode or
+          :func:`~sqlalchemy.sql.expression.text` construct representing 
+          the DDL DEFAULT value for the column.
+
+          String types will be emitted as-is, surrounded by single quotes::
 
               Column('x', Text, server_default="val")
 
               x TEXT DEFAULT 'val'
 
-            A sqlalchemy.text() expression will be rendered as-is, without
-            quotes::
+          A :func:`~sqlalchemy.sql.expression.text` expression will be 
+          rendered as-is, without quotes::
 
               Column('y', DateTime, server_default=text('NOW()'))0
 
               y DATETIME DEFAULT NOW()
 
-            Strings and text() will be converted into a ``DefaultClause``
-            object upon initialization.
+          Strings and text() will be converted into a :class:`DefaultClause`
+          object upon initialization.
+          
+          Use :class:`FetchedValue` to indicate that an already-existing column will generate
+          a default value on the database side which will be available to SQLAlchemy 
+          for post-fetch after inserts.  
+          This construct does not specify any DDL and the implementation is 
+          left to the database, such as via a trigger.
 
-          index
-            Defaults to False: indicates that this column is indexed. The name
-            of the index is autogenerated.  to specify indexes with explicit
-            names or indexes that contain multiple columns, use the ``Index``
-            construct instead.
+        :param server_onupdate:   A :class:`FetchedValue` instance representing 
+            a database-side default generation function.  This indicates to 
+            SQLAlchemy that a newly generated value will be available after updates.
+            This construct does not specify any DDL and the implementation is 
+            left to the database, such as via a trigger.
 
-          info
-            Defaults to {}: A space to store application specific data; this
-            must be a dictionary.
+        :param quote: Force quoting of this column's name on or off, corresponding
+           to ``True`` or ``False``.  When left at its default of ``None``,
+           the column identifier will be quoted according to whether the name is
+           case sensitive (identifiers with at least one upper case character are 
+           treated as case sensitive), or if it's a reserved word.  This flag 
+           is only needed to force quoting of a reserved word which is not known
+           by the SQLAlchemy dialect.
 
-          unique
-            Defaults to False: indicates that this column contains a unique
-            constraint, or if `index` is True as well, indicates that the
-            Index should be created with the unique flag.  To specify multiple
+        :param unique: When ``True``, indicates that this column contains a unique
+            constraint, or if ``index`` is ``True`` as well, indicates that the
+            :class:`Index` should be created with the unique flag.  To specify multiple
             columns in the constraint/index or to specify an explicit name,
-            use the ``UniqueConstraint`` or ``Index`` constructs instead.
+            use the :class:`UniqueConstraint` or :class:`Index` constructs explicitly.
 
-          autoincrement
-            Defaults to True: indicates that integer-based primary key columns
-            should have autoincrementing behavior, if supported by the
-            underlying database.  This will affect ``CREATE TABLE`` statements
-            such that they will use the databases *auto-incrementing* keyword
-            (such as ``SERIAL`` for Postgres, ``AUTO_INCREMENT`` for Mysql)
-            and will also affect the behavior of some dialects during
-            ``INSERT`` statement execution such that they will assume primary
-            key values are created in this manner.  If a ``Column`` has an
-            explicit ``ColumnDefault`` object (such as via the `default`
-            keyword, or a ``Sequence`` or ``DefaultClause``), then the value
-            of `autoincrement` is ignored and is assumed to be False.
-            `autoincrement` value is only significant for a column with a type
-            or subtype of Integer.
-
-          quote
-            Force quoting of the identifier on or off, based on `True` or
-            `False`.  Defaults to `None`.  This flag is rarely needed,
-            as quoting is normally applied
-            automatically for known reserved words, as well as for
-            "case sensitive" identifiers.  An identifier is "case sensitive"
-            if it contains non-lowercase letters, otherwise it's
-            considered to be "case insensitive".
         """
 
         name = kwargs.pop('name', None)
@@ -545,7 +574,7 @@ class Column(SchemaItem, expression._ColumnClause):
             coltype = args[0]
             
             # adjust for partials
-            if callable(coltype):
+            if util.callable(coltype):
                 coltype = args[0]()
 
             if (isinstance(coltype, types.AbstractType) or
@@ -719,57 +748,60 @@ class Column(SchemaItem, expression._ColumnClause):
             return [x for x in (self.default, self.onupdate) if x is not None] + \
                 list(self.foreign_keys) + list(self.constraints)
         else:
-            return expression._ColumnClause.get_children(self, **kwargs)
+            return expression.ColumnClause.get_children(self, **kwargs)
 
 
 class ForeignKey(SchemaItem):
     """Defines a column-level FOREIGN KEY constraint between two columns.
 
-    ``ForeignKey`` is specified as an argument to a ``Column`` object.
+    ``ForeignKey`` is specified as an argument to a :class:`Column` object, e.g.::
+    
+        t = Table("remote_table", metadata, 
+            Column("remote_id", ForeignKey("main_table.id"))
+        )
 
-    For a composite (multiple column) FOREIGN KEY, use a ForeignKeyConstraint
-    within the Table definition.
+    For a composite (multiple column) FOREIGN KEY, use a :class:`ForeignKeyConstraint`
+    object specified at the level of the :class:`Table`.
+    
+    Further examples of foreign key configuration are in :ref:`metadata_foreignkeys`.
 
     """
-    def __init__(self, column, constraint=None, use_alter=False, name=None, onupdate=None, ondelete=None, deferrable=None, initially=None):
-        """Construct a column-level FOREIGN KEY.
 
-        column
-          A single target column for the key relationship.  A ``Column``
+    __visit_name__ = 'foreign_key'
+
+    def __init__(self, column, constraint=None, use_alter=False, name=None, onupdate=None, ondelete=None, deferrable=None, initially=None):
+        """
+        Construct a column-level FOREIGN KEY.
+
+        :param column: A single target column for the key relationship.  A :class:`Column`
           object or a column name as a string: ``tablename.columnname`` or
           ``schema.tablename.columnname``.
 
-        constraint
-          Optional.  A parent ``ForeignKeyConstraint`` object.  If not
-          supplied, a ``ForeignKeyConstraint`` will be automatically created
+        :param constraint: Optional.  A parent :class:`ForeignKeyConstraint` object.  If not
+          supplied, a :class:`ForeignKeyConstraint` will be automatically created
           and added to the parent table.
 
-        name
-          Optional string.  An in-database name for the key if `constraint` is
+        :param name: Optional string.  An in-database name for the key if `constraint` is
           not provided.
 
-        onupdate
-          Optional string.  If set, emit ON UPDATE <value> when issuing DDL
+        :param onupdate: Optional string.  If set, emit ON UPDATE <value> when issuing DDL
           for this constraint.  Typical values include CASCADE, DELETE and
           RESTRICT.
 
-        ondelete
-          Optional string.  If set, emit ON DELETE <value> when issuing DDL
+        :param ondelete: Optional string.  If set, emit ON DELETE <value> when issuing DDL
           for this constraint.  Typical values include CASCADE, DELETE and
           RESTRICT.
 
-        deferrable
-          Optional bool.  If set, emit DEFERRABLE or NOT DEFERRABLE when
+        :param deferrable: Optional bool.  If set, emit DEFERRABLE or NOT DEFERRABLE when
           issuing DDL for this constraint.
 
-        initially
-          Optional string.  If set, emit INITIALLY <value> when issuing DDL
+        :param initially: Optional string.  If set, emit INITIALLY <value> when issuing DDL
           for this constraint.
 
-        use_alter
-          If True, do not emit this key as part of the CREATE TABLE
+        :param use_alter: If True, do not emit this key as part of the CREATE TABLE
           definition.  Instead, use ALTER TABLE after table creation to add
           the key.  Useful for circular dependencies.
+          
         """
 
         self._colspec = column
@@ -872,6 +904,8 @@ class ForeignKey(SchemaItem):
         return _column
 
     def _set_parent(self, column):
+        if hasattr(self, 'parent'):
+            raise exc.InvalidRequestError("This ForeignKey already has a parent !")
         self.parent = column
 
         if self.parent._pre_existing_column is not None:
@@ -894,6 +928,8 @@ class ForeignKey(SchemaItem):
 
 class DefaultGenerator(SchemaItem):
     """Base class for column *default* values."""
+
+    __visit_name__ = 'default_generator'
 
     def __init__(self, for_update=False, metadata=None):
         self.for_update = for_update
@@ -927,7 +963,7 @@ class ColumnDefault(DefaultGenerator):
         if isinstance(arg, FetchedValue):
             raise exc.ArgumentError(
                 "ColumnDefault may not be a server-side default type.")
-        if callable(arg):
+        if util.callable(arg):
             arg = self._maybe_wrap_callable(arg)
         self.arg = arg
 
@@ -974,6 +1010,8 @@ class ColumnDefault(DefaultGenerator):
 
 class Sequence(DefaultGenerator):
     """Represents a named database sequence."""
+
+    __visit_name__ = 'sequence'
 
     def __init__(self, name, start=None, increment=None, schema=None,
                  optional=False, quote=None, **kwargs):
@@ -1051,6 +1089,8 @@ class Constraint(SchemaItem):
     Implements a hybrid of dict/setlike behavior with regards to the list of
     underying columns.
     """
+
+    __visit_name__ = 'constraint'
 
     def __init__(self, name=None, deferrable=None, initially=None):
         """Create a SQL constraint.
@@ -1143,9 +1183,13 @@ class ForeignKeyConstraint(Constraint):
 
     Defines a single column or composite FOREIGN KEY ... REFERENCES
     constraint. For a no-frills, single column foreign key, adding a
-    ``ForeignKey`` to the definition of a ``Column`` is a shorthand equivalent
-    for an unnamed, single column ``ForeignKeyConstraint``.
+    :class:`ForeignKey` to the definition of a :class:`Column` is a shorthand equivalent
+    for an unnamed, single column :class:`ForeignKeyConstraint`.
+    
+    Examples of foreign key configuration are in :ref:`metadata_foreignkeys`.
+    
     """
+    __visit_name__ = 'foreign_key_constraint'
 
     def __init__(self, columns, refcolumns, name=None, onupdate=None, ondelete=None, use_alter=False, deferrable=None, initially=None):
         """Construct a composite-capable FOREIGN KEY.
@@ -1223,6 +1267,8 @@ class PrimaryKeyConstraint(Constraint):
     multiple-column PrimaryKeyConstraint.
     """
 
+    __visit_name__ = 'primary_key_constraint'
+
     def __init__(self, *columns, **kwargs):
         """Construct a composite-capable PRIMARY KEY.
 
@@ -1274,6 +1320,8 @@ class PrimaryKeyConstraint(Constraint):
     def copy(self, **kw):
         return PrimaryKeyConstraint(name=self.name, *[c.key for c in self])
 
+    __hash__ = Constraint.__hash__
+    
     def __eq__(self, other):
         return self.columns == other
 
@@ -1285,6 +1333,8 @@ class UniqueConstraint(Constraint):
     definition is a shorthand equivalent for an unnamed, single column
     UniqueConstraint.
     """
+
+    __visit_name__ = 'unique_constraint'
 
     def __init__(self, *columns, **kwargs):
         """Construct a UNIQUE constraint.
@@ -1335,6 +1385,8 @@ class Index(SchemaItem):
     column index, adding ``index=True`` to the ``Column`` definition is
     a shorthand equivalent for an unnamed, single column Index.
     """
+
+    __visit_name__ = 'index'
 
     def __init__(self, name, *columns, **kwargs):
         """Construct an index object.
@@ -1414,12 +1466,13 @@ class MetaData(SchemaItem):
     """A collection of Tables and their associated schema constructs.
 
     Holds a collection of Tables and an optional binding to an ``Engine`` or
-    ``Connection``.  If bound, the [sqlalchemy.schema#Table] objects in the
-    collection and their columns may participate in implicit SQL execution.
+    ``Connection``.  If bound, the :class:`~sqlalchemy.schema.Table` objects
+    in the collection and their columns may participate in implicit SQL
+    execution.
 
-    The `Table` objects themselves are stored in the `metadata.tables` 
+    The `Table` objects themselves are stored in the `metadata.tables`
     dictionary.
-    
+
     The ``bind`` property may be assigned to dynamically.  A common pattern is
     to start unbound and then bind later when an engine is available::
 
@@ -1432,6 +1485,10 @@ class MetaData(SchemaItem):
 
     MetaData is a thread-safe object after tables have been explicitly defined
     or loaded via reflection.
+
+    .. index::
+      single: thread safety; MetaData
+
     """
 
     __visit_name__ = 'metadata'
@@ -1570,7 +1627,7 @@ class MetaData(SchemaItem):
         in this ``MetaData`` no longer exists in the database.
 
         bind
-          A ``Connectable`` used to access the database; if None, uses the
+          A :class:`~sqlalchemy.engine.base.Connectable` used to access the database; if None, uses the
           existing bind on this ``MetaData``, if any.
 
         schema
@@ -1608,7 +1665,7 @@ class MetaData(SchemaItem):
 
         if only is None:
             load = [name for name in available if name not in current]
-        elif callable(only):
+        elif util.callable(only):
             load = [name for name in available
                     if name not in current and only(name, self)]
         else:
@@ -1668,7 +1725,7 @@ class MetaData(SchemaItem):
         present in the target database.
 
         bind
-          A ``Connectable`` used to access the database; if None, uses the
+          A :class:`~sqlalchemy.engine.base.Connectable` used to access the database; if None, uses the
           existing bind on this ``MetaData``, if any.
 
         tables
@@ -1695,7 +1752,7 @@ class MetaData(SchemaItem):
         the target database.
 
         bind
-          A ``Connectable`` used to access the database; if None, uses
+          A :class:`~sqlalchemy.engine.base.Connectable` used to access the database; if None, uses
           the existing bind on this ``MetaData``, if any.
 
         tables
@@ -1727,8 +1784,6 @@ class ThreadLocalMetaData(MetaData):
     ``connect()``.  You can also re-bind dynamically multiple times per
     thread, just like a regular ``MetaData``.
 
-    Use this type of MetaData when your tables are present in more than one
-    database and you need to address them simultanesouly.
     """
 
     __visit_name__ = 'metadata'
@@ -1877,8 +1932,9 @@ class DDL(object):
           available for use in string substitutions on the DDL statement.
 
         bind
-          Optional. A ``Connectable``, used by default when ``execute()``
+          Optional. A :class:`~sqlalchemy.engine.base.Connectable`, used by default when ``execute()``
           is invoked without a bind argument.
+          
         """
 
         if not isinstance(statement, basestring):
@@ -1886,7 +1942,7 @@ class DDL(object):
                 "Expected a string or unicode SQL statement, got '%r'" %
                 statement)
         if (on is not None and
-            (not isinstance(on, basestring) and not callable(on))):
+            (not isinstance(on, basestring) and not util.callable(on))):
             raise exc.ArgumentError(
                 "Expected the name of a database dialect or a callable for "
                 "'on' criteria, got type '%s'." % type(on).__name__)
@@ -1900,13 +1956,13 @@ class DDL(object):
         """Execute this DDL immediately.
 
         Executes the DDL statement in isolation using the supplied
-        ``Connectable`` or ``Connectable`` assigned to the ``.bind`` property,
+        :class:`~sqlalchemy.engine.base.Connectable` or :class:`~sqlalchemy.engine.base.Connectable` assigned to the ``.bind`` property,
         if not supplied.  If the DDL has a conditional ``on`` criteria, it
         will be invoked with None as the event.
 
         bind
           Optional, an ``Engine`` or ``Connection``.  If not supplied, a
-          valid ``Connectable`` must be present in the ``.bind`` property.
+          valid :class:`~sqlalchemy.engine.base.Connectable` must be present in the ``.bind`` property.
 
         schema_item
           Optional, defaults to None.  Will be passed to the ``on`` callable

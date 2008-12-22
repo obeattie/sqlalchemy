@@ -6,6 +6,7 @@ from sqlalchemy.orm import eagerload, deferred, undefer
 from testlib.sa import Table, Column, Integer, String, ForeignKey, and_
 from testlib.sa.orm import mapper, relation, create_session, lazyload
 from testlib.testing import eq_
+from testlib.assertsql import CompiledSQL
 from orm import _base, _fixtures
 
 class EagerTest(_fixtures.FixtureTest):
@@ -23,6 +24,22 @@ class EagerTest(_fixtures.FixtureTest):
         assert [User(id=7, addresses=[Address(id=1, email_address='jack@bean.com')])] == q.filter(User.id==7).all()
         assert self.static.user_address_result == q.all()
 
+    @testing.resolve_artifact_names
+    def test_late_compile(self):
+        m = mapper(User, users)
+        sess = create_session()
+        sess.query(User).all()
+        m.add_property("addresses", relation(mapper(Address, addresses)))
+        
+        sess.clear()
+        def go():
+            eq_(
+               [User(id=7, addresses=[Address(id=1, email_address='jack@bean.com')])],
+               sess.query(User).options(eagerload('addresses')).filter(User.id==7).all()
+            )
+        self.assert_sql_count(testing.db, go, 1)
+            
+        
     @testing.resolve_artifact_names
     def test_no_orphan(self):
         """An eagerly loaded child object is not marked as an orphan"""
@@ -423,7 +440,7 @@ class EagerTest(_fixtures.FixtureTest):
         assert 'orders' not in noeagers[0].__dict__
         assert 'addresses' not in noeagers[0].__dict__
 
-    @testing.fails_on('maxdb')
+    @testing.fails_on('maxdb', 'FIXME: unknown')
     @testing.resolve_artifact_names
     def test_limit(self):
         """Limit operations combined with lazy-load relationships."""
@@ -473,7 +490,7 @@ class EagerTest(_fixtures.FixtureTest):
             assert self.static.user_address_result == l
         self.assert_sql_count(testing.db, go, 1)
 
-    @testing.fails_on('maxdb')
+    @testing.fails_on('maxdb', 'FIXME: unknown')
     @testing.resolve_artifact_names
     def test_limit_2(self):
         mapper(Keyword, keywords)
@@ -488,7 +505,7 @@ class EagerTest(_fixtures.FixtureTest):
 
         assert self.static.item_keyword_result[1:3] == l
 
-    @testing.fails_on('maxdb')
+    @testing.fails_on('maxdb', 'FIXME: unknown')
     @testing.resolve_artifact_names
     def test_limit_3(self):
         """test that the ORDER BY is propagated from the inner select to the outer select, when using the
@@ -559,7 +576,7 @@ class EagerTest(_fixtures.FixtureTest):
             assert [User(id=7, address=Address(id=1))] == l
         self.assert_sql_count(testing.db, go, 1)
 
-    @testing.fails_on('maxdb')
+    @testing.fails_on('maxdb', 'FIXME: unknown')
     @testing.resolve_artifact_names
     def test_many_to_one(self):
         mapper(Address, addresses, properties = dict(
@@ -854,7 +871,7 @@ class SelfReferentialEagerTest(_base.MappedTest):
             Column('parent_id', Integer, ForeignKey('nodes.id')),
             Column('data', String(30)))
 
-    @testing.fails_on('maxdb')
+    @testing.fails_on('maxdb', 'FIXME: unknown')
     @testing.resolve_artifact_names
     def test_basic(self):
         class Node(_base.ComparableEntity):
@@ -1004,18 +1021,15 @@ class SelfReferentialEagerTest(_base.MappedTest):
             d = sess.query(Node).filter_by(data='n1').options(eagerload('children.children')).first()
 
         # test that the query isn't wrapping the initial query for eager loading.
-        # testing only sqlite for now since the query text is slightly different on other
-        # dialects
-        if testing.against('sqlite'):
-            self.assert_sql(testing.db, go, [
-                (
-                    "SELECT nodes.id AS nodes_id, nodes.parent_id AS nodes_parent_id, nodes.data AS nodes_data FROM nodes "
-                    "WHERE nodes.data = :data_1 ORDER BY nodes.id  LIMIT 1 OFFSET 0",
-                    {'data_1': 'n1'}
-                ),
-            ])
+        self.assert_sql_execution(testing.db, go, 
+            CompiledSQL(
+                "SELECT nodes.id AS nodes_id, nodes.parent_id AS nodes_parent_id, nodes.data AS nodes_data FROM nodes "
+                "WHERE nodes.data = :data_1 ORDER BY nodes.id  LIMIT 1 OFFSET 0",
+                {'data_1': 'n1'}
+            )
+        )
 
-    @testing.fails_on('maxdb')
+    @testing.fails_on('maxdb', 'FIXME: unknown')
     @testing.resolve_artifact_names
     def test_no_depth(self):
         class Node(_base.ComparableEntity):

@@ -6,11 +6,11 @@
 
 """Logic to map Python classes to and from selectables.
 
-Defines the [sqlalchemy.orm.mapper#Mapper] class, the central configurational
+Defines the :class:`~sqlalchemy.orm.mapper.Mapper` class, the central configurational
 unit which associates a class with a database table.
 
 This is a semi-private module; the main configurational API of the ORM is
-available in [sqlalchemy.orm#].
+available in :class:`~sqlalchemy.orm.`.
 
 """
 
@@ -66,7 +66,7 @@ class Mapper(object):
     columns.
 
     Instances of this class should be constructed via the
-    [sqlalchemy.orm#mapper()] function.
+    :func:`~sqlalchemy.orm.mapper` function.
 
     """
     def __init__(self,
@@ -97,11 +97,13 @@ class Mapper(object):
                  eager_defaults=False):
         """Construct a new mapper.
 
-        Mappers are normally constructed via the [sqlalchemy.orm#mapper()]
+        Mappers are normally constructed via the :func:`~sqlalchemy.orm.mapper`
         function.  See for details.
 
         """
-        self.class_ = class_
+
+        self.class_ = util.assert_arg_type(class_, type, 'class_')
+
         self.class_manager = None
 
         self.primary_key_argument = primary_key
@@ -134,8 +136,6 @@ class Mapper(object):
         self._requires_row_aliasing = False
         self._inherits_equated_pairs = None
 
-        if not issubclass(class_, object):
-            raise sa_exc.ArgumentError("Class '%s' is not a new-style class" % class_.__name__)
 
         self.select_table = select_table
         if select_table:
@@ -165,7 +165,7 @@ class Mapper(object):
             self.local_table = self.local_table.alias()
 
         if self.with_polymorphic and isinstance(self.with_polymorphic[1], expression._SelectBaseMixin):
-            self.with_polymorphic[1] = self.with_polymorphic[1].alias()
+            self.with_polymorphic = (self.with_polymorphic[0], self.with_polymorphic[1].alias())
 
         # our 'polymorphic identity', a string name that when located in a result set row
         # indicates this Mapper should be used to construct the object instance for that row.
@@ -270,20 +270,11 @@ class Mapper(object):
                         if mapper.polymorphic_on:
                             self.polymorphic_on = self.mapped_table.corresponding_column(mapper.polymorphic_on)
                             break
-                    else:
-                        # TODO: this exception not covered
-                        raise sa_exc.ArgumentError("Mapper '%s' specifies a polymorphic_identity of '%s', "
-                                    "but no mapper in it's hierarchy specifies "
-                                    "the 'polymorphic_on' column argument" % (self, self.polymorphic_identity))
         else:
             self._all_tables = set()
             self.base_mapper = self
             self.mapped_table = self.local_table
             if self.polymorphic_identity:
-                if self.polymorphic_on is None:
-                    raise sa_exc.ArgumentError("Mapper '%s' specifies a polymorphic_identity of '%s', but "
-                                "no mapper in it's hierarchy specifies the "
-                                "'polymorphic_on' column argument" % (self, self.polymorphic_identity))
                 self.polymorphic_map[self.polymorphic_identity] = self
             self._identity_class = self.class_
 
@@ -418,8 +409,8 @@ class Mapper(object):
         self._pks_by_table = {}
         self._cols_by_table = {}
 
-        all_cols = set(chain(*[col.proxy_set for col in self._columntoproperty]))
-        pk_cols = set(c for c in all_cols if c.primary_key)
+        all_cols = util.column_set(chain(*[col.proxy_set for col in self._columntoproperty]))
+        pk_cols = util.column_set(c for c in all_cols if c.primary_key)
 
         # identify primary key columns which are also mapped by this mapper.
         tables = set(self.tables + [self.mapped_table])
@@ -427,8 +418,8 @@ class Mapper(object):
         for t in tables:
             if t.primary_key and pk_cols.issuperset(t.primary_key):
                 # ordering is important since it determines the ordering of mapper.primary_key (and therefore query.get())
-                self._pks_by_table[t] = util.OrderedSet(t.primary_key).intersection(pk_cols)
-            self._cols_by_table[t] = util.OrderedSet(t.c).intersection(all_cols)
+                self._pks_by_table[t] = util.ordered_column_set(t.primary_key).intersection(pk_cols)
+            self._cols_by_table[t] = util.ordered_column_set(t.c).intersection(all_cols)
 
         # determine cols that aren't expressed within our tables; mark these
         # as "read only" properties which are refreshed upon INSERT/UPDATE
@@ -479,7 +470,7 @@ class Mapper(object):
         # table columns mapped to lists of MapperProperty objects
         # using a list allows a single column to be defined as
         # populating multiple object attributes
-        self._columntoproperty = {}
+        self._columntoproperty = util.column_dict()
 
         # load custom properties
         if self._init_properties:
@@ -612,7 +603,13 @@ class Mapper(object):
                 # right set
                 if hasattr(self, '_cols_by_table') and col.table in self._cols_by_table and col not in self._cols_by_table[col.table]:
                     self._cols_by_table[col.table].add(col)
-
+            
+            # if this ColumnProperty represents the "polymorphic discriminator"
+            # column, mark it.  We'll need this when rendering columns
+            # in SELECT statements.
+            if not hasattr(prop, '_is_polymorphic_discriminator'):
+                prop._is_polymorphic_discriminator = (col is self.polymorphic_on or prop.columns[0] is self.polymorphic_on)
+                
             self.columns[key] = col
             for col in prop.columns:
                 for col in col.proxy_set:
@@ -860,20 +857,27 @@ class Mapper(object):
         else:
             return mappers, self._selectable_from_mappers(mappers)
 
-    @util.memoized_property
-    def _default_polymorphic_properties(self):
-        return util.unique_list(
-            chain(*[list(mapper.iterate_properties) for mapper in [self] + self._with_polymorphic_mappers])
-        )
-        
     def _iterate_polymorphic_properties(self, mappers=None):
+        """Return an iterator of MapperProperty objects which will render into a SELECT."""
+        
         if mappers is None:
-            return iter(self._default_polymorphic_properties)
-        else:
-            return iter(util.unique_list(
-                chain(*[list(mapper.iterate_properties) for mapper in [self] + mappers])
-            ))
+            mappers = self._with_polymorphic_mappers
 
+        if not mappers:
+            for c in self.iterate_properties:
+                yield c
+        else:
+            # in the polymorphic case, filter out discriminator columns
+            # from other mappers, as these are sometimes dependent on that
+            # mapper's polymorphic selectable (which we don't want rendered)
+            for c in util.unique_list(
+                chain(*[list(mapper.iterate_properties) for mapper in [self] + mappers])
+            ):
+                if getattr(c, '_is_polymorphic_discriminator', False) and \
+                    (not self.polymorphic_on or c.columns[0] is not self.polymorphic_on):
+                        continue
+                yield c
+    
     @property
     def properties(self):
         raise NotImplementedError("Public collection of MapperProperty objects is "
@@ -887,7 +891,7 @@ class Mapper(object):
 
         """
         params = [(primary_key, sql.bindparam(None, type_=primary_key.type)) for primary_key in self.primary_key]
-        return sql.and_(*[k==v for (k, v) in params]), dict(params)
+        return sql.and_(*[k==v for (k, v) in params]), util.column_dict(params)
 
     @util.memoized_property
     def _equivalent_columns(self):
@@ -911,17 +915,17 @@ class Mapper(object):
 
         """
 
-        result = {}
+        result = util.column_dict()
         def visit_binary(binary):
             if binary.operator == operators.eq:
                 if binary.left in result:
                     result[binary.left].add(binary.right)
                 else:
-                    result[binary.left] = set((binary.right,))
+                    result[binary.left] = util.column_set((binary.right,))
                 if binary.right in result:
                     result[binary.right].add(binary.left)
                 else:
-                    result[binary.right] = set((binary.left,))
+                    result[binary.right] = util.column_set((binary.left,))
         for mapper in self.base_mapper.polymorphic_iterator():
             if mapper.inherit_condition:
                 visitors.traverse(mapper.inherit_condition, {}, {'binary':visit_binary})
@@ -1137,11 +1141,11 @@ class Mapper(object):
         """Iterate each element and its mapper in an object graph,
         for all relations that meet the given cascade rule.
 
-        type\_
+        ``type\_``:
           The name of the cascade rule (i.e. save-update, delete,
           etc.)
 
-        state
+        ``state``:
           The lead InstanceState.  child items will be processed per
           the relations defined for this object's mapper.
 
@@ -1228,7 +1232,7 @@ class Mapper(object):
             for t in mapper.tables:
                 table_to_mapper[t] = mapper
 
-        for table in sqlutil.sort_tables(table_to_mapper.keys()):
+        for table in sqlutil.sort_tables(table_to_mapper.iterkeys()):
             insert = []
             update = []
 
@@ -1278,7 +1282,7 @@ class Mapper(object):
                         if col is mapper.version_id_col:
                             params[col._label] = mapper._get_state_attr_by_column(state, col)
                             params[col.key] = params[col._label] + 1
-                            for prop in mapper._columntoproperty.values():
+                            for prop in mapper._columntoproperty.itervalues():
                                 history = attributes.get_history(state, prop.key, passive=True)
                                 if history.added:
                                     hasdata = True
@@ -1428,7 +1432,7 @@ class Mapper(object):
             for t in mapper.tables:
                 table_to_mapper[t] = mapper
 
-        for table in reversed(sqlutil.sort_tables(table_to_mapper.keys())):
+        for table in reversed(sqlutil.sort_tables(table_to_mapper.iterkeys())):
             delete = {}
             for state, mapper, connection in tups:
                 if table not in mapper._pks_by_table:
@@ -1476,7 +1480,7 @@ class Mapper(object):
 
     # result set conversion
 
-    def _instance_processor(self, context, path, adapter, polymorphic_from=None, extension=None, only_load_props=None, refresh_state=None):
+    def _instance_processor(self, context, path, adapter, polymorphic_from=None, extension=None, only_load_props=None, refresh_state=None, polymorphic_discriminator=None):
         """Produce a mapper level row processor callable which processes rows into mapped instances."""
         
         pk_cols = self.primary_key
@@ -1484,7 +1488,7 @@ class Mapper(object):
         if polymorphic_from or refresh_state:
             polymorphic_on = None
         else:
-            polymorphic_on = self.polymorphic_on
+            polymorphic_on = polymorphic_discriminator or self.polymorphic_on
             polymorphic_instances = util.PopulateDict(self._configure_subclass_mapper(context, path, adapter))
 
         version_id_col = self.version_id_col
@@ -1662,7 +1666,7 @@ class Mapper(object):
         """Produce a collection of attribute level row processor callables."""
         
         new_populators, existing_populators = [], []
-        for prop in self._props.values():
+        for prop in self._props.itervalues():
             newpop, existingpop = prop.create_row_processor(context, path, self, row, adapter)
             if newpop:
                 new_populators.append((prop.key, newpop))

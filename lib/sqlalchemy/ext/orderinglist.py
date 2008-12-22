@@ -60,12 +60,12 @@ Numbering and serialization are both highly configurable.  See the docstrings
 in this module and the main SQLAlchemy documentation for more information and
 examples.
 
-The [sqlalchemy.ext.orderinglist#ordering_list] factory function is the
+The :class:`~sqlalchemy.ext.orderinglist.ordering_list` factory function is the
 ORM-compatible constructor for `OrderingList` instances.
 
 """
 from sqlalchemy.orm.collections import collection
-
+from sqlalchemy import util
 
 __all__ = [ 'ordering_list' ]
 
@@ -272,7 +272,7 @@ class OrderingList(list):
         self._reorder()
 
     for func_name, func in locals().items():
-        if (callable(func) and func.func_name == func_name and
+        if (util.callable(func) and func.func_name == func_name and
             not func.__doc__ and hasattr(list, func_name)):
             func.__doc__ = getattr(list, func_name).__doc__
     del func_name, func

@@ -112,7 +112,7 @@ class CompositeProperty(ColumnProperty):
             util.warn_deprecated("The 'comparator' argument to CompositeProperty is deprecated.  Use comparator_factory.")
             kwargs['comparator_factory'] = kwargs['comparator']
         super(CompositeProperty, self).__init__(*columns, **kwargs)
-        self._col_position_map = dict((c, i) for i, c in enumerate(columns))
+        self._col_position_map = util.column_dict((c, i) for i, c in enumerate(columns))
         self.composite_class = class_
         self.strategy_class = strategies.CompositeColumnLoader
 
@@ -159,7 +159,9 @@ class CompositeProperty(ColumnProperty):
                 return expression.ClauseList(*[self.adapter(x) for x in self.prop.columns])
             else:
                 return expression.ClauseList(*self.prop.columns)
-
+        
+        __hash__ = None
+        
         def __eq__(self, other):
             if other is None:
                 values = [None] * len(self.prop.columns)
@@ -254,22 +256,15 @@ class RelationProperty(StrategizedProperty):
     """
 
     def __init__(self, argument,
-        secondary=None, primaryjoin=None,
-        secondaryjoin=None, 
-        foreign_keys=None,
-        uselist=None,
-        order_by=False,
-        backref=None,
-        _is_backref=False,
-        post_update=False,
-        cascade=False, extension=None,
-        viewonly=False, lazy=True,
-        collection_class=None, passive_deletes=False,
-        passive_updates=True, remote_side=None,
-        enable_typechecks=True, join_depth=None,
-        comparator_factory=None,
-        strategy_class=None, _local_remote_pairs=None):
-
+                 secondary=None, primaryjoin=None, secondaryjoin=None,
+                 foreign_keys=None, uselist=None, order_by=False, backref=None,
+                 _is_backref=False, post_update=False, cascade=False,
+                 extension=None, viewonly=False, lazy=True,
+                 collection_class=None, passive_deletes=False,
+                 passive_updates=True, remote_side=None,
+                 enable_typechecks=True, join_depth=None,
+                 comparator_factory=None, strategy_class=None,
+                 _local_remote_pairs=None, query_class=None):
         self.uselist = uselist
         self.argument = argument
         self.secondary = secondary
@@ -285,7 +280,8 @@ class RelationProperty(StrategizedProperty):
         self.passive_updates = passive_updates
         self.remote_side = remote_side
         self.enable_typechecks = enable_typechecks
-        
+        self.query_class = query_class
+
         self.join_depth = join_depth
         self.local_remote_pairs = _local_remote_pairs
         self.extension = extension
@@ -369,6 +365,8 @@ class RelationProperty(StrategizedProperty):
             raise NotImplementedError("in_() not yet supported for relations.  For a "
                     "simple many-to-one, use in_() against the set of foreign key values.")
             
+        __hash__ = None
+        
         def __eq__(self, other):
             if other is None:
                 if self.prop.direction in [ONETOMANY, MANYTOMANY]:
@@ -589,7 +587,7 @@ class RelationProperty(StrategizedProperty):
             self.mapper = mapper.class_mapper(self.argument, compile=False)
         elif isinstance(self.argument, mapper.Mapper):
             self.mapper = self.argument
-        elif callable(self.argument):
+        elif util.callable(self.argument):
             # accept a callable to suit various deferred-configurational schemes
             self.mapper = mapper.class_mapper(self.argument(), compile=False)
         else:
@@ -598,7 +596,7 @@ class RelationProperty(StrategizedProperty):
 
         # accept callables for other attributes which may require deferred initialization
         for attr in ('order_by', 'primaryjoin', 'secondaryjoin', 'secondary', '_foreign_keys', 'remote_side'):
-            if callable(getattr(self, attr)):
+            if util.callable(getattr(self, attr)):
                 setattr(self, attr, getattr(self, attr)())
 
         # in the case that InstrumentedAttributes were used to construct
@@ -606,15 +604,15 @@ class RelationProperty(StrategizedProperty):
         # interact with Query in the same way as the original Table-bound Column objects
         for attr in ('primaryjoin', 'secondaryjoin'):
             val = getattr(self, attr)
-            if val:
+            if val is not None:
                 util.assert_arg_type(val, sql.ClauseElement, attr)
                 setattr(self, attr, _orm_deannotate(val))
         
         if self.order_by:
             self.order_by = [expression._literal_as_column(x) for x in util.to_list(self.order_by)]
         
-        self._foreign_keys = set(expression._literal_as_column(x) for x in util.to_set(self._foreign_keys))
-        self.remote_side = set(expression._literal_as_column(x) for x in util.to_set(self.remote_side))
+        self._foreign_keys = util.column_set(expression._literal_as_column(x) for x in util.to_column_set(self._foreign_keys))
+        self.remote_side = util.column_set(expression._literal_as_column(x) for x in util.to_column_set(self.remote_side))
 
         if not self.parent.concrete:
             for inheriting in self.parent.iterate_to_root():
@@ -733,7 +731,7 @@ class RelationProperty(StrategizedProperty):
         else:
             self.secondary_synchronize_pairs = None
 
-        self._foreign_keys = set(r for l, r in self.synchronize_pairs)
+        self._foreign_keys = util.column_set(r for l, r in self.synchronize_pairs)
         if self.secondary_synchronize_pairs:
             self._foreign_keys.update(r for l, r in self.secondary_synchronize_pairs)
 
@@ -790,9 +788,15 @@ class RelationProperty(StrategizedProperty):
                     ]
                 else:
                     self.local_remote_pairs = criterion_as_pairs(self.primaryjoin, consider_as_foreign_keys=self.remote_side, any_operator=True)
+
+                if not self.local_remote_pairs:
+                    raise sa_exc.ArgumentError("Relation %s could not determine any local/remote column pairs from remote side argument %r" % (self, self.remote_side))
+
             else:
                 if self.viewonly:
                     eq_pairs = self.synchronize_pairs
+                    if self.secondaryjoin:
+                        eq_pairs += self.secondary_synchronize_pairs
                 else:
                     eq_pairs = criterion_as_pairs(self.primaryjoin, consider_as_foreign_keys=self._foreign_keys, any_operator=True)
                     if self.secondaryjoin:
@@ -805,7 +809,7 @@ class RelationProperty(StrategizedProperty):
                     self.local_remote_pairs = eq_pairs
         elif self.remote_side:
             raise sa_exc.ArgumentError("remote_side argument is redundant against more detailed _local_remote_side argument.")
-
+        
         for l, r in self.local_remote_pairs:
 
             if self.direction is ONETOMANY and not self._col_is_part_of_mappings(l):
@@ -818,7 +822,7 @@ class RelationProperty(StrategizedProperty):
                         "Specify remote_side argument to indicate which column lazy "
                         "join condition should bind." % (r, self.mapper))
 
-        self.local_side, self.remote_side = [util.OrderedSet(x) for x in zip(*list(self.local_remote_pairs))]
+        self.local_side, self.remote_side = [util.ordered_column_set(x) for x in zip(*list(self.local_remote_pairs))]
 
 
     def _post_init(self):

@@ -20,6 +20,7 @@ http://techspot.zzzeek.org/?p=19 .
 from collections import deque
 import re
 from sqlalchemy import util
+import operator
 
 __all__ = ['VisitableType', 'Visitable', 'ClauseVisitor', 
     'CloningVisitor', 'ReplacingCloningVisitor', 'iterate', 
@@ -27,33 +28,33 @@ __all__ = ['VisitableType', 'Visitable', 'ClauseVisitor',
     'cloned_traverse', 'replacement_traverse']
     
 class VisitableType(type):
-    """Metaclass which applies a `__visit_name__` attribute and 
-    `_compiler_dispatch` method to classes.
+    """Metaclass which checks for a `__visit_name__` attribute and
+    applies `_compiler_dispatch` method to classes.
     
     """
     
-    def __init__(cls, clsname, bases, dict):
-        if not '__visit_name__' in cls.__dict__:
-            m = re.match(r'_?(\w+?)(?:Expression|Clause|Element|$)', clsname)
-            x = m.group(1)
-            x = re.sub(r'(?!^)[A-Z]', lambda m:'_'+m.group(0).lower(), x)
-            cls.__visit_name__ = x.lower()
+    def __init__(cls, clsname, bases, clsdict):
+        if cls.__name__ == 'Visitable':
+            super(VisitableType, cls).__init__(clsname, bases, clsdict)
+            return
+        
+        assert hasattr(cls, '__visit_name__'), "`Visitable` descendants " \
+                                               "should define `__visit_name__`"
         
         # set up an optimized visit dispatch function
         # for use by the compiler
-        visit_name = cls.__dict__["__visit_name__"]
+        visit_name = cls.__visit_name__
         if isinstance(visit_name, str):
-            func_text = "def _compiler_dispatch(self, visitor, **kw):\n"\
-            "    return visitor.visit_%s(self, **kw)" % visit_name
+            getter = operator.attrgetter("visit_%s" % visit_name)
+            def _compiler_dispatch(self, visitor, **kw):
+                return getter(visitor)(self, **kw)
         else:
-            func_text = "def _compiler_dispatch(self, visitor, **kw):\n"\
-            "    return getattr(visitor, 'visit_%s' % self.__visit_name__)(self, **kw)"
+            def _compiler_dispatch(self, visitor, **kw):
+                return getattr(visitor, 'visit_%s' % self.__visit_name__)(self, **kw)
     
-        env = locals().copy()
-        exec func_text in env
-        cls._compiler_dispatch = env['_compiler_dispatch']
+        cls._compiler_dispatch = _compiler_dispatch
         
-        super(VisitableType, cls).__init__(clsname, bases, dict)
+        super(VisitableType, cls).__init__(clsname, bases, clsdict)
 
 class Visitable(object):
     """Base class for visitable objects, applies the
@@ -206,7 +207,7 @@ def traverse_depthfirst(obj, opts, visitors):
 def cloned_traverse(obj, opts, visitors):
     """clone the given expression structure, allowing modifications by visitors."""
     
-    cloned = {}
+    cloned = util.column_dict()
 
     def clone(element):
         if element not in cloned:
@@ -233,8 +234,8 @@ def cloned_traverse(obj, opts, visitors):
 def replacement_traverse(obj, opts, replace):
     """clone the given expression structure, allowing element replacement by a given replacement function."""
     
-    cloned = {}
-    stop_on = set(opts.get('stop_on', []))
+    cloned = util.column_dict()
+    stop_on = util.column_set(opts.get('stop_on', []))
 
     def clone(element):
         newelem = replace(element)

@@ -7,12 +7,12 @@ import operator
 import re
 import sys
 import types
-import unittest
+from testlib import sa_unittest as unittest
 import warnings
 from cStringIO import StringIO
 
 import testlib.config as config
-from testlib.compat import _function_named
+from testlib.compat import _function_named, callable
 
 # Delayed imports
 MetaData = None
@@ -91,8 +91,9 @@ def future(fn):
                 "Unexpected success for future test '%s'" % fn_name)
     return _function_named(decorated, fn_name)
 
-def fails_on(*dbs):
-    """Mark a test as expected to fail on one or more database implementations.
+def fails_on(dbs, reason):
+    """Mark a test as expected to fail on the specified database 
+    implementation.
 
     Unlike ``crashes``, tests marked as ``fails_on`` will be run
     for the named databases.  The test is expected to fail and the unit test
@@ -103,7 +104,7 @@ def fails_on(*dbs):
     def decorate(fn):
         fn_name = fn.__name__
         def maybe(*args, **kw):
-            if config.db.name not in dbs:
+            if config.db.name != dbs:
                 return fn(*args, **kw)
             else:
                 try:
@@ -111,7 +112,7 @@ def fails_on(*dbs):
                 except Exception, ex:
                     print ("'%s' failed as expected on DB implementation "
                            "'%s': %s" % (
-                        fn_name, config.db.name, str(ex)))
+                        fn_name, config.db.name, reason))
                     return True
                 else:
                     raise AssertionError(
@@ -306,13 +307,13 @@ def emits_warning(*messages):
             filters = [dict(action='ignore',
                             category=sa_exc.SAPendingDeprecationWarning)]
             if not messages:
-                filters.append([dict(action='ignore',
-                                     category=sa_exc.SAWarning)])
+                filters.append(dict(action='ignore',
+                                     category=sa_exc.SAWarning))
             else:
-                filters.extend([dict(action='ignore',
+                filters.extend(dict(action='ignore',
                                      message=message,
                                      category=sa_exc.SAWarning)
-                                for message in messages])
+                                for message in messages)
             for f in filters:
                 warnings.filterwarnings(**f)
             try:
@@ -320,6 +321,30 @@ def emits_warning(*messages):
             finally:
                 resetwarnings()
         return _function_named(safe, fn.__name__)
+    return decorate
+
+def emits_warning_on(db, *warnings):
+    """Mark a test as emitting a warning on a specific dialect.
+
+    With no arguments, squelches all SAWarning failures.  Or pass one or more
+    strings; these will be matched to the root of the warning description by
+    warnings.filterwarnings().
+    """
+    def decorate(fn):
+        def maybe(*args, **kw):
+            if isinstance(db, basestring):
+                if config.db.name != db:
+                    return fn(*args, **kw)
+                else:
+                    wrapped = emits_warning(*warnings)(fn)
+                    return wrapped(*args, **kw)
+            else:
+                if not _is_excluded(*db):
+                    return fn(*args, **kw)
+                else:
+                    wrapped = emits_warning(*warnings)(fn)
+                    return wrapped(*args, **kw)
+        return _function_named(maybe, fn.__name__)
     return decorate
 
 def uses_deprecated(*messages):
@@ -458,110 +483,6 @@ def fixture(table, columns, *rows):
         connection.execute(insert, [dict(zip(column_names, column_values))
                                     for column_values in rows])
     table.append_ddl_listener('after-create', onload)
-
-class TestData(object):
-    """Tracks SQL expressions as they are executed via an instrumented ExecutionContext."""
-
-    def __init__(self):
-        self.set_assert_list(None, None)
-        self.sql_count = 0
-        self.buffer = None
-
-    def set_assert_list(self, unittest, list):
-        self.unittest = unittest
-        self.assert_list = list
-        if list is not None:
-            self.assert_list.reverse()
-
-testdata = TestData()
-
-
-class ExecutionContextWrapper(object):
-    """instruments the ExecutionContext created by the Engine so that SQL expressions
-    can be tracked."""
-
-    def __init__(self, ctx):
-        self.__dict__['ctx'] = ctx
-    def __getattr__(self, key):
-        return getattr(self.ctx, key)
-    def __setattr__(self, key, value):
-        setattr(self.ctx, key, value)
-
-    trailing_underscore_pattern = re.compile(r'(\W:[\w_#]+)_\b',re.MULTILINE)
-    def post_exec(self):
-        ctx = self.ctx
-        statement = unicode(ctx.compiled)
-        statement = re.sub(r'\n', '', ctx.statement)
-        if config.db.name == 'mssql' and statement.endswith('; select scope_identity()'):
-            statement = statement[:-25]
-        if testdata.buffer is not None:
-            testdata.buffer.write(statement + "\n")
-
-        if testdata.assert_list is not None:
-            assert len(testdata.assert_list), "Received query but no more assertions: %s" % statement
-            item = testdata.assert_list[-1]
-            if not isinstance(item, dict):
-                item = testdata.assert_list.pop()
-            else:
-                # asserting a dictionary of statements->parameters
-                # this is to specify query assertions where the queries can be in
-                # multiple orderings
-                if '_converted' not in item:
-                    for key in item.keys():
-                        ckey = self.convert_statement(key)
-                        item[ckey] = item[key]
-                        if ckey != key:
-                            del item[key]
-                    item['_converted'] = True
-                try:
-                    entry = item.pop(statement)
-                    if len(item) == 1:
-                        testdata.assert_list.pop()
-                    item = (statement, entry)
-                except KeyError:
-                    assert False, "Testing for one of the following queries: %s, received '%s'" % (repr([k for k in item.keys()]), statement)
-
-            (query, params) = item
-            if callable(params):
-                params = params(ctx)
-            if params is not None and not isinstance(params, list):
-                params = [params]
-
-            parameters = ctx.compiled_parameters
-
-            query = self.convert_statement(query)
-            equivalent = ( (statement == query)
-                           or ( (config.db.name == 'oracle') and (self.trailing_underscore_pattern.sub(r'\1', statement) == query) )
-                         ) \
-                         and \
-                         ( (params is None) or (params == parameters)
-                           or params == [dict([(k.strip('_'), v)
-                                               for (k, v) in p.items()])
-                                         for p in parameters]
-                         )
-            testdata.unittest.assert_(equivalent,
-                    "Testing for query '%s' params %s, received '%s' with params %s" % (query, repr(params), statement, repr(parameters)))
-        testdata.sql_count += 1
-        self.ctx.post_exec()
-
-    def convert_statement(self, query):
-        paramstyle = self.ctx.dialect.paramstyle
-        if paramstyle == 'named':
-            pass
-        elif paramstyle =='pyformat':
-            query = re.sub(r':([\w_]+)', r"%(\1)s", query)
-        else:
-            # positional params
-            repl = None
-            if paramstyle=='qmark':
-                repl = "?"
-            elif paramstyle=='format':
-                repl = r"%s"
-            elif paramstyle=='numeric':
-                repl = None
-            query = re.sub(r':([\w_]+)', repl, query)
-        return query
-
 
 def _import_by_name(name):
     submodule = name.split('.')[-1]
@@ -827,36 +748,39 @@ class AssertsExecutionResults(object):
                     cls.__name__, repr(expected_item)))
         return True
 
-    def assert_sql(self, db, callable_, list, with_sequences=None):
-        global testdata
-        testdata = TestData()
-        if with_sequences is not None and config.db.name in ('firebird', 'oracle', 'postgres'):
-            testdata.set_assert_list(self, with_sequences)
-        else:
-            testdata.set_assert_list(self, list)
+    def assert_sql_execution(self, db, callable_, *rules):
+        from testlib import assertsql
+        assertsql.asserter.add_rules(rules)
         try:
             callable_()
+            assertsql.asserter.statement_complete()
         finally:
-            testdata.set_assert_list(None, None)
+            assertsql.asserter.clear_rules()
+            
+    def assert_sql(self, db, callable_, list_, with_sequences=None):
+        from testlib import assertsql
+
+        if with_sequences is not None and config.db.name in ('firebird', 'oracle', 'postgres'):
+            rules = with_sequences
+        else:
+            rules = list_
+        
+        newrules = []
+        for rule in rules:
+            if isinstance(rule, dict):
+                newrule = assertsql.AllOf(*[
+                    assertsql.ExactSQL(k, v) for k, v in rule.iteritems()
+                ])
+            else:
+                newrule = assertsql.ExactSQL(*rule)
+            newrules.append(newrule)
+            
+        self.assert_sql_execution(db, callable_, *newrules)
 
     def assert_sql_count(self, db, callable_, count):
-        global testdata
-        testdata = TestData()
-        callable_()
-        self.assert_(testdata.sql_count == count,
-                     "desired statement count %d does not match %d" % (
-                       count, testdata.sql_count))
+        from testlib import assertsql
+        self.assert_sql_execution(db, callable_, assertsql.CountStatements(count))
 
-    def capture_sql(self, db, callable_):
-        global testdata
-        testdata = TestData()
-        buffer = StringIO()
-        testdata.buffer = buffer
-        try:
-            callable_()
-            return buffer.getvalue()
-        finally:
-            testdata.buffer = None
 
 _otest_metadata = None
 class ORMTest(TestBase, AssertsExecutionResults):
@@ -939,17 +863,39 @@ class TTestSuite(unittest.TestSuite):
                 break
         unittest.TestSuite.__init__(self, tests)
 
-    def do_run(self, result):
-        # nice job unittest !  you switched __call__ and run() between py2.3
-        # and 2.4 thereby making straight subclassing impossible !
-        for test in self._tests:
-            if result.shouldStop:
-                break
-            test(result)
-        return result
-
     def run(self, result):
-        return self(result)
+        init = getattr(self, '_initTest', None)
+        if init is not None:
+            if (hasattr(init, '__whitelist__') and
+                config.db.name in init.__whitelist__):
+                pass
+            else:
+                if self.__should_skip_for(init):
+                    return True
+            try:
+                resetwarnings()
+                init.setUpAll()
+            except:
+                # skip tests if global setup fails
+                ex = self.__exc_info()
+                for test in self._tests:
+                    result.addError(test, ex)
+                return False
+        try:
+            resetwarnings()
+            for test in self._tests:
+                if result.shouldStop:
+                    break
+                test(result)
+            return result
+        finally:
+            try:
+                resetwarnings()
+                if init is not None:
+                    init.tearDownAll()
+            except:
+                result.addError(init, self.__exc_info())
+                pass
 
     def __should_skip_for(self, cls):
         if hasattr(cls, '__requires__'):
@@ -985,35 +931,6 @@ class TTestSuite(unittest.TestSuite):
                 return True
         return False
 
-    def __call__(self, result):
-        init = getattr(self, '_initTest', None)
-        if init is not None:
-            if (hasattr(init, '__whitelist__') and
-                config.db.name in init.__whitelist__):
-                pass
-            else:
-                if self.__should_skip_for(init):
-                    return True
-            try:
-                resetwarnings()
-                init.setUpAll()
-            except:
-                # skip tests if global setup fails
-                ex = self.__exc_info()
-                for test in self._tests:
-                    result.addError(test, ex)
-                return False
-        try:
-            resetwarnings()
-            return self.do_run(result)
-        finally:
-            try:
-                resetwarnings()
-                if init is not None:
-                    init.tearDownAll()
-            except:
-                result.addError(init, self.__exc_info())
-                pass
 
     def __exc_info(self):
         """Return a version of sys.exc_info() with the traceback frame

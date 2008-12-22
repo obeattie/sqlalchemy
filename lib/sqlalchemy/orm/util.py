@@ -4,8 +4,6 @@
 # This module is part of SQLAlchemy and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
-import new
-
 import sqlalchemy.exceptions as sa_exc
 from sqlalchemy import sql, util
 from sqlalchemy.sql import expression, util as sql_util, operators
@@ -48,7 +46,12 @@ class CascadeOptions(object):
 
 
 class Validator(AttributeExtension):
-    """Runs a validation method on an attribute value to be set or appended."""
+    """Runs a validation method on an attribute value to be set or appended.
+    
+    The Validator class is used by the :func:`~sqlalchemy.orm.validates`
+    decorator, and direct access is usually not needed.
+    
+    """
     
     def __init__(self, key, validator):
         """Construct a new Validator.
@@ -260,7 +263,7 @@ class ORMAdapter(sql_util.ColumnAdapter):
 class AliasedClass(object):
     """Represents an 'alias'ed form of a mapped class for usage with Query.
     
-    The ORM equivalent of a sqlalchemy.sql.expression.Alias 
+    The ORM equivalent of a :class:`~sqlalchemy.sql.expression.Alias`
     object, this object mimics the mapped class using a 
     __getattr__ scheme and maintains a reference to a
     real Alias object.   It indicates to Query that the 
@@ -324,7 +327,7 @@ class AliasedClass(object):
         if hasattr(attr, 'func_code'):
             is_method = getattr(self.__target, key, None)
             if is_method and is_method.im_self is not None:
-                return new.instancemethod(attr.im_func, self, self)
+                return util.types.MethodType(attr.im_func, self, self)
             else:
                 return None
         elif hasattr(attr, '__get__'):
@@ -404,7 +407,7 @@ def join(left, right, onclause=None, isouter=False):
     """Produce an inner join between left and right clauses.
     
     In addition to the interface provided by 
-    sqlalchemy.sql.join(), left and right may be mapped 
+    :func:`~sqlalchemy.sql.expression.join()`, left and right may be mapped 
     classes or AliasedClass instances. The onclause may be a 
     string name of a relation(), or a class-bound descriptor 
     representing a relation.
@@ -416,7 +419,7 @@ def outerjoin(left, right, onclause=None):
     """Produce a left outer join between left and right clauses.
     
     In addition to the interface provided by 
-    sqlalchemy.sql.outerjoin(), left and right may be mapped 
+    :func:`~sqlalchemy.sql.expression.outerjoin()`, left and right may be mapped 
     classes or AliasedClass instances. The onclause may be a 
     string name of a relation(), or a class-bound descriptor 
     representing a relation.
@@ -526,8 +529,6 @@ def class_mapper(class_, compile=True):
     Raises UnmappedClassError if no mapping is configured.
     
     """
-    if not isinstance(class_, type):
-        class_ = type(class_)
     try:
         class_manager = attributes.manager_of_class(class_)
         mapper = class_manager.mapper
@@ -567,7 +568,8 @@ def _is_mapped_class(cls):
     from sqlalchemy.orm import mapperlib as mapper
     if isinstance(cls, (AliasedClass, mapper.Mapper)):
         return True
-
+    if isinstance(cls, expression.ClauseElement):
+        return False
     manager = attributes.manager_of_class(cls)
     return manager and _INSTRUMENTOR in manager.info
 

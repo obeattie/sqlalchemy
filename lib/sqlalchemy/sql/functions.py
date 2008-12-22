@@ -6,10 +6,6 @@ from sqlalchemy.sql import operators
 from sqlalchemy.sql.visitors import VisitableType
 
 class _GenericMeta(VisitableType):
-    def __init__(cls, clsname, bases, dict):
-        cls.__visit_name__ = 'function'
-        type.__init__(cls, clsname, bases, dict)
-
     def __call__(self, *args, **kwargs):
         args = [_literal_as_binds(c) for c in args]
         return type.__call__(self, *args, **kwargs)
@@ -75,7 +71,7 @@ class random(GenericFunction):
         GenericFunction.__init__(self, args=args, **kwargs)
 
 class count(GenericFunction):
-    """The ANSI COUNT aggregate function.  With no arguments, emits COUNT *."""
+    """The ANSI COUNT aggregate function.  With no arguments, emits COUNT \*."""
 
     __return_type__ = sqltypes.Integer
 

@@ -244,7 +244,7 @@ class EagerTest2(_base.MappedTest):
                            lazy=False,
                            backref=backref('middle', lazy=False)))),
 
-    @testing.fails_on('maxdb')
+    @testing.fails_on('maxdb', 'FIXME: unknown')
     @testing.resolve_artifact_names
     def test_eager_terminate(self):
         """Eager query generation does not include the same mapper's table twice.
@@ -293,7 +293,7 @@ class EagerTest3(_base.MappedTest):
         class Stat(_base.BasicEntity):
             pass
 
-    @testing.fails_on('maxdb')
+    @testing.fails_on('maxdb', 'FIXME: unknown')
     @testing.resolve_artifact_names
     def test_nesting_with_functions(self):
         mapper(Data, datas)
@@ -329,7 +329,7 @@ class EagerTest3(_base.MappedTest):
         arb_result = arb_data.execute().fetchall()
 
         # order the result list descending based on 'max'
-        arb_result.sort(lambda a, b: cmp(b['max'], a['max']))
+        arb_result.sort(key = lambda a: a['max'], reverse=True)
 
         # extract just the "data_id" from it
         arb_result = [row['data_id'] for row in arb_result]
@@ -367,7 +367,7 @@ class EagerTest4(_base.MappedTest):
         class Employee(_base.BasicEntity):
             pass
 
-    @testing.fails_on('maxdb')
+    @testing.fails_on('maxdb', 'FIXME: unknown')
     @testing.resolve_artifact_names
     def test_basic(self):
         mapper(Employee, employees)
@@ -753,7 +753,7 @@ class EagerTest8(_base.MappedTest):
         class Joined(_base.ComparableEntity):
             pass
 
-    @testing.fails_on('maxdb')
+    @testing.fails_on('maxdb', 'FIXME: unknown')
     @testing.resolve_artifact_names
     def test_nested_joins(self):
         # this is testing some subtle column resolution stuff,
@@ -831,7 +831,7 @@ class EagerTest9(_base.MappedTest):
                                  backref=backref('entries', lazy=False,
                                                  order_by=entries.c.entry_id))))
 
-    @testing.fails_on('maxdb')
+    @testing.fails_on('maxdb', 'FIXME: unknown')
     @testing.resolve_artifact_names
     def test_eagerload_on_path(self):
         session = create_session()

@@ -12,6 +12,11 @@ class PoolListener(object):
 
     Usage::
     
+        class MyListener(PoolListener):
+            def connect(self, dbapi_con, con_record):
+                '''perform connect operations'''
+            # etc. 
+            
         # create a new pool with a listener
         p = QueuePool(..., listeners=[MyListener()])
         
@@ -19,10 +24,9 @@ class PoolListener(object):
         p.add_listener(MyListener())
         
         # usage with create_engine()
-        e = create_engine("url://", ...)
-        e.pool.add_listener(MyListener())
+        e = create_engine("url://", listeners=[MyListener()])
         
-    All of the standard connection [sqlalchemy.pool#Pool] types can
+    All of the standard connection :class:`~sqlalchemy.pool.Pool` types can
     accept event listeners for key connection lifecycle events:
     creation, pool check-out and check-in.  There are no events fired
     when a connection closes.
@@ -104,20 +108,37 @@ class PoolListener(object):
 class ConnectionProxy(object):
     """Allows interception of statement execution by Connections.
     
-    Subclass ``ConnectionProxy``, overriding either or both of 
-    ``execute()`` and ``cursor_execute()``  The default behavior is provided,
-    which is to call the given executor function with the remaining 
-    arguments.  The proxy is then connected to an engine via
-    ``create_engine(url, proxy=MyProxy())`` where ``MyProxy`` is
-    the user-defined ``ConnectionProxy`` class.
+    Either or both of the ``execute()`` and ``cursor_execute()``
+    may be implemented to intercept compiled statement and
+    cursor level executions, e.g.::
+    
+        class MyProxy(ConnectionProxy):
+            def execute(self, conn, execute, clauseelement, *multiparams, **params):
+                print "compiled statement:", clauseelement
+                return execute(clauseelement, *multiparams, **params)
+                
+            def cursor_execute(self, execute, cursor, statement, parameters, context, executemany):
+                print "raw statement:", statement
+                return execute(cursor, statement, parameters, context)
+
+    The ``execute`` argument is a function that will fulfill the default
+    execution behavior for the operation.  The signature illustrated
+    in the example should be used.
+    
+    The proxy is installed into an :class:`~sqlalchemy.engine.Engine` via
+    the ``proxy`` argument::
+    
+        e = create_engine('someurl://', proxy=MyProxy())
     
     """
     def execute(self, conn, execute, clauseelement, *multiparams, **params):
-        """"""
+        """Intercept high level execute() events."""
+        
         return execute(clauseelement, *multiparams, **params)
 
     def cursor_execute(self, execute, cursor, statement, parameters, context, executemany):
-        """"""
+        """Intercept low-level cursor execute() events."""
+        
         return execute(cursor, statement, parameters, context)
 
         

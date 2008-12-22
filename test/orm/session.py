@@ -199,7 +199,7 @@ class SessionTest(_fixtures.FixtureTest):
         u2 = sess.query(User).filter_by(name='ed').one()
         assert u2 is u
         eq_(conn1.execute("select count(1) from users").scalar(), 1)
-        eq_(conn2.execute("select count(1) from users").scalar(),  0)
+        eq_(conn2.execute("select count(1) from users").scalar(), 0)
         sess.commit()
         eq_(conn1.execute("select count(1) from users").scalar(), 1)
         eq_(bind.connect().execute("select count(1) from users").scalar(), 1)
@@ -392,7 +392,7 @@ class SessionTest(_fixtures.FixtureTest):
         assert session.connection().execute("select count(1) from users").scalar() == 2
 
     @testing.crashes('mssql', 'test causes mssql to hang')
-    @testing.fails_on('sqlite')
+    @testing.fails_on('sqlite', 'FIXME: unknown')
     @testing.resolve_artifact_names
     def test_transactions_isolated(self):
         mapper(User, users)

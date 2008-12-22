@@ -13,7 +13,7 @@ from testlib.testing import eq_, ne_
 from orm import _base, _fixtures
 from engine import _base as engine_base
 import pickleable
-
+from testlib.assertsql import AllOf, CompiledSQL
 
 class UnitOfWorkTest(object):
     pass
@@ -364,6 +364,7 @@ class MutableTypesTest(_base.MappedTest):
              "WHERE mutable_t.id = :mutable_t_id",
              {'mutable_t_id': f1.id, 'val': u'hi', 'data':f1.data})])
 
+    @testing.uses_deprecated()
     @testing.resolve_artifact_names
     def test_nocomparison(self):
         """Changes are detected on MutableTypes lacking an __eq__ method."""
@@ -517,7 +518,7 @@ class PKTest(_base.MappedTest):
 
     # not supported on sqlite since sqlite's auto-pk generation only works with
     # single column primary keys
-    @testing.fails_on('sqlite')
+    @testing.fails_on('sqlite', 'FIXME: unknown')
     @testing.resolve_artifact_names
     def test_primary_key(self):
         mapper(Entry, multipk1)
@@ -883,7 +884,7 @@ class DefaultTest(_base.MappedTest):
         class Secondary(_base.ComparableEntity):
             pass
 
-    @testing.fails_on('firebird') # "Data type unknown" on the parameter
+    @testing.fails_on('firebird', 'Data type unknown on the parameter')
     @testing.resolve_artifact_names
     def test_insert(self):
         mapper(Hoho, default_t)
@@ -928,7 +929,7 @@ class DefaultTest(_base.MappedTest):
         self.assert_(h2.foober == h3.foober == h4.foober == 'im foober')
         eq_(h5.foober, 'im the new foober')
 
-    @testing.fails_on('firebird') # "Data type unknown" on the parameter
+    @testing.fails_on('firebird', 'Data type unknown on the parameter')
     @testing.resolve_artifact_names
     def test_eager_defaults(self):
         mapper(Hoho, default_t, eager_defaults=True)
@@ -958,7 +959,7 @@ class DefaultTest(_base.MappedTest):
             eq_(h1.foober, "im foober")
         self.sql_count_(0, go)
 
-    @testing.fails_on('firebird') # "Data type unknown" on the parameter
+    @testing.fails_on('firebird', 'Data type unknown on the parameter')
     @testing.resolve_artifact_names
     def test_update(self):
         mapper(Hoho, default_t)
@@ -973,7 +974,7 @@ class DefaultTest(_base.MappedTest):
         session.flush()
         eq_(h1.foober, 'im the update')
 
-    @testing.fails_on('firebird') # "Data type unknown" on the parameter
+    @testing.fails_on('firebird', 'Data type unknown on the parameter')
     @testing.resolve_artifact_names
     def test_used_in_relation(self):
         """A server-side default can be used as the target of a foreign key"""
@@ -1450,7 +1451,7 @@ class SaveTest(_fixtures.FixtureTest):
 
     # why no support on oracle ?  because oracle doesn't save
     # "blank" strings; it saves a single space character.
-    @testing.fails_on('oracle')
+    @testing.fails_on('oracle', 'FIXME: unknown')
     @testing.resolve_artifact_names
     def test_dont_update_blanks(self):
         mapper(User, users)
@@ -1602,33 +1603,22 @@ class ManyToOneTest(_fixtures.FixtureTest):
         objects[2].email_address = 'imnew@foo.bar'
         objects[3].user = User()
         objects[3].user.name = 'imnewlyadded'
-        self.assert_sql(testing.db,
+        self.assert_sql_execution(testing.db,
                         session.flush,
-                        [
-            ("INSERT INTO users (name) VALUES (:name)",
-             {'name': 'imnewlyadded'} ),
+                        CompiledSQL("INSERT INTO users (name) VALUES (:name)",
+                         {'name': 'imnewlyadded'} ),
 
-            {"UPDATE addresses SET email_address=:email_address "
-             "WHERE addresses.id = :addresses_id":
-             lambda ctx: {'email_address': 'imnew@foo.bar',
-                          'addresses_id': objects[2].id},
-             "UPDATE addresses SET user_id=:user_id "
-             "WHERE addresses.id = :addresses_id":
-             lambda ctx: {'user_id': objects[3].user.id,
-                          'addresses_id': objects[3].id}},
-                        ],
-                        with_sequences=[
-            ("INSERT INTO users (id, name) VALUES (:id, :name)",
-             lambda ctx:{'name': 'imnewlyadded',
-                         'id':ctx.last_inserted_ids()[0]}),
-            {"UPDATE addresses SET email_address=:email_address "
-             "WHERE addresses.id = :addresses_id":
-             lambda ctx: {'email_address': 'imnew@foo.bar',
-                          'addresses_id': objects[2].id},
-             ("UPDATE addresses SET user_id=:user_id "
-              "WHERE addresses.id = :addresses_id"):
-             lambda ctx: {'user_id': objects[3].user.id,
-                          'addresses_id': objects[3].id}}])
+                         AllOf(
+                            CompiledSQL("UPDATE addresses SET email_address=:email_address "
+                                        "WHERE addresses.id = :addresses_id",
+                                        lambda ctx: {'email_address': 'imnew@foo.bar',
+                                          'addresses_id': objects[2].id}),
+                            CompiledSQL("UPDATE addresses SET user_id=:user_id "
+                                          "WHERE addresses.id = :addresses_id",
+                                          lambda ctx: {'user_id': objects[3].user.id,
+                                                       'addresses_id': objects[3].id})
+                        )
+                    )
 
         l = sa.select([users, addresses],
                       sa.and_(users.c.id==addresses.c.user_id,
@@ -1813,44 +1803,40 @@ class ManyToManyTest(_fixtures.FixtureTest):
         k = Keyword()
         k.name = 'yellow'
         objects[5].keywords.append(k)
-        self.assert_sql(testing.db, session.flush, [
-            {"UPDATE items SET description=:description "
-             "WHERE items.id = :items_id":
-             {'description': 'item4updated',
-              'items_id': objects[4].id},
-             "INSERT INTO keywords (name) "
-             "VALUES (:name)":
-             {'name': 'yellow'}},
-            ("INSERT INTO item_keywords (item_id, keyword_id) "
-             "VALUES (:item_id, :keyword_id)",
-             lambda ctx: [{'item_id': objects[5].id,
-                           'keyword_id': k.id}])],
-                        with_sequences = [
-              {"UPDATE items SET description=:description "
-               "WHERE items.id = :items_id":
-               {'description': 'item4updated',
-                'items_id': objects[4].id},
-               "INSERT INTO keywords (id, name) "
-               "VALUES (:id, :name)":
-               lambda ctx: {'name': 'yellow',
-                            'id':ctx.last_inserted_ids()[0]}},
-              ("INSERT INTO item_keywords (item_id, keyword_id) "
-               "VALUES (:item_id, :keyword_id)",
-               lambda ctx: [{'item_id': objects[5].id,
-                             'keyword_id': k.id}])])
+        self.assert_sql_execution(
+            testing.db, 
+            session.flush, 
+            AllOf(
+                CompiledSQL("UPDATE items SET description=:description "
+                 "WHERE items.id = :items_id",
+                     {'description': 'item4updated',
+                      'items_id': objects[4].id},
+                ),
+                CompiledSQL("INSERT INTO keywords (name) "
+                    "VALUES (:name)",
+                    {'name': 'yellow'},
+                )
+            ),
+            CompiledSQL("INSERT INTO item_keywords (item_id, keyword_id) "
+                    "VALUES (:item_id, :keyword_id)",
+                     lambda ctx: [{'item_id': objects[5].id,
+                                   'keyword_id': k.id}])
+            )
 
         objects[2].keywords.append(k)
         dkid = objects[5].keywords[1].id
         del objects[5].keywords[1]
-        self.assert_sql(testing.db, session.flush, [
-            ("DELETE FROM item_keywords "
-             "WHERE item_keywords.item_id = :item_id AND "
-             "item_keywords.keyword_id = :keyword_id",
-             [{'item_id': objects[5].id, 'keyword_id': dkid}]),
-            ("INSERT INTO item_keywords (item_id, keyword_id) "
-             "VALUES (:item_id, :keyword_id)",
-             lambda ctx: [{'item_id': objects[2].id, 'keyword_id': k.id}]
-             )])
+        self.assert_sql_execution(
+            testing.db, 
+            session.flush, 
+            CompiledSQL("DELETE FROM item_keywords "
+                     "WHERE item_keywords.item_id = :item_id AND "
+                     "item_keywords.keyword_id = :keyword_id",
+                     [{'item_id': objects[5].id, 'keyword_id': dkid}]),
+            CompiledSQL("INSERT INTO item_keywords (item_id, keyword_id) "
+                    "VALUES (:item_id, :keyword_id)",
+                    lambda ctx: [{'item_id': objects[2].id, 'keyword_id': k.id}]
+             ))
 
         session.delete(objects[3])
         session.flush()
@@ -1999,33 +1985,20 @@ class SaveTest2(_fixtures.FixtureTest):
 
         session.add_all(fixture())
 
-        self.assert_sql(testing.db, session.flush, [
-            ("INSERT INTO users (name) VALUES (:name)",
+        self.assert_sql_execution(
+            testing.db, 
+            session.flush, 
+            CompiledSQL("INSERT INTO users (name) VALUES (:name)",
              {'name': 'u1'}),
-            ("INSERT INTO users (name) VALUES (:name)",
+            CompiledSQL("INSERT INTO users (name) VALUES (:name)",
              {'name': 'u2'}),
-            ("INSERT INTO addresses (user_id, email_address) "
+            CompiledSQL("INSERT INTO addresses (user_id, email_address) "
              "VALUES (:user_id, :email_address)",
              {'user_id': 1, 'email_address': 'a1'}),
-            ("INSERT INTO addresses (user_id, email_address) "
+            CompiledSQL("INSERT INTO addresses (user_id, email_address) "
              "VALUES (:user_id, :email_address)",
-             {'user_id': 2, 'email_address': 'a2'})],
-            with_sequences = [
-            ("INSERT INTO users (id, name) "
-             "VALUES (:id, :name)",
-             lambda ctx: {'name': 'u1', 'id':ctx.last_inserted_ids()[0]}),
-            ("INSERT INTO users (id, name) "
-             "VALUES (:id, :name)",
-             lambda ctx: {'name': 'u2', 'id':ctx.last_inserted_ids()[0]}),
-            ("INSERT INTO addresses (id, user_id, email_address) "
-             "VALUES (:id, :user_id, :email_address)",
-             lambda ctx:{'user_id': 1, 'email_address': 'a1',
-                         'id':ctx.last_inserted_ids()[0]}),
-            ("INSERT INTO addresses (id, user_id, email_address) "
-             "VALUES (:id, :user_id, :email_address)",
-             lambda ctx:{'user_id': 2, 'email_address': 'a2',
-                         'id':ctx.last_inserted_ids()[0]})])
-
+             {'user_id': 2, 'email_address': 'a2'}),
+        )
 
 class SaveTest3(_base.MappedTest):
     def define_tables(self, metadata):

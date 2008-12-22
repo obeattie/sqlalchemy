@@ -222,6 +222,8 @@ class MapperTest(_fixtures.FixtureTest):
         mapper(Address, addresses)
 
         class UCComparator(sa.orm.PropComparator):
+            __hash__ = None
+            
             def __eq__(self, other):
                 cls = self.prop.parent.class_
                 col = getattr(cls, 'name')
@@ -509,7 +511,7 @@ class MapperTest(_fixtures.FixtureTest):
 
 
     # 'Raises a "expression evaluation not supported" error at prepare time
-    @testing.fails_on('firebird')
+    @testing.fails_on('firebird', 'FIXME: unknown')
     @testing.resolve_artifact_names
     def test_function(self):
         """Mapping to a SELECT statement that has functions in it."""
@@ -696,6 +698,7 @@ class MapperTest(_fixtures.FixtureTest):
                 return 'value'
 
         class UCComparator(sa.orm.PropComparator):
+            __hash__ = None
             def __eq__(self, other):
                 cls = self.prop.parent.class_
                 col = getattr(cls, 'name')
@@ -853,7 +856,7 @@ class MapperTest(_fixtures.FixtureTest):
 
 class OptionsTest(_fixtures.FixtureTest):
 
-    @testing.fails_on('maxdb')
+    @testing.fails_on('maxdb', 'FIXME: unknown')
     @testing.resolve_artifact_names
     def test_synonym_options(self):
         mapper(User, users, properties=dict(
@@ -888,7 +891,7 @@ class OptionsTest(_fixtures.FixtureTest):
             eq_(l, self.static.user_address_result)
         self.sql_count_(0, go)
 
-    @testing.fails_on('maxdb')
+    @testing.fails_on('maxdb', 'FIXME: unknown')
     @testing.resolve_artifact_names
     def test_eager_options_with_limit(self):
         mapper(User, users, properties=dict(
@@ -906,14 +909,11 @@ class OptionsTest(_fixtures.FixtureTest):
 
         sess.clear()
 
-        # test that eager loading doesnt modify parent mapper
-        def go():
-            u = sess.query(User).filter_by(id=8).one()
-            eq_(u.id, 8)
-            eq_(len(u.addresses), 3)
-        assert "tbl_row_count" not in self.capture_sql(testing.db, go)
+        u = sess.query(User).filter_by(id=8).one()
+        eq_(u.id, 8)
+        eq_(len(u.addresses), 3)
 
-    @testing.fails_on('maxdb')
+    @testing.fails_on('maxdb', 'FIXME: unknown')
     @testing.resolve_artifact_names
     def test_lazy_options_with_limit(self):
         mapper(User, users, properties=dict(
@@ -1161,6 +1161,7 @@ class ComparatorFactoryTest(_fixtures.FixtureTest, AssertsCompiledSQL):
         from sqlalchemy.orm.properties import ColumnProperty
         
         class MyFactory(ColumnProperty.Comparator):
+            __hash__ = None
             def __eq__(self, other):
                 return func.foobar(self.__clause_element__()) == func.foobar(other)
         mapper(User, users, properties={'name':column_property(users.c.name, comparator_factory=MyFactory)})
@@ -1171,6 +1172,7 @@ class ComparatorFactoryTest(_fixtures.FixtureTest, AssertsCompiledSQL):
     def test_synonym(self):
         from sqlalchemy.orm.properties import ColumnProperty
         class MyFactory(ColumnProperty.Comparator):
+            __hash__ = None
             def __eq__(self, other):
                 return func.foobar(self.__clause_element__()) == func.foobar(other)
         mapper(User, users, properties={'name':synonym('_name', map_column=True, comparator_factory=MyFactory)})
@@ -1182,10 +1184,12 @@ class ComparatorFactoryTest(_fixtures.FixtureTest, AssertsCompiledSQL):
         from sqlalchemy.orm.properties import PropertyLoader
 
         class MyFactory(PropertyLoader.Comparator):
+            __hash__ = None
             def __eq__(self, other):
                 return func.foobar(self.__clause_element__().c.user_id) == func.foobar(other.id)
 
         class MyFactory2(PropertyLoader.Comparator):
+            __hash__ = None
             def __eq__(self, other):
                 return func.foobar(self.__clause_element__().c.id) == func.foobar(other.user_id)
                 
@@ -1396,7 +1400,10 @@ class DeferredTest(_fixtures.FixtureTest):
         sess = create_session()
         q = sess.query(Order).order_by(Order.id).options(defer('user_id'))
 
-        self.sql_eq_(q.all, [
+        def go():
+            q.all()[0].user_id
+                
+        self.sql_eq_(go, [
             ("SELECT orders.id AS orders_id, "
              "orders.address_id AS orders_address_id, "
              "orders.description AS orders_description, "
@@ -1404,7 +1411,7 @@ class DeferredTest(_fixtures.FixtureTest):
              "FROM orders ORDER BY orders.id", {}),
             ("SELECT orders.user_id AS orders_user_id "
              "FROM orders WHERE orders.id = :param_1",
-             {'param_1':3})])
+             {'param_1':1})])
         sess.clear()
 
         q2 = q.options(sa.orm.undefer('user_id'))
@@ -1610,6 +1617,7 @@ class CompositeTypesTest(_base.MappedTest):
                 self.y = y
             def __composite_values__(self):
                 return [self.x, self.y]
+            __hash__ = None
             def __eq__(self, other):
                 return other.x == self.x and other.y == self.y
             def __ne__(self, other):
@@ -1676,6 +1684,9 @@ class CompositeTypesTest(_base.MappedTest):
 
         eq_(sess.query(Edge).filter(Edge.start==None).all(), [])
 
+        # query by columns
+        eq_(sess.query(Edge.start, Edge.end).all(), [(3, 4, 5, 6), (14, 5, 19, 5)])
+
     @testing.resolve_artifact_names
     def test_pk(self):
         """Using a composite type as a primary key"""
@@ -1686,6 +1697,7 @@ class CompositeTypesTest(_base.MappedTest):
                 self.version = version
             def __composite_values__(self):
                 return (self.id, self.version)
+            __hash__ = None
             def __eq__(self, other):
                 return other.id == self.id and other.version == self.version
             def __ne__(self, other):
@@ -1745,6 +1757,7 @@ class CompositeTypesTest(_base.MappedTest):
                 self.x4 = x4
             def __composite_values__(self):
                 return self.x1, self.x2, self.x3, self.x4
+            __hash__ = None
             def __eq__(self, other):
                 return other.x1 == self.x1 and other.x2 == self.x2 and other.x3 == self.x3 and other.x4 == self.x4
             def __ne__(self, other):
@@ -1780,6 +1793,7 @@ class CompositeTypesTest(_base.MappedTest):
                 self.x2val = x2
                 self.x3 = x3
                 self.x4 = x4
+            __hash__ = None
             def __eq__(self, other):
                 return other.x1val == self.x1val and other.x2val == self.x2val and other.x3 == self.x3 and other.x4 == self.x4
             def __ne__(self, other):
@@ -1811,6 +1825,7 @@ class CompositeTypesTest(_base.MappedTest):
                 self.y = y
             def __composite_values__(self):
                 return [self.x, self.y]
+            __hash__ = None
             def __eq__(self, other):
                 return other.x == self.x and other.y == self.y
             def __ne__(self, other):
@@ -2104,6 +2119,8 @@ class RequirementsTest(_base.MappedTest):
 
         self.assertRaises(sa.exc.ArgumentError, mapper, OldStyle, ht1)
 
+        self.assertRaises(sa.exc.ArgumentError, mapper, 123)
+        
         class NoWeakrefSupport(str):
             pass
 
@@ -2281,44 +2298,6 @@ class MagicNamesTest(_base.MappedTest):
                 mapper, M, maps, properties={
                   reserved: maps.c.state})
 
-
-class ScalarRequirementsTest(_base.MappedTest):
-
-    # TODO: is this needed here?
-    # what does this suite excercise that unitofwork doesn't?
-
-    def define_tables(self, metadata):
-        Table('t1', metadata,
-              Column('id', Integer, primary_key=True,
-                     test_needs_autoincrement=True),
-              Column('data', sa.PickleType()))
-
-    def setup_classes(self):
-        class Foo(_base.ComparableEntity):
-            pass
-
-    @testing.resolve_artifact_names
-    def test_correct_comparison(self):
-        mapper(Foo, t1)
-
-        f1 = Foo(data=pickleable.NotComparable('12345'))
-
-        session = create_session()
-        session.add(f1)
-        session.flush()
-        session.clear()
-
-        f1 = session.query(Foo).get(f1.id)
-        eq_(f1.data.data, '12345')
-
-        f2 = Foo(data=pickleable.BrokenComparable('abc'))
-
-        session.add(f2)
-        session.flush()
-        session.clear()
-
-        f2 = session.query(Foo).get(f2.id)
-        eq_(f2.data.data, 'abc')
 
 
 if __name__ == "__main__":

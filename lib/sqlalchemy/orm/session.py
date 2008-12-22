@@ -28,7 +28,7 @@ __all__ = ['Session', 'SessionTransaction', 'SessionExtension']
 
 def sessionmaker(bind=None, class_=None, autoflush=True, autocommit=False,
                  expire_on_commit=True, **kwargs):
-    """Generate a custom-configured [sqlalchemy.orm.session#Session] class.
+    """Generate a custom-configured :class:`~sqlalchemy.orm.session.Session` class.
 
     The returned object is a subclass of ``Session``, which, when instantiated
     with no arguments, uses the keyword arguments configured here as its
@@ -139,7 +139,7 @@ def sessionmaker(bind=None, class_=None, autoflush=True, autocommit=False,
       transaction will load from the most recent database state.
 
     extension
-      An optional [sqlalchemy.orm.session#SessionExtension] instance, or
+      An optional :class:`~sqlalchemy.orm.session.SessionExtension` instance, or
       a list of such instances, which
       will receive pre- and post- commit and flush events, as well as a
       post-rollback event.  User- defined code may be placed within these
@@ -147,11 +147,11 @@ def sessionmaker(bind=None, class_=None, autoflush=True, autocommit=False,
 
     query_cls
       Class which should be used to create new Query objects, as returned
-      by the ``query()`` method.  Defaults to [sqlalchemy.orm.query#Query].
+      by the ``query()`` method.  Defaults to :class:`~sqlalchemy.orm.query.Query`.
 
     twophase
       When ``True``, all transactions will be started using
-      [sqlalchemy.engine_TwoPhaseTransaction]. During a ``commit()``, after
+      :mod:~sqlalchemy.engine_TwoPhaseTransaction. During a ``commit()``, after
       ``flush()`` has been issued for all attached databases, the
       ``prepare()`` method on each database's ``TwoPhaseTransaction`` will be
       called. This allows each database to roll back the entire transaction,
@@ -207,14 +207,17 @@ def sessionmaker(bind=None, class_=None, autoflush=True, autocommit=False,
 class SessionTransaction(object):
     """A Session-level transaction.
 
-    This corresponds to one or more [sqlalchemy.engine#Transaction]
+    This corresponds to one or more :class:`~sqlalchemy.engine.Transaction`
     instances behind the scenes, with one ``Transaction`` per ``Engine`` in
     use.
 
     Direct usage of ``SessionTransaction`` is not necessary as of SQLAlchemy
     0.4; use the ``begin()`` and ``commit()`` methods on ``Session`` itself.
 
-    The ``SessionTransaction`` object is **not** threadsafe.
+    The ``SessionTransaction`` object is **not** thread-safe.
+
+    .. index::
+      single: thread safety; SessionTransaction
 
     """
 
@@ -515,7 +518,7 @@ class Session(object):
     is either to use mutexes to limit concurrent access to one thread at a
     time, or more commonly to establish a unique session for every thread,
     using a threadlocal variable.  SQLAlchemy provides a thread-managed
-    Session adapter, provided by the [sqlalchemy.orm#scoped_session()]
+    Session adapter, provided by the :func:`~sqlalchemy.orm.scoped_session`
     function.
 
     """
@@ -534,7 +537,7 @@ class Session(object):
         """Construct a new Session.
 
         Arguments to ``Session`` are described using the
-        [sqlalchemy.orm#sessionmaker()] function.
+        :func:`~sqlalchemy.orm.sessionmaker` function.
 
         """
         
@@ -1091,13 +1094,13 @@ class Session(object):
         self._cascade_save_or_update(state)
 
     def add(self, instance):
-        """Add the given instance into this ``Session``.
+        """Place an object in the ``Session``.
 
-        TODO: rephrase the below in user terms; possibly tie into future
-        function that downgrades persistent to transient. [ticket:1052]
+        Its state will be persisted to the database on the next flush
+        operation.
 
-        The non-None state `key` on the instance's state determines whether
-        to ``save()`` or ``update()`` the instance.
+        Repeated calls to ``add()`` will be ignored. The opposite of ``add()``
+        is ``expunge()``.
 
         """
         state = _state_for_unknown_persistence_instance(instance)
@@ -1172,6 +1175,9 @@ class Session(object):
             # TODO: this should be an IdentityDict for instances, but will
             # need a separate dict for PropertyLoader tuples
             _recursive = {}
+            # Autoflush only on the topmost call
+            self._autoflush()
+
         mapper = _object_mapper(instance)
         if instance in _recursive:
             return _recursive[instance]
@@ -1204,7 +1210,7 @@ class Session(object):
                 self._update_impl(merged_state)
                 new_instance = True
             else:
-                merged = self.query(mapper.class_).get(key[1])
+                merged = self.query(mapper.class_).autoflush(False).get(key[1])
 
         if merged is None:
             merged = mapper.class_manager.new_instance()

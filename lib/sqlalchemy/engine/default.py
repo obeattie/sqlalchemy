@@ -59,9 +59,6 @@ class DefaultDialect(base.Dialect):
             raise exc.ArgumentError("Label length of %d is greater than this dialect's maximum identifier length of %d" % (label_length, self.max_identifier_length))
         self.label_length = label_length
 
-    def create_execution_context(self, connection, **kwargs):
-        return DefaultExecutionContext(self, connection, **kwargs)
-
     def type_descriptor(self, typeobj):
         """Provide a database-specific ``TypeEngine`` object, given
         the generic object which comes from the types module.
@@ -304,6 +301,9 @@ class DefaultExecutionContext(base.ExecutionContext):
     def post_exec(self):
         pass
     
+    def handle_dbapi_exception(self, e):
+        pass
+
     def get_result_proxy(self):
         return base.ResultProxy(self)
 
@@ -351,7 +351,7 @@ class DefaultExecutionContext(base.ExecutionContext):
             try:
                 self.cursor.setinputsizes(*inputsizes)
             except Exception, e:
-                self._connection._handle_dbapi_exception(e, None, None, None)
+                self._connection._handle_dbapi_exception(e, None, None, None, self)
                 raise
         else:
             inputsizes = {}
@@ -363,7 +363,7 @@ class DefaultExecutionContext(base.ExecutionContext):
             try:
                 self.cursor.setinputsizes(**inputsizes)
             except Exception, e:
-                self._connection._handle_dbapi_exception(e, None, None, None)
+                self._connection._handle_dbapi_exception(e, None, None, None, self)
                 raise
 
     def __process_defaults(self):
@@ -409,3 +409,5 @@ class DefaultExecutionContext(base.ExecutionContext):
 
             self.postfetch_cols = self.compiled.postfetch
             self.prefetch_cols = self.compiled.prefetch
+
+DefaultDialect.execution_ctx_cls = DefaultExecutionContext
