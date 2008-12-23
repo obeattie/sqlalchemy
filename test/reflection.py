@@ -96,7 +96,6 @@ class ReflectionTest(TestBase):
     def test_get_columns(self):
         self._test_get_columns()
 
-    @testing.fails_on('sqlite')
     def test_get_columns_with_schema(self):
         self._test_get_columns(schema=getSchema())
 
@@ -115,11 +114,9 @@ class ReflectionTest(TestBase):
             addresses.drop()
             users.drop()
 
-    @testing.fails_on('sqlite')
     def test_get_primary_keys(self):
         self._test_get_primary_keys()
 
-    @testing.fails_on('sqlite')
     def test_get_primary_keys_with_schema(self):
         self._test_get_primary_keys(schema=getSchema())
 
@@ -153,11 +150,9 @@ class ReflectionTest(TestBase):
             addresses.drop()
             users.drop()
 
-    @testing.fails_on('sqlite')
     def test_get_foreign_keys(self):
         self._test_get_foreign_keys()
 
-    @testing.fails_on('sqlite')
     def test_get_foreign_keys_with_schema(self):
         self._test_get_foreign_keys(schema=getSchema())
 
