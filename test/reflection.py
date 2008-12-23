@@ -74,6 +74,9 @@ class ReflectionTest(TestBase):
     def test_get_table_names(self):
         self._test_get_table_names()
 
+    def test_get_table_names_with_schema(self):
+        self._test_get_table_names(getSchema())
+
     def _test_get_columns(self, schema=None):
         meta = MetaData(testing.db)
         (users, addresses) = createTables(meta, schema)
