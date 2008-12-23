@@ -30,6 +30,14 @@ class Inspector(object):
         else:
             self.engine = conn
 
+    def get_schema_names(self):
+        """Return all schema names.
+
+        """
+        if hasattr(self.engine.dialect, 'get_schema_names'):
+            return self.engine.dialect.get_schema_names(self.conn)
+        return []
+
     def get_table_names(self, schema=None):
         """
         schema:

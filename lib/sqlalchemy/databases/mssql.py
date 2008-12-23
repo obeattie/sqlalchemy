@@ -722,6 +722,12 @@ class MSSQLDialect(default.DefaultDialect):
         row  = c.fetchone()
         return row is not None
 
+    def get_schema_names(self, connection):
+        import sqlalchemy.databases.information_schema as ischema
+        schemata = ischema.schemata
+        s = sql.select([schemata.c.schema_name.distinct()])
+        return [row[0] for row in connection.execute(s)]
+
     def get_table_names(self, connection, schema=None):
         import sqlalchemy.databases.information_schema as ischema
         if schema is not None:

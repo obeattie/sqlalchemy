@@ -57,6 +57,11 @@ def createTables(meta, schema=None):
 
 class ReflectionTest(TestBase):
 
+    def test_get_schema_names(self):
+        meta = MetaData(testing.db)
+        insp = Inspector(meta.bind)
+        self.assert_(getSchema() in insp.get_schema_names())
+
     def _test_get_table_names(self, schema=None):
         meta = MetaData(testing.db)
         (users, addresses) = createTables(meta, schema)

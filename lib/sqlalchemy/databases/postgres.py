@@ -488,6 +488,29 @@ class PGDialect(default.DefaultDialect):
             raise exc.NoSuchTableError(table_name)
         return rows[0].table_oid
 
+    def get_schema_names(self, connection):
+        import sqlalchemy.databases.information_schema as ischema
+        schemata = ischema.schemata
+        s = sql.select([schemata.c.schema_name.distinct()])
+        return [row[0] for row in connection.execute(s)]
+
+    def get_table_names(self, connection, schema=None):
+        import sqlalchemy.databases.information_schema as ischema
+        if schema is not None:
+            current_schema = schema
+        else:
+            current_schema = self.get_default_schema_name(connection)
+        select = sql.select
+        and_ = sql.and_
+        tables = ischema.tables
+        s = select([tables.c.table_name],
+                    and_(
+                        tables.c.table_schema==current_schema,
+                        tables.c.table_type=='BASE TABLE'
+                        )
+                   )
+        return [row[0] for row in connection.execute(s)]
+
     def get_columns(self, connection, table_name, schema=None, info_cache=None):
         info_cache = self._prepare_info_cache(info_cache, table_name, schema)
         preparer = self.identifier_preparer
