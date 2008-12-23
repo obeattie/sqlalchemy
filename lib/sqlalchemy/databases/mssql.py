@@ -887,12 +887,6 @@ class MSSQLDialect(default.DefaultDialect):
                 # ignoring it, works just like before
                 pass
 
-        # Add constraints
-        RR = self.uppercase_table(ischema.ref_constraints)    #information_schema.referential_constraints
-        TC = self.uppercase_table(ischema.constraints)        #information_schema.table_constraints
-        C  = self.uppercase_table(ischema.pg_key_constraints).alias('C') #information_schema.constraint_column_usage: the constrained column
-        R  = self.uppercase_table(ischema.pg_key_constraints).alias('R') #information_schema.constraint_column_usage: the referenced column
-
         # Primary key constraints
         pkeys = self.get_primary_keys(connection, table.name,
                                       current_schema, info_cache)
@@ -902,15 +896,12 @@ class MSSQLDialect(default.DefaultDialect):
         # Foreign key constraints
         def _gen_fkref(table, rschema, rtbl, rcols):
             if rschema == current_schema and not table.schema:
-                ##return '.'.join([rtbl, rcol])
                 return ["%s.%s" % (rtbl, rcol) for rcol in rcols]
             else:
-                ##return '.'.join([rschema, rtbl, rcol])
                 return ["%s.%s.%s" % (rschema, rtbl, rcol) for rcol in rcols]
 
         fkeys = self.get_foreign_keys(connection, table.name, current_schema,
                                       info_cache)
-
         for (fknm, scols, rschema, rtbl, rcols) in fkeys:
             if rschema == current_schema and not table.schema:
                 schema.Table(rtbl, table.metadata, autoload=True,
