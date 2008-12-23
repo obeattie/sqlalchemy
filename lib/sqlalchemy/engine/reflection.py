@@ -39,6 +39,8 @@ class Inspector(object):
         them with an indicator t or v.
 
         """
+        if hasattr(self.engine.dialect, 'get_table_names'):
+            return self.engine.dialect.get_table_names(self.conn, schema)
         return self.engine.table_names(schema)
 
     def get_columns(self, table_name, schema=None):

@@ -722,6 +722,23 @@ class MSSQLDialect(default.DefaultDialect):
         row  = c.fetchone()
         return row is not None
 
+    def get_table_names(self, connection, schema=None):
+        import sqlalchemy.databases.information_schema as ischema
+        if schema is not None:
+            current_schema = schema
+        else:
+            current_schema = self.get_default_schema_name(connection)
+        select = sql.select
+        and_ = sql.and_
+        tables = ischema.tables
+        s = select([tables.c.table_name],
+                    and_(
+                        tables.c.table_schema==current_schema,
+                        tables.c.table_type=='BASE TABLE'
+                        )
+                   )
+        return [row[0] for row in connection.execute(s)]
+
     def get_columns(self, connection, table_name, schema=None, info_cache=None):
         import sqlalchemy.databases.information_schema as ischema
         # Get base columns

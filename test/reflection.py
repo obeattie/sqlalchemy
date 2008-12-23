@@ -57,6 +57,23 @@ def createTables(meta, schema=None):
 
 class ReflectionTest(TestBase):
 
+    def _test_get_table_names(self, schema=None):
+        meta = MetaData(testing.db)
+        (users, addresses) = createTables(meta, schema)
+        meta.create_all()
+        try:
+            insp = Inspector(meta.bind)
+            table_names = insp.get_table_names(schema)
+            table_names.sort()
+            answer = ['engine_email_addresses', 'engine_users']
+            self.assertEqual(table_names, answer)
+        finally:
+            addresses.drop()
+            users.drop()
+
+    def test_get_table_names(self):
+        self._test_get_table_names()
+
     def _test_get_columns(self, schema=None):
         meta = MetaData(testing.db)
         (users, addresses) = createTables(meta, schema)
