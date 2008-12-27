@@ -9,6 +9,7 @@ attributes.
 
 """
 import sqlalchemy
+from sqlalchemy.types import TypeEngine
 
 class Inspector(object):
     """performs database introspection
@@ -78,6 +79,10 @@ class Inspector(object):
                                                info_cache=self.info_cache)
         cols = []
         for col_def in col_defs:
+            # make this easy and only return instances for coltype
+            coltype = col_def[1]
+            if not isinstance(coltype, TypeEngine):
+                coltype = coltype()
             cols.append(
                 {'name':col_def[0],
                  'coltype':col_def[1],

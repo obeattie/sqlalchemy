@@ -123,12 +123,10 @@ class ReflectionTest(TestBase):
                 # should be in order
                 for (i, col) in enumerate(table.columns):
                     self.assertEqual(col.name, cols[i]['name'])
-                    # coltype is tricky.  It can be a class or instance.
-                    # Also, it may not inherit from col.type while they share
+                    # coltype is tricky
+                    # It may not inherit from col.type while they share
                     # the same base.
-                    coltype = cols[i]['coltype']
-                    if not hasattr(coltype, '__bases__'):
-                        coltype = coltype.__class__
+                    coltype = cols[i]['coltype'].__class__
                     self.assert_(
                         issubclass(coltype, col.type.__class__) or \
                         len(
