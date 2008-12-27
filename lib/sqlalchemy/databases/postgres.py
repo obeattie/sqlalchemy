@@ -494,7 +494,7 @@ class PGDialect(default.DefaultDialect):
         s = sql.select([schemata.c.schema_name.distinct()])
         return [row[0] for row in connection.execute(s)]
 
-    def get_table_names(self, connection, schema=None):
+    def __get_table_names(self, connection, table_type, schema=None):
         import sqlalchemy.databases.information_schema as ischema
         if schema is not None:
             current_schema = schema
@@ -506,10 +506,16 @@ class PGDialect(default.DefaultDialect):
         s = select([tables.c.table_name],
                     and_(
                         tables.c.table_schema==current_schema,
-                        tables.c.table_type=='BASE TABLE'
+                        tables.c.table_type==table_type
                         )
                    )
         return [row[0] for row in connection.execute(s)]
+
+    def get_table_names(self, connection, schema=None):
+        return self.__get_table_names(connection, 'BASE TABLE', schema)
+
+    def get_view_names(self, connection, schema=None):
+        return self.__get_table_names(connection, 'VIEW', schema)
 
     def get_columns(self, connection, table_name, schema=None, info_cache=None):
         info_cache = self._prepare_info_cache(info_cache, table_name, schema)

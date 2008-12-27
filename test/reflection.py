@@ -82,16 +82,21 @@ class ReflectionTest(TestBase):
         insp = Inspector(meta.bind)
         self.assert_(getSchema() in insp.get_schema_names())
 
-    def _test_get_table_names(self, schema=None):
+    def _test_get_table_names(self, schema=None, table_type='table'):
         meta = MetaData(testing.db)
         (users, addresses) = createTables(meta, schema)
         meta.create_all()
         createViews(meta.bind, schema)
         try:
             insp = Inspector(meta.bind)
-            table_names = insp.get_table_names(schema)
-            table_names.sort()
-            answer = ['email_addresses', 'users']
+            if table_type == 'view':
+                table_names = insp.get_view_names(schema)
+                table_names.sort()
+                answer = ['email_addresses_v', 'users_v']
+            else:
+                table_names = insp.get_table_names(schema)
+                table_names.sort()
+                answer = ['email_addresses', 'users']
             self.assertEqual(table_names, answer)
         finally:
             dropViews(meta.bind, schema)
@@ -103,6 +108,12 @@ class ReflectionTest(TestBase):
 
     def test_get_table_names_with_schema(self):
         self._test_get_table_names(getSchema())
+
+    def test_get_view_names(self):
+        self._test_get_table_names(table_type='view')
+
+    def test_get_view_names_with_schema(self):
+        self._test_get_table_names(getSchema(), table_type='view')
 
     def _test_get_columns(self, schema=None, table_type='table'):
         meta = MetaData(testing.db)

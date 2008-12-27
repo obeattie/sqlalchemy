@@ -52,6 +52,14 @@ class Inspector(object):
             return self.engine.dialect.get_table_names(self.conn, schema)
         return self.engine.table_names(schema)
 
+    def get_view_names(self, schema=None):
+        """
+        schema:
+          Optional, retrieve names from a non-default schema.
+
+        """
+        return self.engine.dialect.get_view_names(self.conn, schema)
+
     def get_columns(self, table_name, schema=None):
         """Return information about columns in `table_name`.
 
