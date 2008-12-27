@@ -20,14 +20,14 @@ def getSchema():
 def createTables(meta, schema=None):
     if schema:
         parent_user_id = Column('parent_user_id', sa.Integer,
-            sa.ForeignKey('%s.engine_users.user_id' % schema)
+            sa.ForeignKey('%s.users.user_id' % schema)
         )
     else:
         parent_user_id = Column('parent_user_id', sa.Integer,
-            sa.ForeignKey('engine_users.user_id')
+            sa.ForeignKey('users.user_id')
         )
 
-    users = Table('engine_users', meta,
+    users = Table('users', meta,
         Column('user_id', sa.INT, primary_key=True),
         Column('user_name', sa.VARCHAR(20), nullable=False),
         Column('test1', sa.CHAR(5), nullable=False),
@@ -45,7 +45,7 @@ def createTables(meta, schema=None):
         schema=schema,
         test_needs_fk=True,
     )
-    addresses = Table('engine_email_addresses', meta,
+    addresses = Table('email_addresses', meta,
         Column('address_id', sa.Integer, primary_key = True),
         Column('remote_user_id', sa.Integer,
                sa.ForeignKey(users.c.user_id)),
@@ -54,6 +54,26 @@ def createTables(meta, schema=None):
         test_needs_fk=True,
     )
     return (users, addresses)
+
+def createViews(con, schema=None):
+    for table_name in ('users', 'email_addresses'):
+        fullname = table_name
+        if schema:
+            fullname = "%s.%s" % (schema, table_name)
+        view_name = fullname + '_v'
+        query = "CREATE OR REPLACE VIEW %s AS SELECT * FROM %s" % (view_name,
+                                                                   fullname)
+        con.execute(sa.sql.text(query))
+
+def dropViews(con, schema=None):
+    for table_name in ('email_addresses', 'users'):
+        fullname = table_name
+        if schema:
+            fullname = "%s.%s" % (schema, table_name)
+        view_name = fullname + '_v'
+        query = "DROP VIEW %s" % view_name
+        con.execute(sa.sql.text(query))
+
 
 class ReflectionTest(TestBase):
 
@@ -66,13 +86,15 @@ class ReflectionTest(TestBase):
         meta = MetaData(testing.db)
         (users, addresses) = createTables(meta, schema)
         meta.create_all()
+        createViews(meta.bind, schema)
         try:
             insp = Inspector(meta.bind)
             table_names = insp.get_table_names(schema)
             table_names.sort()
-            answer = ['engine_email_addresses', 'engine_users']
+            answer = ['email_addresses', 'users']
             self.assertEqual(table_names, answer)
         finally:
+            dropViews(meta.bind, schema)
             addresses.drop()
             users.drop()
 
@@ -82,21 +104,21 @@ class ReflectionTest(TestBase):
     def test_get_table_names_with_schema(self):
         self._test_get_table_names(getSchema())
 
-    def _test_get_columns(self, schema=None):
+    def _test_get_columns(self, schema=None, table_type='table'):
         meta = MetaData(testing.db)
         (users, addresses) = createTables(meta, schema)
+        table_names = ['users', 'email_addresses']
         meta.create_all()
-
+        if table_type == 'view':
+            createViews(meta.bind, schema)
+            table_names = ['users_v', 'email_addresses_v']
         try:
             insp = Inspector(meta.bind)
-            for table in (users, addresses):
+            for (table_name, table) in zip(table_names, (users, addresses)):
                 schema_name = schema
-                if schema:
-                    # fixme.  issue with case on oracle
-                    schema_name = table.schema
-                    if testing.against('oracle'):
-                        schema_name = table.schema.upper()
-                cols = insp.get_columns(table.name, schema=schema_name)
+                if schema and testing.against('oracle'):
+                    schema_name = schema.upper()
+                cols = insp.get_columns(table_name, schema=schema_name)
                 self.assert_(len(cols) > 0, len(cols))
                 # should be in order
                 for (i, col) in enumerate(table.columns):
@@ -115,6 +137,8 @@ class ReflectionTest(TestBase):
                             ).intersection(col.type.__class__.__bases__)) > 0
                     ,("%s, %s", (col.type, coltype)))
         finally:
+            if table_type == 'view':
+                dropViews(meta.bind, schema)
             addresses.drop()
             users.drop()
 
@@ -123,6 +147,12 @@ class ReflectionTest(TestBase):
 
     def test_get_columns_with_schema(self):
         self._test_get_columns(schema=getSchema())
+
+    def test_get_view_columns(self):
+        self._test_get_columns(table_type='view')
+
+    def test_get_view_columns_with_schema(self):
+        self._test_get_columns(schema=getSchema(), table_type='view')
 
     def _test_get_primary_keys(self, schema=None):
         meta = MetaData(testing.db)
