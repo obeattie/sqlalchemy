@@ -517,10 +517,24 @@ class PGDialect(default.DefaultDialect):
         return [row[0] for row in connection.execute(s)]
 
     def get_table_names(self, connection, schema=None):
-        return self.__get_table_names(connection, 'BASE TABLE', schema)
+        if schema is not None:
+            current_schema = schema
+        else:
+            current_schema = self.get_default_schema_name(connection)
+        return self.table_names(connection, schema)
 
     def get_view_names(self, connection, schema=None):
-        return self.__get_table_names(connection, 'VIEW', schema)
+        if schema is not None:
+            current_schema = schema
+        else:
+            current_schema = self.get_default_schema_name(connection)
+        s = """
+        SELECT relname
+        FROM pg_class c
+        WHERE relkind = 'v'
+          AND '%(schema)s' = (select nspname from pg_namespace n where n.oid = c.relnamespace)
+        """ % current_schema
+        return [row[0].decode(self.encoding) for row in connection.execute(s)]
 
     def get_columns(self, connection, table_name, schema=None, info_cache=None):
         info_cache = self._prepare_info_cache(info_cache, table_name, schema)
