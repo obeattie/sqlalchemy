@@ -505,6 +505,11 @@ class OracleDialect(default.DefaultDialect):
     get_default_schema_name = base.connection_memoize(
         ('dialect', 'default_schema_name'))(get_default_schema_name)
 
+    def get_schema_names(self, connection):
+        s = "SELECT username FROM all_users ORDER BY username"
+        cursor = connection.execute(s,)
+        return [self._normalize_name(row[0]) for row in cursor]
+
     def table_names(self, connection, schema):
         # note that table_names() isnt loading DBLINKed or synonym'ed tables
         if schema is None:
@@ -556,6 +561,18 @@ class OracleDialect(default.DefaultDialect):
                 return row['TABLE_NAME'], row['TABLE_OWNER'], row['DB_LINK'], row['SYNONYM_NAME']
             else:
                 return None, None, None, None
+
+    def get_table_names(self, connection, schema):
+        return self.table_names(connection, schema)
+
+    def get_view_names(self, connection, schema):
+        if schema is None:
+            owner = self.get_default_schema_name(connection)
+        else:
+            owner = schema
+        s = "select view_name from all_views where OWNER = :owner"
+        cursor = connection.execute(s, {'owner': self._denormalize_name(owner)})
+        return [self._normalize_name(row[0]) for row in cursor]
 
     def get_columns(self, connection, table_name, schema=None, info_cache=None,
                     dblink=''):
