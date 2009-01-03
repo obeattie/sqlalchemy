@@ -489,10 +489,15 @@ class PGDialect(default.DefaultDialect):
         return rows[0].table_oid
 
     def get_schema_names(self, connection):
-        import sqlalchemy.databases.information_schema as ischema
-        schemata = ischema.schemata
-        s = sql.select([schemata.c.schema_name.distinct()])
-        return [row[0] for row in connection.execute(s)]
+        s = """
+        SELECT nspname
+        FROM pg_namespace
+        ORDER BY nspname
+        """
+        rp = connection.execute(s)
+        # what about system tables?
+        return [row[0].decode(self.encoding) for row in rp \
+                if not row[0].startswith('pg_')]
 
     def __get_table_names(self, connection, table_type, schema=None):
         import sqlalchemy.databases.information_schema as ischema
