@@ -162,7 +162,9 @@ class DefaultDialect(base.Dialect):
                              autoload_with=connection, **tbl_kwargs)
                 for column in referred_columns:
                     refspec.append(".".join([referred_table, column]))
-            table.append_constraint(schema.ForeignKeyConstraint(constrained_columns, refspec, constraint_name))
+            table.append_constraint(schema.ForeignKeyConstraint(
+                constrained_columns, refspec, constraint_name,
+                link_to_name=True))
 
 class DefaultExecutionContext(base.ExecutionContext):
     def __init__(self, dialect, connection, compiled=None, statement=None, parameters=None):

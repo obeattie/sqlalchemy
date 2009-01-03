@@ -18,7 +18,7 @@ Note that psycopg1 is **not** supported.
 Connecting
 ----------
 
-URLs are of the form `postgres://user@password@host:port/dbname[?key=value&key=value...]`.
+URLs are of the form `postgres://user:password@host:port/dbname[?key=value&key=value...]`.
 
 Postgres-specific keyword arguments which are accepted by :func:`~sqlalchemy.create_engine()` are:
 
@@ -748,10 +748,11 @@ class PGDialect(default.DefaultDialect):
         for row in self.get_primary_keys(connection, table.name, table.schema,
                                          info_cache):
             pk = row[0]
-            col = table.c[pk]
-            table.primary_key.add(col)
-            if col.default is None:
-                col.autoincrement = False
+            if pk in table.c:
+                col = table.c[pk]
+                table.primary_key.add(col)
+                if col.default is None:
+                    col.autoincrement = False
         # Foreign keys
         self._reflect_foreign_keys(connection, table, info_cache)
         # Indexes 
@@ -824,6 +825,11 @@ class PGCompiler(compiler.DefaultCompiler):
             return None
         else:
             return "nextval('%s')" % self.preparer.format_sequence(seq)
+
+    def post_process_text(self, text):
+        if '%%' in text:
+            util.warn("The SQLAlchemy psycopg2 dialect now automatically escapes '%' in text() expressions to '%%'.")
+        return text.replace('%', '%%') 
 
     def limit_clause(self, select):
         text = ""
