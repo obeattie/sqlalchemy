@@ -579,8 +579,7 @@ class OracleDialect(default.DefaultDialect):
         table_name = self._denormalize_name(table_name)
         if not dblink:
             dblink = ''
-        if not schema:
-            schema = self._denormalize_name(schema or self.get_default_schema_name(connection))
+        schema = self._denormalize_name(schema or self.get_default_schema_name(connection))
         columns = []
         c = connection.execute ("select COLUMN_NAME, DATA_TYPE, DATA_LENGTH, DATA_PRECISION, DATA_SCALE, NULLABLE, DATA_DEFAULT from ALL_TAB_COLUMNS%(dblink)s where TABLE_NAME = :table_name and OWNER = :owner" % {'dblink':dblink}, {'table_name':table_name, 'owner':schema})
 
