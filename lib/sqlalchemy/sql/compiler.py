@@ -294,6 +294,9 @@ class DefaultCompiler(engine.Compiled):
     def visit_typeclause(self, typeclause, **kwargs):
         return typeclause.type.dialect_impl(self.dialect).get_col_spec()
 
+    def post_process_text(self, text):
+        return text
+        
     def visit_textclause(self, textclause, **kwargs):
         if textclause.typemap is not None:
             for colname, type_ in textclause.typemap.iteritems():
@@ -308,7 +311,7 @@ class DefaultCompiler(engine.Compiled):
 
         # un-escape any \:params
         return BIND_PARAMS_ESC.sub(lambda m: m.group(1),
-            BIND_PARAMS.sub(do_bindparam, textclause.text)
+            BIND_PARAMS.sub(do_bindparam, self.post_process_text(textclause.text))
         )
 
     def visit_null(self, null, **kwargs):
@@ -407,11 +410,12 @@ class DefaultCompiler(engine.Compiled):
 
         return bind_name
 
+    _trunc_re = re.compile(r'%\((-?\d+ \w+)\)s', re.U)
     def _truncated_identifier(self, ident_class, name):
         if (ident_class, name) in self.truncated_names:
             return self.truncated_names[(ident_class, name)]
-        
-        anonname = name % self.anon_map
+
+        anonname = self._trunc_re.sub(lambda m: self.anon_map[m.group(1)], name)
 
         if len(anonname) > self.label_length:
             counter = self.truncated_names.get(ident_class, 1)
@@ -423,7 +427,7 @@ class DefaultCompiler(engine.Compiled):
         return truncname
     
     def _anonymize(self, name):
-        return name % self.anon_map
+        return self._trunc_re.sub(lambda m: self.anon_map[m.group(1)], name)
         
     def _process_anon(self, key):
         (ident, derived) = key.split(' ')
@@ -462,7 +466,7 @@ class DefaultCompiler(engine.Compiled):
             not isinstance(column.table, sql.Select):
             return _CompileLabel(column, sql._generated_label(column.name))
         elif not isinstance(column, (sql._UnaryExpression, sql._TextClause, sql._BindParamClause)) \
-                and (not hasattr(column, 'name') or isinstance(column, sql._Function)):
+                and (not hasattr(column, 'name') or isinstance(column, sql.Function)):
             return _CompileLabel(column, column.anon_label)
         else:
             return column
@@ -652,12 +656,12 @@ class DefaultCompiler(engine.Compiled):
         if self.column_keys is None:
             parameters = {}
         else:
-            parameters = dict((getattr(key, 'key', key), None)
+            parameters = dict((sql._column_as_key(key), None)
                               for key in self.column_keys)
 
         if stmt.parameters is not None:
             for k, v in stmt.parameters.iteritems():
-                parameters.setdefault(getattr(k, 'key', k), v)
+                parameters.setdefault(sql._column_as_key(k), v)
 
         # create a list of column assignment clauses as tuples
         values = []

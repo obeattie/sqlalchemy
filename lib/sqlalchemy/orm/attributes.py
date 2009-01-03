@@ -131,7 +131,17 @@ class QueryableAttribute(interfaces.PropComparator):
 
     def hasparent(self, state, optimistic=False):
         return self.impl.hasparent(state, optimistic=optimistic)
-
+    
+    def __getattr__(self, key):
+        try:
+            return getattr(self.comparator, key)
+        except AttributeError:
+            raise AttributeError('Neither %r object nor %r object has an attribute %r' % (
+                    type(self).__name__, 
+                    type(self.comparator).__name__, 
+                    key)
+            )
+        
     def __str__(self):
         return repr(self.parententity) + "." + self.property.key
 
@@ -195,8 +205,19 @@ def proxied_attribute_factory(descriptor):
             return descriptor.__delete__(instance)
 
         def __getattr__(self, attribute):
-            """Delegate __getattr__ to the original descriptor."""
-            return getattr(descriptor, attribute)
+            """Delegate __getattr__ to the original descriptor and/or comparator."""
+            
+            try:
+                return getattr(descriptor, attribute)
+            except AttributeError:
+                try:
+                    return getattr(self._comparator, attribute)
+                except AttributeError:
+                    raise AttributeError('Neither %r object nor %r object has an attribute %r' % (
+                            type(descriptor).__name__, 
+                            type(self._comparator).__name__, 
+                            attribute)
+                    )
 
         def _property(self):
             return self._parententity.get_property(self.key, resolve_synonyms=True)
@@ -1246,6 +1267,9 @@ class ClassManager(dict):
         setattr(instance, self.STATE_ATTR, state or self.instance_state_factory(instance, self))
         return instance
 
+    def setup_instance(self, instance, state=None):
+        setattr(instance, self.STATE_ATTR, state or self.instance_state_factory(instance, self))
+        
     def _new_state_if_none(self, instance):
         """Install a default InstanceState if none is present.
 
@@ -1333,7 +1357,7 @@ class _ClassInstrumentationAdapter(ClassManager):
 
     def new_instance(self, state=None):
         instance = self.class_.__new__(self.class_)
-        self._setup_instance(instance, state)
+        self.setup_instance(instance, state)
         return instance
 
     def _new_state_if_none(self, instance):
@@ -1344,9 +1368,9 @@ class _ClassInstrumentationAdapter(ClassManager):
         if self.has_state(instance):
             return False
         else:
-            return self._setup_instance(instance)
+            return self.setup_instance(instance)
 
-    def _setup_instance(self, instance, state=None):
+    def setup_instance(self, instance, state=None):
         self._adapted.initialize_instance_dict(self.class_, instance)
         
         if state is None:

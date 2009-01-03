@@ -312,7 +312,7 @@ class AccessDialect(default.DefaultDialect):
                     continue
                 scols = [c.ForeignName for c in fk.Fields]
                 rcols = ['%s.%s' % (fk.Table, c.Name) for c in fk.Fields]
-                table.append_constraint(schema.ForeignKeyConstraint(scols, rcols))
+                table.append_constraint(schema.ForeignKeyConstraint(scols, rcols, link_to_name=True))
 
         finally:
             dtbs.Close()
@@ -346,7 +346,7 @@ class AccessCompiler(compiler.DefaultCompiler):
         return binary.operator == '%' and 'mod' or binary.operator
 
     def label_select_column(self, select, column, asfrom):
-        if isinstance(column, expression._Function):
+        if isinstance(column, expression.Function):
             return column.label()
         else:
             return super(AccessCompiler, self).label_select_column(select, column, asfrom)

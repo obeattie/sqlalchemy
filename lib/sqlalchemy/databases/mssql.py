@@ -96,7 +96,7 @@ arguments on the URL, or as keyword argument to
 
 * *auto_identity_insert* - enables support for IDENTITY inserts by
   automatically turning IDENTITY INSERT ON and OFF as required.
-  Defaults to ``True`.
+  Defaults to ``True``.
 
 * *query_timeout* - allows you to override the default query timeout.
   Defaults to ``None``. This is only supported on pymssql.
@@ -151,6 +151,21 @@ optional and will default to 1,1.
 * Support for auto-fetching of ``@@IDENTITY/@@SCOPE_IDENTITY()`` on
   ``INSERT``
 
+Collation Support
+-----------------
+
+MSSQL specific string types support a collation parameter that
+creates a column-level specific collation for the column. The
+collation parameter accepts a Windows Collation Name or a SQL
+Collation Name. Supported types are MSChar, MSNChar, MSString,
+MSNVarchar, MSText, and MSNText. For example::
+
+    Column('login', String(32, collation='Latin1_General_CI_AS'))
+
+will yield::
+
+    login VARCHAR(32) COLLATE Latin1_General_CI_AS NULL
+
 LIMIT/OFFSET Support
 --------------------
 
@@ -185,6 +200,17 @@ render::
 If ``nullable`` is ``True`` or ``False`` then the column will be
 ``NULL` or ``NOT NULL`` respectively.
 
+Compatibility Levels
+--------------------
+MSSQL supports the notion of setting compatibility levels at the
+database level. This allows, for instance, to run a database that
+is compatibile with SQL2000 while running on a SQL2005 database
+server. ``server_version_info`` will always retrun the database
+server version information (in this case SQL2005) and not the
+compatibiility level information. Because of this, if running under
+a backwards compatibility mode SQAlchemy may attempt to use T-SQL
+statements that are unable to be parsed by the database server.
+
 Known Issues
 ------------
 
@@ -194,7 +220,7 @@ Known Issues
   does **not** work around
 
 """
-import datetime, operator, re, sys, urllib
+import datetime, inspect, operator, re, sys, urllib
 
 from sqlalchemy import sql, schema, exc, util
 from sqlalchemy.sql import compiler, expression, operators as sqlops, functions as sql_functions
@@ -205,6 +231,67 @@ from decimal import Decimal as _python_Decimal
 
 
 MSSQL_RESERVED_WORDS = set(['function'])
+
+
+class _StringType(object):
+    """Base for MSSQL string types."""
+
+    def __init__(self, collation=None, **kwargs):
+        self.collation = kwargs.get('collate', collation)
+
+    def _extend(self, spec):
+        """Extend a string-type declaration with standard SQL
+        COLLATE annotations.
+        """
+
+        if self.collation:
+            collation = 'COLLATE %s' % self.collation
+        else:
+            collation = None
+
+        return ' '.join([c for c in (spec, collation)
+                         if c is not None])
+
+    def __repr__(self):
+        attributes = inspect.getargspec(self.__init__)[0][1:]
+        attributes.extend(inspect.getargspec(_StringType.__init__)[0][1:])
+
+        params = {}
+        for attr in attributes:
+            val = getattr(self, attr)
+            if val is not None and val is not False:
+                params[attr] = val
+
+        return "%s(%s)" % (self.__class__.__name__,
+                           ', '.join(['%s=%r' % (k, params[k]) for k in params]))
+
+    def bind_processor(self, dialect):
+        if self.convert_unicode or dialect.convert_unicode:
+            if self.assert_unicode is None:
+                assert_unicode = dialect.assert_unicode
+            else:
+                assert_unicode = self.assert_unicode
+
+            if not assert_unicode:
+                return None
+
+            def process(value):
+                if not isinstance(value, (unicode, sqltypes.NoneType)):
+                    if assert_unicode == 'warn':
+                        util.warn("Unicode type received non-unicode bind "
+                                  "param value %r" % value)
+                        return value
+                    else:
+                        raise exc.InvalidRequestError("Unicode type received non-unicode bind param value %r" % value)
+                else:
+                    return value
+            return process
+        else:
+            return None
+
+    def result_processor(self, dialect):
+        return None
+
 
 class MSNumeric(sqltypes.Numeric):
     def result_processor(self, dialect):
@@ -242,9 +329,13 @@ class MSNumeric(sqltypes.Numeric):
         else:
             return "NUMERIC(%(precision)s, %(scale)s)" % {'precision': self.precision, 'scale' : self.scale}
 
+
 class MSFloat(sqltypes.Float):
     def get_col_spec(self):
-        return "FLOAT(%(precision)s)" % {'precision': self.precision}
+        if self.precision is None:
+            return "FLOAT"
+        else:
+            return "FLOAT(%(precision)s)" % {'precision': self.precision}
 
     def bind_processor(self, dialect):
         def process(value):
@@ -254,21 +345,51 @@ class MSFloat(sqltypes.Float):
             return None
         return process
 
+
+class MSReal(MSFloat):
+    """A type for ``real`` numbers."""
+
+    def __init__(self):
+        """
+        Construct a Real.
+
+        """
+        super(MSReal, self).__init__(precision=24)
+
+    def adapt(self, impltype):
+        return impltype()
+
+    def bind_processor(self, dialect):
+        def process(value):
+            if value is not None:
+                return float(value)
+            else:
+                return value
+        return process
+
+    def get_col_spec(self):
+        return "REAL"
+
+
 class MSInteger(sqltypes.Integer):
     def get_col_spec(self):
         return "INTEGER"
+
 
 class MSBigInteger(MSInteger):
     def get_col_spec(self):
         return "BIGINT"
 
+
 class MSTinyInteger(MSInteger):
     def get_col_spec(self):
         return "TINYINT"
 
+
 class MSSmallInteger(MSInteger):
     def get_col_spec(self):
         return "SMALLINT"
+
 
 class MSDateTime(sqltypes.DateTime):
     def __init__(self, *a, **kw):
@@ -276,6 +397,7 @@ class MSDateTime(sqltypes.DateTime):
 
     def get_col_spec(self):
         return "DATETIME"
+
 
 class MSSmallDate(sqltypes.Date):
     def __init__(self, *a, **kw):
@@ -292,6 +414,7 @@ class MSSmallDate(sqltypes.Date):
             return value
         return process
 
+
 class MSDate(sqltypes.Date):
     def __init__(self, *a, **kw):
         super(MSDate, self).__init__(False)
@@ -306,6 +429,7 @@ class MSDate(sqltypes.Date):
                 return value.date()
             return value
         return process
+
 
 class MSTime(sqltypes.Time):
     __zero_date = datetime.date(1900, 1, 1)
@@ -334,6 +458,7 @@ class MSTime(sqltypes.Time):
             return value
         return process
 
+
 class MSDateTime_adodbapi(MSDateTime):
     def result_processor(self, dialect):
         def process(value):
@@ -344,6 +469,7 @@ class MSDateTime_adodbapi(MSDateTime):
             return value
         return process
 
+
 class MSDateTime_pyodbc(MSDateTime):
     def bind_processor(self, dialect):
         def process(value):
@@ -351,6 +477,7 @@ class MSDateTime_pyodbc(MSDateTime):
                 return datetime.datetime(value.year, value.month, value.day)
             return value
         return process
+
 
 class MSDate_pyodbc(MSDate):
     def bind_processor(self, dialect):
@@ -360,45 +487,240 @@ class MSDate_pyodbc(MSDate):
             return value
         return process
 
-class MSText(sqltypes.Text):
+
+class MSText(_StringType, sqltypes.Text):
+    """MSSQL TEXT type, for variable-length text up to 2^31 characters."""
+
+    def __init__(self, *args, **kwargs):
+        """Construct a TEXT.
+
+        :param collation: Optional, a column-level collation for this string
+          value. Accepts a Windows Collation Name or a SQL Collation Name.
+
+        """
+        _StringType.__init__(self, **kwargs)
+        sqltypes.Text.__init__(self, None,
+                convert_unicode=kwargs.get('convert_unicode', False),
+                assert_unicode=kwargs.get('assert_unicode', None))
+
     def get_col_spec(self):
         if self.dialect.text_as_varchar:
-            return "VARCHAR(max)"
+            return self._extend("VARCHAR(max)")
         else:
-            return "TEXT"
+            return self._extend("TEXT")
 
-class MSString(sqltypes.String):
+
+class MSNText(_StringType, sqltypes.UnicodeText):
+    """MSSQL NTEXT type, for variable-length unicode text up to 2^30
+    characters."""
+
+    def __init__(self, *args, **kwargs):
+        """Construct a NTEXT.
+
+        :param collation: Optional, a column-level collation for this string
+          value. Accepts a Windows Collation Name or a SQL Collation Name.
+
+        """
+        _StringType.__init__(self, **kwargs)
+        sqltypes.UnicodeText.__init__(self, None,
+                convert_unicode=kwargs.get('convert_unicode', True),
+                assert_unicode=kwargs.get('assert_unicode', 'warn'))
+
     def get_col_spec(self):
-        return "VARCHAR" + (self.length and "(%d)" % self.length or "")
+        if self.dialect.text_as_varchar:
+            return self._extend("NVARCHAR(max)")
+        else:
+            return self._extend("NTEXT")
 
-class MSNVarchar(sqltypes.Unicode):
+
+class MSString(_StringType, sqltypes.String):
+    """MSSQL VARCHAR type, for variable-length non-Unicode data with a maximum
+    of 8,000 characters."""
+
+    def __init__(self, length=None, convert_unicode=False, assert_unicode=None, **kwargs):
+        """Construct a VARCHAR.
+
+        :param length: Optinal, maximum data length, in characters.
+
+        :param convert_unicode: defaults to False.  If True, convert
+          ``unicode`` data sent to the database to a ``str``
+          bytestring, and convert bytestrings coming back from the
+          database into ``unicode``.
+
+          Bytestrings are encoded using the dialect's
+          :attr:`~sqlalchemy.engine.base.Dialect.encoding`, which
+          defaults to `utf-8`.
+
+          If False, may be overridden by
+          :attr:`sqlalchemy.engine.base.Dialect.convert_unicode`.
+
+        :param assert_unicode:
+
+          If None (the default), no assertion will take place unless
+          overridden by :attr:`sqlalchemy.engine.base.Dialect.assert_unicode`.
+
+          If 'warn', will issue a runtime warning if a ``str``
+          instance is used as a bind value.
+
+          If true, will raise an :exc:`sqlalchemy.exc.InvalidRequestError`.
+
+        :param collation: Optional, a column-level collation for this string
+          value. Accepts a Windows Collation Name or a SQL Collation Name.
+
+        """
+        _StringType.__init__(self, **kwargs)
+        sqltypes.String.__init__(self, length=length,
+                convert_unicode=convert_unicode,
+                assert_unicode=assert_unicode)
+
     def get_col_spec(self):
         if self.length:
-            return "NVARCHAR(%(length)s)" % {'length' : self.length}
-        elif self.dialect.text_as_varchar:
-            return "NVARCHAR(max)"
+            return self._extend("VARCHAR(%s)" % self.length)
         else:
-            return "NTEXT"
+            return self._extend("VARCHAR")
 
-class AdoMSNVarchar(MSNVarchar):
-    """overrides bindparam/result processing to not convert any unicode strings"""
-    def bind_processor(self, dialect):
-        return None
 
-    def result_processor(self, dialect):
-        return None
+class MSNVarchar(_StringType, sqltypes.Unicode):
+    """MSSQL NVARCHAR type.
 
-class MSChar(sqltypes.CHAR):
+    For variable-length unicode character data up to 4,000 characters."""
+
+    def __init__(self, length=None, **kwargs):
+        """Construct a NVARCHAR.
+
+        :param length: Optional, Maximum data length, in characters.
+
+        :param collation: Optional, a column-level collation for this string
+          value. Accepts a Windows Collation Name or a SQL Collation Name.
+
+        """
+        _StringType.__init__(self, **kwargs)
+        sqltypes.Unicode.__init__(self, length=length,
+                convert_unicode=kwargs.get('convert_unicode', True),
+                assert_unicode=kwargs.get('assert_unicode', 'warn'))
+
+    def adapt(self, impltype):
+        return impltype(length=self.length,
+                        convert_unicode=self.convert_unicode,
+                        assert_unicode=self.assert_unicode,
+                        collation=self.collation)
+
     def get_col_spec(self):
-        return "CHAR(%(length)s)" % {'length' : self.length}
+        if self.length:
+            return self._extend("NVARCHAR(%(length)s)" % {'length' : self.length})
+        else:
+            return self._extend("NVARCHAR")
 
-class MSNChar(sqltypes.NCHAR):
+
+class MSChar(_StringType, sqltypes.CHAR):
+    """MSSQL CHAR type, for fixed-length non-Unicode data with a maximum
+    of 8,000 characters."""
+
+    def __init__(self, length=None, convert_unicode=False, assert_unicode=None, **kwargs):
+        """Construct a CHAR.
+
+        :param length: Optinal, maximum data length, in characters.
+
+        :param convert_unicode: defaults to False.  If True, convert
+          ``unicode`` data sent to the database to a ``str``
+          bytestring, and convert bytestrings coming back from the
+          database into ``unicode``.
+
+          Bytestrings are encoded using the dialect's
+          :attr:`~sqlalchemy.engine.base.Dialect.encoding`, which
+          defaults to `utf-8`.
+
+          If False, may be overridden by
+          :attr:`sqlalchemy.engine.base.Dialect.convert_unicode`.
+
+        :param assert_unicode:
+
+          If None (the default), no assertion will take place unless
+          overridden by :attr:`sqlalchemy.engine.base.Dialect.assert_unicode`.
+
+          If 'warn', will issue a runtime warning if a ``str``
+          instance is used as a bind value.
+
+          If true, will raise an :exc:`sqlalchemy.exc.InvalidRequestError`.
+
+        :param collation: Optional, a column-level collation for this string
+          value. Accepts a Windows Collation Name or a SQL Collation Name.
+
+        """
+        _StringType.__init__(self, **kwargs)
+        sqltypes.CHAR.__init__(self, length=length,
+                convert_unicode=convert_unicode,
+                assert_unicode=assert_unicode)
+
     def get_col_spec(self):
-        return "NCHAR(%(length)s)" % {'length' : self.length}
+        if self.length:
+            return self._extend("CHAR(%s)" % self.length)
+        else:
+            return self._extend("CHAR")
 
-class MSBinary(sqltypes.Binary):
+
+class MSNChar(_StringType, sqltypes.NCHAR):
+    """MSSQL NCHAR type.
+
+    For fixed-length unicode character data up to 4,000 characters."""
+
+    def __init__(self, length=None, **kwargs):
+        """Construct an NCHAR.
+
+        :param length: Optional, Maximum data length, in characters.
+
+        :param collation: Optional, a column-level collation for this string
+          value. Accepts a Windows Collation Name or a SQL Collation Name.
+
+        """
+        _StringType.__init__(self, **kwargs)
+        sqltypes.NCHAR.__init__(self, length=length,
+                convert_unicode=kwargs.get('convert_unicode', True),
+                assert_unicode=kwargs.get('assert_unicode', 'warn'))
+
+    def get_col_spec(self):
+        if self.length:
+            return self._extend("NCHAR(%(length)s)" % {'length' : self.length})
+        else:
+            return self._extend("NCHAR")
+
+
+class MSGenericBinary(sqltypes.Binary):
+    """The Binary type assumes that a Binary specification without a length
+    is an unbound Binary type whereas one with a length specification results
+    in a fixed length Binary type.
+
+    If you want standard MSSQL ``BINARY`` behavior use the ``MSBinary`` type.
+
+    """
+
+    def get_col_spec(self):
+        if self.length:
+            return "BINARY(%s)" % self.length
+        else:
+            return "IMAGE"
+
+
+class MSBinary(MSGenericBinary):
+    def get_col_spec(self):
+        if self.length:
+            return "BINARY(%s)" % self.length
+        else:
+            return "BINARY"
+
+
+class MSVarBinary(MSGenericBinary):
+    def get_col_spec(self):
+        if self.length:
+            return "VARBINARY(%s)" % self.length
+        else:
+            return "VARBINARY"
+
+
+class MSImage(MSGenericBinary):
     def get_col_spec(self):
         return "IMAGE"
+
 
 class MSBoolean(sqltypes.Boolean):
     def get_col_spec(self):
@@ -423,21 +745,26 @@ class MSBoolean(sqltypes.Boolean):
                 return value and True or False
         return process
 
+
 class MSTimeStamp(sqltypes.TIMESTAMP):
     def get_col_spec(self):
         return "TIMESTAMP"
+
 
 class MSMoney(sqltypes.TypeEngine):
     def get_col_spec(self):
         return "MONEY"
 
+
 class MSSmallMoney(MSMoney):
     def get_col_spec(self):
         return "SMALLMONEY"
 
+
 class MSUniqueIdentifier(sqltypes.TypeEngine):
     def get_col_spec(self):
         return "UNIQUEIDENTIFIER"
+
 
 class MSVariant(sqltypes.TypeEngine):
     def get_col_spec(self):
@@ -474,7 +801,6 @@ class MSSQLExecutionContext(default.DefaultExecutionContext):
 
         if self.compiled.isinsert:
             tbl = self.compiled.statement.table
-            
             seq_column = _table_sequence_column(tbl)
             self.HASIDENT = bool(seq_column)
             if self.dialect.auto_identity_insert and self.HASIDENT:
@@ -554,9 +880,10 @@ class MSSQLDialect(default.DefaultDialect):
         sqltypes.Date : MSDate,
         sqltypes.Time : MSTime,
         sqltypes.String : MSString,
-        sqltypes.Binary : MSBinary,
+        sqltypes.Binary : MSGenericBinary,
         sqltypes.Boolean : MSBoolean,
         sqltypes.Text : MSText,
+        sqltypes.UnicodeText : MSNText,
         sqltypes.CHAR: MSChar,
         sqltypes.NCHAR: MSNChar,
         sqltypes.TIMESTAMP: MSTimeStamp,
@@ -572,7 +899,7 @@ class MSSQLDialect(default.DefaultDialect):
         'char' : MSChar,
         'nchar' : MSNChar,
         'text' : MSText,
-        'ntext' : MSText,
+        'ntext' : MSNText,
         'decimal' : MSNumeric,
         'numeric' : MSNumeric,
         'float' : MSFloat,
@@ -580,10 +907,10 @@ class MSSQLDialect(default.DefaultDialect):
         'date': MSDate,
         'smalldatetime' : MSSmallDate,
         'binary' : MSBinary,
-        'varbinary' : MSBinary,
+        'varbinary' : MSVarBinary,
         'bit': MSBoolean,
         'real' : MSFloat,
-        'image' : MSBinary,
+        'image' : MSImage,
         'timestamp': MSTimeStamp,
         'money': MSMoney,
         'smallmoney': MSSmallMoney,
@@ -603,8 +930,9 @@ class MSSQLDialect(default.DefaultDialect):
             return object.__new__(cls, *args, **kwargs)
 
     def __init__(self,
-                 auto_identity_insert=True, query_timeout=None, text_as_varchar=False,
-                 use_scope_identity=False,  has_window_funcs=False, max_identifier_length=None,
+                 auto_identity_insert=True, query_timeout=None,
+                 text_as_varchar=False, use_scope_identity=False,
+                 has_window_funcs=False, max_identifier_length=None,
                  schema_name="dbo", **opts):
         self.auto_identity_insert = bool(auto_identity_insert)
         self.query_timeout = int(query_timeout or 0)
@@ -670,28 +998,34 @@ class MSSQLDialect(default.DefaultDialect):
     def type_descriptor(self, typeobj):
         newobj = sqltypes.adapt_type(typeobj, self.colspecs)
         # Some types need to know about the dialect
-        if isinstance(newobj, (MSText, MSNVarchar)):
+        if isinstance(newobj, (MSText, MSNText)):
             newobj.dialect = self
         return newobj
 
+    def do_begin(self, connection):
+        connection.execute("SET IMPLICIT_TRANSACTIONS OFF")
+        connection.execute("BEGIN TRANSACTION")
+
+    @base.connection_memoize(('dialect', 'default_schema_name'))
     def get_default_schema_name(self, connection):
         query = "SELECT user_name() as user_name;"
         user_name = connection.scalar(sql.text(query))
         if user_name is not None:
             # now, get the default schema
             query = """
-            SELECT default_schema_name FROM 
+            SELECT default_schema_name FROM
             sys.database_principals
             WHERE name = :user_name
             AND type = 'S'
             """
-            default_schema_name = connection.scalar(sql.text(query),
+            try:
+                default_schema_name = connection.scalar(sql.text(query),
                                                     user_name=user_name)
-            if default_schema_name is not None:
-                return default_schema_name
+                if default_schema_name is not None:
+                    return default_schema_name
+            except:
+                pass
         return self.schema_name
-    get_default_schema_name = base.connection_memoize(
-        ('dialect', 'default_schema_name'))(get_default_schema_name)
 
     def table_names(self, connection, schema):
         from sqlalchemy.databases import information_schema as ischema
@@ -722,145 +1056,6 @@ class MSSQLDialect(default.DefaultDialect):
         row  = c.fetchone()
         return row is not None
 
-    def get_schema_names(self, connection):
-        import sqlalchemy.databases.information_schema as ischema
-        schemata = ischema.schemata
-        s = sql.select([schemata.c.schema_name.distinct()])
-        return [row[0] for row in connection.execute(s)]
-
-    def get_table_names(self, connection, schema=None):
-        import sqlalchemy.databases.information_schema as ischema
-        if schema is not None:
-            current_schema = schema
-        else:
-            current_schema = self.get_default_schema_name(connection)
-        select = sql.select
-        and_ = sql.and_
-        tables = ischema.tables
-        s = select([tables.c.table_name],
-                    and_(
-                        tables.c.table_schema==current_schema,
-                        tables.c.table_type=='BASE TABLE'
-                        )
-                   )
-        return [row[0] for row in connection.execute(s)]
-
-    def get_columns(self, connection, table_name, schema=None, info_cache=None):
-        import sqlalchemy.databases.information_schema as ischema
-        # Get base columns
-        if schema is not None:
-            current_schema = schema
-        else:
-            current_schema = self.get_default_schema_name(connection)
-        columns = self.uppercase_table(ischema.columns)
-        s = sql.select([columns],
-                   current_schema
-                       and sql.and_(columns.c.table_name==table_name, columns.c.table_schema==current_schema)
-                       or columns.c.table_name==table_name,
-                   order_by=[columns.c.ordinal_position])
-        c = connection.execute(s)
-        cols = []
-        while True:
-            row = c.fetchone()
-            if row is None:
-                break
-            (name, type, nullable, charlen, numericprec, numericscale, default) = (
-                row[columns.c.column_name],
-                row[columns.c.data_type],
-                row[columns.c.is_nullable] == 'YES',
-                row[columns.c.character_maximum_length],
-                row[columns.c.numeric_precision],
-                row[columns.c.numeric_scale],
-                row[columns.c.column_default]
-            )
-            args = []
-            for a in (charlen, numericprec, numericscale):
-                if a is not None:
-                    args.append(a)
-            coltype = self.ischema_names.get(type, None)
-            if coltype == MSText or (coltype == MSString and charlen == -1):
-                coltype = MSText()
-            else:
-                if coltype is None:
-                    util.warn("Did not recognize type '%s' of column '%s'" %
-                              (type, name))
-                    coltype = sqltypes.NULLTYPE
-
-                elif coltype in (MSNVarchar, AdoMSNVarchar) and charlen == -1:
-                    args[0] = None
-                coltype = coltype(*args)
-            colargs = []
-            cols.append((name, coltype, nullable, default, colargs))
-        return cols
-
-    def get_primary_keys(self, connection, table_name, schema=None,
-                         info_cache=None):
-        import sqlalchemy.databases.information_schema as ischema
-        if schema is not None:
-            current_schema = schema
-        else:
-            current_schema = self.get_default_schema_name(connection)
-        pkeys = []
-        # Add constraints
-        RR = self.uppercase_table(ischema.ref_constraints)    #information_schema.referential_constraints
-        TC = self.uppercase_table(ischema.constraints)        #information_schema.table_constraints
-        C  = self.uppercase_table(ischema.pg_key_constraints).alias('C') #information_schema.constraint_column_usage: the constrained column
-        R  = self.uppercase_table(ischema.pg_key_constraints).alias('R') #information_schema.constraint_column_usage: the referenced column
-
-        # Primary key constraints
-        s = sql.select([C.c.column_name, TC.c.constraint_type],
-            sql.and_(TC.c.constraint_name == C.c.constraint_name,
-                     C.c.table_name == table_name,
-                     C.c.table_schema == current_schema
-            )
-        )
-        c = connection.execute(s)
-        for row in c:
-            if 'PRIMARY' in row[TC.c.constraint_type.name]:
-                pkeys.append((row[0], ))
-        return pkeys
-
-    def get_foreign_keys(self, connection, table_name, schema=None,
-                         info_cache=None):
-        import sqlalchemy.databases.information_schema as ischema
-        if schema is not None:
-            current_schema = schema
-        else:
-            current_schema = self.get_default_schema_name(connection)
-        pkeys = []
-        # Add constraints
-        RR = self.uppercase_table(ischema.ref_constraints)    #information_schema.referential_constraints
-        TC = self.uppercase_table(ischema.constraints)        #information_schema.table_constraints
-        C  = self.uppercase_table(ischema.pg_key_constraints).alias('C') #information_schema.constraint_column_usage: the constrained column
-        R  = self.uppercase_table(ischema.pg_key_constraints).alias('R') #information_schema.constraint_column_usage: the referenced column
-        s = sql.select([C.c.column_name,
-                        R.c.table_schema, R.c.table_name, R.c.column_name,
-                        RR.c.constraint_name, RR.c.match_option, RR.c.update_rule, RR.c.delete_rule],
-                       sql.and_(C.c.table_name == table_name,
-                                C.c.table_schema == current_schema,
-                                C.c.constraint_name == RR.c.constraint_name,
-                                R.c.constraint_name == RR.c.unique_constraint_name,
-                                C.c.ordinal_position == R.c.ordinal_position
-                                ),
-                       order_by = [RR.c.constraint_name, R.c.ordinal_position])
-        rows = connection.execute(s).fetchall()
-        # group rows by constraint ID, to handle multi-column FKs
-        fkeys = []
-        fknm, scols, rcols = (None, [], [])
-        for r in rows:
-            (scol, rschema, rtbl, rcol, rfknm, fkmatch, fkuprule, fkdelrule) = r
-            if rfknm != fknm:
-                if fknm:
-                    fkeys.append((fknm, scols, rschema, rtbl, rcols))
-                (fknm, scols, rcols) = (rfknm, [], [])
-            if not scol in scols:
-                scols.append(scol)
-            if not rcol in rcols:
-                rcols.append(rcol)
-        if fknm and scols:
-            fkeys.append((fknm, scols, rschema, rtbl, rcols))
-        return fkeys
-
     def reflecttable(self, connection, table, include_columns):
         import sqlalchemy.databases.information_schema as ischema
         # Get base columns
@@ -868,17 +1063,62 @@ class MSSQLDialect(default.DefaultDialect):
             current_schema = table.schema
         else:
             current_schema = self.get_default_schema_name(connection)
-        info_cache = {}
-        columns = self.get_columns(connection, table.name, current_schema,
-                                   info_cache)
+
+        columns = self.uppercase_table(ischema.columns)
+        s = sql.select([columns],
+                   current_schema
+                       and sql.and_(columns.c.table_name==table.name, columns.c.table_schema==current_schema)
+                       or columns.c.table_name==table.name,
+                   order_by=[columns.c.ordinal_position])
+
+        c = connection.execute(s)
         found_table = False
-        for (name, coltype, nullable, default, colargs) in columns:
+        while True:
+            row = c.fetchone()
+            if row is None:
+                break
             found_table = True
+            (name, type, nullable, charlen, numericprec, numericscale, default, collation) = (
+                row[columns.c.column_name],
+                row[columns.c.data_type],
+                row[columns.c.is_nullable] == 'YES',
+                row[columns.c.character_maximum_length],
+                row[columns.c.numeric_precision],
+                row[columns.c.numeric_scale],
+                row[columns.c.column_default],
+                row[columns.c.collation_name]
+            )
             if include_columns and name not in include_columns:
                 continue
+
+            args = []
+            for a in (charlen, numericprec, numericscale):
+                if a is not None:
+                    args.append(a)
+            coltype = self.ischema_names.get(type, None)
+
+            kwargs = {}
+            if coltype in (MSString, MSChar, MSNVarchar, MSNChar, MSText, MSNText):
+                if collation:
+                    kwargs.update(collation=collation)
+
+            if coltype == MSText or (coltype == MSString and charlen == -1):
+                coltype = MSText(**kwargs)
+            else:
+                if coltype is None:
+                    util.warn("Did not recognize type '%s' of column '%s'" %
+                              (type, name))
+                    coltype = sqltypes.NULLTYPE
+
+                elif coltype in (MSNVarchar,) and charlen == -1:
+                    args[0] = None
+                coltype = coltype(*args, **kwargs)
+            colargs = []
             if default is not None:
                 colargs.append(schema.DefaultClause(sql.text(default)))
+
             table.append_column(schema.Column(name, coltype, nullable=nullable, autoincrement=False, *colargs))
+
         if not found_table:
             raise exc.NoSuchTableError(table.name)
 
@@ -890,7 +1130,7 @@ class MSSQLDialect(default.DefaultDialect):
             if row is None:
                 break
             col_name, type_name = row[3], row[5]
-            if type_name.endswith("identity"):
+            if type_name.endswith("identity") and col_name in table.c:
                 ic = table.c[col_name]
                 ic.autoincrement = True
                 # setup a psuedo-sequence to represent the identity attribute - we interpret this at table.create() time as the identity attribute
@@ -910,35 +1150,62 @@ class MSSQLDialect(default.DefaultDialect):
                 # ignoring it, works just like before
                 pass
 
+        # Add constraints
+        RR = self.uppercase_table(ischema.ref_constraints)    #information_schema.referential_constraints
+        TC = self.uppercase_table(ischema.constraints)        #information_schema.table_constraints
+        C  = self.uppercase_table(ischema.pg_key_constraints).alias('C') #information_schema.constraint_column_usage: the constrained column
+        R  = self.uppercase_table(ischema.pg_key_constraints).alias('R') #information_schema.constraint_column_usage: the referenced column
+
         # Primary key constraints
-        pkeys = self.get_primary_keys(connection, table.name,
-                                      current_schema, info_cache)
-        for pkey in pkeys:
-            table.primary_key.add(table.c[pkey[0]])
+        s = sql.select([C.c.column_name, TC.c.constraint_type], sql.and_(TC.c.constraint_name == C.c.constraint_name,
+                                                                         C.c.table_name == table.name,
+                                                                         C.c.table_schema == (table.schema or current_schema)))
+        c = connection.execute(s)
+        for row in c:
+            if 'PRIMARY' in row[TC.c.constraint_type.name] and row[0] in table.c:
+                table.primary_key.add(table.c[row[0]])
 
         # Foreign key constraints
-        def _gen_fkref(table, rschema, rtbl, rcols):
-            if rschema == current_schema and not table.schema:
-                return ["%s.%s" % (rtbl, rcol) for rcol in rcols]
-            else:
-                return ["%s.%s.%s" % (rschema, rtbl, rcol) for rcol in rcols]
+        s = sql.select([C.c.column_name,
+                        R.c.table_schema, R.c.table_name, R.c.column_name,
+                        RR.c.constraint_name, RR.c.match_option, RR.c.update_rule, RR.c.delete_rule],
+                       sql.and_(C.c.table_name == table.name,
+                                C.c.table_schema == (table.schema or current_schema),
+                                C.c.constraint_name == RR.c.constraint_name,
+                                R.c.constraint_name == RR.c.unique_constraint_name,
+                                C.c.ordinal_position == R.c.ordinal_position
+                                ),
+                       order_by = [RR.c.constraint_name, R.c.ordinal_position])
+        rows = connection.execute(s).fetchall()
 
-        fkeys = self.get_foreign_keys(connection, table.name, current_schema,
-                                      info_cache)
-        for (fknm, scols, rschema, rtbl, rcols) in fkeys:
+        def _gen_fkref(table, rschema, rtbl, rcol):
             if rschema == current_schema and not table.schema:
-                schema.Table(rtbl, table.metadata, autoload=True,
-                             autoload_with=connection)
+                return '.'.join([rtbl, rcol])
             else:
-                schema.Table(rtbl, table.metadata, schema=rschema,
-                             autoload=True, autoload_with=connection)
-            table.append_constraint(
-                schema.ForeignKeyConstraint(
-                    scols,
-                    _gen_fkref(table, rschema, rtbl, rcols),
-                    fknm
-                )
-            )
+                return '.'.join([rschema, rtbl, rcol])
+
+        # group rows by constraint ID, to handle multi-column FKs
+        fknm, scols, rcols = (None, [], [])
+        for r in rows:
+            scol, rschema, rtbl, rcol, rfknm, fkmatch, fkuprule, fkdelrule = r
+            # if the reflected schema is the default schema then don't set it because this will
+            # play into the metadata key causing duplicates.
+            if rschema == current_schema and not table.schema:
+                schema.Table(rtbl, table.metadata, autoload=True, autoload_with=connection)
+            else:
+                schema.Table(rtbl, table.metadata, schema=rschema, autoload=True, autoload_with=connection)
+            if rfknm != fknm:
+                if fknm:
+                    table.append_constraint(schema.ForeignKeyConstraint(scols, [_gen_fkref(table, s, t, c) for s, t, c in rcols], fknm, link_to_name=True))
+                fknm, scols, rcols = (rfknm, [], [])
+            if not scol in scols:
+                scols.append(scol)
+            if not (rschema, rtbl, rcol) in rcols:
+                rcols.append((rschema, rtbl, rcol))
+
+        if fknm and scols:
+            table.append_constraint(schema.ForeignKeyConstraint(scols, [_gen_fkref(table, s, t, c) for s, t, c in rcols], fknm, link_to_name=True))
+
 
 class MSSQLDialect_pymssql(MSSQLDialect):
     supports_sane_rowcount = False
@@ -986,8 +1253,9 @@ class MSSQLDialect_pyodbc(MSSQLDialect):
     supports_unicode_statements = supports_unicode
     execution_ctx_cls = MSSQLExecutionContext_pyodbc
 
-    def __init__(self, **params):
+    def __init__(self, description_encoding='latin-1', **params):
         super(MSSQLDialect_pyodbc, self).__init__(**params)
+        self.description_encoding = description_encoding
         # FIXME: scope_identity sniff should look at server version, not the ODBC driver
         # whether use_scope_identity will work depends on the version of pyodbc
         try:
@@ -1002,14 +1270,9 @@ class MSSQLDialect_pyodbc(MSSQLDialect):
         return module
 
     colspecs = MSSQLDialect.colspecs.copy()
-    if supports_unicode:
-        colspecs[sqltypes.Unicode] = AdoMSNVarchar
     colspecs[sqltypes.Date] = MSDate_pyodbc
     colspecs[sqltypes.DateTime] = MSDateTime_pyodbc
-
     ischema_names = MSSQLDialect.ischema_names.copy()
-    if supports_unicode:
-        ischema_names['nvarchar'] = AdoMSNVarchar
     ischema_names['smalldatetime'] = MSDate_pyodbc
     ischema_names['datetime'] = MSDateTime_pyodbc
 
@@ -1082,11 +1345,9 @@ class MSSQLDialect_adodbapi(MSSQLDialect):
         return module
 
     colspecs = MSSQLDialect.colspecs.copy()
-    colspecs[sqltypes.Unicode] = AdoMSNVarchar
     colspecs[sqltypes.DateTime] = MSDateTime_adodbapi
 
     ischema_names = MSSQLDialect.ischema_names.copy()
-    ischema_names['nvarchar'] = AdoMSNVarchar
     ischema_names['datetime'] = MSDateTime_adodbapi
 
     def make_connect_string(self, keys, query):
@@ -1126,7 +1387,8 @@ class MSSQLCompiler(compiler.DefaultCompiler):
         {
             sql_functions.now: 'CURRENT_TIMESTAMP',
             sql_functions.current_date: 'GETDATE()',
-            'length': lambda x: "LEN(%s)" % x
+            'length': lambda x: "LEN(%s)" % x,
+            sql_functions.char_length: lambda x: "LEN(%s)" % x
         }
     )
 
@@ -1243,8 +1505,35 @@ class MSSQLCompiler(compiler.DefaultCompiler):
                 return self.process(expression._BinaryExpression(binary.left, binary.right, op), **kwargs)
             return super(MSSQLCompiler, self).visit_binary(binary, **kwargs)
 
+    def visit_insert(self, insert_stmt):
+        insert_select = False
+        if insert_stmt.parameters:
+            insert_select = [p for p in insert_stmt.parameters.values() if isinstance(p, sql.Select)]
+        if insert_select:
+            self.isinsert = True
+            colparams = self._get_colparams(insert_stmt)
+            preparer = self.preparer
+
+            insert = ' '.join(["INSERT"] +
+                              [self.process(x) for x in insert_stmt._prefixes])
+
+            if not colparams and not self.dialect.supports_default_values and not self.dialect.supports_empty_insert:
+                raise exc.NotSupportedError(
+                    "The version of %s you are using does not support empty inserts." % self.dialect.name)
+            elif not colparams and self.dialect.supports_default_values:
+                return (insert + " INTO %s DEFAULT VALUES" % (
+                    (preparer.format_table(insert_stmt.table),)))
+            else:
+                return (insert + " INTO %s (%s) SELECT %s" %
+                    (preparer.format_table(insert_stmt.table),
+                     ', '.join([preparer.format_column(c[0])
+                               for c in colparams]),
+                     ', '.join([c[1] for c in colparams])))
+        else:
+            return super(MSSQLCompiler, self).visit_insert(insert_stmt)
+
     def label_select_column(self, select, column, asfrom):
-        if isinstance(column, expression._Function):
+        if isinstance(column, expression.Function):
             return column.label(None)
         else:
             return super(MSSQLCompiler, self).label_select_column(select, column, asfrom)
@@ -1268,7 +1557,7 @@ class MSSQLSchemaGenerator(compiler.SchemaGenerator):
         colspec = self.preparer.format_column(column) + " " + column.type.dialect_impl(self.dialect).get_col_spec()
 
         if column.nullable is not None:
-            if not column.nullable:
+            if not column.nullable or column.primary_key:
                 colspec += " NOT NULL"
             else:
                 colspec += " NULL"
@@ -1317,3 +1606,4 @@ dialect.statement_compiler = MSSQLCompiler
 dialect.schemagenerator = MSSQLSchemaGenerator
 dialect.schemadropper = MSSQLSchemaDropper
 dialect.preparer = MSSQLIdentifierPreparer
+

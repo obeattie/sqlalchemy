@@ -4,7 +4,7 @@ import testenv; testenv.configure_for_tests()
 from testlib import sa, testing
 from testlib.sa import MetaData, Table, Column, Integer, String, ForeignKey, func
 from testlib.sa.engine import default
-from testlib.sa.orm import mapper, relation, backref, create_session, class_mapper, reconstructor, validates, aliased
+from testlib.sa.orm import mapper, relation, backref, create_session, class_mapper, compile_mappers, reconstructor, validates, aliased
 from testlib.sa.orm import defer, deferred, synonym, attributes, column_property, composite, relation, dynamic_loader, comparable_property
 from testlib.testing import eq_, AssertsCompiledSQL
 import pickleable
@@ -25,6 +25,21 @@ class MapperTest(_fixtures.FixtureTest):
         self.assertRaises(sa.exc.ArgumentError, sa.orm.compile_mappers)
 
     @testing.resolve_artifact_names
+    def test_update_attr_keys(self):
+        """test that update()/insert() use the correct key when given InstrumentedAttributes."""
+        
+        mapper(User, users, properties={
+            'foobar':users.c.name
+        })
+
+        users.insert().values({User.foobar:'name1'}).execute()
+        eq_(sa.select([User.foobar]).where(User.foobar=='name1').execute().fetchall(), [('name1',)])
+
+        users.update().values({User.foobar:User.foobar + 'foo'}).execute()
+        eq_(sa.select([User.foobar]).where(User.foobar=='name1foo').execute().fetchall(), [('name1foo',)])
+        
+
+    @testing.resolve_artifact_names
     def test_prop_accessor(self):
         mapper(User, users)
         self.assertRaises(NotImplementedError,
@@ -37,6 +52,14 @@ class MapperTest(_fixtures.FixtureTest):
         self.assertRaises(sa.exc.ArgumentError,
                           relation, Address, cascade="fake, all, delete-orphan")
 
+    @testing.resolve_artifact_names
+    def test_exceptions_sticky(self):
+        mapper(Address, addresses, properties={
+            'user':relation(User)
+        })
+        hasattr(Address.id, 'in_')
+        self.assertRaisesMessage(sa.exc.InvalidRequestError, r"suppressed within a hasattr\(\)", compile_mappers)
+    
     @testing.resolve_artifact_names
     def test_column_prefix(self):
         mapper(User, users, column_prefix='_', properties={
@@ -694,11 +717,22 @@ class MapperTest(_fixtures.FixtureTest):
     def test_comparable(self):
         class extendedproperty(property):
             attribute = 123
+            
+            def method1(self):
+                return "method1"
+            
             def __getitem__(self, key):
                 return 'value'
 
         class UCComparator(sa.orm.PropComparator):
             __hash__ = None
+            
+            def method1(self):
+                return "uccmethod1"
+                
+            def method2(self, other):
+                return "method2"
+                
             def __eq__(self, other):
                 cls = self.prop.parent.class_
                 col = getattr(cls, 'name')
@@ -731,6 +765,14 @@ class MapperTest(_fixtures.FixtureTest):
             assert hasattr(User, 'name')
             assert hasattr(User, 'uc_name')
 
+            eq_(User.uc_name.method1(), "method1")
+            eq_(User.uc_name.method2('x'), "method2")
+
+            self.assertRaisesMessage(
+                AttributeError, 
+                "Neither 'extendedproperty' object nor 'UCComparator' object has an attribute 'nonexistent'", 
+                getattr, User.uc_name, 'nonexistent')
+            
             # test compile
             assert not isinstance(User.uc_name == 'jack', bool)
             u = q.filter(User.uc_name=='JACK').one()
@@ -755,6 +797,30 @@ class MapperTest(_fixtures.FixtureTest):
             eq_(User.uc_name.attribute, 123)
             eq_(User.uc_name['key'], 'value')
             sess.rollback()
+
+    @testing.resolve_artifact_names
+    def test_comparable_column(self):
+        class MyComparator(sa.orm.properties.ColumnProperty.Comparator):
+            def __eq__(self, other):
+                # lower case comparison
+                return func.lower(self.__clause_element__()) == func.lower(other)
+                
+            def intersects(self, other):
+                # non-standard comparator
+                return self.__clause_element__().op('&=')(other)
+                
+        mapper(User, users, properties={
+            'name':sa.orm.column_property(users.c.name, comparator_factory=MyComparator)
+        })
+        
+        self.assertRaisesMessage(
+            AttributeError, 
+            "Neither 'InstrumentedAttribute' object nor 'MyComparator' object has an attribute 'nonexistent'", 
+            getattr, User.name, "nonexistent")
+
+        eq_(str((User.name == 'ed').compile(dialect=sa.engine.default.DefaultDialect())) , "lower(users.name) = lower(:lower_1)")
+        eq_(str((User.name.intersects('ed')).compile(dialect=sa.engine.default.DefaultDialect())), "users.name &= :name_1")
+        
 
     @testing.resolve_artifact_names
     def test_reconstructor(self):
@@ -1725,11 +1791,14 @@ class CompositeTypesTest(_base.MappedTest):
         eq_(g.version, g2.version)
 
         # test pk mutation
-        g2.version = Version(2, 1)
-        sess.flush()
-        g3 = sess.query(Graph).get(Version(2, 1))
-        eq_(g2.version, g3.version)
-        
+        @testing.fails_on('mssql', 'Cannot update identity columns.')
+        def update_pk():
+            g2.version = Version(2, 1)
+            sess.flush()
+            g3 = sess.query(Graph).get(Version(2, 1))
+            eq_(g2.version, g3.version)
+        update_pk()
+
         # test pk with one column NULL
         # TODO: can't seem to get NULL in for a PK value
         # in either mysql or postgres, autoincrement=False etc.
@@ -2078,7 +2147,22 @@ class MapperExtensionTest(_fixtures.FixtureTest):
              'create_instance', 'populate_instance', 'reconstruct_instance',
              'append_result', 'before_update', 'after_update', 'before_delete',
              'after_delete'])
-
+        
+    @testing.resolve_artifact_names
+    def test_create_instance(self):
+        class CreateUserExt(sa.orm.MapperExtension):
+            def create_instance(self, mapper, selectcontext, row, class_):
+                return User.__new__(User)
+                
+        mapper(User, users, extension=CreateUserExt())
+        sess = create_session()
+        u1 = User()
+        u1.name = 'ed'
+        sess.add(u1)
+        sess.flush()
+        sess.clear()
+        assert sess.query(User).first()
+        
 
 class RequirementsTest(_base.MappedTest):
     """Tests the contract for user classes."""

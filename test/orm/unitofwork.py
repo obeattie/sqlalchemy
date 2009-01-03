@@ -233,6 +233,7 @@ class UnicodeSchemaTest(engine_base.AltEngineTest, _base.MappedTest):
         _base.MappedTest.tearDownAll(self)
         engine_base.AltEngineTest.tearDownAll(self)
 
+    @testing.fails_on('mssql', 'pyodbc returns a non unicode encoding of the results description.')
     @testing.resolve_artifact_names
     def test_mapping(self):
         class A(_base.ComparableEntity):
@@ -269,6 +270,7 @@ class UnicodeSchemaTest(engine_base.AltEngineTest, _base.MappedTest):
         assert new_a1.t2s[0].d == b1.d
         session.clear()
 
+    @testing.fails_on('mssql', 'pyodbc returns a non unicode encoding of the results description.')
     @testing.resolve_artifact_names
     def test_inheritance_mapping(self):
         class A(_base.ComparableEntity):
@@ -658,7 +660,6 @@ class ClauseAttributesTest(_base.MappedTest):
         eq_(u.name, 'test2')
         eq_(u.counter,  2)
 
-    @testing.crashes('mssql', 'FIXME: unknown, verify not fails_on()')
     @testing.resolve_artifact_names
     def test_insert(self):
         u = User(name='test', counter=sa.select([5]))
@@ -841,7 +842,7 @@ class DefaultTest(_base.MappedTest):
     """
 
     def define_tables(self, metadata):
-        use_string_defaults = testing.against('postgres', 'oracle', 'sqlite')
+        use_string_defaults = testing.against('postgres', 'oracle', 'sqlite', 'mssql')
 
         if use_string_defaults:
             hohotype = String(30)
@@ -874,6 +875,10 @@ class DefaultTest(_base.MappedTest):
             st.append_column(
                 Column('fk_val', Integer,
                        ForeignKey('default_t.secondary_id')))
+        elif testing.against('mssql'):
+            st.append_column(
+                Column('fk_val', Integer,
+                       ForeignKey('default_t.id')))
         else:
             st.append_column(
                 Column('hoho', hohotype, ForeignKey('default_t.hoho')))

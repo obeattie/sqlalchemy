@@ -122,7 +122,7 @@ always represented by an actual database result string.
 
 import datetime, re, time
 
-from sqlalchemy import schema, exc, pool, DefaultClause
+from sqlalchemy import sql, schema, exc, pool, DefaultClause
 from sqlalchemy.engine import default
 import sqlalchemy.types as sqltypes
 import sqlalchemy.util as util
@@ -465,7 +465,7 @@ class SQLiteDialect(default.DefaultDialect):
                 break
 
             found_table = True
-            (name, type_, nullable, has_default, primary_key) = (row[1], row[2].upper(), not row[3], row[4] is not None, row[5])
+            (name, type_, nullable, default, has_default, primary_key) = (row[1], row[2].upper(), not row[3], row[4], row[4] is not None, row[5])
             name = re.sub(r'^\"|\"$', '', name)
             if include_columns and name not in include_columns:
                 continue
@@ -490,7 +490,7 @@ class SQLiteDialect(default.DefaultDialect):
 
             colargs = []
             if has_default:
-                colargs.append(DefaultClause('?'))
+                colargs.append(DefaultClause(sql.text(default)))
             table.append_column(schema.Column(name, coltype, primary_key = primary_key, nullable = nullable, *colargs))
 
         if not found_table:
@@ -522,7 +522,7 @@ class SQLiteDialect(default.DefaultDialect):
             if refspec not in fk[1]:
                 fk[1].append(refspec)
         for name, value in fks.iteritems():
-            table.append_constraint(schema.ForeignKeyConstraint(value[0], value[1]))
+            table.append_constraint(schema.ForeignKeyConstraint(value[0], value[1], link_to_name=True))
         # check for UNIQUE indexes
         c = connection.execute("%sindex_list(%s)" % (pragma, qtable))
         unique_indexes = []

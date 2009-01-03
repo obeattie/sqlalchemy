@@ -42,7 +42,6 @@ class QueryTest(FixtureTest):
         mapper(Keyword, keywords)
 
         compile_mappers()
-        #class_mapper(User).add_property('addresses', relation(Address, primaryjoin=User.id==Address.user_id, order_by=Address.id, backref='user'))
 
 class UnicodeSchemaTest(QueryTest):
     keep_mappers = False
@@ -1693,10 +1692,14 @@ class MixedEntitiesTest(QueryTest):
         
         sess = create_session()
         oalias = aliased(Order)
-        
+
         for q in [
             sess.query(Order, oalias).filter(Order.user_id==oalias.user_id).filter(Order.user_id==7).filter(Order.id>oalias.id).order_by(Order.id, oalias.id),
             sess.query(Order, oalias)._from_self().filter(Order.user_id==oalias.user_id).filter(Order.user_id==7).filter(Order.id>oalias.id).order_by(Order.id, oalias.id),
+            
+            # same thing, but reversed.  
+            sess.query(oalias, Order)._from_self().filter(oalias.user_id==Order.user_id).filter(oalias.user_id==7).filter(Order.id<oalias.id).order_by(oalias.id, Order.id),
+            
             # here we go....two layers of aliasing
             sess.query(Order, oalias).filter(Order.user_id==oalias.user_id).filter(Order.user_id==7).filter(Order.id>oalias.id)._from_self().order_by(Order.id, oalias.id).limit(10).options(eagerload(Order.items)),
 
@@ -2253,6 +2256,15 @@ class SelfReferentialTest(ORMTest):
             (Node(data='n122'), Node(data='n12'), Node(data='n1'))
         )
 
+        # same, change order around
+        self.assertEquals(
+            sess.query(parent, grandparent, Node).\
+                join((Node.parent, parent), (parent.parent, grandparent)).\
+                    filter(Node.data=='n122').filter(parent.data=='n12').\
+                    filter(grandparent.data=='n1')._from_self().first(),
+            (Node(data='n12'), Node(data='n1'), Node(data='n122'))
+        )
+
         self.assertEquals(
             sess.query(Node, parent, grandparent).\
                 join((Node.parent, parent), (parent.parent, grandparent)).\
@@ -2663,6 +2675,15 @@ class UpdateDeleteTest(_base.MappedTest):
         
         eq_([john.age, jack.age, jill.age, jane.age], [25,37,29,27])
         eq_(sess.query(User.age).order_by(User.id).all(), zip([25,37,29,27]))
+
+        sess.query(User).filter(User.age > 29).update({User.age: User.age - 10}, synchronize_session='evaluate')
+        eq_([john.age, jack.age, jill.age, jane.age], [25,27,29,27])
+        eq_(sess.query(User.age).order_by(User.id).all(), zip([25,27,29,27]))
+
+        sess.query(User).filter(User.age > 27).update({users.c.age: User.age - 10}, synchronize_session='evaluate')
+        eq_([john.age, jack.age, jill.age, jane.age], [25,27,19,27])
+        eq_(sess.query(User.age).order_by(User.id).all(), zip([25,27,19,27]))
+
 
     @testing.resolve_artifact_names
     def test_update_with_bindparams(self):

@@ -4,12 +4,12 @@ from sqlalchemy import *
 from sqlalchemy import exc, sql
 from sqlalchemy.engine import default
 from testlib import *
-
+from testlib.testing import eq_
 
 class QueryTest(TestBase):
 
     def setUpAll(self):
-        global users, addresses, metadata
+        global users, users2, addresses, metadata
         metadata = MetaData(testing.db)
         users = Table('query_users', metadata,
             Column('user_id', INT, primary_key = True),
@@ -19,11 +19,17 @@ class QueryTest(TestBase):
             Column('address_id', Integer, primary_key=True),
             Column('user_id', Integer, ForeignKey('query_users.user_id')),
             Column('address', String(30)))
+            
+        users2 = Table('u2', metadata,
+            Column('user_id', INT, primary_key = True),
+            Column('user_name', VARCHAR(20)),
+        )
         metadata.create_all()
 
     def tearDown(self):
         addresses.delete().execute()
         users.delete().execute()
+        users2.delete().execute()
 
     def tearDownAll(self):
         metadata.drop_all()
@@ -229,6 +235,35 @@ class QueryTest(TestBase):
             l.append(row)
         self.assert_(len(l) == 2, "fetchmany(size=2) got %s rows" % len(l))
 
+    def test_like_ops(self):
+        users.insert().execute(
+            {'user_id':1, 'user_name':'apples'},
+            {'user_id':2, 'user_name':'oranges'},
+            {'user_id':3, 'user_name':'bananas'},
+            {'user_id':4, 'user_name':'legumes'},
+            {'user_id':5, 'user_name':'hi % there'},
+        )
+
+        for expr, result in (
+            (select([users.c.user_id]).where(users.c.user_name.startswith('apple')), [(1,)]),
+            (select([users.c.user_id]).where(users.c.user_name.contains('i % t')), [(5,)]),
+            (select([users.c.user_id]).where(users.c.user_name.endswith('anas')), [(3,)]),
+        ):
+            eq_(expr.execute().fetchall(), result)
+    
+
+    @testing.emits_warning('.*now automatically escapes.*')
+    def test_percents_in_text(self):
+        for expr, result in (
+            (text("select 6 % 10"), 6),
+            (text("select 17 % 10"), 7),
+            (text("select '%'"), '%'),
+            (text("select '%%'"), '%%'),
+            (text("select '%%%'"), '%%%'),
+            (text("select 'hello % world'"), "hello % world")
+        ):
+            eq_(testing.db.scalar(expr), result)
+        
     def test_ilike(self):
         users.insert().execute(
             {'user_id':1, 'user_name':'one'},
@@ -448,7 +483,24 @@ class QueryTest(TestBase):
         self.assert_(r['query_users.user_id']) == 1
         self.assert_(r['query_users.user_name']) == "john"
 
-
+    def test_row_as_args(self):
+        users.insert().execute(user_id=1, user_name='john')
+        r = users.select(users.c.user_id==1).execute().fetchone()
+        users.delete().execute()
+        users.insert().execute(r)
+        assert users.select().execute().fetchall() == [(1, 'john')]
+    
+    def test_result_as_args(self):
+        users.insert().execute([dict(user_id=1, user_name='john'), dict(user_id=2, user_name='ed')])
+        r = users.select().execute()
+        users2.insert().execute(list(r))
+        assert users2.select().execute().fetchall() == [(1, 'john'), (2, 'ed')]
+        
+        users2.delete().execute()
+        r = users.select().execute()
+        users2.insert().execute(*list(r))
+        assert users2.select().execute().fetchall() == [(1, 'john'), (2, 'ed')]
+        
     def test_ambiguous_column(self):
         users.insert().execute(user_id=1, user_name='john')
         r = users.outerjoin(addresses).select().execute().fetchone()

@@ -22,6 +22,9 @@ CHANGES
       recommended over easy_install as it installs in a more
       simplified way.
 
+    - added an extremely basic illustration of a PostGIS
+      integration to the examples folder.
+      
 - orm
     - Query.with_polymorphic() now accepts a third argument
       "discriminator" which will replace the value of
@@ -38,9 +41,66 @@ CHANGES
       classes used for both the dynamic collection and the queries
       built from it.
 
+- sql
+    - RowProxy objects can be used in place of dictionary arguments 
+      sent to connection.execute() and friends.  [ticket:935]
+
+- dialect
+    - Added a new description_encoding attribute on the dialect
+      that is used for encoding the column name when processing
+      the metadata. This usually defaults to utf-8.
+
+- mssql
+    - Added in a new MSGenericBinary type. This maps to the Binary
+      type so it can implement the specialized behavior of treating
+      length specified types as fixed-width Binary types and
+      non-length types as an unbound variable length Binary type.
+
+    - Added in new types: MSVarBinary and MSImage. [ticket:1249]
+
+    - Added in the MSReal and MSNText types.
+
+- sqlite
+    - Table reflection now stores the actual DefaultClause value
+      for the column. [ticket:1266]
+
 - bugfixes, behavioral changes
 - general
 - orm
+    - Exceptions raised during compile_mappers() are now
+      preserved to provide "sticky behavior" - if a hasattr()
+      call on a pre-compiled mapped attribute triggers a failing 
+      compile and suppresses the exception, subsequent compilation 
+      is blocked and the exception will be reiterated on the 
+      next compile() call.  This issue occurs frequently
+      when using declarative.
+
+    - Fixed some deep "column correspondence" issues which could
+      impact a Query made against a selectable containing
+      multiple versions of the same table, as well as 
+      unions and similar which contained the same table columns
+      in different column positions at different levels.
+      [ticket:1268]
+      
+    - Custom comparator classes used in conjunction with 
+      column_property(), relation() etc. can define 
+      new comparison methods on the Comparator, which will
+      become available via __getattr__() on the 
+      InstrumentedAttribute.   In the case of synonym()
+      or comparable_property(), attributes are resolved first
+      on the user-defined descriptor, then on the user-defined
+      comparator.
+      
+    - Added ScopedSession.is_active accessor. [ticket:976]
+    
+    - Can pass mapped attributes and column objects as keys
+      to query.update({}).  [ticket:1262]
+      
+    - Mapped attributes passed to the values() of an 
+      expression level insert() or update() will use the 
+      keys of the mapped columns, not that of the mapped 
+      attribute.
+      
     - Corrected problem with Query.delete() and
       Query.update() not working properly with bind 
       parameters. [ticket:1242]
@@ -130,16 +190,25 @@ CHANGES
           queried against. The column won't be
           "pulled in" from a subclass or superclass
           mapper since it's not needed.
+
+    - Fixed shard_id argument on ShardedSession.execute().
+      [ticket:1072]
       
 - sql
+    - Columns can again contain percent signs within their
+      names. [ticket:1256]
+    
+    - sqlalchemy.sql.expression.Function is now a public
+      class.  It can be subclassed to provide user-defined
+      SQL functions in an imperative style, including
+      with pre-established behaviors.  The postgis.py
+      example illustrates one usage of this.
+      
     - PickleType now favors == comparison by default,
       if the incoming object (such as a dict) implements
       __eq__().  If the object does not implement 
       __eq__() and mutable=True, a deprecation warning
       is raised.
-    
-    - Connection.invalidate() checks for closed status 
-      to avoid attribute errors. [ticket:1246]
       
     - Fixed the import weirdness in sqlalchemy.sql
       to not export __names__ [ticket:1215].
@@ -154,6 +223,16 @@ CHANGES
       also would be a little misleading compared to
       values().
 
+    - Reflected foreign keys will properly locate 
+      their referenced column, even if the column
+      was given a "key" attribute different from
+      the reflected name.  This is achieved via a 
+      new flag on ForeignKey/ForeignKeyConstraint 
+      called "link_to_name", if True means the given 
+      name is the referred-to column's name, not its 
+      assigned key.
+      [ticket:650]
+      
     - select() can accept a ClauseList as a column
       in the same way as a Table or other selectable
       and the interior expressions will be used as
@@ -169,6 +248,20 @@ CHANGES
       LIMIT/OFFSET), you should also call self_group() 
       on it to apply parenthesis.
     
+      
+- engine/pool
+    
+    - Connection.invalidate() checks for closed status 
+      to avoid attribute errors. [ticket:1246]
+
+    - NullPool supports reconnect on failure behavior.
+      [ticket:1094]
+
+    - Added a mutex for the initial pool creation when
+      using pool.manage(dbapi).  This prevents a minor 
+      case of "dogpile" behavior which would otherwise
+      occur upon a heavy load startup.  [ticket:799]
+      
     - _execute_clauseelement() goes back to being 
       a private method.  Subclassing Connection
       is not needed now that ConnectionProxy 
@@ -196,6 +289,29 @@ CHANGES
       new doc section "Custom Comparators".
     
 - mssql
+    - Mapped ``char_length`` to the ``LEN()`` function.
+
+    - If an ``INSERT`` includes a subselect the ``INSERT`` is
+      converted from an ``INSERT INTO VALUES`` construct to a
+      ``INSERT INTO SELECT`` construct.
+
+    - If the column is part of a ``primary_key`` it will be
+      ``NOT NULL`` since MSSQL doesn't allow ``NULL`` in primary_key
+      columns.
+
+    - ``MSBinary`` now returns a ``BINARY`` instead of an
+      ``IMAGE``. This is a backwards incompatible change in that
+      ``BINARY`` is a fixed length data type whereas ``IMAGE`` is
+      a variable length data type. [ticket:1249]
+
+    - ``get_default_schema_name`` is now reflected from the
+      database based on the user's default schema. This only works
+      with MSSQL 2005 and later. [ticket:1258]
+
+    - Added collation support through the use of a new collation
+      argument. This is supported on the following types: char,
+      nchar, varchar, nvarchar, text, ntext. [ticket:1248]
+
     - Changes to the connection string parameters favor DSN as the
       default specification for pyodbc. See the mssql.py docstring
       for detailed usage instructions.
@@ -203,18 +319,27 @@ CHANGES
     - Added experimental support of savepoints. It
       currently does not work fully with sessions.
 
-    - Support for three levels of column nullability: NULL, NOT NULL,
-      and the database's configured default.  The default Column
-      configuration (nullable=True) will now generate NULL in the DDL.
-      Previously no specification was emitted and the database default
-      would take effect (usually NULL, but not always).  To explicitly
-      request the database default, configure columns with
-      nullable=None and no specification will be emitted in DDL. This
-      is backwards incompatible behavior. [ticket:1243]
+    - Support for three levels of column nullability: NULL,
+      NOT NULL, and the database's configured default.  The default
+      Column configuration (nullable=True) will now generate NULL
+      in the DDL. Previously no specification was emitted and the
+      database default would take effect (usually NULL, but not
+      always).  To explicitly request the database default,
+      configure columns with nullable=None and no specification
+      will be emitted in DDL. This is backwards incompatible
+      behavior. [ticket:1243]
 
 - postgres
+    - "%" signs in text() constructs are automatically escaped to "%%".
+      Because of the backwards incompatible nature of this change, 
+      a warning is emitted if '%%' is detected in the string.  [ticket:1267]
+
     - Calling alias.execute() in conjunction with
       server_side_cursors won't raise AttributeError.
+
+    - Added Index reflection support to Postgres, using a
+      great patch we long neglected, submitted by 
+      Ken Kuhlman. [ticket:714]
 
 - oracle
     - Adjusted the format of create_xid() to repair
@@ -222,7 +347,21 @@ CHANGES
       of Oracle two-phase commit working properly
       with this change.
 
+    - Added OracleNVarchar type, produces NVARCHAR2, and also
+      subclasses Unicode so that convert_unicode=True by default.
+      NVARCHAR2 reflects into this type automatically so 
+      these columns pass unicode on a reflected table with no explicit
+      convert_unicode=True flags.  [ticket:1233]
+
+    - Fixed bug which was preventing out params of certain types 
+      from being received; thanks a ton to huddlej at wwu.edu ! 
+      [ticket:1265]
+      
 - mysql
+    - "%" signs in text() constructs are automatically escaped to "%%".
+      Because of the backwards incompatible nature of this change, 
+      a warning is emitted if '%%' is detected in the string.
+      
     - Fixed bug in exception raise when FK columns not present
       during reflection. [ticket:1241]
       

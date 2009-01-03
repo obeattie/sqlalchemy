@@ -701,7 +701,7 @@ class MaxDBDialect(default.DefaultDialect):
                              autoload=True, autoload_with=connection,
                              **table_kw)
 
-            constraint = schema.ForeignKeyConstraint(columns, referants,
+            constraint = schema.ForeignKeyConstraint(columns, referants, link_to_name=True,
                                                      **constraint_kw)
             table.append_constraint(constraint)
 
@@ -867,7 +867,7 @@ class MaxDBCompiler(compiler.DefaultCompiler):
 
         colparams = self._get_colparams(insert)
         for value in (insert.parameters or {}).itervalues():
-            if isinstance(value, sql_expr._Function):
+            if isinstance(value, sql_expr.Function):
                 self._safeserial = False
                 break
 
