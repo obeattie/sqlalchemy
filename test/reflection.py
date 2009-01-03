@@ -55,6 +55,13 @@ def createTables(meta, schema=None):
     )
     return (users, addresses)
 
+def createIndexes(con, schema=None):
+    fullname = 'users'
+    if schema:
+        fullname = "%s.%s" % (schema, 'users')
+    query = "CREATE INDEX users_t_idx ON %s (test1, test2)" % fullname
+    con.execute(sa.sql.text(query))
+
 def createViews(con, schema=None):
     for table_name in ('users', 'email_addresses'):
         fullname = table_name
@@ -219,6 +226,33 @@ class ReflectionTest(TestBase):
 
     def test_get_foreign_keys_with_schema(self):
         self._test_get_foreign_keys(schema=getSchema())
+
+    def _test_get_indexes(self, schema=None):
+        meta = MetaData(testing.db)
+        (users, addresses) = createTables(meta, schema)
+        meta.create_all()
+        createIndexes(meta.bind, schema)
+        try:
+            insp = Inspector(meta.bind)
+            indexes = insp.get_indexes('users', schema=schema)
+            indexes.sort()
+            expected_indexes = [
+                {'is_unique': False,
+                 'column_names': ['test1', 'test2'],
+                 'index_name': 'users_t_idx'},
+                {'is_unique': True,
+                 'column_names': ['user_id'],
+                 'index_name': 'users_pkey'}]
+            self.assertEqual(indexes, expected_indexes)
+        finally:
+            addresses.drop()
+            users.drop()
+
+    def test_get_indexes(self):
+        self._test_get_indexes()
+
+    def test_get_indexes_with_schema(self):
+        self._test_get_indexes(schema=getSchema())
 
 if __name__ == "__main__":
     testenv.main()

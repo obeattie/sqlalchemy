@@ -638,6 +638,48 @@ class PGDialect(default.DefaultDialect):
         c = connection.execute(t, table_oid=table_oid)
         return [tuple(r) for r in c.fetchall()]
 
+    def get_indexes(self, connection, table_name, schema=None,
+                    info_cache=None):
+        info_cache = self._prepare_info_cache(info_cache, table_name, schema)
+        SQL = """
+        SELECT
+        i.relname AS indexname,
+        a.attname AS colname,
+        indisunique AS is_unique
+        FROM
+        pg_attribute a
+        INNER JOIN pg_index x ON a.attrelid = x.indexrelid
+        INNER JOIN pg_class i ON i.oid = x.indexrelid
+        WHERE x.indrelid = :table_oid
+        --AND c.relkind = 'r'::"char"
+        AND i.relkind = 'i'::"char"
+        """
+        # what about the ordering?
+        t = sql.text(SQL, typemap={'indexname':sqltypes.Unicode,
+                                   'colname':sqltypes.Unicode,
+                                   'is_unique':sqltypes.Boolean,
+                                  })
+        table_index = "%s.%s" % (schema, table_name)
+        # See if the oid is cached.
+        table_oid = info_cache['tables'][table_index].get('table_oid')
+        if table_oid is None:
+            table_oid = self._get_table_oid(connection, table_name, schema)
+            info_cache['tables'][table_index]['table_oid'] = table_oid
+        rp = connection.execute(t, table_oid=table_oid)
+        index_names = {}
+        indexes = []
+        for rset in rp:
+            if rset.indexname in index_names:
+                index_d = index_names[rset.indexname]
+            else:
+                index_d = {'column_names':[]}
+                indexes.append(index_d)
+                index_names[rset.indexname] = index_d
+            index_d['index_name'] = rset.indexname
+            index_d['column_names'].append(rset.colname)
+            index_d['is_unique'] = rset.is_unique
+        return indexes
+
     def get_foreign_keys(self, connection, table_name, schema=None,
                          info_cache=None):
         info_cache = self._prepare_info_cache(info_cache, table_name, schema)

@@ -31,6 +31,10 @@ class Inspector(object):
         else:
             self.engine = conn
 
+    def default_schema_name(self):
+        return self.engine.dialect.get_default_schema_name(self.conn)
+    default_schema_name = property(default_schema_name)
+
     def get_schema_names(self):
         """Return all schema names.
 
@@ -165,6 +169,31 @@ class Inspector(object):
                 }
             )
         return fks
+
+    def get_indexes(self, table_name, schema=None):
+        """Return information about indexes in `table_name`.
+
+        Given a string `table_name` and an optional string `schema`, return
+        index information as a list of dicts of the form:
+
+        dict(name=str, column_names=list, is_unique=bool)
+        
+        name
+          the index's name
+
+        column_names
+          list of column names in index in index order
+
+        is_unique
+          is the index unique
+
+        """
+
+        indexes = self.engine.dialect.get_indexes(self.conn, table_name,
+                                                  schema=schema,
+                                                  info_cache=self.info_cache)
+        return indexes
+
 
 if __name__ == '__main__':
     e = sqlalchemy.create_engine('postgres:///test1')
