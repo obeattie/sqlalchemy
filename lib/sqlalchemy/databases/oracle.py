@@ -228,6 +228,9 @@ class OracleText(sqltypes.Text):
                     return value
         return process
 
+class OracleNVarchar(sqltypes.Unicode, OracleString):
+    def get_col_spec(self):
+        return "NVARCHAR2(%(length)s)" % {'length' : self.length}
 
 class OracleChar(sqltypes.CHAR):
     def get_col_spec(self):
@@ -298,6 +301,7 @@ colspecs = {
 
 ischema_names = {
     'VARCHAR2' : OracleString,
+    'NVARCHAR2' : OracleNVarchar,
     'CHAR' : OracleString,
     'DATE' : OracleDateTime,
     'DATETIME' : OracleDateTime,
@@ -760,7 +764,7 @@ class OracleDialect(default.DefaultDialect):
                 refspecs.append(refspec)
             table.append_constraint(
                 schema.ForeignKeyConstraint(constrained_columns, refspecs,
-                                            name=conname))
+                                        name=conname, link_to_name=True))
 
 class _OuterJoinColumn(sql.ClauseElement):
     __visit_name__ = 'outer_join_column'
