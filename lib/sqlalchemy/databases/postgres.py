@@ -499,29 +499,12 @@ class PGDialect(default.DefaultDialect):
         return [row[0].decode(self.encoding) for row in rp \
                 if not row[0].startswith('pg_')]
 
-    def __get_table_names(self, connection, table_type, schema=None):
-        import sqlalchemy.databases.information_schema as ischema
-        if schema is not None:
-            current_schema = schema
-        else:
-            current_schema = self.get_default_schema_name(connection)
-        select = sql.select
-        and_ = sql.and_
-        tables = ischema.tables
-        s = select([tables.c.table_name],
-                    and_(
-                        tables.c.table_schema==current_schema,
-                        tables.c.table_type==table_type
-                        )
-                   )
-        return [row[0] for row in connection.execute(s)]
-
     def get_table_names(self, connection, schema=None):
         if schema is not None:
             current_schema = schema
         else:
             current_schema = self.get_default_schema_name(connection)
-        return self.table_names(connection, schema)
+        return self.table_names(connection, current_schema)
 
     def get_view_names(self, connection, schema=None):
         if schema is not None:
@@ -533,7 +516,7 @@ class PGDialect(default.DefaultDialect):
         FROM pg_class c
         WHERE relkind = 'v'
           AND '%(schema)s' = (select nspname from pg_namespace n where n.oid = c.relnamespace)
-        """ % current_schema
+        """ % dict(schema=current_schema)
         return [row[0].decode(self.encoding) for row in connection.execute(s)]
 
     def get_columns(self, connection, table_name, schema=None, info_cache=None):
@@ -660,43 +643,47 @@ class PGDialect(default.DefaultDialect):
     def get_indexes(self, connection, table_name, schema=None,
                     info_cache=None):
         info_cache = self._prepare_info_cache(info_cache, table_name, schema)
-        SQL = """
-        SELECT
-        i.relname AS indexname,
-        a.attname AS colname,
-        indisunique AS is_unique
-        FROM
-        pg_attribute a
-        INNER JOIN pg_index x ON a.attrelid = x.indexrelid
-        INNER JOIN pg_class i ON i.oid = x.indexrelid
-        WHERE x.indrelid = :table_oid
-        --AND c.relkind = 'r'::"char"
-        AND i.relkind = 'i'::"char"
-        """
-        # what about the ordering?
-        t = sql.text(SQL, typemap={'indexname':sqltypes.Unicode,
-                                   'colname':sqltypes.Unicode,
-                                   'is_unique':sqltypes.Boolean,
-                                  })
-        table_index = "%s.%s" % (schema, table_name)
         # See if the oid is cached.
+        table_index = '%s.%s' % (schema, table_name)
         table_oid = info_cache['tables'][table_index].get('table_oid')
         if table_oid is None:
             table_oid = self._get_table_oid(connection, table_name, schema)
             info_cache['tables'][table_index]['table_oid'] = table_oid
-        rp = connection.execute(t, table_oid=table_oid)
+        IDX_SQL = """
+          SELECT c.relname, i.indisunique, i.indexprs, i.indpred,
+            a.attname
+          FROM pg_index i, pg_class c, pg_attribute a
+          WHERE i.indrelid = :table AND i.indexrelid = c.oid
+            AND a.attrelid = i.indexrelid AND i.indisprimary = 'f'
+          ORDER BY c.relname, a.attnum
+        """
+        t = sql.text(IDX_SQL, typemap={'attname':sqltypes.Unicode})
+        c = connection.execute(t, table=table_oid)
         index_names = {}
         indexes = []
-        for rset in rp:
-            if rset.indexname in index_names:
-                index_d = index_names[rset.indexname]
+        sv_idx_name = None
+        for row in c.fetchall():
+            idx_name, unique, expr, prd, col = row
+            if expr and not idx_name == sv_idx_name:
+                util.warn(
+                  "Skipped unsupported reflection of expression-based index %s"
+                  % idx_name)
+                sv_idx_name = idx_name
+                continue
+            if prd and not idx_name == sv_idx_name:
+                util.warn(
+                   "Predicate of partial index %s ignored during reflection"
+                   % idx_name)
+                sv_idx_name = idx_name
+            if idx_name in index_names:
+                index_d = index_names[idx_name]
             else:
                 index_d = {'column_names':[]}
                 indexes.append(index_d)
-                index_names[rset.indexname] = index_d
-            index_d['index_name'] = rset.indexname
-            index_d['column_names'].append(rset.colname)
-            index_d['is_unique'] = rset.is_unique
+                index_names[idx_name] = index_d
+            index_d['index_name'] = idx_name
+            index_d['column_names'].append(col)
+            index_d['is_unique'] = unique
         return indexes
 
     def get_foreign_keys(self, connection, table_name, schema=None,
@@ -767,7 +754,15 @@ class PGDialect(default.DefaultDialect):
                 col.autoincrement = False
         # Foreign keys
         self._reflect_foreign_keys(connection, table, info_cache)
-        return None
+        # Indexes 
+        indexes = self.get_indexes(connection, table.name, table.schema)
+        for index_d in indexes:
+            name = index_d['index_name']
+            columns = index_d['columns']
+            unique = index_d['is_unique']
+        for name, (unique, columns) in indexes.items():
+            schema.Index(name, *[table.columns[c] for c in columns], 
+                         **dict(unique=unique))
 
     def _load_domains(self, connection):
         ## Load data types for domains:

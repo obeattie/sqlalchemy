@@ -239,10 +239,7 @@ class ReflectionTest(TestBase):
             expected_indexes = [
                 {'is_unique': False,
                  'column_names': ['test1', 'test2'],
-                 'index_name': 'users_t_idx'},
-                {'is_unique': True,
-                 'column_names': ['user_id'],
-                 'index_name': 'users_pkey'}]
+                 'index_name': 'users_t_idx'}]
             self.assertEqual(indexes, expected_indexes)
         finally:
             addresses.drop()
