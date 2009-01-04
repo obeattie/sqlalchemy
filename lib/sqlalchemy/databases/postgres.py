@@ -613,7 +613,8 @@ class PGDialect(default.DefaultDialect):
                           (attype, name))
                 coltype = sqltypes.NULLTYPE
             other_args = []
-            columns.append((name, coltype, nullable, default, other_args))
+            columns.append(dict(name=name, type=coltype, nullable=nullable,
+                                default=default, attrs=other_args))
         if table_oid is not None:
             table_index = "%s.%s" % (schema, table_name)
             info_cache['tables'][table_index]['table_oid'] = table_oid
@@ -638,7 +639,7 @@ class PGDialect(default.DefaultDialect):
             table_oid = self._get_table_oid(connection, table_name, schema)
             info_cache['tables'][table_index]['table_oid'] = table_oid
         c = connection.execute(t, table_oid=table_oid)
-        return [tuple(r) for r in c.fetchall()]
+        return [r[0] for r in c.fetchall()]
 
     def get_indexes(self, connection, table_name, schema=None,
                     info_cache=None):
@@ -681,9 +682,9 @@ class PGDialect(default.DefaultDialect):
                 index_d = {'column_names':[]}
                 indexes.append(index_d)
                 index_names[idx_name] = index_d
-            index_d['index_name'] = idx_name
+            index_d['name'] = idx_name
             index_d['column_names'].append(col)
-            index_d['is_unique'] = unique
+            index_d['unique'] = unique
         return indexes
 
     def get_foreign_keys(self, connection, table_name, schema=None,
@@ -712,8 +713,14 @@ class PGDialect(default.DefaultDialect):
             (constrained_columns, referred_schema, referred_table, referred_columns) = m
             constrained_columns = [preparer._unquote_identifier(x) for x in re.split(r'\s*,\s*', constrained_columns)]
             referred_columns = [preparer._unquote_identifier(x) for x in re.split(r'\s*,\s*', referred_columns)]
-            fkeys.append((conname, constrained_columns, referred_schema,
-                          referred_table, referred_columns))
+            fkey_d = {
+                'name' : conname,
+                'constrained_columns' : constrained_columns,
+                'referred_schema' : referred_schema,
+                'referred_table' : referred_table,
+                'referred_columns' : referred_columns
+            }
+            fkeys.append(fkey_d)
         return fkeys 
 
     def server_version_info(self, connection):
@@ -729,7 +736,12 @@ class PGDialect(default.DefaultDialect):
         # Columns
         columns = self.get_columns(connection, table.name, table.schema,
                                    info_cache)
-        for (name, coltype, nullable, default, other_args) in columns:
+        for col_d in columns:
+            name = col_d['name']
+            coltype = col_d['type']
+            nullable = col_d['nullable']
+            default = col_d['default']
+            other_args = col_d['attrs']
             if include_columns and name not in include_columns:
                 continue
             colargs = []
@@ -745,9 +757,8 @@ class PGDialect(default.DefaultDialect):
             table.append_column(schema.Column(name, coltype, nullable=nullable, 
                                 *colargs))
         # Primary Keys
-        for row in self.get_primary_keys(connection, table.name, table.schema,
+        for pk in self.get_primary_keys(connection, table.name, table.schema,
                                          info_cache):
-            pk = row[0]
             if pk in table.c:
                 col = table.c[pk]
                 table.primary_key.add(col)
@@ -758,9 +769,9 @@ class PGDialect(default.DefaultDialect):
         # Indexes 
         indexes = self.get_indexes(connection, table.name, table.schema)
         for index_d in indexes:
-            name = index_d['index_name']
+            name = index_d['name']
             columns = index_d['columns']
-            unique = index_d['is_unique']
+            unique = index_d['unique']
         for name, (unique, columns) in indexes.items():
             schema.Index(name, *[table.columns[c] for c in columns], 
                          **dict(unique=unique))

@@ -140,8 +140,12 @@ class DefaultDialect(base.Dialect):
         preparer = self.identifier_preparer
         fkeys = self.get_foreign_keys(connection, table.name, table.schema,
                                       info_cache, **fk_kwargs)
-        for (constraint_name, constrained_columns, referred_schema,
-                                    referred_table, referred_columns) in fkeys:
+        for fkey_d in fkeys:
+            constraint_name = fkey_d['name']
+            constrained_columns = fkey_d['constrained_columns']
+            referred_schema = fkey_d['referred_schema']
+            referred_table = fkey_d['referred_table']
+            referred_columns = fkey_d['referred_columns']
             if referred_schema:
                 if hasattr(preparer, '_unquote_identifier'):
                     referred_schema = preparer._unquote_identifier(referred_schema)

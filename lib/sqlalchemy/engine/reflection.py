@@ -1,10 +1,19 @@
 """Provides an abstracting for obtaining database schema information.
 
-Notes:
+Development Notes:
 
-The Inspector currently returns tuples and lists of tuples, but it may be
-better to return dicts and lists of dicts.  This would make it easier to add
-attributes.
+I'm still trying to decide upon conventions for both the Inspector interface as well as the dialect interface the Inspector is to consume.  Below are some of the current conventions.
+
+  1. Inspector methods should return lists of dicts in most cases for the 
+     following reasons:
+    a) They're both simple standard types.
+    b) Using a dict instead of a tuple allows easy expansion of attributes.
+    c) Using a list for the outer structure maintains order and is easy to work 
+       with (e.g. list comprehension [d['name'] for d in cols]).
+    d) Being consistent is just good.
+  2. Records that contain a name, such as the column name in a column record
+     should use the key 'name' in the dict.  This allows the user to expect a
+     'name' key and to know what it will reference.
 
 
 """
@@ -68,20 +77,21 @@ class Inspector(object):
         """Return information about columns in `table_name`.
 
         Given a string `table_name` and an optional string `schema`, return
-        column information as a list of dicts of the form:
+        column information as a list of dicts with these keys:
 
-        dict(name=name, coltype=coltype, nullable=nullable, colattrs=colattrs)
-        
         name
           the column's name
 
-        coltype
+        type
           [sqlalchemy.types#TypeEngine]
 
         nullable
           boolean
 
-        colattrs
+        default
+          the column's default value
+
+        attrs
           dict containing optional column attributes
 
         """
@@ -89,52 +99,32 @@ class Inspector(object):
         col_defs = self.engine.dialect.get_columns(self.conn, table_name,
                                                schema=schema,
                                                info_cache=self.info_cache)
-        cols = []
         for col_def in col_defs:
             # make this easy and only return instances for coltype
-            coltype = col_def[1]
+            coltype = col_def['type']
             if not isinstance(coltype, TypeEngine):
-                coltype = coltype()
-            cols.append(
-                {'name':col_def[0],
-                 'coltype':col_def[1],
-                 'nullable':col_def[2],
-                 'colattrs':col_def[3],
-                }
-            )
-        return cols
+                col_def['type'] = coltype()
+        return col_defs
 
     def get_primary_keys(self, table_name, schema=None):
         """Return information about primary keys in `table_name`.
 
         Given a string `table_name`, and an optional string `schema`, return 
-        primary key information as a list of dicts of the form:
-
-        dict(colname=colname)
+        primary key information as a list of column names:
 
         """
 
-        pk_defs = self.engine.dialect.get_primary_keys(self.conn, table_name,
+        pkeys = self.engine.dialect.get_primary_keys(self.conn, table_name,
                                                schema=schema,
                                                info_cache=self.info_cache)
-        pks = []
-        for pk_def in pk_defs:
-            pks.append(
-                {'colname':pk_def[0]}
-            )
-        return pks
+
+        return pkeys
 
     def get_foreign_keys(self, table_name, schema=None):
         """Return information about foreign_keys in `table_name`.
 
         Given a string `table_name`, and an optional string `schema`, return 
-        foreign key information as a list of dicts of the form:
-
-        dict(constraint_name=constraint_name,
-             constrained_columns=constrained_columns,
-             referred_schema=referred_schema,
-             referred_table=referred_table, 
-             referred_columns=referred_columns)
+        foreign key information as a list of dicts with these keys:
 
         constrained_columns
           a list of column names that make up the foreign key
@@ -154,38 +144,29 @@ class Inspector(object):
         fk_defs = self.engine.dialect.get_foreign_keys(self.conn, table_name,
                                                schema=schema,
                                                info_cache=self.info_cache)
-        fks = []
         for fk_def in fk_defs:
-            referred_schema = fk_def[2]
+            referred_schema = fk_def['referred_schema']
+            # always set the referred_schema.
             if referred_schema is None and schema is None:
                 referred_schema = self.engine.dialect.get_default_schema_name(
                                                                     self.conn)
-            fks.append(
-                {'constraint_name':fk_def[0],
-                 'constrained_columns':fk_def[1],
-                 'referred_schema':referred_schema,
-                 'referred_table':fk_def[3],
-                 'referred_columns':fk_def[4]
-                }
-            )
-        return fks
+                fk_def['referred_schema'] = referred_schema
+        return fk_defs
 
     def get_indexes(self, table_name, schema=None):
         """Return information about indexes in `table_name`.
 
         Given a string `table_name` and an optional string `schema`, return
-        index information as a list of dicts of the form:
+        index information as a list of dicts with these keys:
 
-        dict(name=str, column_names=list, is_unique=bool)
-        
         name
           the index's name
 
         column_names
-          list of column names in index in index order
+          list of column names in order
 
-        is_unique
-          is the index unique
+        unique
+          boolean
 
         """
 

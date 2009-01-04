@@ -158,21 +158,22 @@ class Dialect(object):
         """Return information about columns in `table_name`.
 
         Given a [sqlalchemy.engine#Connection], a string `table_name`, and an
-        optional string `schema`, return column information as a list of tuples 
-        of the form:
+        optional string `schema`, return column information as a list of dicts
+        with these keys:
 
-        (name, coltype, nullable, colattrs)
-        
         name
           the column's name
 
-        coltype
+        type
           [sqlalchemy.types#TypeEngine]
 
         nullable
           boolean
 
-        colattrs
+        default
+          the column's default value
+
+        attrs
           dict containing optional column attributes
         """
 
@@ -184,12 +185,8 @@ class Dialect(object):
 
         Given a [sqlalchemy.engine#Connection], a string `table_name`, and an
         optional string `schema`, return primary key information as a list of
-        tuples of the form:
+        column names:
 
-        (colname, )
-
-        A tuple is used here to leave room for other data items should they be
-        added to the spec.
         """
 
         raise NotImplementedError()
@@ -200,10 +197,10 @@ class Dialect(object):
 
         Given a [sqlalchemy.engine#Connection], a string `table_name`, and an
         optional string `schema`, return foreign key information as a list of
-        tuples of the form:
+        dicts with these keys:
 
-        (constraint_name, constrained_columns, referred_schema, referred_table, 
-         referred_columns)
+        name
+          the constraint's name
 
         constrained_columns
           a list of column names that make up the foreign key
@@ -238,7 +235,7 @@ class Dialect(object):
                             info_cache=None):
         """Return view definition.
 
-        Given a [sqlalchemy.engine#Connection], a string `table_name`, and an
+        Given a [sqlalchemy.engine#Connection], a string `view_name`, and an
         optional string `schema`, return the view definition.
 
         """
@@ -248,11 +245,18 @@ class Dialect(object):
     def get_indexes(self, connection, table_name, schema=None, info_cache=None):
         """Return information about indexes in `table_name`.
 
-        Given a [sqlalchemy.engine#Connection], a string `table_name`, and an
-        optional string `schema`, return index information as a list of tuples
-        of the form:
+        Given a [sqlalchemy.engine#Connection], a string `table_name` and an 
+        optional string `schema`, return index information as a list of dicts 
+        with these keys:
 
-        (todo, )
+        name
+          the index's name
+
+        column_names
+          list of column names in order
+
+        unique
+          boolean
 
         """
 

@@ -144,7 +144,7 @@ class ReflectionTest(TestBase):
                     # coltype is tricky
                     # It may not inherit from col.type while they share
                     # the same base.
-                    coltype = cols[i]['coltype'].__class__
+                    coltype = cols[i]['type'].__class__
                     self.assert_(
                         issubclass(coltype, col.type.__class__) or \
                         len(
@@ -177,9 +177,9 @@ class ReflectionTest(TestBase):
         insp = Inspector(meta.bind)
         try:
             users_pkeys = insp.get_primary_keys(users.name, schema=schema)
-            self.assertEqual(users_pkeys,  [{'colname':'user_id'}])
+            self.assertEqual(users_pkeys,  ['user_id'])
             addr_pkeys = insp.get_primary_keys(addresses.name, schema=schema)
-            self.assertEqual(addr_pkeys,  [{'colname':'address_id'}])
+            self.assertEqual(addr_pkeys,  ['address_id'])
 
         finally:
             addresses.drop()
@@ -204,7 +204,7 @@ class ReflectionTest(TestBase):
             # users
             users_fkeys = insp.get_foreign_keys(users.name, schema=schema)
             fkey1 = users_fkeys[0]
-            self.assert_(fkey1['constraint_name'] is not None)
+            self.assert_(fkey1['name'] is not None)
             self.assertEqual(fkey1['referred_schema'], expected_schema)
             self.assertEqual(fkey1['referred_table'], users.name)
             self.assertEqual(fkey1['referred_columns'], ['user_id', ])
@@ -212,7 +212,7 @@ class ReflectionTest(TestBase):
             #addresses
             addr_fkeys = insp.get_foreign_keys(addresses.name, schema=schema)
             fkey1 = addr_fkeys[0]
-            self.assert_(fkey1['constraint_name'] is not None)
+            self.assert_(fkey1['name'] is not None)
             self.assertEqual(fkey1['referred_schema'], expected_schema)
             self.assertEqual(fkey1['referred_table'], users.name)
             self.assertEqual(fkey1['referred_columns'], ['user_id', ])
@@ -237,9 +237,9 @@ class ReflectionTest(TestBase):
             indexes = insp.get_indexes('users', schema=schema)
             indexes.sort()
             expected_indexes = [
-                {'is_unique': False,
+                {'unique': False,
                  'column_names': ['test1', 'test2'],
-                 'index_name': 'users_t_idx'}]
+                 'name': 'users_t_idx'}]
             self.assertEqual(indexes, expected_indexes)
         finally:
             addresses.drop()
