@@ -785,6 +785,14 @@ class SessionTest(_fixtures.FixtureTest):
         gc.collect()
         assert len(s.identity_map) == 1
 
+        user = s.query(User).one()
+        assert not s.identity_map.modified
+        user.name = 'u2'
+        assert s.identity_map.modified
+        s.flush()
+        eq_(users.select().execute().fetchall(), [(user.id, 'u2')])
+        
+        
     @testing.resolve_artifact_names
     def test_prune(self):
         s = create_session(weak_identity_map=False)

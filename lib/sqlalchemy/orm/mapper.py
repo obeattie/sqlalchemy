@@ -161,7 +161,9 @@ class Mapper(object):
 
         if isinstance(self.local_table, expression._SelectBaseMixin):
             util.warn("mapper %s creating an alias for the given "
-                        "selectable - use Class attributes for queries." % self)
+                        "selectable.  References to the original selectable "
+                        "may be misinterpreted by queries, polymorphic_on, etc. "
+                        " Consider passing an explicit selectable.alias() construct instead." % self)
             self.local_table = self.local_table.alias()
 
         if self.with_polymorphic and isinstance(self.with_polymorphic[1], expression._SelectBaseMixin):
@@ -839,6 +841,19 @@ class Mapper(object):
 
         return from_obj
 
+    @property
+    def _single_table_criterion(self):
+        if self.single and \
+            self.inherits and \
+            self.polymorphic_on and \
+            self.polymorphic_identity is not None:
+            return self.polymorphic_on.in_(
+                m.polymorphic_identity
+                for m in self.polymorphic_iterator())
+        else:
+            return None
+        
+    
     @util.memoized_property
     def _with_polymorphic_mappers(self):
         if not self.with_polymorphic:

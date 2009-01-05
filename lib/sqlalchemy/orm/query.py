@@ -653,12 +653,15 @@ class Query(object):
     def order_by(self, *criterion):
         """apply one or more ORDER BY criterion to the query and return the newly resulting ``Query``"""
 
-        criterion = [self._adapt_clause(expression._literal_as_text(o), True, True) for o in criterion]
-
-        if self._order_by is False:
-            self._order_by = criterion
+        if len(criterion) == 1 and criterion[0] is None:
+            self._order_by = None
         else:
-            self._order_by = self._order_by + criterion
+            criterion = [self._adapt_clause(expression._literal_as_text(o), True, True) for o in criterion]
+
+            if self._order_by is False or self._order_by is None:
+                self._order_by = criterion
+            else:
+                self._order_by = self._order_by + criterion
 
     @_generative(__no_statement_condition, __no_limit_offset)
     @util.accepts_a_list_as_starargs(list_deprecation='pending')
@@ -884,7 +887,8 @@ class Query(object):
                         self.__currenttables.add(prop.secondary)
                     self.__currenttables.add(prop.table)
 
-                    right_entity = prop.mapper
+                    if not right_entity:
+                        right_entity = prop.mapper
 
             if alias_criterion:
                 right_adapter = ORMAdapter(right_entity,
@@ -1615,14 +1619,12 @@ class Query(object):
 
         """
         for entity, (mapper, adapter, s, i, w) in self._mapper_adapter_map.iteritems():
-            if mapper.single and mapper.inherits and mapper.polymorphic_on and mapper.polymorphic_identity is not None:
-                crit = mapper.polymorphic_on.in_(
-                    m.polymorphic_identity
-                    for m in mapper.polymorphic_iterator())
+            single_crit = mapper._single_table_criterion
+            if single_crit:
                 if adapter:
-                    crit = adapter.traverse(crit)
-                crit = self._adapt_clause(crit, False, False)
-                context.whereclause = sql.and_(context.whereclause, crit)
+                    single_crit = adapter.traverse(single_crit)
+                single_crit = self._adapt_clause(single_crit, False, False)
+                context.whereclause = sql.and_(context.whereclause, single_crit)
 
     def __str__(self):
         return str(self._compile_context().statement)
@@ -1756,6 +1758,7 @@ class _MapperEntity(_QueryEntity):
         if context.order_by is False and self.mapper.order_by:
             context.order_by = self.mapper.order_by
 
+            # apply adaptation to the mapper's order_by if needed.
             if adapter:
                 context.order_by = adapter.adapt_list(util.to_list(context.order_by))
                     

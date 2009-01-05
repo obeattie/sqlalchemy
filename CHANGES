@@ -40,7 +40,13 @@ CHANGES
     - dynamic_loader accepts a query_class= to customize the Query
       classes used for both the dynamic collection and the queries
       built from it.
-
+    
+    - query.order_by() accepts None which will remove any pending
+      order_by state from the query, as well as cancel out any
+      mapper/relation configured ordering. This is primarily useful 
+      for overriding the ordering specified on a dynamic_loader().
+      [ticket:1079]
+      
 - sql
     - RowProxy objects can be used in place of dictionary arguments 
       sent to connection.execute() and friends.  [ticket:935]
@@ -75,6 +81,14 @@ CHANGES
       next compile() call.  This issue occurs frequently
       when using declarative.
 
+    - property.of_type() is now recognized on a single-table
+      inheriting target, when used in the context of 
+      prop.of_type(..).any()/has(), as well as 
+      query.join(prop.of_type(...)).
+      
+    - Fixed bug when using weak_instance_map=False where modified
+      events would not be intercepted for a flush(). [ticket:1272]
+      
     - Fixed some deep "column correspondence" issues which could
       impact a Query made against a selectable containing
       multiple versions of the same table, as well as 
@@ -289,6 +303,8 @@ CHANGES
       new doc section "Custom Comparators".
     
 - mssql
+    - Corrected an issue with Numerics to accept an int.
+
     - Mapped ``char_length`` to the ``LEN()`` function.
 
     - If an ``INSERT`` includes a subselect the ``INSERT`` is
@@ -364,6 +380,9 @@ CHANGES
       
     - Fixed bug in exception raise when FK columns not present
       during reflection. [ticket:1241]
+    
+    - Fixed bug involving reflection of a remote-schema table with
+      a foreign key ref to another table in that schema.
       
 - associationproxy
     - The association proxy properties are make themselves available
