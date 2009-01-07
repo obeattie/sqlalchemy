@@ -53,7 +53,7 @@ class Inspector(object):
         return []
 
     def get_table_names(self, schema=None):
-        """
+        """Return all table names in `schema`.
         schema:
           Optional, retrieve names from a non-default schema.
 
@@ -66,12 +66,21 @@ class Inspector(object):
         return self.engine.table_names(schema)
 
     def get_view_names(self, schema=None):
-        """
+        """Return all view names in `schema`.
         schema:
           Optional, retrieve names from a non-default schema.
 
         """
         return self.engine.dialect.get_view_names(self.conn, schema)
+
+    def get_view_definition(self, view_name, schema=None):
+        """Return definition for `view_name`.
+        schema:
+          Optional, retrieve names from a non-default schema.
+
+        """
+        return self.engine.dialect.get_view_definition(
+            self.conn, view_name, schema)
 
     def get_columns(self, table_name, schema=None):
         """Return information about columns in `table_name`.

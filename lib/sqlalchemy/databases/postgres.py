@@ -519,6 +519,21 @@ class PGDialect(default.DefaultDialect):
         """ % dict(schema=current_schema)
         return [row[0].decode(self.encoding) for row in connection.execute(s)]
 
+    def get_view_definition(self, connection, view_name, schema=None):
+        if schema is not None:
+            current_schema = schema
+        else:
+            current_schema = self.get_default_schema_name(connection)
+        s = """
+        SELECT definition FROM pg_views
+        WHERE schemaname = :schema
+        AND viewname = :view_name
+        """
+        rp = connection.execute(sql.text(s),
+                                view_name=view_name, schema=current_schema)
+        if rp:
+            return rp.scalar().decode(self.encoding)
+
     def get_columns(self, connection, table_name, schema=None, info_cache=None):
         info_cache = self._prepare_info_cache(info_cache, table_name, schema)
         preparer = self.identifier_preparer

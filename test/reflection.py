@@ -251,5 +251,29 @@ class ReflectionTest(TestBase):
     def test_get_indexes_with_schema(self):
         self._test_get_indexes(schema=getSchema())
 
+    def _test_get_view_definition(self, schema=None):
+        meta = MetaData(testing.db)
+        (users, addresses) = createTables(meta, schema)
+        meta.create_all()
+        createViews(meta.bind, schema)
+        view_name1 = 'users_v'
+        view_name2 = 'email_addresses_v'
+        try:
+            insp = Inspector(meta.bind)
+            v1 = insp.get_view_definition(view_name1, schema=schema)
+            self.assert_(v1)
+            v2 = insp.get_view_definition(view_name2, schema=schema)
+            self.assert_(v2)
+        finally:
+            dropViews(meta.bind, schema)
+            addresses.drop()
+            users.drop()
+
+    def test_get_view_definition(self):
+        self._test_get_view_definition()
+
+    def test_get_view_definition_with_schema(self):
+        self._test_get_view_definition(schema=getSchema())
+
 if __name__ == "__main__":
     testenv.main()
