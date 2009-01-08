@@ -318,11 +318,13 @@ class PropertyInheritanceTest(_base.MappedTest):
     def define_tables(self, metadata):
         Table('a_table', metadata,
             Column('id', Integer, primary_key=True),
-            Column('some_c_id', Integer, ForeignKey('c_table.id'))
+            Column('some_c_id', Integer, ForeignKey('c_table.id')),
+            Column('aname', String(50)),
         )
         Table('b_table', metadata,
             Column('id', Integer, primary_key=True),
-            Column('some_c_id', Integer, ForeignKey('c_table.id'))
+            Column('some_c_id', Integer, ForeignKey('c_table.id')),
+            Column('bname', String(50)),
         )
         Table('c_table', metadata,
             Column('id', Integer, primary_key=True)
@@ -383,10 +385,13 @@ class PropertyInheritanceTest(_base.MappedTest):
         
         c1 = C()
         c2 = C()
-        a1 = A(some_c=c1)
-        a2 = A(some_c=c2)
-        b1 = B(some_c=c1)
-        b2 = B(some_c=c1)
+        a1 = A(some_c=c1, aname='a1')
+        a2 = A(some_c=c2, aname='a2')
+        b1 = B(some_c=c1, bname='b1')
+        b2 = B(some_c=c1, bname='b2')
+        
+        self.assertRaises(sa.exc.InvalidRequestError, setattr, b1, 'aname', 'foo')
+        self.assertRaises(AttributeError, getattr, A, 'bname')
         
         assert c2.many_a == [a2]
         assert c1.many_a == [a1]
@@ -399,6 +404,8 @@ class PropertyInheritanceTest(_base.MappedTest):
         assert c2.many_a == [a2]
         assert c1.many_a == [a1]
         assert c1.many_b == [b1, b2]
+
+        assert sess.query(B).filter(B.bname=='b1').one() is b1
         
     @testing.resolve_artifact_names    
     def test_polymorphic_backref(self):
