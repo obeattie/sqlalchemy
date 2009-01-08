@@ -102,12 +102,8 @@ class ReflectionTest(TestBase, ComparesTables):
         t.create()
         dialect_module.ischema_names = {}
         try:
-            try:
-                m2 = MetaData(testing.db)
-                t2 = Table("test", m2, autoload=True)
-                assert False
-            except tsa.exc.SAWarning:
-                assert True
+            m2 = MetaData(testing.db)
+            self.assertRaises(tsa.exc.SAWarning, Table, "test", m2, autoload=True)
 
             @testing.emits_warning('Did not recognize type')
             def warns():
@@ -238,6 +234,59 @@ class ReflectionTest(TestBase, ComparesTables):
         finally:
             meta.drop_all()
 
+    def test_override_keys(self):
+        """test that columns can be overridden with a 'key', 
+        and that ForeignKey targeting during reflection still works."""
+        
+
+        meta = MetaData(testing.db)
+        a1 = Table('a', meta,
+            Column('x', sa.Integer, primary_key=True),
+            Column('z', sa.Integer),
+            test_needs_fk=True
+        )
+        b1 = Table('b', meta,
+            Column('y', sa.Integer, sa.ForeignKey('a.x')),
+            test_needs_fk=True
+        )
+        meta.create_all()
+        try:
+            m2 = MetaData(testing.db)
+            a2 = Table('a', m2, Column('x', sa.Integer, primary_key=True, key='x1'), autoload=True)
+            b2 = Table('b', m2, autoload=True)
+            
+            assert a2.join(b2).onclause.compare(a2.c.x1==b2.c.y)
+            assert b2.c.y.references(a2.c.x1)
+        finally:
+            meta.drop_all()
+    
+    def test_nonreflected_fk_raises(self):
+        """test that a NoReferencedColumnError is raised when reflecting
+        a table with an FK to another table which has not included the target
+        column in its reflection.
+        
+        """
+        meta = MetaData(testing.db)
+        a1 = Table('a', meta,
+            Column('x', sa.Integer, primary_key=True),
+            Column('z', sa.Integer),
+            test_needs_fk=True
+        )
+        b1 = Table('b', meta,
+            Column('y', sa.Integer, sa.ForeignKey('a.x')),
+            test_needs_fk=True
+        )
+        meta.create_all()
+        try:
+            m2 = MetaData(testing.db)
+            a2 = Table('a', m2, include_columns=['z'], autoload=True)
+            b2 = Table('b', m2, autoload=True)
+            
+            self.assertRaises(tsa.exc.NoReferencedColumnError, a2.join, b2)
+        finally:
+            meta.drop_all()
+        
+        
     @testing.exclude('mysql', '<', (4, 1, 1), 'innodb funkiness')
     def test_override_existing_fk(self):
         """test that you can override columns and specify new foreign keys to other reflected tables,
@@ -351,11 +400,8 @@ class ReflectionTest(TestBase, ComparesTables):
             Column('pkg_id', sa.Integer, sa.ForeignKey('pkgs.pkg_id')),
             Column('slot', sa.String(128)),
             )
-        try:
-            metadata.create_all()
-            assert False
-        except tsa.exc.InvalidRequestError, err:
-            assert str(err) == "Could not find table 'pkgs' with which to generate a foreign key"
+            
+        self.assertRaisesMessage(tsa.exc.InvalidRequestError, "Could not find table 'pkgs' with which to generate a foreign key", metadata.create_all)
 
     def test_composite_pks(self):
         """test reflection of a composite primary key"""
@@ -418,7 +464,7 @@ class ReflectionTest(TestBase, ComparesTables):
 
 
     @testing.crashes('oracle', 'FIXME: unknown, confirm not fails_on')
-    def testreserved(self):
+    def test_reserved(self):
         # check a table that uses an SQL reserved name doesn't cause an error
         meta = MetaData(testing.db)
         table_a = Table('select', meta,
@@ -525,6 +571,37 @@ class ReflectionTest(TestBase, ComparesTables):
             m9.reflect()
             self.assert_(not m9.tables)
 
+    @testing.fails_on_everything_except('postgres', 'mysql')
+    def test_index_reflection(self):
+        m1 = MetaData(testing.db)
+        t1 = Table('party', m1,
+            Column('id', sa.Integer, nullable=False),
+            Column('name', sa.String(20), index=True)
+            )
+        i1 = sa.Index('idx1', t1.c.id, unique=True)
+        i2 = sa.Index('idx2', t1.c.name, t1.c.id, unique=False)
+        m1.create_all()
+        try:
+            m2 = MetaData(testing.db)
+            t2 = Table('party', m2, autoload=True)
+
+            print len(t2.indexes), t2.indexes
+            assert len(t2.indexes) == 3
+            # Make sure indexes are in the order we expect them in
+            tmp = [(idx.name, idx) for idx in t2.indexes]
+            tmp.sort()
+            r1, r2, r3 = [idx[1] for idx in tmp]
+
+            assert r1.name == 'idx1'
+            assert r2.name == 'idx2'
+            assert r1.unique == True
+            assert r2.unique == False
+            assert r3.unique == False
+            assert [t2.c.id] == r1.columns
+            assert [t2.c.name, t2.c.id] == r2.columns
+            assert [t2.c.name] == r3.columns
+        finally:
+            m1.drop_all()
 
 class CreateDropTest(TestBase):
     def setUpAll(self):
@@ -675,9 +752,10 @@ class SchemaTest(TestBase):
             assert buf.index("CREATE TABLE someschema.table2") > -1
 
     @testing.crashes('firebird', 'No schema support')
-    @testing.fails_on('sqlite')
+    @testing.fails_on('sqlite', 'FIXME: unknown')
     # fixme: revisit these below.
-    @testing.fails_on('access', 'sybase')
+    @testing.fails_on('access', 'FIXME: unknown')
+    @testing.fails_on('sybase', 'FIXME: unknown')
     def test_explicit_default_schema(self):
         engine = testing.db
 

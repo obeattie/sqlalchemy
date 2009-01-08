@@ -1,3 +1,5 @@
+# coding: utf-8
+
 import testenv; testenv.configure_for_tests()
 from sqlalchemy import *
 from sqlalchemy.sql import table, column
@@ -13,19 +15,19 @@ class OutParamTest(TestBase, AssertsExecutionResults):
 
     def setUpAll(self):
         testing.db.execute("""
-create or replace procedure foo(x_in IN number, x_out OUT number, y_out OUT number) IS
+create or replace procedure foo(x_in IN number, x_out OUT number, y_out OUT number, z_out OUT varchar) IS
   retval number;
     begin
     retval := 6;
     x_out := 10;
     y_out := x_in * 15;
+    z_out := NULL;
     end;
         """)
 
     def test_out_params(self):
-        result = testing.db.execute(text("begin foo(:x, :y, :z); end;", bindparams=[bindparam('x', Numeric), outparam('y', Numeric), outparam('z', Numeric)]), x=5)
-        assert result.out_parameters == {'y':10, 'z':75}, result.out_parameters
-        print result.out_parameters
+        result = testing.db.execute(text("begin foo(:x_in, :x_out, :y_out, :z_out); end;", bindparams=[bindparam('x_in', Numeric), outparam('x_out', Numeric), outparam('y_out', Numeric), outparam('z_out', String)]), x_in=5)
+        assert result.out_parameters == {'x_out':10, 'y_out':75, 'z_out':None}, result.out_parameters
 
     def tearDownAll(self):
          testing.db.execute("DROP PROCEDURE foo")
@@ -296,6 +298,22 @@ class TypesTest(TestBase, AssertsCompiledSQL):
             )
         [[row[k] for k in row.keys()] for row in types_table.select().execute().fetchall()]
 
+    def test_reflect_nvarchar(self):
+        metadata = MetaData(testing.db)
+        t = Table('t', metadata,
+            Column('data', oracle.OracleNVarchar(255))
+        )
+        metadata.create_all()
+        try:
+            m2 = MetaData(testing.db)
+            t2 = Table('t', m2, autoload=True)
+            assert isinstance(t2.c.data.type, oracle.OracleNVarchar)
+            data = u'm’a réveillé.'
+            t2.insert().execute(data=data)
+            eq_(t2.select().execute().fetchone()['data'], data)
+        finally:
+            metadata.drop_all()
+        
     def test_longstring(self):
         metadata = MetaData(testing.db)
         testing.db.execute("""

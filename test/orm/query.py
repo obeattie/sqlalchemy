@@ -2,7 +2,7 @@ import testenv; testenv.configure_for_tests()
 import operator
 from sqlalchemy import *
 from sqlalchemy import exc as sa_exc, util
-from sqlalchemy.sql import compiler
+from sqlalchemy.sql import compiler, table, column
 from sqlalchemy.engine import default
 from sqlalchemy.orm import *
 from sqlalchemy.orm import attributes
@@ -42,7 +42,6 @@ class QueryTest(FixtureTest):
         mapper(Keyword, keywords)
 
         compile_mappers()
-        #class_mapper(User).add_property('addresses', relation(Address, primaryjoin=User.id==Address.user_id, order_by=Address.id, backref='user'))
 
 class UnicodeSchemaTest(QueryTest):
     keep_mappers = False
@@ -574,50 +573,12 @@ class SliceTest(QueryTest):
         ])
 
 
-class TextTest(QueryTest):
-    def test_fulltext(self):
-        assert [User(id=7), User(id=8), User(id=9),User(id=10)] == create_session().query(User).from_statement("select * from users").all()
-
-    def test_fragment(self):
-        assert [User(id=8), User(id=9)] == create_session().query(User).filter("id in (8, 9)").all()
-
-        assert [User(id=9)] == create_session().query(User).filter("name='fred'").filter("id=9").all()
-
-        assert [User(id=9)] == create_session().query(User).filter("name='fred'").filter(User.id==9).all()
-
-    def test_binds(self):
-        assert [User(id=8), User(id=9)] == create_session().query(User).filter("id in (:id1, :id2)").params(id1=8, id2=9).all()
-
-
-class FooTest(FixtureTest):
-    keep_data = True
-        
-    def test_filter_by(self):
-        clear_mappers()
-        sess = create_session(bind=testing.db)
-        from sqlalchemy.ext.declarative import declarative_base
-        Base = declarative_base(bind=testing.db)
-        class User(Base, _base.ComparableEntity):
-            __table__ = users
-        
-        class Address(Base, _base.ComparableEntity):
-            __table__ = addresses
-
-        compile_mappers()
-#        Address.user = relation(User, primaryjoin="User.id==Address.user_id")
-        Address.user = relation(User, primaryjoin=User.id==Address.user_id)
-#        Address.user = relation(User, primaryjoin=users.c.id==addresses.c.user_id)
-        compile_mappers()
-#        Address.user.property.primaryjoin = User.id==Address.user_id
-        user = sess.query(User).get(8)
-        print sess.query(Address).filter_by(user=user).all()
-        assert [Address(id=2), Address(id=3), Address(id=4)] == sess.query(Address).filter_by(user=user).all()
     
 class FilterTest(QueryTest):
     def test_basic(self):
         assert [User(id=7), User(id=8), User(id=9),User(id=10)] == create_session().query(User).all()
 
-    @testing.fails_on('maxdb')
+    @testing.fails_on('maxdb', 'FIXME: unknown')
     def test_limit(self):
         assert [User(id=8), User(id=9)] == create_session().query(User).order_by(User.id).limit(2).offset(1).all()
 
@@ -751,6 +712,7 @@ class FilterTest(QueryTest):
         # o2m
         self.assertEquals([User(id=10)], sess.query(User).filter(User.addresses==None).all())
         self.assertEquals([User(id=7),User(id=8),User(id=9)], sess.query(User).filter(User.addresses!=None).order_by(User.id).all())
+
 
 class FromSelfTest(QueryTest):
     def test_filter(self):
@@ -906,7 +868,10 @@ class YieldTest(QueryTest):
 
 class TextTest(QueryTest):
     def test_fulltext(self):
-        assert [User(id=7), User(id=8), User(id=9),User(id=10)] == create_session().query(User).from_statement("select * from users").all()
+        assert [User(id=7), User(id=8), User(id=9),User(id=10)] == create_session().query(User).from_statement("select * from users order by id").all()
+
+        assert User(id=7) == create_session().query(User).from_statement("select * from users order by id").first()
+        assert None == create_session().query(User).from_statement("select * from users where name='nonexistent'").first()
 
     def test_fragment(self):
         assert [User(id=8), User(id=9)] == create_session().query(User).filter("id in (8, 9)").all()
@@ -918,6 +883,11 @@ class TextTest(QueryTest):
     def test_binds(self):
         assert [User(id=8), User(id=9)] == create_session().query(User).filter("id in (:id1, :id2)").params(id1=8, id2=9).all()
 
+    def test_as_column(self):
+        s = create_session()
+        self.assertRaises(sa_exc.InvalidRequestError, s.query, User.id, text("users.name"))
+
+        eq_(s.query(User.id, "name").order_by(User.id).all(), [(7, u'jack'), (8, u'ed'), (9, u'fred'), (10, u'chuck')])
 
 class ParentTest(QueryTest):
     def test_o2m(self):
@@ -1009,6 +979,38 @@ class JoinTest(QueryTest):
             []
         )
     
+    def test_backwards_join(self):
+        # a more controversial feature.  join from
+        # User->Address, but the onclause is Address.user.
+        
+        sess = create_session()
+
+        self.assertEquals(
+            sess.query(User).join(Address.user).filter(Address.email_address=='ed@wood.com').all(),
+            [User(id=8,name=u'ed')]
+        )
+
+        # its actually not so controversial if you view it in terms
+        # of multiple entities.
+        self.assertEquals(
+            sess.query(User, Address).join(Address.user).filter(Address.email_address=='ed@wood.com').all(),
+            [(User(id=8,name=u'ed'), Address(email_address='ed@wood.com'))]
+        )
+        
+        # this was the controversial part.  now, raise an error if the feature is abused.
+        # before the error raise was added, this would silently work.....
+        self.assertRaises(
+            sa_exc.InvalidRequestError,
+            sess.query(User).join, (Address, Address.user),
+        )
+
+        # but this one would silently fail 
+        adalias = aliased(Address)
+        self.assertRaises(
+            sa_exc.InvalidRequestError,
+            sess.query(User).join, (adalias, Address.user),
+        )
+        
     def test_multiple_with_aliases(self):
         sess = create_session()
         
@@ -1244,6 +1246,23 @@ class JoinTest(QueryTest):
         q = sess.query(User).join('orders', aliased=True).filter(Order.description=="order 3").join('orders', aliased=True).filter(Order.description=="order 5")
         assert q.count() == 1
         assert [User(id=7)] == q.all()
+
+    def test_aliased_order_by(self):
+        sess = create_session()
+
+        ualias = aliased(User)
+        self.assertEquals(
+            sess.query(User, ualias).filter(User.id > ualias.id).order_by(desc(ualias.id), User.name).all(),
+            [
+                (User(id=10,name=u'chuck'), User(id=9,name=u'fred')), 
+                (User(id=10,name=u'chuck'), User(id=8,name=u'ed')), 
+                (User(id=9,name=u'fred'), User(id=8,name=u'ed')), 
+                (User(id=10,name=u'chuck'), User(id=7,name=u'jack')), 
+                (User(id=8,name=u'ed'), User(id=7,name=u'jack')),
+                (User(id=9,name=u'fred'), User(id=7,name=u'jack'))
+            ]
+        )
+
 
 class MultiplePathTest(ORMTest):
     def define_tables(self, metadata):
@@ -1535,10 +1554,6 @@ class MixedEntitiesTest(QueryTest):
         q2 = q.values(func.count(User.name))
         assert q2.next() == (4,)
 
-        u2 = aliased(User)
-        q2 = q.select_from(sel).filter(u2.id>1).order_by([User.id, sel.c.id, u2.id]).values(User.name, sel.c.name, u2.name)
-        self.assertEquals(list(q2), [(u'jack', u'jack', u'jack'), (u'jack', u'jack', u'ed'), (u'jack', u'jack', u'fred'), (u'jack', u'jack', u'chuck'), (u'ed', u'ed', u'jack'), (u'ed', u'ed', u'ed'), (u'ed', u'ed', u'fred'), (u'ed', u'ed', u'chuck')])
-        
         q2 = q.select_from(sel).filter(User.id==8).values(User.name, sel.c.name, User.name)
         self.assertEquals(list(q2), [(u'ed', u'ed', u'ed')])
 
@@ -1550,7 +1565,19 @@ class MixedEntitiesTest(QueryTest):
         q2 = q.select_from(sel).filter(users.c.id==8).filter(users.c.id>sel.c.id).values(users.c.name, sel.c.name, User.name)
         self.assertEquals(list(q2), [(u'ed', u'jack', u'jack')])
 
-    @testing.fails_on('mssql')
+    @testing.fails_on('mssql', 'FIXME: unknown')
+    def test_values_specific_order_by(self):
+        sess = create_session()
+
+        assert list(sess.query(User).values()) == list()
+
+        sel = users.select(User.id.in_([7, 8])).alias()
+        q = sess.query(User)
+        u2 = aliased(User)
+        q2 = q.select_from(sel).filter(u2.id>1).order_by([User.id, sel.c.id, u2.id]).values(User.name, sel.c.name, u2.name)
+        self.assertEquals(list(q2), [(u'jack', u'jack', u'jack'), (u'jack', u'jack', u'ed'), (u'jack', u'jack', u'fred'), (u'jack', u'jack', u'chuck'), (u'ed', u'ed', u'jack'), (u'ed', u'ed', u'ed'), (u'ed', u'ed', u'fred'), (u'ed', u'ed', u'chuck')])
+
+    @testing.fails_on('mssql', 'FIXME: unknown')
     def test_values_with_boolean_selects(self):
         """Tests a values clause that works with select boolean evaluations"""
         sess = create_session()
@@ -1715,10 +1742,14 @@ class MixedEntitiesTest(QueryTest):
         
         sess = create_session()
         oalias = aliased(Order)
-        
+
         for q in [
             sess.query(Order, oalias).filter(Order.user_id==oalias.user_id).filter(Order.user_id==7).filter(Order.id>oalias.id).order_by(Order.id, oalias.id),
             sess.query(Order, oalias)._from_self().filter(Order.user_id==oalias.user_id).filter(Order.user_id==7).filter(Order.id>oalias.id).order_by(Order.id, oalias.id),
+            
+            # same thing, but reversed.  
+            sess.query(oalias, Order)._from_self().filter(oalias.user_id==Order.user_id).filter(oalias.user_id==7).filter(Order.id<oalias.id).order_by(oalias.id, Order.id),
+            
             # here we go....two layers of aliasing
             sess.query(Order, oalias).filter(Order.user_id==oalias.user_id).filter(Order.user_id==7).filter(Order.id>oalias.id)._from_self().order_by(Order.id, oalias.id).limit(10).options(eagerload(Order.items)),
 
@@ -1999,6 +2030,8 @@ class SelectFromTest(QueryTest):
         )
 
     def test_join_mapper_order_by(self):
+        """test that mapper-level order_by is adapted to a selectable."""
+        
         mapper(User, users, order_by=users.c.id)
 
         sel = users.select(users.c.id.in_([7, 8]))
@@ -2273,6 +2306,15 @@ class SelfReferentialTest(ORMTest):
                     filter(Node.data=='n122').filter(parent.data=='n12').\
                     filter(grandparent.data=='n1')._from_self().first(),
             (Node(data='n122'), Node(data='n12'), Node(data='n1'))
+        )
+
+        # same, change order around
+        self.assertEquals(
+            sess.query(parent, grandparent, Node).\
+                join((Node.parent, parent), (parent.parent, grandparent)).\
+                    filter(Node.data=='n122').filter(parent.data=='n12').\
+                    filter(grandparent.data=='n1')._from_self().first(),
+            (Node(data='n12'), Node(data='n1'), Node(data='n122'))
         )
 
         self.assertEquals(
@@ -2613,7 +2655,17 @@ class UpdateDeleteTest(_base.MappedTest):
         assert john not in sess and jill not in sess
         
         eq_(sess.query(User).order_by(User.id).all(), [jack,jane])
-        
+
+    @testing.resolve_artifact_names
+    def test_delete_with_bindparams(self):
+        sess = create_session(bind=testing.db, autocommit=False)
+
+        john,jack,jill,jane = sess.query(User).order_by(User.id).all()
+        sess.query(User).filter('name = :name').params(name='john').delete()
+        assert john not in sess
+
+        eq_(sess.query(User).order_by(User.id).all(), [jack,jill,jane])
+
     @testing.resolve_artifact_names
     def test_delete_rollback(self):
         sess = sessionmaker()()
@@ -2654,7 +2706,7 @@ class UpdateDeleteTest(_base.MappedTest):
         
         eq_(sess.query(User).order_by(User.id).all(), [jack,jane])
     
-    @testing.fails_on('mysql')
+    @testing.fails_on('mysql', 'FIXME: unknown')
     @testing.resolve_artifact_names
     def test_delete_fallback(self):
         sess = create_session(bind=testing.db, autocommit=False)
@@ -2673,6 +2725,26 @@ class UpdateDeleteTest(_base.MappedTest):
         john,jack,jill,jane = sess.query(User).order_by(User.id).all()
         sess.query(User).filter(User.age > 29).update({'age': User.age - 10}, synchronize_session='evaluate')
         
+        eq_([john.age, jack.age, jill.age, jane.age], [25,37,29,27])
+        eq_(sess.query(User.age).order_by(User.id).all(), zip([25,37,29,27]))
+
+        sess.query(User).filter(User.age > 29).update({User.age: User.age - 10}, synchronize_session='evaluate')
+        eq_([john.age, jack.age, jill.age, jane.age], [25,27,29,27])
+        eq_(sess.query(User.age).order_by(User.id).all(), zip([25,27,29,27]))
+
+        sess.query(User).filter(User.age > 27).update({users.c.age: User.age - 10}, synchronize_session='evaluate')
+        eq_([john.age, jack.age, jill.age, jane.age], [25,27,19,27])
+        eq_(sess.query(User.age).order_by(User.id).all(), zip([25,27,19,27]))
+
+
+    @testing.resolve_artifact_names
+    def test_update_with_bindparams(self):
+        sess = create_session(bind=testing.db, autocommit=False)
+
+        john,jack,jill,jane = sess.query(User).order_by(User.id).all()
+
+        sess.query(User).filter('age > :x').params(x=29).update({'age': User.age - 10}, synchronize_session='evaluate')
+
         eq_([john.age, jack.age, jill.age, jane.age], [25,37,29,27])
         eq_(sess.query(User.age).order_by(User.id).all(), zip([25,37,29,27]))
 

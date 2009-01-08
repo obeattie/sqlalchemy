@@ -239,9 +239,6 @@ class InfoDialect(default.DefaultDialect):
 
         return ([dsn], opt)
 
-    def create_execution_context(self , *args, **kwargs):
-        return InfoExecutionContext(self, *args, **kwargs)
-
     def table_names(self, connection, schema):
         s = "select tabname from systables"
         return [row[0] for row in connection.execute(s)]
@@ -341,7 +338,7 @@ class InfoDialect(default.DefaultDialect):
                 fk[1].append(refspec)
 
         for name, value in fks.iteritems():
-            table.append_constraint(schema.ForeignKeyConstraint(value[0], value[1] , None ))
+            table.append_constraint(schema.ForeignKeyConstraint(value[0], value[1] , None, link_to_name=True ))
 
         # PK
         c = connection.execute("""select t1.constrname as cons_name , t1.constrtype as cons_type ,
@@ -493,3 +490,4 @@ dialect.statement_compiler = InfoCompiler
 dialect.schemagenerator = InfoSchemaGenerator
 dialect.schemadropper = InfoSchemaDropper
 dialect.preparer = InfoIdentifierPreparer
+dialect.execution_ctx_cls = InfoExecutionContext

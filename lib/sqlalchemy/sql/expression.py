@@ -33,6 +33,7 @@ from sqlalchemy import util, exc
 from sqlalchemy.sql import operators
 from sqlalchemy.sql.visitors import Visitable, cloned_traverse
 from sqlalchemy import types as sqltypes
+import operator
 
 functions, schema, sql_util = None, None, None
 DefaultDialect, ClauseAdapter, Annotated = None, None, None
@@ -820,12 +821,12 @@ def text(text, bind=None, *args, **kwargs):
     return _TextClause(text, bind=bind, *args, **kwargs)
 
 def null():
-    """Return a ``_Null`` object, which compiles to ``NULL`` in a sql statement."""
+    """Return a :class:`_Null` object, which compiles to ``NULL`` in a sql statement."""
 
     return _Null()
 
 class _FunctionGenerator(object):
-    """Generate ``_Function`` objects based on getattr calls."""
+    """Generate :class:`Function` objects based on getattr calls."""
 
     def __init__(self, **opts):
         self.__names = []
@@ -856,7 +857,7 @@ class _FunctionGenerator(object):
             if func is not None:
                 return func(*c, **o)
 
-        return _Function(self.__names[-1], packagenames=self.__names[0:-1], *c, **o)
+        return Function(self.__names[-1], packagenames=self.__names[0:-1], *c, **o)
 
 # "func" global - i.e. func.count()
 func = _FunctionGenerator()
@@ -901,6 +902,13 @@ def _labeled(element):
     else:
         return element
 
+def _column_as_key(element):
+    if isinstance(element, basestring):
+        return element
+    if hasattr(element, '__clause_element__'):
+        element = element.__clause_element__()
+    return element.key
+    
 def _literal_as_text(element):
     if hasattr(element, '__clause_element__'):
         return element.__clause_element__()
@@ -961,6 +969,8 @@ def is_column(col):
 class ClauseElement(Visitable):
     """Base class for elements of a programmatically constructed SQL expression."""
 
+    __visit_name__ = 'clause'
+
     _annotations = {}
     supports_execution = False
     _from_objects = []
@@ -995,7 +1005,7 @@ class ClauseElement(Visitable):
         of transformative operations.
 
         """
-        s = set()
+        s = util.column_set()
         f = self
         while f is not None:
             s.add(f)
@@ -1122,7 +1132,7 @@ class ClauseElement(Visitable):
                    'or the Metadata of its underlying tables to enable '
                    'implicit execution via this method.' % label)
             raise exc.UnboundExecutionError(msg)
-        return e.execute_clauseelement(self, multiparams, params)
+        return e._execute_clauseelement(self, multiparams, params)
 
     def scalar(self, *multiparams, **params):
         """Compile and execute this ``ClauseElement``, returning the result's scalar representation."""
@@ -1256,6 +1266,8 @@ class ColumnOperators(Operators):
     def __le__(self, other):
         return self.operate(operators.le, other)
 
+    __hash__ = Operators.__hash__
+    
     def __eq__(self, other):
         return self.operate(operators.eq, other)
 
@@ -1567,6 +1579,7 @@ class ColumnElement(ClauseElement, _CompareMixin):
 
     """
 
+    __visit_name__ = 'column'
     primary_key = False
     foreign_keys = []
     quote = None
@@ -1577,12 +1590,12 @@ class ColumnElement(ClauseElement, _CompareMixin):
 
     @util.memoized_property
     def base_columns(self):
-        return set(c for c in self.proxy_set
+        return util.column_set(c for c in self.proxy_set
                                      if not hasattr(c, 'proxies'))
 
     @util.memoized_property
     def proxy_set(self):
-        s = set([self])
+        s = util.column_set([self])
         if hasattr(self, 'proxies'):
             for c in self.proxies:
                 s.update(c.proxy_set)
@@ -1691,6 +1704,8 @@ class ColumnCollection(util.OrderedProperties):
         for c in iter:
             self.add(c)
 
+    __hash__ = None
+    
     def __eq__(self, other):
         l = []
         for c in other:
@@ -1708,9 +1723,9 @@ class ColumnCollection(util.OrderedProperties):
         # have to use a Set here, because it will compare the identity
         # of the column, not just using "==" for comparison which will always return a
         # "True" value (i.e. a BinaryClause...)
-        return col in set(self)
+        return col in util.column_set(self)
 
-class ColumnSet(util.OrderedSet):
+class ColumnSet(util.ordered_column_set):
     def contains_column(self, col):
         return col in self
 
@@ -1730,10 +1745,11 @@ class ColumnSet(util.OrderedSet):
         return and_(*l)
 
     def __hash__(self):
-        return hash(tuple(self._list))
+        return hash(tuple(x for x in self))
 
 class Selectable(ClauseElement):
     """mark a class as being selectable"""
+    __visit_name__ = 'selectable'
 
 class FromClause(Selectable):
     """Represent an element that can be used within the ``FROM`` clause of a ``SELECT`` statement."""
@@ -1825,9 +1841,32 @@ class FromClause(Selectable):
         for c in cols:
             i = c.proxy_set.intersection(target_set)
             if i and \
-                (not require_embedded or c.proxy_set.issuperset(target_set)) and \
-                (intersect is None or len(i) > len(intersect)):
-                col, intersect = c, i
+                (not require_embedded or c.proxy_set.issuperset(target_set)):
+                
+                if col is None:
+                    # no corresponding column yet, pick this one.
+                    col, intersect = c, i
+                elif len(i) > len(intersect):
+                    # 'c' has a larger field of correspondence than 'col'.
+                    # i.e. selectable.c.a1_x->a1.c.x->table.c.x matches a1.c.x->table.c.x better than 
+                    # selectable.c.x->table.c.x does.
+                    col, intersect = c, i
+                elif i == intersect:
+                    # they have the same field of correspondence.
+                    # see which proxy_set has fewer columns in it, which indicates a
+                    # closer relationship with the root column.  Also take into account the 
+                    # "weight" attribute which CompoundSelect() uses to give higher precedence to
+                    # columns based on vertical position in the compound statement, and discard columns
+                    # that have no reference to the target column (also occurs with CompoundSelect)
+                    col_distance = util.reduce(operator.add, 
+                                        [sc._annotations.get('weight', 1) for sc in col.proxy_set if sc.shares_lineage(column)]
+                                    )
+                    c_distance = util.reduce(operator.add, 
+                                        [sc._annotations.get('weight', 1) for sc in c.proxy_set if sc.shares_lineage(column)]
+                                    )
+                    if \
+                        c_distance < col_distance:
+                        col, intersect = c, i
         return col
 
     @property
@@ -1981,7 +2020,7 @@ class _BindParamClause(ColumnElement):
 
         d = self.__dict__.copy()
         v = self.value
-        if callable(v):
+        if util.callable(v):
             v = v()
         d['value'] = v
         return d
@@ -2062,6 +2101,8 @@ class _Null(ColumnElement):
 
     """
 
+    __visit_name__ = 'null'
+
     def __init__(self):
         self.type = sqltypes.NULLTYPE
 
@@ -2093,6 +2134,10 @@ class ClauseList(ClauseElement):
     def __len__(self):
         return len(self.clauses)
 
+    @property
+    def _select_iterable(self):
+        return iter(self)
+
     def append(self, clause):
         # TODO: not sure if i like the 'group_contents' flag.  need to
         # define the difference between a ClauseList of ClauseLists,
@@ -2114,7 +2159,7 @@ class ClauseList(ClauseElement):
         return list(itertools.chain(*[c._from_objects for c in self.clauses]))
 
     def self_group(self, against=None):
-        if self.group and self.operator != against and operators.is_precedent(self.operator, against):
+        if self.group and self.operator is not against and operators.is_precedent(self.operator, against):
             return _Grouping(self)
         else:
             return self
@@ -2141,6 +2186,10 @@ class BooleanClauseList(ClauseList, ColumnElement):
     def __init__(self, *clauses, **kwargs):
         super(BooleanClauseList, self).__init__(*clauses, **kwargs)
         self.type = sqltypes.to_instance(kwargs.get('type_', sqltypes.Boolean))
+
+    @property
+    def _select_iterable(self):
+        return (self, )
 
 
 class _CalculatedClause(ColumnElement):
@@ -2203,13 +2252,15 @@ class _CalculatedClause(ColumnElement):
     def _compare_type(self, obj):
         return self.type
 
-class _Function(_CalculatedClause, FromClause):
+class Function(_CalculatedClause, FromClause):
     """Describe a SQL function.
 
     Extends ``_CalculatedClause``, turn the *clauselist* into function
     arguments, also adds a `packagenames` argument.
 
     """
+
+    __visit_name__ = 'function'
 
     def __init__(self, name, *clauses, **kwargs):
         self.packagenames = kwargs.get('packagenames', None) or []
@@ -2237,6 +2288,8 @@ class _Function(_CalculatedClause, FromClause):
 
 class _Cast(ColumnElement):
 
+    __visit_name__ = 'cast'
+
     def __init__(self, clause, totype, **kwargs):
         self.type = sqltypes.to_instance(totype)
         self.clause = _literal_as_binds(clause, None)
@@ -2255,6 +2308,9 @@ class _Cast(ColumnElement):
 
 
 class _UnaryExpression(ColumnElement):
+
+    __visit_name__ = 'unary'
+
     def __init__(self, element, operator=None, modifier=None, type_=None, negate=None):
         self.operator = operator
         self.modifier = modifier
@@ -2304,6 +2360,8 @@ class _UnaryExpression(ColumnElement):
 class _BinaryExpression(ColumnElement):
     """Represent an expression that is ``LEFT <operator> RIGHT``."""
 
+    __visit_name__ = 'binary'
+
     def __init__(self, left, right, operator, type_=None, negate=None, modifiers=None):
         self.left = _literal_as_text(left).self_group(against=operator)
         self.right = _literal_as_text(right).self_group(against=operator)
@@ -2346,7 +2404,7 @@ class _BinaryExpression(ColumnElement):
     def self_group(self, against=None):
         # use small/large defaults for comparison so that unknown
         # operators are always parenthesized
-        if self.operator != against and operators.is_precedent(self.operator, against):
+        if self.operator is not against and operators.is_precedent(self.operator, against):
             return _Grouping(self)
         else:
             return self
@@ -2408,6 +2466,7 @@ class Join(FromClause):
     off all ``FromClause`` subclasses.
 
     """
+    __visit_name__ = 'join'
 
     def __init__(self, left, right, onclause=None, isouter=False):
         self.left = _selectable(left)
@@ -2463,23 +2522,22 @@ class Join(FromClause):
         return sql_util.join_condition(primary, secondary)
 
     def select(self, whereclause=None, fold_equivalents=False, **kwargs):
-        """Create a ``Select`` from this ``Join``.
+        """Create a :class:`Select` from this :class:`Join`.
 
-        whereclause
-          the WHERE criterion that will be sent to the ``select()``
-          function
+        :param whereclause: the WHERE criterion that will be sent to 
+          the :func:`select()` function
 
-        fold_equivalents
-          based on the join criterion of this ``Join``, do not include
+        :param fold_equivalents: based on the join criterion of this 
+          :class:`Join`, do not include
           repeat column names in the column list of the resulting
           select, for columns that are calculated to be "equivalent"
-          based on the join criterion of this ``Join``. This will
+          based on the join criterion of this :class:`Join`. This will
           recursively apply to any joins directly nested by this one
-          as well.
+          as well.  This flag is specific to a particular use case
+          by the ORM and will be deprecated in 0.6.
 
-        \**kwargs
-          all other kwargs are sent to the underlying ``select()`` function.
-          See the ``select()`` module level function for details.
+        :param \**kwargs: all other kwargs are sent to the 
+          underlying :func:`select()` function.
 
         """
         if fold_equivalents:
@@ -2528,6 +2586,7 @@ class Alias(FromClause):
 
     """
 
+    __visit_name__ = 'alias'
     named_with_column = True
 
     def __init__(self, selectable, alias=None):
@@ -2583,6 +2642,8 @@ class Alias(FromClause):
 
 class _Grouping(ColumnElement):
     """Represent a grouping within a column expression"""
+
+    __visit_name__ = 'grouping'
 
     def __init__(self, element):
         self.element = element
@@ -2655,6 +2716,8 @@ class _Label(ColumnElement):
     ``ColumnElement`` subclasses.
 
     """
+
+    __visit_name__ = 'label'
 
     def __init__(self, name, element, type_=None):
         while isinstance(element, _Label):
@@ -2729,6 +2792,8 @@ class ColumnClause(_Immutable, ColumnElement):
       ``ColumnClause``.
 
     """
+    __visit_name__ = 'column'
+
     def __init__(self, text, selectable=None, type_=None, is_literal=False):
         self.key = self.name = text
         self.table = selectable
@@ -2800,6 +2865,8 @@ class TableClause(_Immutable, FromClause):
     functionality.
 
     """
+
+    __visit_name__ = 'table'
 
     named_with_column = True
 
@@ -2994,7 +3061,6 @@ class _SelectBaseMixin(object):
 
 
 class _ScalarSelect(_Grouping):
-    __visit_name__ = 'grouping'
     _from_objects = []
 
     def __init__(self, element):
@@ -3019,6 +3085,8 @@ class _ScalarSelect(_Grouping):
 
 class CompoundSelect(_SelectBaseMixin, FromClause):
     """Forms the basis of ``UNION``, ``UNION ALL``, and other SELECT-based set operations."""
+
+    __visit_name__ = 'compound_select'
 
     def __init__(self, keyword, *selects, **kwargs):
         self._should_correlate = kwargs.pop('correlate', False)
@@ -3052,8 +3120,12 @@ class CompoundSelect(_SelectBaseMixin, FromClause):
     def _populate_column_collection(self):
         for cols in zip(*[s.c for s in self.selects]):
             proxy = cols[0]._make_proxy(self, name=self.use_labels and cols[0]._label or None)
-            proxy.proxies = cols
-
+            
+            # place a 'weight' annotation corresponding to how low in the list of select()s
+            # the column occurs, so that the corresponding_column() operation
+            # can resolve conflicts
+            proxy.proxies = [c._annotate({'weight':i + 1}) for i, c in enumerate(cols)]
+            
     def _copy_internals(self, clone=_clone):
         self._reset_exported()
         self.selects = [clone(s) for s in self.selects]
@@ -3087,6 +3159,9 @@ class Select(_SelectBaseMixin, FromClause):
     ability to execute themselves and return a result set.
 
     """
+
+    __visit_name__ = 'select'
+
     def __init__(self, columns, whereclause=None, from_obj=None, distinct=False, having=None, correlate=True, prefixes=None, **kwargs):
         """Construct a Select object.
 
@@ -3444,6 +3519,8 @@ class Select(_SelectBaseMixin, FromClause):
 class _UpdateBase(ClauseElement):
     """Form the base for ``INSERT``, ``UPDATE``, and ``DELETE`` statements."""
 
+    __visit_name__ = 'update_base'
+
     supports_execution = True
     _autocommit = True
 
@@ -3453,10 +3530,6 @@ class _UpdateBase(ClauseElement):
         return s
 
     def _process_colparams(self, parameters):
-
-        if parameters is None:
-            return None
-
         if isinstance(parameters, (list, tuple)):
             pp = {}
             for i, c in enumerate(self.table.c):
@@ -3477,6 +3550,9 @@ class _UpdateBase(ClauseElement):
     bind = property(bind, _set_bind)
 
 class _ValuesBase(_UpdateBase):
+
+    __visit_name__ = 'values_base'
+
     def __init__(self, table, values):
         self.table = table
         self.parameters = self._process_colparams(values)
@@ -3512,6 +3588,8 @@ class Insert(_ValuesBase):
     The ``Insert`` object is created using the :func:`insert()` function.
 
     """
+    __visit_name__ = 'insert'
+
     def __init__(self, table, values=None, inline=False, bind=None, prefixes=None, **kwargs):
         _ValuesBase.__init__(self, table, values)
         self._bind = bind
@@ -3550,6 +3628,8 @@ class Update(_ValuesBase):
     The ``Update`` object is created using the :func:`update()` function.
 
     """
+    __visit_name__ = 'update'
+
     def __init__(self, table, whereclause, values=None, inline=False, bind=None, **kwargs):
         _ValuesBase.__init__(self, table, values)
         self._bind = bind
@@ -3589,6 +3669,8 @@ class Delete(_UpdateBase):
 
     """
 
+    __visit_name__ = 'delete'
+
     def __init__(self, table, whereclause, bind=None, **kwargs):
         self._bind = bind
         self.table = table
@@ -3619,6 +3701,7 @@ class Delete(_UpdateBase):
         self._whereclause = clone(self._whereclause)
 
 class _IdentifiedClause(ClauseElement):
+    __visit_name__ = 'identified'
     supports_execution = True
     _autocommit = False
     quote = None
@@ -3627,10 +3710,10 @@ class _IdentifiedClause(ClauseElement):
         self.ident = ident
 
 class SavepointClause(_IdentifiedClause):
-    pass
+    __visit_name__ = 'savepoint'
 
 class RollbackToSavepointClause(_IdentifiedClause):
-    pass
+    __visit_name__ = 'rollback_to_savepoint'
 
 class ReleaseSavepointClause(_IdentifiedClause):
-    pass
+    __visit_name__ = 'release_savepoint'

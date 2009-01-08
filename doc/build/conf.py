@@ -157,7 +157,7 @@ html_use_modindex = False
 # Output file base name for HTML help builder.
 htmlhelp_basename = 'FooBardoc'
 
-autoclass_content = 'both'
+#autoclass_content = 'both'
 
 # Options for LaTeX output
 # ------------------------
@@ -171,7 +171,7 @@ autoclass_content = 'both'
 # Grouping the document tree into LaTeX files. List of tuples
 # (source start file, target name, title, author, document class [howto/manual]).
 latex_documents = [
-  ('index', 'sqlalchemy.tex', ur'SQLAlchemy Documentation',
+  ('index', 'sqlalchemy_%s.tex' % release.replace('.', '_'), ur'SQLAlchemy Documentation',
    ur'Mike Bayer', 'manual'),
 ]
 

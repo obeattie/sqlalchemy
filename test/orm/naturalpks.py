@@ -101,8 +101,8 @@ class NaturalPKTest(_base.MappedTest):
         assert sess.query(User).get('ed').fullname == 'jack'
         
 
-    @testing.fails_on('mysql')
-    @testing.fails_on('sqlite')
+    @testing.fails_on('mysql', 'FIXME: unknown')
+    @testing.fails_on('sqlite', 'FIXME: unknown')
     def test_onetomany_passive(self):
         self._test_onetomany(True)
 
@@ -153,8 +153,8 @@ class NaturalPKTest(_base.MappedTest):
         self.assertEquals(User(username='fred', fullname='jack'), u1)
         
 
-    @testing.fails_on('sqlite')
-    @testing.fails_on('mysql')
+    @testing.fails_on('sqlite', 'FIXME: unknown')
+    @testing.fails_on('mysql', 'FIXME: unknown')
     def test_manytoone_passive(self):
         self._test_manytoone(True)
 
@@ -198,8 +198,8 @@ class NaturalPKTest(_base.MappedTest):
         sess.clear()
         self.assertEquals([Address(username='ed'), Address(username='ed')], sess.query(Address).all())
 
-    @testing.fails_on('sqlite')
-    @testing.fails_on('mysql')
+    @testing.fails_on('sqlite', 'FIXME: unknown')
+    @testing.fails_on('mysql', 'FIXME: unknown')
     def test_bidirectional_passive(self):
         self._test_bidirectional(True)
 
@@ -252,8 +252,8 @@ class NaturalPKTest(_base.MappedTest):
         self.assertEquals([Address(username='fred'), Address(username='fred')], sess.query(Address).all())
 
 
-    @testing.fails_on('sqlite')
-    @testing.fails_on('mysql')
+    @testing.fails_on('sqlite', 'FIXME: unknown')
+    @testing.fails_on('mysql', 'FIXME: unknown')
     def test_manytomany_passive(self):
         self._test_manytomany(True)
 
@@ -309,10 +309,11 @@ class NaturalPKTest(_base.MappedTest):
         sess.flush()
         r = sess.query(Item).with_parent(u2).all()
         self.assertEquals(Item(itemname='item2'), r[0])
-        
-        
+
 
 class SelfRefTest(_base.MappedTest):
+    __unsupported_on__ = 'mssql' # mssql doesn't allow ON UPDATE on self-referential keys
+
     def define_tables(self, metadata):
         Table('nodes', metadata,
               Column('name', String(50), primary_key=True),
@@ -368,8 +369,8 @@ class NonPKCascadeTest(_base.MappedTest):
         class Address(_base.ComparableEntity):
             pass
 
-    @testing.fails_on('sqlite')
-    @testing.fails_on('mysql')
+    @testing.fails_on('sqlite', 'FIXME: unknown')
+    @testing.fails_on('mysql', 'FIXME: unknown')
     def test_onetomany_passive(self):
         self._test_onetomany(True)
 

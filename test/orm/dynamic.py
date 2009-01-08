@@ -3,7 +3,7 @@ import operator
 from sqlalchemy.orm import dynamic_loader, backref
 from testlib import testing
 from testlib.sa import Table, Column, Integer, String, ForeignKey, desc
-from testlib.sa.orm import mapper, relation, create_session
+from testlib.sa.orm import mapper, relation, create_session, Query
 from testlib.testing import eq_
 from testlib.compat import _function_named
 from orm import _base, _fixtures
@@ -41,6 +41,18 @@ class DynamicTest(_fixtures.FixtureTest):
         sess = create_session()
         u = sess.query(User).get(8)
         eq_(list(u.addresses), [Address(email_address=u'ed@wood.com'), Address(email_address=u'ed@lala.com'), Address(email_address=u'ed@bettyboop.com')])
+
+        # test cancellation of None, replacement with something else
+        eq_(
+            list(u.addresses.order_by(None).order_by(Address.email_address)),
+            [Address(email_address=u'ed@bettyboop.com'), Address(email_address=u'ed@lala.com'), Address(email_address=u'ed@wood.com')]
+        )
+
+        # test cancellation of None, replacement with nothing
+        eq_(
+            set(u.addresses.order_by(None)),
+            set([Address(email_address=u'ed@bettyboop.com'), Address(email_address=u'ed@lala.com'), Address(email_address=u'ed@wood.com')])
+        )
 
     @testing.resolve_artifact_names
     def test_count(self):
@@ -114,6 +126,32 @@ class DynamicTest(_fixtures.FixtureTest):
         assert u1.addresses.count() == 1
         assert u1.addresses[0] == Address()
 
+    @testing.resolve_artifact_names
+    def test_custom_query(self):
+        class MyQuery(Query):
+            pass
+
+        mapper(User, users, properties={
+            'addresses':dynamic_loader(mapper(Address, addresses),
+                                       query_class=MyQuery)
+        })
+        sess = create_session()
+        u = User()
+        sess.add(u)
+
+        col = u.addresses
+        assert isinstance(col, Query)
+        assert isinstance(col, MyQuery)
+        assert hasattr(col, 'append')
+        assert type(col).__name__ == 'AppenderMyQuery'
+
+        q = col.limit(1)
+        assert isinstance(q, Query)
+        assert isinstance(q, MyQuery)
+        assert not hasattr(q, 'append')
+        assert type(q).__name__ == 'MyQuery'
+
+
 class FlushTest(_fixtures.FixtureTest):
     run_inserts = None
 
@@ -171,7 +209,7 @@ class FlushTest(_fixtures.FixtureTest):
         sess.rollback()
         eq_(u1.addresses.all(), [Address(email_address='lala@hoho.com')])
 
-    @testing.fails_on('maxdb')
+    @testing.fails_on('maxdb', 'FIXME: unknown')
     @testing.resolve_artifact_names
     def test_delete_nocascade(self):
         mapper(User, users, properties={
@@ -205,7 +243,7 @@ class FlushTest(_fixtures.FixtureTest):
 
         assert testing.db.scalar(addresses.count(addresses.c.user_id != None)) ==0
 
-    @testing.fails_on('maxdb')
+    @testing.fails_on('maxdb', 'FIXME: unknown')
     @testing.resolve_artifact_names
     def test_delete_cascade(self):
         mapper(User, users, properties={
@@ -239,7 +277,7 @@ class FlushTest(_fixtures.FixtureTest):
 
         assert testing.db.scalar(addresses.count()) ==0
 
-    @testing.fails_on('maxdb')
+    @testing.fails_on('maxdb', 'FIXME: unknown')
     @testing.resolve_artifact_names
     def test_remove_orphans(self):
         mapper(User, users, properties={

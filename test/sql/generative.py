@@ -18,12 +18,16 @@ class TraversalTest(TestBase, AssertsExecutionResults):
         # establish two ficticious ClauseElements.
         # define deep equality semantics as well as deep identity semantics.
         class A(ClauseElement):
+            __visit_name__ = 'a'
+
             def __init__(self, expr):
                 self.expr = expr
 
             def is_other(self, other):
                 return other is self
 
+            __hash__ = ClauseElement.__hash__
+            
             def __eq__(self, other):
                 return other.expr == self.expr
 
@@ -34,6 +38,8 @@ class TraversalTest(TestBase, AssertsExecutionResults):
                 return "A(%s)" % repr(self.expr)
 
         class B(ClauseElement):
+            __visit_name__ = 'b'
+
             def __init__(self, *items):
                 self.items = items
 
@@ -44,6 +50,8 @@ class TraversalTest(TestBase, AssertsExecutionResults):
                     if i1 is not i2:
                         return False
                 return True
+
+            __hash__ = ClauseElement.__hash__
 
             def __eq__(self, other):
                 for i1, i2 in zip(self.items, other.items):
@@ -137,6 +145,19 @@ class TraversalTest(TestBase, AssertsExecutionResults):
         assert struct != s3
         assert struct3 == s3
 
+    def test_visit_name(self):
+        # override fns in testlib/schema.py
+        from sqlalchemy import Column
+
+        class CustomObj(Column):
+            pass
+            
+        assert CustomObj.__visit_name__ == Column.__visit_name__ == 'column'
+        
+        foo, bar = CustomObj('foo', String), CustomObj('bar', String)
+        bin = foo == bar
+        s = set(ClauseVisitor().iterate(bin))
+        assert set(ClauseVisitor().iterate(bin)) == set([foo, bar, bin])
 
 class ClauseTest(TestBase, AssertsCompiledSQL):
     """test copy-in-place behavior of various ClauseElements."""

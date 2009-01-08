@@ -214,7 +214,10 @@ class SessionTransaction(object):
     Direct usage of ``SessionTransaction`` is not necessary as of SQLAlchemy
     0.4; use the ``begin()`` and ``commit()`` methods on ``Session`` itself.
 
-    The ``SessionTransaction`` object is **not** threadsafe.
+    The ``SessionTransaction`` object is **not** thread-safe.
+
+    .. index::
+      single: thread safety; SessionTransaction
 
     """
 
@@ -523,7 +526,7 @@ class Session(object):
     public_methods = (
         '__contains__', '__iter__', 'add', 'add_all', 'begin', 'begin_nested',
         'clear', 'close', 'commit', 'connection', 'delete', 'execute', 'expire',
-        'expire_all', 'expunge', 'flush', 'get_bind', 'is_modified',
+        'expire_all', 'expunge', 'flush', 'get_bind', 'is_modified', 
         'merge', 'query', 'refresh', 'rollback', 'save',
         'save_or_update', 'scalar', 'update')
 
@@ -687,7 +690,7 @@ class Session(object):
 
         self.transaction.prepare()
 
-    def connection(self, mapper=None, clause=None, _state=None):
+    def connection(self, mapper=None, clause=None):
         """Return the active Connection.
 
         Retrieves the ``Connection`` managing the current transaction.  Any
@@ -709,7 +712,7 @@ class Session(object):
           Optional, any ``ClauseElement``
 
         """
-        return self.__connection(self.get_bind(mapper, clause, _state))
+        return self.__connection(self.get_bind(mapper, clause))
 
     def __connection(self, engine, **kwargs):
         if self.transaction is not None:
@@ -717,7 +720,7 @@ class Session(object):
         else:
             return engine.contextual_connect(**kwargs)
 
-    def execute(self, clause, params=None, mapper=None, _state=None):
+    def execute(self, clause, params=None, mapper=None, **kw):
         """Execute a clause within the current transaction.
 
         Returns a ``ResultProxy`` of execution results.  `autocommit` Sessions
@@ -738,21 +741,23 @@ class Session(object):
         mapper
           Optional, a ``mapper`` or mapped class
 
-        _state
-          Optional, an instance of a mapped class
-
+        \**kw
+          Additional keyword arguments are sent to :meth:`get_bind()`
+          which locates a connectable to use for the execution.
+          Subclasses of :class:`Session` may override this.
+          
         """
         clause = expression._literal_as_text(clause)
 
-        engine = self.get_bind(mapper, clause=clause, _state=_state)
+        engine = self.get_bind(mapper, clause=clause, **kw)
 
         return self.__connection(engine, close_with_result=True).execute(
             clause, params or {})
 
-    def scalar(self, clause, params=None, mapper=None, _state=None):
+    def scalar(self, clause, params=None, mapper=None):
         """Like execute() but return a scalar result."""
 
-        engine = self.get_bind(mapper, clause=clause, _state=_state)
+        engine = self.get_bind(mapper, clause=clause)
 
         return self.__connection(engine, close_with_result=True).scalar(
             clause, params or {})
@@ -835,7 +840,7 @@ class Session(object):
         """
         self.__binds[table] = bind
 
-    def get_bind(self, mapper, clause=None, _state=None):
+    def get_bind(self, mapper, clause=None):
         """Return an engine corresponding to the given arguments.
 
         All arguments are optional.
@@ -846,11 +851,8 @@ class Session(object):
         clause
           Optional, A ClauseElement (i.e. select(), text(), etc.)
 
-        _state
-          Optional, SA internal representation of a mapped instance
-
         """
-        if mapper is clause is _state is None:
+        if mapper is clause is None:
             if self.bind:
                 return self.bind
             else:
@@ -859,16 +861,10 @@ class Session(object):
                     "Connection, and no context was provided to locate "
                     "a binding.")
 
-        s_mapper = _state is not None and _state_mapper(_state) or None
         c_mapper = mapper is not None and _class_to_mapper(mapper) or None
 
         # manually bound?
         if self.__binds:
-            if s_mapper:
-                if s_mapper.base_mapper in self.__binds:
-                    return self.__binds[s_mapper.base_mapper]
-                elif s_mapper.mapped_table in self.__binds:
-                    return self.__binds[s_mapper.mapped_table]
             if c_mapper:
                 if c_mapper.base_mapper in self.__binds:
                     return self.__binds[c_mapper.base_mapper]
@@ -885,8 +881,6 @@ class Session(object):
         if isinstance(clause, sql.expression.ClauseElement) and clause.bind:
             return clause.bind
 
-        if s_mapper and s_mapper.mapped_table.bind:
-            return s_mapper.mapped_table.bind
         if c_mapper and c_mapper.mapped_table.bind:
             return c_mapper.mapped_table.bind
 
@@ -895,8 +889,6 @@ class Session(object):
             context.append('mapper %s' % c_mapper)
         if clause is not None:
             context.append('SQL expression')
-        if _state is not None:
-            context.append('state %r' % _state)
 
         raise sa_exc.UnboundExecutionError(
             "Could not locate a bind configured on %s or this Session" % (

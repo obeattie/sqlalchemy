@@ -302,9 +302,6 @@ class FBDialect(default.DefaultDialect):
             self.dbapi.init(type_conv=type_conv, concurrency_level=concurrency_level)
         return ([], opts)
 
-    def create_execution_context(self, *args, **kwargs):
-        return FBExecutionContext(self, *args, **kwargs)
-
     def type_descriptor(self, typeobj):
         return sqltypes.adapt_type(typeobj, colspecs)
 
@@ -542,7 +539,7 @@ class FBDialect(default.DefaultDialect):
             fk[1].append(refspec)
 
         for name, value in fks.iteritems():
-            table.append_constraint(schema.ForeignKeyConstraint(value[0], value[1], name=name))
+            table.append_constraint(schema.ForeignKeyConstraint(value[0], value[1], name=name, link_to_name=True))
 
     def do_execute(self, cursor, statement, parameters, **kwargs):
         # kinterbase does not accept a None, but wants an empty list
@@ -768,3 +765,4 @@ dialect.schemagenerator = FBSchemaGenerator
 dialect.schemadropper = FBSchemaDropper
 dialect.defaultrunner = FBDefaultRunner
 dialect.preparer = FBIdentifierPreparer
+dialect.execution_ctx_cls = FBExecutionContext

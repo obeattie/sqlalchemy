@@ -255,7 +255,7 @@ RESERVED_WORDS = set(
      'using', 'utc_date', 'utc_time', 'utc_timestamp', 'values', 'varbinary',
      'varchar', 'varcharacter', 'varying', 'when', 'where', 'while', 'with',
      'write', 'x509', 'xor', 'year_month', 'zerofill', # 5.0
-     'fields', # 4.1
+     'columns', 'fields', 'privileges', 'soname', 'tables', # 4.1
      'accessible', 'linear', 'master_ssl_verify_server_cert', 'range',
      'read_only', 'read_write', # 5.1
      ])
@@ -1034,7 +1034,7 @@ class _BinaryType(sqltypes.Binary):
             if value is None:
                 return None
             else:
-                return buffer(value)
+                return util.buffer(value)
         return process
 
 class MSVarBinary(_BinaryType):
@@ -1081,7 +1081,7 @@ class MSBinary(_BinaryType):
             if value is None:
                 return None
             else:
-                return buffer(value)
+                return util.buffer(value)
         return process
 
 class MSBlob(_BinaryType):
@@ -1108,7 +1108,7 @@ class MSBlob(_BinaryType):
             if value is None:
                 return None
             else:
-                return buffer(value)
+                return util.buffer(value)
         return process
 
     def __repr__(self):
@@ -1496,9 +1496,6 @@ class MySQLDialect(default.DefaultDialect):
             opts['client_flag'] = client_flag
         return [[], opts]
 
-    def create_execution_context(self, connection, **kwargs):
-        return MySQLExecutionContext(self, connection, **kwargs)
-
     def type_descriptor(self, typeobj):
         return sqltypes.adapt_type(typeobj, colspecs)
 
@@ -1509,9 +1506,6 @@ class MySQLDialect(default.DefaultDialect):
 
     def supports_unicode_statements(self):
         return True
-
-    def do_execute(self, cursor, statement, parameters, context=None):
-        cursor.execute(statement, parameters)
 
     def do_commit(self, connection):
         """Execute a COMMIT."""
@@ -1811,8 +1805,8 @@ class MySQLDialect(default.DefaultDialect):
             return
 
         row = _compat_fetchone(
-            connection.execute("SHOW VARIABLES LIKE 'sql_mode'",
-                               charset=charset))
+            connection.execute("SHOW VARIABLES LIKE 'sql_mode'"),
+                               charset=charset)
         if not row:
             mode = ''
         else:
@@ -1957,6 +1951,11 @@ class MySQLCompiler(compiler.DefaultCompiler):
 
         return 'CAST(%s AS %s)' % (self.process(cast.clause), type_)
 
+
+    def post_process_text(self, text):
+        if '%%' in text:
+            util.warn("The SQLAlchemy MySQLDB dialect now automatically escapes '%' in text() expressions to '%%'.")
+        return text.replace('%', '%%')
 
     def get_select_precolumns(self, select):
         if isinstance(select._distinct, basestring):
@@ -2307,7 +2306,7 @@ class MySQLSchemaReflector(object):
         for spec in constraints:
             # only FOREIGN KEYs
             ref_name = spec['table'][-1]
-            ref_schema = len(spec['table']) > 1 and spec['table'][-2] or None
+            ref_schema = len(spec['table']) > 1 and spec['table'][-2] or table.schema
 
             if not ref_schema:
                 if default_schema is None:
@@ -2332,23 +2331,19 @@ class MySQLSchemaReflector(object):
                     autoload=True, autoload_with=connection)
 
             ref_names = spec['foreign']
-            if not set(ref_names).issubset(
-                set(c.name for c in ref_table.c)):
-                raise exc.InvalidRequestError(
-                    "Foreign key columns (%s) are not present on "
-                    "foreign table %s" %
-                    (', '.join(ref_names), ref_table.fullname()))
-            ref_columns = [ref_table.c[name] for name in ref_names]
+
+            if ref_schema:
+                refspec = [".".join([ref_schema, ref_name, column]) for column in ref_names]
+            else:
+                refspec = [".".join([ref_name, column]) for column in ref_names]
 
             con_kw = {}
             for opt in ('name', 'onupdate', 'ondelete'):
                 if spec.get(opt, False):
                     con_kw[opt] = spec[opt]
 
-            key = schema.ForeignKeyConstraint([], [], **con_kw)
+            key = schema.ForeignKeyConstraint(loc_names, refspec, link_to_name=True, **con_kw)
             table.append_constraint(key)
-            for pair in zip(loc_names, ref_columns):
-                key.append_element(*pair)
 
     def _set_options(self, table, line):
         """Apply safe reflected table options to a ``Table``.
@@ -2730,3 +2725,4 @@ dialect = MySQLDialect
 dialect.statement_compiler = MySQLCompiler
 dialect.schemagenerator = MySQLSchemaGenerator
 dialect.schemadropper = MySQLSchemaDropper
+dialect.execution_ctx_cls = MySQLExecutionContext

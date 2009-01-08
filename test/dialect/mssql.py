@@ -1,12 +1,13 @@
 import testenv; testenv.configure_for_tests()
-import re
+import datetime, os, pickleable, re
 from sqlalchemy import *
+from sqlalchemy import types, exc
 from sqlalchemy.orm import *
-from sqlalchemy import exc
 from sqlalchemy.sql import table, column
 from sqlalchemy.databases import mssql
 import sqlalchemy.engine.url as url
 from testlib import *
+from testlib.testing import eq_
 
 
 class CompileTest(TestBase, AssertsCompiledSQL):
@@ -247,6 +248,48 @@ class GenerativeQueryTest(TestBase):
         assert list(query[:10]) == orig[:10]
         assert list(query[:10]) == orig[:10]
 
+
+class SchemaTest(TestBase):
+
+    def setUp(self):
+        t = Table('sometable', MetaData(),
+            Column('pk_column', Integer),
+            Column('test_column', String)
+        )
+        self.column = t.c.test_column
+
+    def test_that_mssql_default_nullability_emits_null(self):
+        schemagenerator = \
+            mssql.MSSQLDialect().schemagenerator(mssql.MSSQLDialect(), None)
+        column_specification = \
+            schemagenerator.get_column_specification(self.column)
+        eq_("test_column VARCHAR NULL", column_specification)
+
+    def test_that_mssql_none_nullability_does_not_emit_nullability(self):
+        schemagenerator = \
+            mssql.MSSQLDialect().schemagenerator(mssql.MSSQLDialect(), None)
+        self.column.nullable = None
+        column_specification = \
+            schemagenerator.get_column_specification(self.column)
+        eq_("test_column VARCHAR", column_specification)
+
+    def test_that_mssql_specified_nullable_emits_null(self):
+        schemagenerator = \
+            mssql.MSSQLDialect().schemagenerator(mssql.MSSQLDialect(), None)
+        self.column.nullable = True
+        column_specification = \
+            schemagenerator.get_column_specification(self.column)
+        eq_("test_column VARCHAR NULL", column_specification)
+
+    def test_that_mssql_specified_not_nullable_emits_not_null(self):
+        schemagenerator = \
+            mssql.MSSQLDialect().schemagenerator(mssql.MSSQLDialect(), None)
+        self.column.nullable = False
+        column_specification = \
+            schemagenerator.get_column_specification(self.column)
+        eq_("test_column VARCHAR NOT NULL", column_specification)
+
+
 def full_text_search_missing():
     """Test if full text search is not implemented and return False if 
     it is and True otherwise."""
@@ -357,17 +400,72 @@ class MatchTest(TestBase, AssertsCompiledSQL):
 class ParseConnectTest(TestBase, AssertsCompiledSQL):
     __only_on__ = 'mssql'
 
+    def test_pyodbc_connect_dsn_trusted(self):
+        u = url.make_url('mssql://mydsn')
+        dialect = mssql.MSSQLDialect_pyodbc()
+        connection = dialect.create_connect_args(u)
+        self.assertEquals([['dsn=mydsn;TrustedConnection=Yes'], {}], connection)
+
+    def test_pyodbc_connect_old_style_dsn_trusted(self):
+        u = url.make_url('mssql:///?dsn=mydsn')
+        dialect = mssql.MSSQLDialect_pyodbc()
+        connection = dialect.create_connect_args(u)
+        self.assertEquals([['dsn=mydsn;TrustedConnection=Yes'], {}], connection)
+
+    def test_pyodbc_connect_dsn_non_trusted(self):
+        u = url.make_url('mssql://username:password@mydsn')
+        dialect = mssql.MSSQLDialect_pyodbc()
+        connection = dialect.create_connect_args(u)
+        self.assertEquals([['dsn=mydsn;UID=username;PWD=password'], {}], connection)
+
+    def test_pyodbc_connect_dsn_extra(self):
+        u = url.make_url('mssql://username:password@mydsn/?LANGUAGE=us_english&foo=bar')
+        dialect = mssql.MSSQLDialect_pyodbc()
+        connection = dialect.create_connect_args(u)
+        self.assertEquals([['dsn=mydsn;UID=username;PWD=password;LANGUAGE=us_english;foo=bar'], {}], connection)
+
     def test_pyodbc_connect(self):
         u = url.make_url('mssql://username:password@hostspec/database')
         dialect = mssql.MSSQLDialect_pyodbc()
         connection = dialect.create_connect_args(u)
         self.assertEquals([['DRIVER={SQL Server};Server=hostspec;Database=database;UID=username;PWD=password'], {}], connection)
 
+    def test_pyodbc_connect_comma_port(self):
+        u = url.make_url('mssql://username:password@hostspec:12345/database')
+        dialect = mssql.MSSQLDialect_pyodbc()
+        connection = dialect.create_connect_args(u)
+        self.assertEquals([['DRIVER={SQL Server};Server=hostspec,12345;Database=database;UID=username;PWD=password'], {}], connection)
+
+    def test_pyodbc_connect_config_port(self):
+        u = url.make_url('mssql://username:password@hostspec/database?port=12345')
+        dialect = mssql.MSSQLDialect_pyodbc()
+        connection = dialect.create_connect_args(u)
+        self.assertEquals([['DRIVER={SQL Server};Server=hostspec;Database=database;UID=username;PWD=password;port=12345'], {}], connection)
+
     def test_pyodbc_extra_connect(self):
         u = url.make_url('mssql://username:password@hostspec/database?LANGUAGE=us_english&foo=bar')
         dialect = mssql.MSSQLDialect_pyodbc()
         connection = dialect.create_connect_args(u)
         self.assertEquals([['DRIVER={SQL Server};Server=hostspec;Database=database;UID=username;PWD=password;foo=bar;LANGUAGE=us_english'], {}], connection)
+
+    def test_pyodbc_odbc_connect(self):
+        u = url.make_url('mssql:///?odbc_connect=DRIVER%3D%7BSQL+Server%7D%3BServer%3Dhostspec%3BDatabase%3Ddatabase%3BUID%3Dusername%3BPWD%3Dpassword')
+        dialect = mssql.MSSQLDialect_pyodbc()
+        connection = dialect.create_connect_args(u)
+        self.assertEquals([['DRIVER={SQL Server};Server=hostspec;Database=database;UID=username;PWD=password'], {}], connection)
+
+    def test_pyodbc_odbc_connect_with_dsn(self):
+        u = url.make_url('mssql:///?odbc_connect=dsn%3Dmydsn%3BDatabase%3Ddatabase%3BUID%3Dusername%3BPWD%3Dpassword')
+        dialect = mssql.MSSQLDialect_pyodbc()
+        connection = dialect.create_connect_args(u)
+        self.assertEquals([['dsn=mydsn;Database=database;UID=username;PWD=password'], {}], connection)
+
+    def test_pyodbc_odbc_connect_ignores_other_values(self):
+        u = url.make_url('mssql://userdiff:passdiff@localhost/dbdiff?odbc_connect=DRIVER%3D%7BSQL+Server%7D%3BServer%3Dhostspec%3BDatabase%3Ddatabase%3BUID%3Dusername%3BPWD%3Dpassword')
+        dialect = mssql.MSSQLDialect_pyodbc()
+        connection = dialect.create_connect_args(u)
+        self.assertEquals([['DRIVER={SQL Server};Server=hostspec;Database=database;UID=username;PWD=password'], {}], connection)
+
 
 class TypesTest(TestBase):
     __only_on__ = 'mssql'
@@ -400,8 +498,515 @@ class TypesTest(TestBase):
             numeric_table.insert().execute(numericcol=Decimal('1E-6'))
             numeric_table.insert().execute(numericcol=Decimal('1E-7'))
             numeric_table.insert().execute(numericcol=Decimal('1E-8'))
+            numeric_table.insert().execute(numericcol=10000)
+        except Exception, e:
+            raise e
+
+
+class TypesTest2(TestBase, AssertsExecutionResults):
+    "Test Microsoft SQL Server column types"
+
+    __only_on__ = 'mssql'
+
+    def test_money(self):
+        "Exercise type specification for money types."
+
+        columns = [
+            # column type, args, kwargs, expected ddl
+            (mssql.MSMoney, [], {},
+             'MONEY'),
+            (mssql.MSSmallMoney, [], {},
+             'SMALLMONEY'),
+           ]
+
+        table_args = ['test_mssql_money', MetaData(testing.db)]
+        for index, spec in enumerate(columns):
+            type_, args, kw, res = spec
+            table_args.append(Column('c%s' % index, type_(*args, **kw), nullable=None))
+
+        money_table = Table(*table_args)
+        gen = testing.db.dialect.schemagenerator(testing.db.dialect, testing.db, None, None)
+
+        for col in money_table.c:
+            index = int(col.name[1:])
+            testing.eq_(gen.get_column_specification(col),
+                           "%s %s" % (col.name, columns[index][3]))
+            self.assert_(repr(col))
+
+        try:
+            money_table.create(checkfirst=True)
+            assert True
         except:
-            assert False 
+            raise
+        money_table.drop()
+
+    def test_dates(self):
+        "Exercise type specification for date types."
+
+        columns = [
+            # column type, args, kwargs, expected ddl
+            (mssql.MSDateTime, [], {},
+             'DATETIME', []),
+
+            (mssql.MSDate, [], {},
+             'DATE', ['>=', (10,)]),
+            (mssql.MSDate, [], {},
+             'DATETIME', ['<', (10,)], mssql.MSDateTime),
+
+            (mssql.MSTime, [], {},
+             'TIME', ['>=', (10,)]),
+            (mssql.MSTime, [1], {},
+             'TIME(1)', ['>=', (10,)]),
+            (mssql.MSTime, [], {},
+             'DATETIME', ['<', (10,)], mssql.MSDateTime),
+
+            (mssql.MSSmallDateTime, [], {},
+             'SMALLDATETIME', []),
+
+            (mssql.MSDateTimeOffset, [], {},
+             'DATETIMEOFFSET', ['>=', (10,)]),
+            (mssql.MSDateTimeOffset, [1], {},
+             'DATETIMEOFFSET(1)', ['>=', (10,)]),
+
+            (mssql.MSDateTime2, [], {},
+             'DATETIME2', ['>=', (10,)]),
+            (mssql.MSDateTime2, [1], {},
+             'DATETIME2(1)', ['>=', (10,)]),
+
+            ]
+
+        table_args = ['test_mssql_dates', MetaData(testing.db)]
+        for index, spec in enumerate(columns):
+            type_, args, kw, res, requires = spec[0:5]
+            if (requires and testing._is_excluded('mssql', *requires)) or not requires:
+                table_args.append(Column('c%s' % index, type_(*args, **kw), nullable=None))
+
+        dates_table = Table(*table_args)
+        gen = testing.db.dialect.schemagenerator(testing.db.dialect, testing.db, None, None)
+
+        for col in dates_table.c:
+            index = int(col.name[1:])
+            testing.eq_(gen.get_column_specification(col),
+                           "%s %s" % (col.name, columns[index][3]))
+            self.assert_(repr(col))
+
+        try:
+            dates_table.create(checkfirst=True)
+            assert True
+        except:
+            raise
+
+        reflected_dates = Table('test_mssql_dates', MetaData(testing.db), autoload=True)
+        for col in reflected_dates.c:
+            index = int(col.name[1:])
+            testing.eq_(testing.db.dialect.type_descriptor(col.type).__class__,
+                len(columns[index]) > 5 and columns[index][5] or columns[index][0])
+        dates_table.drop()
+
+    def test_dates2(self):
+        meta = MetaData(testing.db)
+        t = Table('test_dates', meta,
+                  Column('id', Integer,
+                         Sequence('datetest_id_seq', optional=True),
+                         primary_key=True),
+                  Column('adate', Date),
+                  Column('atime', Time),
+                  Column('adatetime', DateTime))
+        t.create(checkfirst=True)
+        try:
+            d1 = datetime.date(2007, 10, 30)
+            t1 = datetime.time(11, 2, 32)
+            d2 = datetime.datetime(2007, 10, 30, 11, 2, 32)
+            t.insert().execute(adate=d1, adatetime=d2, atime=t1)
+            t.insert().execute(adate=d2, adatetime=d2, atime=d2)
+
+            x = t.select().execute().fetchall()[0]
+            self.assert_(x.adate.__class__ == datetime.date)
+            self.assert_(x.atime.__class__ == datetime.time)
+            self.assert_(x.adatetime.__class__ == datetime.datetime)
+
+            t.delete().execute()
+
+            t.insert().execute(adate=d1, adatetime=d2, atime=t1)
+
+            self.assertEquals(select([t.c.adate, t.c.atime, t.c.adatetime], t.c.adate==d1).execute().fetchall(), [(d1, t1, d2)])
+
+        finally:
+            t.drop(checkfirst=True)
+
+    def test_binary(self):
+        "Exercise type specification for binary types."
+
+        columns = [
+            # column type, args, kwargs, expected ddl
+            (mssql.MSBinary, [], {},
+             'BINARY'),
+            (mssql.MSBinary, [10], {},
+             'BINARY(10)'),
+
+            (mssql.MSVarBinary, [], {},
+             'VARBINARY'),
+            (mssql.MSVarBinary, [10], {},
+             'VARBINARY(10)'),
+
+            (mssql.MSImage, [], {},
+             'IMAGE'),
+
+            (types.Binary, [], {},
+             'IMAGE'),
+            (types.Binary, [10], {},
+             'BINARY(10)')
+            ]
+
+        table_args = ['test_mssql_binary', MetaData(testing.db)]
+        for index, spec in enumerate(columns):
+            type_, args, kw, res = spec
+            table_args.append(Column('c%s' % index, type_(*args, **kw), nullable=None))
+
+        binary_table = Table(*table_args)
+        gen = testing.db.dialect.schemagenerator(testing.db.dialect, testing.db, None, None)
+
+        for col in binary_table.c:
+            index = int(col.name[1:])
+            testing.eq_(gen.get_column_specification(col),
+                           "%s %s" % (col.name, columns[index][3]))
+            self.assert_(repr(col))
+
+        try:
+            binary_table.create(checkfirst=True)
+            assert True
+        except:
+            raise
+
+        reflected_binary = Table('test_mssql_binary', MetaData(testing.db), autoload=True)
+        for col in reflected_binary.c:
+            # don't test the MSGenericBinary since it's a special case and
+            # reflected it will map to a MSImage or MSBinary depending
+            if not testing.db.dialect.type_descriptor(binary_table.c[col.name].type).__class__ == mssql.MSGenericBinary:
+                testing.eq_(testing.db.dialect.type_descriptor(col.type).__class__,
+                    testing.db.dialect.type_descriptor(binary_table.c[col.name].type).__class__)
+            if binary_table.c[col.name].type.length:
+                testing.eq_(col.type.length, binary_table.c[col.name].type.length)
+        binary_table.drop()
+
+    def test_boolean(self):
+        "Exercise type specification for boolean type."
+
+        columns = [
+            # column type, args, kwargs, expected ddl
+            (mssql.MSBoolean, [], {},
+             'BIT'),
+           ]
+
+        table_args = ['test_mssql_boolean', MetaData(testing.db)]
+        for index, spec in enumerate(columns):
+            type_, args, kw, res = spec
+            table_args.append(Column('c%s' % index, type_(*args, **kw), nullable=None))
+
+        boolean_table = Table(*table_args)
+        gen = testing.db.dialect.schemagenerator(testing.db.dialect, testing.db, None, None)
+
+        for col in boolean_table.c:
+            index = int(col.name[1:])
+            testing.eq_(gen.get_column_specification(col),
+                           "%s %s" % (col.name, columns[index][3]))
+            self.assert_(repr(col))
+
+        try:
+            boolean_table.create(checkfirst=True)
+            assert True
+        except:
+            raise
+        boolean_table.drop()
+
+    def test_numeric(self):
+        "Exercise type specification and options for numeric types."
+
+        columns = [
+            # column type, args, kwargs, expected ddl
+            (mssql.MSNumeric, [], {},
+             'NUMERIC(10, 2)'),
+            (mssql.MSNumeric, [None], {},
+             'NUMERIC'),
+            (mssql.MSNumeric, [12], {},
+             'NUMERIC(12, 2)'),
+            (mssql.MSNumeric, [12, 4], {},
+             'NUMERIC(12, 4)'),
+
+            (mssql.MSFloat, [], {},
+             'FLOAT(10)'),
+            (mssql.MSFloat, [None], {},
+             'FLOAT'),
+            (mssql.MSFloat, [12], {},
+             'FLOAT(12)'),
+            (mssql.MSReal, [], {},
+             'REAL'),
+
+            (mssql.MSInteger, [], {},
+             'INTEGER'),
+            (mssql.MSBigInteger, [], {},
+             'BIGINT'),
+            (mssql.MSTinyInteger, [], {},
+             'TINYINT'),
+            (mssql.MSSmallInteger, [], {},
+             'SMALLINT'),
+           ]
+
+        table_args = ['test_mssql_numeric', MetaData(testing.db)]
+        for index, spec in enumerate(columns):
+            type_, args, kw, res = spec
+            table_args.append(Column('c%s' % index, type_(*args, **kw), nullable=None))
+
+        numeric_table = Table(*table_args)
+        gen = testing.db.dialect.schemagenerator(testing.db.dialect, testing.db, None, None)
+
+        for col in numeric_table.c:
+            index = int(col.name[1:])
+            testing.eq_(gen.get_column_specification(col),
+                           "%s %s" % (col.name, columns[index][3]))
+            self.assert_(repr(col))
+
+        try:
+            numeric_table.create(checkfirst=True)
+            assert True
+        except:
+            raise
+        numeric_table.drop()
+
+    def test_char(self):
+        """Exercise COLLATE-ish options on string types."""
+
+        # modify the text_as_varchar setting since we are not testing that behavior here
+        text_as_varchar = testing.db.dialect.text_as_varchar
+        testing.db.dialect.text_as_varchar = False
+
+        columns = [
+            (mssql.MSChar, [], {},
+             'CHAR'),
+            (mssql.MSChar, [1], {},
+             'CHAR(1)'),
+            (mssql.MSChar, [1], {'collation': 'Latin1_General_CI_AS'},
+             'CHAR(1) COLLATE Latin1_General_CI_AS'),
+
+            (mssql.MSNChar, [], {},
+             'NCHAR'),
+            (mssql.MSNChar, [1], {},
+             'NCHAR(1)'),
+            (mssql.MSNChar, [1], {'collation': 'Latin1_General_CI_AS'},
+             'NCHAR(1) COLLATE Latin1_General_CI_AS'),
+
+            (mssql.MSString, [], {},
+             'VARCHAR'),
+            (mssql.MSString, [1], {},
+             'VARCHAR(1)'),
+            (mssql.MSString, [1], {'collation': 'Latin1_General_CI_AS'},
+             'VARCHAR(1) COLLATE Latin1_General_CI_AS'),
+
+            (mssql.MSNVarchar, [], {},
+             'NVARCHAR'),
+            (mssql.MSNVarchar, [1], {},
+             'NVARCHAR(1)'),
+            (mssql.MSNVarchar, [1], {'collation': 'Latin1_General_CI_AS'},
+             'NVARCHAR(1) COLLATE Latin1_General_CI_AS'),
+
+            (mssql.MSText, [], {},
+             'TEXT'),
+            (mssql.MSText, [], {'collation': 'Latin1_General_CI_AS'},
+             'TEXT COLLATE Latin1_General_CI_AS'),
+
+            (mssql.MSNText, [], {},
+             'NTEXT'),
+            (mssql.MSNText, [], {'collation': 'Latin1_General_CI_AS'},
+             'NTEXT COLLATE Latin1_General_CI_AS'),
+           ]
+
+        table_args = ['test_mssql_charset', MetaData(testing.db)]
+        for index, spec in enumerate(columns):
+            type_, args, kw, res = spec
+            table_args.append(Column('c%s' % index, type_(*args, **kw), nullable=None))
+
+        charset_table = Table(*table_args)
+        gen = testing.db.dialect.schemagenerator(testing.db.dialect, testing.db, None, None)
+
+        for col in charset_table.c:
+            index = int(col.name[1:])
+            testing.eq_(gen.get_column_specification(col),
+                           "%s %s" % (col.name, columns[index][3]))
+            self.assert_(repr(col))
+
+        try:
+            charset_table.create(checkfirst=True)
+            assert True
+        except:
+            raise
+        charset_table.drop()
+
+        testing.db.dialect.text_as_varchar = text_as_varchar
+
+    def test_timestamp(self):
+        """Exercise TIMESTAMP column."""
+
+        meta = MetaData(testing.db)
+
+        try:
+            columns = [
+                (TIMESTAMP,
+                 'TIMESTAMP'),
+                (mssql.MSTimeStamp,
+                 'TIMESTAMP'),
+                ]
+            for idx, (spec, expected) in enumerate(columns):
+                t = Table('mssql_ts%s' % idx, meta,
+                          Column('id', Integer, primary_key=True),
+                          Column('t', spec, nullable=None))
+                testing.eq_(colspec(t.c.t), "t %s" % expected)
+                self.assert_(repr(t.c.t))
+                try:
+                    t.create(checkfirst=True)
+                    assert True
+                except:
+                    raise
+                t.drop()
+        finally:
+            meta.drop_all()
+
+    def test_autoincrement(self):
+        meta = MetaData(testing.db)
+        try:
+            Table('ai_1', meta,
+                  Column('int_y', Integer, primary_key=True),
+                  Column('int_n', Integer, DefaultClause('0'),
+                         primary_key=True))
+            Table('ai_2', meta,
+                  Column('int_y', Integer, primary_key=True),
+                  Column('int_n', Integer, DefaultClause('0'),
+                         primary_key=True))
+            Table('ai_3', meta,
+                  Column('int_n', Integer, DefaultClause('0'),
+                         primary_key=True, autoincrement=False),
+                  Column('int_y', Integer, primary_key=True))
+            Table('ai_4', meta,
+                  Column('int_n', Integer, DefaultClause('0'),
+                         primary_key=True, autoincrement=False),
+                  Column('int_n2', Integer, DefaultClause('0'),
+                         primary_key=True, autoincrement=False))
+            Table('ai_5', meta,
+                  Column('int_y', Integer, primary_key=True),
+                  Column('int_n', Integer, DefaultClause('0'),
+                         primary_key=True, autoincrement=False))
+            Table('ai_6', meta,
+                  Column('o1', String(1), DefaultClause('x'),
+                         primary_key=True),
+                  Column('int_y', Integer, primary_key=True))
+            Table('ai_7', meta,
+                  Column('o1', String(1), DefaultClause('x'),
+                         primary_key=True),
+                  Column('o2', String(1), DefaultClause('x'),
+                         primary_key=True),
+                  Column('int_y', Integer, primary_key=True))
+            Table('ai_8', meta,
+                  Column('o1', String(1), DefaultClause('x'),
+                         primary_key=True),
+                  Column('o2', String(1), DefaultClause('x'),
+                         primary_key=True))
+            meta.create_all()
+
+            table_names = ['ai_1', 'ai_2', 'ai_3', 'ai_4',
+                           'ai_5', 'ai_6', 'ai_7', 'ai_8']
+            mr = MetaData(testing.db)
+            mr.reflect(only=table_names)
+
+            for tbl in [mr.tables[name] for name in table_names]:
+                for c in tbl.c:
+                    if c.name.startswith('int_y'):
+                        assert c.autoincrement
+                    elif c.name.startswith('int_n'):
+                        assert not c.autoincrement
+                tbl.insert().execute()
+                if 'int_y' in tbl.c:
+                    assert select([tbl.c.int_y]).scalar() == 1
+                    assert list(tbl.select().execute().fetchone()).count(1) == 1
+                else:
+                    assert 1 not in list(tbl.select().execute().fetchone())
+        finally:
+            meta.drop_all()
+
+def colspec(c):
+    return testing.db.dialect.schemagenerator(testing.db.dialect,
+        testing.db, None, None).get_column_specification(c)
+
+
+class BinaryTest(TestBase, AssertsExecutionResults):
+    """Test the Binary and VarBinary types"""
+    def setUpAll(self):
+        global binary_table, MyPickleType
+
+        class MyPickleType(types.TypeDecorator):
+            impl = PickleType
+
+            def process_bind_param(self, value, dialect):
+                if value:
+                    value.stuff = 'this is modified stuff'
+                return value
+
+            def process_result_value(self, value, dialect):
+                if value:
+                    value.stuff = 'this is the right stuff'
+                return value
+
+        binary_table = Table('binary_table', MetaData(testing.db),
+        Column('primary_id', Integer, Sequence('binary_id_seq', optional=True), primary_key=True),
+        Column('data', mssql.MSVarBinary(8000)),
+        Column('data_image', mssql.MSImage),
+        Column('data_slice', Binary(100)),
+        Column('misc', String(30)),
+        # construct PickleType with non-native pickle module, since cPickle uses relative module
+        # loading and confuses this test's parent package 'sql' with the 'sqlalchemy.sql' package relative
+        # to the 'types' module
+        Column('pickled', PickleType),
+        Column('mypickle', MyPickleType)
+        )
+        binary_table.create()
+
+    def tearDown(self):
+        binary_table.delete().execute()
+
+    def tearDownAll(self):
+        binary_table.drop()
+
+    def test_binary(self):
+        testobj1 = pickleable.Foo('im foo 1')
+        testobj2 = pickleable.Foo('im foo 2')
+        testobj3 = pickleable.Foo('im foo 3')
+
+        stream1 =self.load_stream('binary_data_one.dat')
+        stream2 =self.load_stream('binary_data_two.dat')
+        binary_table.insert().execute(primary_id=1, misc='binary_data_one.dat', data=stream1, data_image=stream1, data_slice=stream1[0:100], pickled=testobj1, mypickle=testobj3)
+        binary_table.insert().execute(primary_id=2, misc='binary_data_two.dat', data=stream2, data_image=stream2, data_slice=stream2[0:99], pickled=testobj2)
+        binary_table.insert().execute(primary_id=3, misc='binary_data_two.dat', data=None, data_image=None, data_slice=stream2[0:99], pickled=None)
+
+        for stmt in (
+            binary_table.select(order_by=binary_table.c.primary_id),
+            text("select * from binary_table order by binary_table.primary_id", typemap={'pickled':PickleType, 'mypickle':MyPickleType}, bind=testing.db)
+        ):
+            l = stmt.execute().fetchall()
+            self.assertEquals(list(stream1), list(l[0]['data']))
+
+            paddedstream = list(stream1[0:100])
+            paddedstream.extend(['\x00'] * (100 - len(paddedstream)))
+            self.assertEquals(paddedstream, list(l[0]['data_slice']))
+
+            self.assertEquals(list(stream2), list(l[1]['data']))
+            self.assertEquals(list(stream2), list(l[1]['data_image']))
+            self.assertEquals(testobj1, l[0]['pickled'])
+            self.assertEquals(testobj2, l[1]['pickled'])
+            self.assertEquals(testobj3.moredata, l[0]['mypickle'].moredata)
+            self.assertEquals(l[0]['mypickle'].stuff, 'this is the right stuff')
+
+    def load_stream(self, name, len=3000):
+        f = os.path.join(os.path.dirname(testenv.__file__), name)
+        return file(f).read(len)
+
 
 if __name__ == "__main__":
     testenv.main()

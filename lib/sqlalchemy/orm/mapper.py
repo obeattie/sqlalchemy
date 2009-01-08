@@ -164,7 +164,9 @@ class Mapper(object):
 
         if isinstance(self.local_table, expression._SelectBaseMixin):
             util.warn("mapper %s creating an alias for the given "
-                        "selectable - use Class attributes for queries." % self)
+                        "selectable.  References to the original selectable "
+                        "may be misinterpreted by queries, polymorphic_on, etc. "
+                        " Consider passing an explicit selectable.alias() construct instead." % self)
             self.local_table = self.local_table.alias()
 
         if self.with_polymorphic and isinstance(self.with_polymorphic[1], expression._SelectBaseMixin):
@@ -392,7 +394,8 @@ class Mapper(object):
         # Disable any attribute-based compilation.
         self.compiled = True
         manager = self.class_manager
-
+        if hasattr(self, '_compile_failed'):
+            del self._compile_failed
         if not self.non_primary and manager.mapper is self:
             manager.mapper = None
             manager.events.remove_listener('on_init', _event_on_init)
@@ -412,8 +415,8 @@ class Mapper(object):
         self._pks_by_table = {}
         self._cols_by_table = {}
 
-        all_cols = set(chain(*[col.proxy_set for col in self._columntoproperty]))
-        pk_cols = set(c for c in all_cols if c.primary_key)
+        all_cols = util.column_set(chain(*[col.proxy_set for col in self._columntoproperty]))
+        pk_cols = util.column_set(c for c in all_cols if c.primary_key)
 
         # identify primary key columns which are also mapped by this mapper.
         tables = set(self.tables + [self.mapped_table])
@@ -421,8 +424,8 @@ class Mapper(object):
         for t in tables:
             if t.primary_key and pk_cols.issuperset(t.primary_key):
                 # ordering is important since it determines the ordering of mapper.primary_key (and therefore query.get())
-                self._pks_by_table[t] = util.OrderedSet(t.primary_key).intersection(pk_cols)
-            self._cols_by_table[t] = util.OrderedSet(t.c).intersection(all_cols)
+                self._pks_by_table[t] = util.ordered_column_set(t.primary_key).intersection(pk_cols)
+            self._cols_by_table[t] = util.ordered_column_set(t.c).intersection(all_cols)
 
         # determine cols that aren't expressed within our tables; mark these
         # as "read only" properties which are refreshed upon INSERT/UPDATE
@@ -473,7 +476,7 @@ class Mapper(object):
         # table columns mapped to lists of MapperProperty objects
         # using a list allows a single column to be defined as
         # populating multiple object attributes
-        self._columntoproperty = {}
+        self._columntoproperty = util.column_dict()
 
         # load custom properties
         if self._init_properties:
@@ -539,7 +542,7 @@ class Mapper(object):
                 return object.__getattribute__(self, key)
 
             class_mapper(cls)
-
+                
             if cls.__dict__.get(clskey) is self:
                 # if this warning occurs, it usually means mapper
                 # compilation has failed, but operations upon the mapped
@@ -666,29 +669,39 @@ class Mapper(object):
 
         _COMPILE_MUTEX.acquire()
         try:
-            global _already_compiling
-            if _already_compiling:
-                # re-entrance to compile() occurs rarely, when a class-mapped construct is
-                # used within a ForeignKey, something that is possible
-                # when using the declarative layer
-                self._post_configure_properties()
-                return
-            _already_compiling = True
             try:
+                global _already_compiling
+                if _already_compiling:
+                    # re-entrance to compile() occurs rarely, when a class-mapped construct is
+                    # used within a ForeignKey, something that is possible
+                    # when using the declarative layer
+                    self._post_configure_properties()
+                    return
+                _already_compiling = True
+                try:
 
-                # double-check inside mutex
-                if self.compiled and not _new_mappers:
+                    # double-check inside mutex
+                    if self.compiled and not _new_mappers:
+                        return self
+
+                    # initialize properties on all mappers
+                    for mapper in list(_mapper_registry):
+                        if getattr(mapper, '_compile_failed', False):
+                            raise sa_exc.InvalidRequestError("One or more mappers failed to compile.  Exception was probably "
+                                    "suppressed within a hasattr() call. "
+                                    "Message was: %s" % mapper._compile_failed)
+                        if not mapper.compiled:
+                            mapper._post_configure_properties()
+
+                    _new_mappers = False
                     return self
-
-                # initialize properties on all mappers
-                for mapper in list(_mapper_registry):
-                    if not mapper.compiled:
-                        mapper._post_configure_properties()
-
-                _new_mappers = False
-                return self
-            finally:
-                _already_compiling = False
+                finally:
+                    _already_compiling = False
+            except:
+                import sys
+                exc = sys.exc_info()[1]
+                self._compile_failed = exc
+                raise
         finally:
             _COMPILE_MUTEX.release()
 
@@ -700,6 +713,7 @@ class Mapper(object):
         to execute once all mappers have been constructed.
         
         """
+
         self._log("_post_configure_properties() started")
         l = [(key, prop) for key, prop in self._props.iteritems()]
         for key, prop in l:
@@ -708,7 +722,7 @@ class Mapper(object):
                 prop.init(key, self)
         self._log("_post_configure_properties() complete")
         self.compiled = True
-
+            
     def add_properties(self, dict_of_properties):
         """Add the given dictionary of properties to this mapper,
         using `add_property`.
@@ -834,6 +848,19 @@ class Mapper(object):
 
         return from_obj
 
+    @property
+    def _single_table_criterion(self):
+        if self.single and \
+            self.inherits and \
+            self.polymorphic_on and \
+            self.polymorphic_identity is not None:
+            return self.polymorphic_on.in_(
+                m.polymorphic_identity
+                for m in self.polymorphic_iterator())
+        else:
+            return None
+        
+    
     @util.memoized_property
     def _with_polymorphic_mappers(self):
         if not self.with_polymorphic:
@@ -898,7 +925,7 @@ class Mapper(object):
 
         """
         params = [(primary_key, sql.bindparam(None, type_=primary_key.type)) for primary_key in self.primary_key]
-        return sql.and_(*[k==v for (k, v) in params]), dict(params)
+        return sql.and_(*[k==v for (k, v) in params]), util.column_dict(params)
 
     @util.memoized_property
     def _equivalent_columns(self):
@@ -921,18 +948,17 @@ class Mapper(object):
         }
 
         """
-
-        result = {}
+        result = util.column_dict()
         def visit_binary(binary):
             if binary.operator == operators.eq:
                 if binary.left in result:
                     result[binary.left].add(binary.right)
                 else:
-                    result[binary.left] = set((binary.right,))
+                    result[binary.left] = util.column_set((binary.right,))
                 if binary.right in result:
                     result[binary.right].add(binary.left)
                 else:
-                    result[binary.right] = set((binary.left,))
+                    result[binary.right] = util.column_set((binary.left,))
         for mapper in self.base_mapper.polymorphic_iterator():
             if mapper.inherit_condition:
                 visitors.traverse(mapper.inherit_condition, {}, {'binary':visit_binary})
@@ -1239,7 +1265,7 @@ class Mapper(object):
             for t in mapper.tables:
                 table_to_mapper[t] = mapper
 
-        for table in sqlutil.sort_tables(table_to_mapper.keys()):
+        for table in sqlutil.sort_tables(table_to_mapper.iterkeys()):
             insert = []
             update = []
 
@@ -1289,7 +1315,7 @@ class Mapper(object):
                         if col is mapper.version_id_col:
                             params[col._label] = mapper._get_state_attr_by_column(state, col)
                             params[col.key] = params[col._label] + 1
-                            for prop in mapper._columntoproperty.values():
+                            for prop in mapper._columntoproperty.itervalues():
                                 history = attributes.get_history(state, prop.key, passive=True)
                                 if history.added:
                                     hasdata = True
@@ -1313,6 +1339,9 @@ class Mapper(object):
                                         params[col._label] = prop.get_col_value(col, history.deleted[0])
                                     else:
                                         # row switch logic can reach us here
+                                        # remove the pk from the update params so the update doesn't
+                                        # attempt to include the pk in the update statement
+                                        del params[col.key]
                                         params[col._label] = prop.get_col_value(col, history.added[0])
                                 hasdata = True
                             elif col in pks:
@@ -1439,7 +1468,7 @@ class Mapper(object):
             for t in mapper.tables:
                 table_to_mapper[t] = mapper
 
-        for table in reversed(sqlutil.sort_tables(table_to_mapper.keys())):
+        for table in reversed(sqlutil.sort_tables(table_to_mapper.iterkeys())):
             delete = {}
             for state, mapper, connection in tups:
                 if table not in mapper._pks_by_table:
@@ -1611,7 +1640,6 @@ class Mapper(object):
                     if instance is EXT_CONTINUE:
                         instance = self.class_manager.new_instance()
                     else:
-                        # TODO: don't think theres coverage here
                         manager = attributes.manager_of_class(instance.__class__)
                         # TODO: if manager is None, raise a friendly error about
                         # returning instances of unmapped types
@@ -1673,7 +1701,7 @@ class Mapper(object):
         """Produce a collection of attribute level row processor callables."""
         
         new_populators, existing_populators = [], []
-        for prop in self._props.values():
+        for prop in self._props.itervalues():
             newpop, existingpop = prop.create_row_processor(context, path, self, row, adapter)
             if newpop:
                 new_populators.append((prop.key, newpop))

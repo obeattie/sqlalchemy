@@ -1,35 +1,237 @@
 # mssql.py
 
-"""MSSQL backend, thru either pymssq, adodbapi or pyodbc interfaces.
+"""Support for the Microsoft SQL Server database.
 
-* ``IDENTITY`` columns are supported by using SA ``schema.Sequence()``
-  objects. In other words::
+Driver
+------
+
+The MSSQL dialect will work with three different available drivers:
+
+* *pyodbc* - http://pyodbc.sourceforge.net/. This is the recommeded
+  driver.
+
+* *pymssql* - http://pymssql.sourceforge.net/
+
+* *adodbapi* - http://adodbapi.sourceforge.net/
+
+Drivers are loaded in the order listed above based on availability.
+
+If you need to load a specific driver pass ``module_name`` when
+creating the engine::
+
+    engine = create_engine('mssql://dsn', module_name='pymssql')
+
+``module_name`` currently accepts: ``pyodbc``, ``pymssql``, and
+``adodbapi``.
+
+Currently the pyodbc driver offers the greatest level of
+compatibility.
+
+Connecting
+----------
+
+Connecting with create_engine() uses the standard URL approach of
+``mssql://user:pass@host/dbname[?key=value&key=value...]``.
+
+If the database name is present, the tokens are converted to a
+connection string with the specified values. If the database is not
+present, then the host token is taken directly as the DSN name.
+
+Examples of pyodbc connection string URLs:
+
+* *mssql://mydsn* - connects using the specified DSN named ``mydsn``.
+  The connection string that is created will appear like::
+
+    dsn=mydsn;TrustedConnection=Yes
+
+* *mssql://user:pass@mydsn* - connects using the DSN named
+  ``mydsn`` passing in the ``UID`` and ``PWD`` information. The
+  connection string that is created will appear like::
+
+    dsn=mydsn;UID=user;PWD=pass
+
+* *mssql://user:pass@mydsn/?LANGUAGE=us_english* - connects
+  using the DSN named ``mydsn`` passing in the ``UID`` and ``PWD``
+  information, plus the additional connection configuration option
+  ``LANGUAGE``. The connection string that is created will appear
+  like::
+
+    dsn=mydsn;UID=user;PWD=pass;LANGUAGE=us_english
+
+* *mssql://user:pass@host/db* - connects using a connection string
+  dynamically created that would appear like::
+
+    DRIVER={SQL Server};Server=host;Database=db;UID=user;PWD=pass
+
+* *mssql://user:pass@host:123/db* - connects using a connection
+  string that is dynamically created, which also includes the port
+  information using the comma syntax. If your connection string
+  requires the port information to be passed as a ``port`` keyword
+  see the next example. This will create the following connection
+  string::
+
+    DRIVER={SQL Server};Server=host,123;Database=db;UID=user;PWD=pass
+
+* *mssql://user:pass@host/db?port=123* - connects using a connection
+  string that is dynamically created that includes the port
+  information as a separate ``port`` keyword. This will create the
+  following connection string::
+
+    DRIVER={SQL Server};Server=host;Database=db;UID=user;PWD=pass;port=123
+
+If you require a connection string that is outside the options
+presented above, use the ``odbc_connect`` keyword to pass in a
+urlencoded connection string. What gets passed in will be urldecoded
+and passed directly.
+
+For example::
+
+    mssql:///?odbc_connect=dsn%3Dmydsn%3BDatabase%3Ddb
+
+would create the following connection string::
+
+    dsn=mydsn;Database=db
+
+Encoding your connection string can be easily accomplished through
+the python shell. For example::
+
+    >>> import urllib
+    >>> urllib.quote_plus('dsn=mydsn;Database=db')
+    'dsn%3Dmydsn%3BDatabase%3Ddb'
+
+Additional arguments which may be specified either as query string
+arguments on the URL, or as keyword argument to
+:func:`~sqlalchemy.create_engine()` are:
+
+* *auto_identity_insert* - enables support for IDENTITY inserts by
+  automatically turning IDENTITY INSERT ON and OFF as required.
+  Defaults to ``True``.
+
+* *query_timeout* - allows you to override the default query timeout.
+  Defaults to ``None``. This is only supported on pymssql.
+
+* *text_as_varchar* - if enabled this will treat all TEXT column
+  types as their equivalent VARCHAR(max) type. This is often used if
+  you need to compare a VARCHAR to a TEXT field, which is not
+  supported directly on MSSQL. Defaults to ``False``.
+
+* *use_scope_identity* - allows you to specify that SCOPE_IDENTITY
+  should be used in place of the non-scoped version @@IDENTITY.
+  Defaults to ``False``. On pymssql this defaults to ``True``, and on
+  pyodbc this defaults to ``True`` if the version of pyodbc being
+  used supports it.
+
+* *has_window_funcs* - indicates whether or not window functions
+  (LIMIT and OFFSET) are supported on the version of MSSQL being
+  used. If you're running MSSQL 2005 or later turn this on to get
+  OFFSET support. Defaults to ``False``.
+
+* *max_identifier_length* - allows you to se the maximum length of
+  identfiers supported by the database. Defaults to 128. For pymssql
+  the default is 30.
+
+* *schema_name* - use to set the schema name. Defaults to ``dbo``.
+
+Auto Increment Behavior
+-----------------------
+
+``IDENTITY`` columns are supported by using SQLAlchemy
+``schema.Sequence()`` objects. In other words::
 
     Table('test', mss_engine,
-           Column('id',   Integer, Sequence('blah',100,10), primary_key=True),
+           Column('id', Integer,
+                  Sequence('blah',100,10), primary_key=True),
            Column('name', String(20))
          ).create()
 
-  would yield::
+would yield::
 
    CREATE TABLE test (
      id INTEGER NOT NULL IDENTITY(100,10) PRIMARY KEY,
-     name VARCHAR(20)
+     name VARCHAR(20) NULL,
      )
 
-  Note that the start & increment values for sequences are optional
-  and will default to 1,1.
+Note that the ``start`` and ``increment`` values for sequences are
+optional and will default to 1,1.
 
 * Support for ``SET IDENTITY_INSERT ON`` mode (automagic on / off for
   ``INSERT`` s)
 
-* Support for auto-fetching of ``@@IDENTITY/@@SCOPE_IDENTITY()`` on ``INSERT``
+* Support for auto-fetching of ``@@IDENTITY/@@SCOPE_IDENTITY()`` on
+  ``INSERT``
 
-* ``select._limit`` implemented as ``SELECT TOP n``
+Collation Support
+-----------------
 
-* Experimental implemention of LIMIT / OFFSET with row_number()
+MSSQL specific string types support a collation parameter that
+creates a column-level specific collation for the column. The
+collation parameter accepts a Windows Collation Name or a SQL
+Collation Name. Supported types are MSChar, MSNChar, MSString,
+MSNVarchar, MSText, and MSNText. For example::
 
-Known issues / TODO:
+    Column('login', String(32, collation='Latin1_General_CI_AS'))
+
+will yield::
+
+    login VARCHAR(32) COLLATE Latin1_General_CI_AS NULL
+
+LIMIT/OFFSET Support
+--------------------
+
+MSSQL has no support for the LIMIT or OFFSET keysowrds. LIMIT is
+supported directly through the ``TOP`` Transact SQL keyword::
+
+    select.limit
+
+will yield::
+
+    SELECT TOP n
+
+If the ``has_window_funcs`` flag is set then LIMIT with OFFSET
+support is available through the ``ROW_NUMBER OVER`` construct. This
+construct requires an ``ORDER BY`` to be specified as well and is
+only available on MSSQL 2005 and later.
+
+Nullability
+-----------
+MSSQL has support for three levels of column nullability. The default
+nullability allows nulls and is explicit in the CREATE TABLE
+construct::
+
+    name VARCHAR(20) NULL
+
+If ``nullable=None`` is specified then no specification is made. In
+other words the database's configured default is used. This will
+render::
+
+    name VARCHAR(20)
+
+If ``nullable`` is ``True`` or ``False`` then the column will be
+``NULL` or ``NOT NULL`` respectively.
+
+Date / Time Handling
+--------------------
+For MSSQL versions that support the ``DATE`` and ``TIME`` types
+(MSSQL 2008+) the data type is used. For versions that do not
+support the ``DATE`` and ``TIME`` types a ``DATETIME`` type is used
+instead and the MSSQL dialect handles converting the results
+properly. This means ``Date()`` and ``Time()`` are fully supported
+on all versions of MSSQL. If you do not desire this behavior then
+do not use the ``Date()`` or ``Time()`` types.
+
+Compatibility Levels
+--------------------
+MSSQL supports the notion of setting compatibility levels at the
+database level. This allows, for instance, to run a database that
+is compatibile with SQL2000 while running on a SQL2005 database
+server. ``server_version_info`` will always retrun the database
+server version information (in this case SQL2005) and not the
+compatibiility level information. Because of this, if running under
+a backwards compatibility mode SQAlchemy may attempt to use T-SQL
+statements that are unable to be parsed by the database server.
+
+Known Issues
+------------
 
 * No support for more than one ``IDENTITY`` column per table
 
@@ -37,7 +239,7 @@ Known issues / TODO:
   does **not** work around
 
 """
-import datetime, operator, re, sys
+import datetime, decimal, inspect, operator, re, sys, urllib
 
 from sqlalchemy import sql, schema, exc, util
 from sqlalchemy.sql import compiler, expression, operators as sqlops, functions as sql_functions
@@ -48,6 +250,67 @@ from decimal import Decimal as _python_Decimal
 
 
 MSSQL_RESERVED_WORDS = set(['function'])
+
+
+class _StringType(object):
+    """Base for MSSQL string types."""
+
+    def __init__(self, collation=None, **kwargs):
+        self.collation = kwargs.get('collate', collation)
+
+    def _extend(self, spec):
+        """Extend a string-type declaration with standard SQL
+        COLLATE annotations.
+        """
+
+        if self.collation:
+            collation = 'COLLATE %s' % self.collation
+        else:
+            collation = None
+
+        return ' '.join([c for c in (spec, collation)
+                         if c is not None])
+
+    def __repr__(self):
+        attributes = inspect.getargspec(self.__init__)[0][1:]
+        attributes.extend(inspect.getargspec(_StringType.__init__)[0][1:])
+
+        params = {}
+        for attr in attributes:
+            val = getattr(self, attr)
+            if val is not None and val is not False:
+                params[attr] = val
+
+        return "%s(%s)" % (self.__class__.__name__,
+                           ', '.join(['%s=%r' % (k, params[k]) for k in params]))
+
+    def bind_processor(self, dialect):
+        if self.convert_unicode or dialect.convert_unicode:
+            if self.assert_unicode is None:
+                assert_unicode = dialect.assert_unicode
+            else:
+                assert_unicode = self.assert_unicode
+
+            if not assert_unicode:
+                return None
+
+            def process(value):
+                if not isinstance(value, (unicode, sqltypes.NoneType)):
+                    if assert_unicode == 'warn':
+                        util.warn("Unicode type received non-unicode bind "
+                                  "param value %r" % value)
+                        return value
+                    else:
+                        raise exc.InvalidRequestError("Unicode type received non-unicode bind param value %r" % value)
+                else:
+                    return value
+            return process
+        else:
+            return None
+
+    def result_processor(self, dialect):
+        return None
+
 
 class MSNumeric(sqltypes.Numeric):
     def result_processor(self, dialect):
@@ -69,7 +332,9 @@ class MSNumeric(sqltypes.Numeric):
                 # Not sure that this exception is needed
                 return value
             else:
-                if not isinstance(value, float) and value._exp < -6:
+                # FIXME: this will not correct a situation where a float
+                # gets converted to e-notation.
+                if isinstance(value, decimal.Decimal) and value._exp < -6:
                     value = ((value < 0 and '-' or '')
                         + '0.'
                         + '0' * -(value._exp+1)
@@ -85,9 +350,13 @@ class MSNumeric(sqltypes.Numeric):
         else:
             return "NUMERIC(%(precision)s, %(scale)s)" % {'precision': self.precision, 'scale' : self.scale}
 
+
 class MSFloat(sqltypes.Float):
     def get_col_spec(self):
-        return "FLOAT(%(precision)s)" % {'precision': self.precision}
+        if self.precision is None:
+            return "FLOAT"
+        else:
+            return "FLOAT(%(precision)s)" % {'precision': self.precision}
 
     def bind_processor(self, dialect):
         def process(value):
@@ -97,64 +366,144 @@ class MSFloat(sqltypes.Float):
             return None
         return process
 
+
+class MSReal(MSFloat):
+    """A type for ``real`` numbers."""
+
+    def __init__(self):
+        """
+        Construct a Real.
+
+        """
+        super(MSReal, self).__init__(precision=24)
+
+    def adapt(self, impltype):
+        return impltype()
+
+    def bind_processor(self, dialect):
+        def process(value):
+            if value is not None:
+                return float(value)
+            else:
+                return value
+        return process
+
+    def get_col_spec(self):
+        return "REAL"
+
+
 class MSInteger(sqltypes.Integer):
     def get_col_spec(self):
         return "INTEGER"
+
 
 class MSBigInteger(MSInteger):
     def get_col_spec(self):
         return "BIGINT"
 
+
 class MSTinyInteger(MSInteger):
     def get_col_spec(self):
         return "TINYINT"
+
 
 class MSSmallInteger(MSInteger):
     def get_col_spec(self):
         return "SMALLINT"
 
-class MSDateTime(sqltypes.DateTime):
-    def __init__(self, *a, **kw):
-        super(MSDateTime, self).__init__(False)
 
+class _DateTimeType(object):
+    """Base for MSSQL datetime types."""
+
+    def bind_processor(self, dialect):
+        # if we receive just a date we can manipulate it
+        # into a datetime since the db-api may not do this.
+        def process(value):
+            if type(value) is datetime.date:
+                return datetime.datetime(value.year, value.month, value.day)
+            return value
+        return process
+
+
+class MSDateTime(_DateTimeType, sqltypes.DateTime):
     def get_col_spec(self):
         return "DATETIME"
 
-class MSSmallDate(sqltypes.Date):
-    def __init__(self, *a, **kw):
-        super(MSSmallDate, self).__init__(False)
 
+class MSDate(sqltypes.Date):
+    def get_col_spec(self):
+        return "DATE"
+
+
+class MSTime(sqltypes.Time):
+    def __init__(self, precision=None, **kwargs):
+        self.precision = precision
+        super(MSTime, self).__init__()
+
+    def get_col_spec(self):
+        if self.precision:
+            return "TIME(%s)" % self.precision
+        else:
+            return "TIME"
+
+
+class MSSmallDateTime(_DateTimeType, sqltypes.TypeEngine):
     def get_col_spec(self):
         return "SMALLDATETIME"
 
-    def result_processor(self, dialect):
-        def process(value):
-            # If the DBAPI returns the value as datetime.datetime(), truncate it back to datetime.date()
-            if type(value) is datetime.datetime:
-                return value.date()
-            return value
-        return process
 
-class MSDate(sqltypes.Date):
-    def __init__(self, *a, **kw):
-        super(MSDate, self).__init__(False)
+class MSDateTime2(_DateTimeType, sqltypes.TypeEngine):
+    def __init__(self, precision=None, **kwargs):
+        self.precision = precision
+
+    def get_col_spec(self):
+        if self.precision:
+            return "DATETIME2(%s)" % self.precision
+        else:
+            return "DATETIME2"
+
+
+class MSDateTimeOffset(_DateTimeType, sqltypes.TypeEngine):
+    def __init__(self, precision=None, **kwargs):
+        self.precision = precision
+
+    def get_col_spec(self):
+        if self.precision:
+            return "DATETIMEOFFSET(%s)" % self.precision
+        else:
+            return "DATETIMEOFFSET"
+
+
+class MSDateTimeAsDate(_DateTimeType, MSDate):
+    """ This is an implementation of the Date type for versions of MSSQL that
+    do not support that specific type. In order to make it work a ``DATETIME``
+    column specification is used and the results get converted back to just
+    the date portion.
+
+    """
 
     def get_col_spec(self):
         return "DATETIME"
 
     def result_processor(self, dialect):
         def process(value):
-            # If the DBAPI returns the value as datetime.datetime(), truncate it back to datetime.date()
+            # If the DBAPI returns the value as datetime.datetime(), truncate
+            # it back to datetime.date()
             if type(value) is datetime.datetime:
                 return value.date()
             return value
         return process
 
-class MSTime(sqltypes.Time):
-    __zero_date = datetime.date(1900, 1, 1)
 
-    def __init__(self, *a, **kw):
-        super(MSTime, self).__init__(False)
+class MSDateTimeAsTime(MSTime):
+    """ This is an implementation of the Time type for versions of MSSQL that
+    do not support that specific type. In order to make it work a ``DATETIME``
+    column specification is used and the results get converted back to just
+    the time portion.
+
+    """
+
+    __zero_date = datetime.date(1900, 1, 1)
 
     def get_col_spec(self):
         return "DATETIME"
@@ -177,6 +526,7 @@ class MSTime(sqltypes.Time):
             return value
         return process
 
+
 class MSDateTime_adodbapi(MSDateTime):
     def result_processor(self, dialect):
         def process(value):
@@ -187,61 +537,240 @@ class MSDateTime_adodbapi(MSDateTime):
             return value
         return process
 
-class MSDateTime_pyodbc(MSDateTime):
-    def bind_processor(self, dialect):
-        def process(value):
-            if type(value) is datetime.date:
-                return datetime.datetime(value.year, value.month, value.day)
-            return value
-        return process
 
-class MSDate_pyodbc(MSDate):
-    def bind_processor(self, dialect):
-        def process(value):
-            if type(value) is datetime.date:
-                return datetime.datetime(value.year, value.month, value.day)
-            return value
-        return process
+class MSText(_StringType, sqltypes.Text):
+    """MSSQL TEXT type, for variable-length text up to 2^31 characters."""
 
-class MSText(sqltypes.Text):
+    def __init__(self, *args, **kwargs):
+        """Construct a TEXT.
+
+        :param collation: Optional, a column-level collation for this string
+          value. Accepts a Windows Collation Name or a SQL Collation Name.
+
+        """
+        _StringType.__init__(self, **kwargs)
+        sqltypes.Text.__init__(self, None,
+                convert_unicode=kwargs.get('convert_unicode', False),
+                assert_unicode=kwargs.get('assert_unicode', None))
+
     def get_col_spec(self):
         if self.dialect.text_as_varchar:
-            return "VARCHAR(max)"
+            return self._extend("VARCHAR(max)")
         else:
-            return "TEXT"
+            return self._extend("TEXT")
 
-class MSString(sqltypes.String):
+
+class MSNText(_StringType, sqltypes.UnicodeText):
+    """MSSQL NTEXT type, for variable-length unicode text up to 2^30
+    characters."""
+
+    def __init__(self, *args, **kwargs):
+        """Construct a NTEXT.
+
+        :param collation: Optional, a column-level collation for this string
+          value. Accepts a Windows Collation Name or a SQL Collation Name.
+
+        """
+        _StringType.__init__(self, **kwargs)
+        sqltypes.UnicodeText.__init__(self, None,
+                convert_unicode=kwargs.get('convert_unicode', True),
+                assert_unicode=kwargs.get('assert_unicode', 'warn'))
+
     def get_col_spec(self):
-        return "VARCHAR" + (self.length and "(%d)" % self.length or "")
+        if self.dialect.text_as_varchar:
+            return self._extend("NVARCHAR(max)")
+        else:
+            return self._extend("NTEXT")
 
-class MSNVarchar(sqltypes.Unicode):
+
+class MSString(_StringType, sqltypes.String):
+    """MSSQL VARCHAR type, for variable-length non-Unicode data with a maximum
+    of 8,000 characters."""
+
+    def __init__(self, length=None, convert_unicode=False, assert_unicode=None, **kwargs):
+        """Construct a VARCHAR.
+
+        :param length: Optinal, maximum data length, in characters.
+
+        :param convert_unicode: defaults to False.  If True, convert
+          ``unicode`` data sent to the database to a ``str``
+          bytestring, and convert bytestrings coming back from the
+          database into ``unicode``.
+
+          Bytestrings are encoded using the dialect's
+          :attr:`~sqlalchemy.engine.base.Dialect.encoding`, which
+          defaults to `utf-8`.
+
+          If False, may be overridden by
+          :attr:`sqlalchemy.engine.base.Dialect.convert_unicode`.
+
+        :param assert_unicode:
+
+          If None (the default), no assertion will take place unless
+          overridden by :attr:`sqlalchemy.engine.base.Dialect.assert_unicode`.
+
+          If 'warn', will issue a runtime warning if a ``str``
+          instance is used as a bind value.
+
+          If true, will raise an :exc:`sqlalchemy.exc.InvalidRequestError`.
+
+        :param collation: Optional, a column-level collation for this string
+          value. Accepts a Windows Collation Name or a SQL Collation Name.
+
+        """
+        _StringType.__init__(self, **kwargs)
+        sqltypes.String.__init__(self, length=length,
+                convert_unicode=convert_unicode,
+                assert_unicode=assert_unicode)
+
     def get_col_spec(self):
         if self.length:
-            return "NVARCHAR(%(length)s)" % {'length' : self.length}
-        elif self.dialect.text_as_varchar:
-            return "NVARCHAR(max)"
+            return self._extend("VARCHAR(%s)" % self.length)
         else:
-            return "NTEXT"
+            return self._extend("VARCHAR")
 
-class AdoMSNVarchar(MSNVarchar):
-    """overrides bindparam/result processing to not convert any unicode strings"""
-    def bind_processor(self, dialect):
-        return None
 
-    def result_processor(self, dialect):
-        return None
+class MSNVarchar(_StringType, sqltypes.Unicode):
+    """MSSQL NVARCHAR type.
 
-class MSChar(sqltypes.CHAR):
+    For variable-length unicode character data up to 4,000 characters."""
+
+    def __init__(self, length=None, **kwargs):
+        """Construct a NVARCHAR.
+
+        :param length: Optional, Maximum data length, in characters.
+
+        :param collation: Optional, a column-level collation for this string
+          value. Accepts a Windows Collation Name or a SQL Collation Name.
+
+        """
+        _StringType.__init__(self, **kwargs)
+        sqltypes.Unicode.__init__(self, length=length,
+                convert_unicode=kwargs.get('convert_unicode', True),
+                assert_unicode=kwargs.get('assert_unicode', 'warn'))
+
+    def adapt(self, impltype):
+        return impltype(length=self.length,
+                        convert_unicode=self.convert_unicode,
+                        assert_unicode=self.assert_unicode,
+                        collation=self.collation)
+
     def get_col_spec(self):
-        return "CHAR(%(length)s)" % {'length' : self.length}
+        if self.length:
+            return self._extend("NVARCHAR(%(length)s)" % {'length' : self.length})
+        else:
+            return self._extend("NVARCHAR")
 
-class MSNChar(sqltypes.NCHAR):
+
+class MSChar(_StringType, sqltypes.CHAR):
+    """MSSQL CHAR type, for fixed-length non-Unicode data with a maximum
+    of 8,000 characters."""
+
+    def __init__(self, length=None, convert_unicode=False, assert_unicode=None, **kwargs):
+        """Construct a CHAR.
+
+        :param length: Optinal, maximum data length, in characters.
+
+        :param convert_unicode: defaults to False.  If True, convert
+          ``unicode`` data sent to the database to a ``str``
+          bytestring, and convert bytestrings coming back from the
+          database into ``unicode``.
+
+          Bytestrings are encoded using the dialect's
+          :attr:`~sqlalchemy.engine.base.Dialect.encoding`, which
+          defaults to `utf-8`.
+
+          If False, may be overridden by
+          :attr:`sqlalchemy.engine.base.Dialect.convert_unicode`.
+
+        :param assert_unicode:
+
+          If None (the default), no assertion will take place unless
+          overridden by :attr:`sqlalchemy.engine.base.Dialect.assert_unicode`.
+
+          If 'warn', will issue a runtime warning if a ``str``
+          instance is used as a bind value.
+
+          If true, will raise an :exc:`sqlalchemy.exc.InvalidRequestError`.
+
+        :param collation: Optional, a column-level collation for this string
+          value. Accepts a Windows Collation Name or a SQL Collation Name.
+
+        """
+        _StringType.__init__(self, **kwargs)
+        sqltypes.CHAR.__init__(self, length=length,
+                convert_unicode=convert_unicode,
+                assert_unicode=assert_unicode)
+
     def get_col_spec(self):
-        return "NCHAR(%(length)s)" % {'length' : self.length}
+        if self.length:
+            return self._extend("CHAR(%s)" % self.length)
+        else:
+            return self._extend("CHAR")
 
-class MSBinary(sqltypes.Binary):
+
+class MSNChar(_StringType, sqltypes.NCHAR):
+    """MSSQL NCHAR type.
+
+    For fixed-length unicode character data up to 4,000 characters."""
+
+    def __init__(self, length=None, **kwargs):
+        """Construct an NCHAR.
+
+        :param length: Optional, Maximum data length, in characters.
+
+        :param collation: Optional, a column-level collation for this string
+          value. Accepts a Windows Collation Name or a SQL Collation Name.
+
+        """
+        _StringType.__init__(self, **kwargs)
+        sqltypes.NCHAR.__init__(self, length=length,
+                convert_unicode=kwargs.get('convert_unicode', True),
+                assert_unicode=kwargs.get('assert_unicode', 'warn'))
+
+    def get_col_spec(self):
+        if self.length:
+            return self._extend("NCHAR(%(length)s)" % {'length' : self.length})
+        else:
+            return self._extend("NCHAR")
+
+
+class MSGenericBinary(sqltypes.Binary):
+    """The Binary type assumes that a Binary specification without a length
+    is an unbound Binary type whereas one with a length specification results
+    in a fixed length Binary type.
+
+    If you want standard MSSQL ``BINARY`` behavior use the ``MSBinary`` type.
+
+    """
+
+    def get_col_spec(self):
+        if self.length:
+            return "BINARY(%s)" % self.length
+        else:
+            return "IMAGE"
+
+
+class MSBinary(MSGenericBinary):
+    def get_col_spec(self):
+        if self.length:
+            return "BINARY(%s)" % self.length
+        else:
+            return "BINARY"
+
+
+class MSVarBinary(MSGenericBinary):
+    def get_col_spec(self):
+        if self.length:
+            return "VARBINARY(%s)" % self.length
+        else:
+            return "VARBINARY"
+
+
+class MSImage(MSGenericBinary):
     def get_col_spec(self):
         return "IMAGE"
+
 
 class MSBoolean(sqltypes.Boolean):
     def get_col_spec(self):
@@ -266,97 +795,116 @@ class MSBoolean(sqltypes.Boolean):
                 return value and True or False
         return process
 
+
 class MSTimeStamp(sqltypes.TIMESTAMP):
     def get_col_spec(self):
         return "TIMESTAMP"
+
 
 class MSMoney(sqltypes.TypeEngine):
     def get_col_spec(self):
         return "MONEY"
 
+
 class MSSmallMoney(MSMoney):
     def get_col_spec(self):
         return "SMALLMONEY"
+
 
 class MSUniqueIdentifier(sqltypes.TypeEngine):
     def get_col_spec(self):
         return "UNIQUEIDENTIFIER"
 
+
 class MSVariant(sqltypes.TypeEngine):
     def get_col_spec(self):
         return "SQL_VARIANT"
 
-class MSSQLExecutionContext(default.DefaultExecutionContext):
-    def __init__(self, *args, **kwargs):
-        self.IINSERT = self.HASIDENT = False
-        super(MSSQLExecutionContext, self).__init__(*args, **kwargs)
 
-    def _has_implicit_sequence(self, column):
-        if column.primary_key and column.autoincrement:
-            if isinstance(column.type, sqltypes.Integer) and not column.foreign_keys:
-                if column.default is None or (isinstance(column.default, schema.Sequence) and \
-                                              column.default.optional):
-                    return True
-        return False
+def _has_implicit_sequence(column):
+    return column.primary_key and  \
+        column.autoincrement and \
+        isinstance(column.type, sqltypes.Integer) and \
+        not column.foreign_keys and \
+        (
+            column.default is None or 
+            (
+                isinstance(column.default, schema.Sequence) and 
+                column.default.optional)
+            )
+
+def _table_sequence_column(tbl):
+    if not hasattr(tbl, '_ms_has_sequence'):
+        tbl._ms_has_sequence = None
+        for column in tbl.c:
+            if getattr(column, 'sequence', False) or _has_implicit_sequence(column):
+                tbl._ms_has_sequence = column
+                break
+    return tbl._ms_has_sequence
+
+class MSSQLExecutionContext(default.DefaultExecutionContext):
+    IINSERT = False
+    HASIDENT = False
 
     def pre_exec(self):
-        """MS-SQL has a special mode for inserting non-NULL values
-        into IDENTITY columns.
+        """Activate IDENTITY_INSERT if needed."""
 
-        Activate it if the feature is turned on and needed.
-        """
         if self.compiled.isinsert:
             tbl = self.compiled.statement.table
-            if not hasattr(tbl, 'has_sequence'):
-                tbl.has_sequence = None
-                for column in tbl.c:
-                    if getattr(column, 'sequence', False) or self._has_implicit_sequence(column):
-                        tbl.has_sequence = column
-                        break
-
-            self.HASIDENT = bool(tbl.has_sequence)
+            seq_column = _table_sequence_column(tbl)
+            self.HASIDENT = bool(seq_column)
             if self.dialect.auto_identity_insert and self.HASIDENT:
-                if isinstance(self.compiled_parameters, list):
-                    self.IINSERT = tbl.has_sequence.key in self.compiled_parameters[0]
-                else:
-                    self.IINSERT = tbl.has_sequence.key in self.compiled_parameters
+                self.IINSERT = tbl._ms_has_sequence.key in self.compiled_parameters[0]
             else:
                 self.IINSERT = False
 
             if self.IINSERT:
-                self.cursor.execute("SET IDENTITY_INSERT %s ON" % self.dialect.identifier_preparer.format_table(self.compiled.statement.table))
+                self.cursor.execute("SET IDENTITY_INSERT %s ON" % 
+                    self.dialect.identifier_preparer.format_table(self.compiled.statement.table))
 
-        super(MSSQLExecutionContext, self).pre_exec()
+    def handle_dbapi_exception(self, e):
+        if self.IINSERT:
+            try:
+                self.cursor.execute("SET IDENTITY_INSERT %s OFF" % self.dialect.identifier_preparer.format_table(self.compiled.statement.table))
+            except:
+                pass
 
     def post_exec(self):
-        """Turn off the INDENTITY_INSERT mode if it's been activated,
-        and fetch recently inserted IDENTIFY values (works only for
-        one column).
-        """
+        """Disable IDENTITY_INSERT if enabled."""
 
-        if self.compiled.isinsert and (not self.executemany) and self.HASIDENT and not self.IINSERT:
-            if not len(self._last_inserted_ids) or self._last_inserted_ids[0] is None:
+        if self.compiled.isinsert and not self.executemany and self.HASIDENT and not self.IINSERT:
+            if not self._last_inserted_ids or self._last_inserted_ids[0] is None:
                 if self.dialect.use_scope_identity:
                     self.cursor.execute("SELECT scope_identity() AS lastrowid")
                 else:
                     self.cursor.execute("SELECT @@identity AS lastrowid")
                 row = self.cursor.fetchone()
                 self._last_inserted_ids = [int(row[0])] + self._last_inserted_ids[1:]
-        super(MSSQLExecutionContext, self).post_exec()
+
+        if self.IINSERT:
+            self.cursor.execute("SET IDENTITY_INSERT %s OFF" % self.dialect.identifier_preparer.format_table(self.compiled.statement.table))
 
 
 class MSSQLExecutionContext_pyodbc (MSSQLExecutionContext):
     def pre_exec(self):
         """where appropriate, issue "select scope_identity()" in the same statement"""
         super(MSSQLExecutionContext_pyodbc, self).pre_exec()
-        if self.compiled.isinsert and self.HASIDENT and (not self.IINSERT) \
+        if self.compiled.isinsert and self.HASIDENT and not self.IINSERT \
                 and len(self.parameters) == 1 and self.dialect.use_scope_identity:
             self.statement += "; select scope_identity()"
 
     def post_exec(self):
-        if self.compiled.isinsert and self.HASIDENT and (not self.IINSERT) and self.dialect.use_scope_identity:
-            # do nothing - id was fetched in dialect.do_execute()
-            pass
+        if self.HASIDENT and not self.IINSERT and self.dialect.use_scope_identity and not self.executemany:
+            import pyodbc
+            # Fetch the last inserted id from the manipulated statement
+            # We may have to skip over a number of result sets with no data (due to triggers, etc.)
+            while True:
+                try:
+                    row = self.cursor.fetchone()
+                    break
+                except pyodbc.Error, e:
+                    self.cursor.nextset()
+            self._last_inserted_ids = [int(row[0])]
         else:
             super(MSSQLExecutionContext_pyodbc, self).post_exec()
 
@@ -364,6 +912,13 @@ class MSSQLDialect(default.DefaultDialect):
     name = 'mssql'
     supports_default_values = True
     supports_empty_insert = False
+    auto_identity_insert = True
+    execution_ctx_cls = MSSQLExecutionContext
+    text_as_varchar = False
+    use_scope_identity = False
+    has_window_funcs = False
+    max_identifier_length = 128
+    schema_name = "dbo"
 
     colspecs = {
         sqltypes.Unicode : MSNVarchar,
@@ -375,9 +930,10 @@ class MSSQLDialect(default.DefaultDialect):
         sqltypes.Date : MSDate,
         sqltypes.Time : MSTime,
         sqltypes.String : MSString,
-        sqltypes.Binary : MSBinary,
+        sqltypes.Binary : MSGenericBinary,
         sqltypes.Boolean : MSBoolean,
         sqltypes.Text : MSText,
+        sqltypes.UnicodeText : MSNText,
         sqltypes.CHAR: MSChar,
         sqltypes.NCHAR: MSNChar,
         sqltypes.TIMESTAMP: MSTimeStamp,
@@ -393,18 +949,21 @@ class MSSQLDialect(default.DefaultDialect):
         'char' : MSChar,
         'nchar' : MSNChar,
         'text' : MSText,
-        'ntext' : MSText,
+        'ntext' : MSNText,
         'decimal' : MSNumeric,
         'numeric' : MSNumeric,
         'float' : MSFloat,
         'datetime' : MSDateTime,
+        'datetime2' : MSDateTime2,
+        'datetimeoffset' : MSDateTimeOffset,
         'date': MSDate,
-        'smalldatetime' : MSSmallDate,
+        'time': MSTime,
+        'smalldatetime' : MSSmallDateTime,
         'binary' : MSBinary,
-        'varbinary' : MSBinary,
+        'varbinary' : MSVarBinary,
         'bit': MSBoolean,
         'real' : MSFloat,
-        'image' : MSBinary,
+        'image' : MSImage,
         'timestamp': MSTimeStamp,
         'money': MSMoney,
         'smallmoney': MSSmallMoney,
@@ -412,23 +971,34 @@ class MSSQLDialect(default.DefaultDialect):
         'sql_variant': MSVariant,
     }
 
-    def __new__(cls, dbapi=None, *args, **kwargs):
-        if cls != MSSQLDialect:
+    def __new__(cls, *args, **kwargs):
+        if cls is not MSSQLDialect:
+            # this gets called with the dialect specific class
             return super(MSSQLDialect, cls).__new__(cls, *args, **kwargs)
+        dbapi = kwargs.get('dbapi', None)
         if dbapi:
             dialect = dialect_mapping.get(dbapi.__name__)
-            return dialect(*args, **kwargs)
+            return dialect(**kwargs)
         else:
             return object.__new__(cls, *args, **kwargs)
 
-    def __init__(self, auto_identity_insert=True, **params):
-        super(MSSQLDialect, self).__init__(**params)
-        self.auto_identity_insert = auto_identity_insert
-        self.text_as_varchar = False
-        self.use_scope_identity = False
-        self.has_window_funcs = False
-        self.set_default_schema_name("dbo")
+    def __init__(self,
+                 auto_identity_insert=True, query_timeout=None,
+                 text_as_varchar=False, use_scope_identity=False,
+                 has_window_funcs=False, max_identifier_length=None,
+                 schema_name="dbo", **opts):
+        self.auto_identity_insert = bool(auto_identity_insert)
+        self.query_timeout = int(query_timeout or 0)
+        self.schema_name = schema_name
 
+        # to-do: the options below should use server version introspection to set themselves on connection
+        self.text_as_varchar = bool(text_as_varchar)
+        self.use_scope_identity = bool(use_scope_identity)
+        self.has_window_funcs =  bool(has_window_funcs)
+        self.max_identifier_length = int(max_identifier_length or 0) or 128
+        super(MSSQLDialect, self).__init__(**opts)
+
+    @classmethod
     def dbapi(cls, module_name=None):
         if module_name:
             try:
@@ -444,8 +1014,8 @@ class MSSQLDialect(default.DefaultDialect):
                     pass
             else:
                 raise ImportError('No DBAPI module detected for MSSQL - please install pyodbc, pymssql, or adodbapi')
-    dbapi = classmethod(dbapi)
 
+    @base.connection_memoize(('mssql', 'server_version_info'))
     def server_version_info(self, connection):
         """A tuple of the database server version.
 
@@ -458,14 +1028,11 @@ class MSSQLDialect(default.DefaultDialect):
         cached per-Connection.
         """
         return connection.dialect._server_version_info(connection.connection)
-    server_version_info = base.connection_memoize(
-        ('mssql', 'server_version_info'))(server_version_info)
 
     def _server_version_info(self, dbapi_con):
         """Return a tuple of the database's version number."""
-
         raise NotImplementedError()
-    
+
     def create_connect_args(self, url):
         opts = url.translate_connect_args(username='user')
         opts.update(url.query)
@@ -479,68 +1046,43 @@ class MSSQLDialect(default.DefaultDialect):
             self.use_scope_identity = bool(int(opts.pop('use_scope_identity')))
         if 'has_window_funcs' in opts:
             self.has_window_funcs =  bool(int(opts.pop('has_window_funcs')))
-        return self.make_connect_string(opts)
-
-    def create_execution_context(self, *args, **kwargs):
-        return MSSQLExecutionContext(self, *args, **kwargs)
+        return self.make_connect_string(opts, url.query)
 
     def type_descriptor(self, typeobj):
         newobj = sqltypes.adapt_type(typeobj, self.colspecs)
         # Some types need to know about the dialect
-        if isinstance(newobj, (MSText, MSNVarchar)):
+        if isinstance(newobj, (MSText, MSNText)):
             newobj.dialect = self
         return newobj
 
-    def last_inserted_ids(self):
-        return self.context.last_inserted_ids
+    def do_begin(self, connection):
+        connection.execute("SET IMPLICIT_TRANSACTIONS OFF")
+        connection.execute("BEGIN TRANSACTION")
 
+    @base.connection_memoize(('dialect', 'default_schema_name'))
     def get_default_schema_name(self, connection):
+        query = "SELECT user_name() as user_name;"
+        user_name = connection.scalar(sql.text(query))
+        if user_name is not None:
+            # now, get the default schema
+            query = """
+            SELECT default_schema_name FROM
+            sys.database_principals
+            WHERE name = :user_name
+            AND type = 'S'
+            """
+            try:
+                default_schema_name = connection.scalar(sql.text(query),
+                                                    user_name=user_name)
+                if default_schema_name is not None:
+                    return default_schema_name
+            except:
+                pass
         return self.schema_name
-
-    def set_default_schema_name(self, schema_name):
-        self.schema_name = schema_name
-
-    def last_inserted_ids(self):
-        return self.context.last_inserted_ids
-
-    def do_execute(self, cursor, statement, params, context=None, **kwargs):
-        if params == {}:
-            params = ()
-        try:
-            super(MSSQLDialect, self).do_execute(cursor, statement, params, context=context, **kwargs)
-        finally:
-            if context.IINSERT:
-                cursor.execute("SET IDENTITY_INSERT %s OFF" % self.identifier_preparer.format_table(context.compiled.statement.table))
-
-    def do_executemany(self, cursor, statement, params, context=None, **kwargs):
-        try:
-            super(MSSQLDialect, self).do_executemany(cursor, statement, params, context=context, **kwargs)
-        finally:
-            if context.IINSERT:
-                cursor.execute("SET IDENTITY_INSERT %s OFF" % self.identifier_preparer.format_table(context.compiled.statement.table))
-
-    def _execute(self, c, statement, parameters):
-        try:
-            if parameters == {}:
-                parameters = ()
-            c.execute(statement, parameters)
-            self.context.rowcount = c.rowcount
-            c.DBPROP_COMMITPRESERVE = "Y"
-        except Exception, e:
-            raise exc.DBAPIError.instance(statement, parameters, e)
 
     def table_names(self, connection, schema):
         from sqlalchemy.databases import information_schema as ischema
         return ischema.table_names(connection, schema)
-
-    def raw_connection(self, connection):
-        """Pull the raw pymmsql connection out--sensative to "pool.ConnectionFairy" and pymssql.pymssqlCnx Classes"""
-        try:
-            # TODO: probably want to move this to individual dialect subclasses to
-            # save on the exception throw + simplify
-            return connection.connection.__dict__['_pymssqlCnx__cnx']
-        except:
-            return connection.connection.adoConn
 
     def uppercase_table(self, t):
         # convert all names to uppercase -- fixes refs to INFORMATION_SCHEMA for case-senstive DBs, and won't matter for case-insensitive
@@ -550,6 +1092,7 @@ class MSSQLDialect(default.DefaultDialect):
         for c in t.columns:
             c.name = c.name.upper()
         return t
+
 
     def has_table(self, connection, tablename, schema=None):
         import sqlalchemy.databases.information_schema as ischema
@@ -588,14 +1131,15 @@ class MSSQLDialect(default.DefaultDialect):
             if row is None:
                 break
             found_table = True
-            (name, type, nullable, charlen, numericprec, numericscale, default) = (
+            (name, type, nullable, charlen, numericprec, numericscale, default, collation) = (
                 row[columns.c.column_name],
                 row[columns.c.data_type],
                 row[columns.c.is_nullable] == 'YES',
                 row[columns.c.character_maximum_length],
                 row[columns.c.numeric_precision],
                 row[columns.c.numeric_scale],
-                row[columns.c.column_default]
+                row[columns.c.column_default],
+                row[columns.c.collation_name]
             )
             if include_columns and name not in include_columns:
                 continue
@@ -605,17 +1149,23 @@ class MSSQLDialect(default.DefaultDialect):
                 if a is not None:
                     args.append(a)
             coltype = self.ischema_names.get(type, None)
+
+            kwargs = {}
+            if coltype in (MSString, MSChar, MSNVarchar, MSNChar, MSText, MSNText):
+                if collation:
+                    kwargs.update(collation=collation)
+
             if coltype == MSText or (coltype == MSString and charlen == -1):
-                coltype = MSText()
+                coltype = MSText(**kwargs)
             else:
                 if coltype is None:
                     util.warn("Did not recognize type '%s' of column '%s'" %
                               (type, name))
                     coltype = sqltypes.NULLTYPE
 
-                elif coltype in (MSNVarchar, AdoMSNVarchar) and charlen == -1:
+                elif coltype in (MSNVarchar,) and charlen == -1:
                     args[0] = None
-                coltype = coltype(*args)
+                coltype = coltype(*args, **kwargs)
             colargs = []
             if default is not None:
                 colargs.append(schema.DefaultClause(sql.text(default)))
@@ -633,11 +1183,11 @@ class MSSQLDialect(default.DefaultDialect):
             if row is None:
                 break
             col_name, type_name = row[3], row[5]
-            if type_name.endswith("identity"):
+            if type_name.endswith("identity") and col_name in table.c:
                 ic = table.c[col_name]
                 ic.autoincrement = True
                 # setup a psuedo-sequence to represent the identity attribute - we interpret this at table.create() time as the identity attribute
-                ic.sequence = schema.Sequence(ic.name + '_identity')
+                ic.sequence = schema.Sequence(ic.name + '_identity', 1, 1)
                 # MSSQL: only one identity per table allowed
                 cursor.close()
                 break
@@ -665,7 +1215,7 @@ class MSSQLDialect(default.DefaultDialect):
                                                                          C.c.table_schema == (table.schema or current_schema)))
         c = connection.execute(s)
         for row in c:
-            if 'PRIMARY' in row[TC.c.constraint_type.name]:
+            if 'PRIMARY' in row[TC.c.constraint_type.name] and row[0] in table.c:
                 table.primary_key.add(table.c[row[0]])
 
         # Foreign key constraints
@@ -699,7 +1249,7 @@ class MSSQLDialect(default.DefaultDialect):
                 schema.Table(rtbl, table.metadata, schema=rschema, autoload=True, autoload_with=connection)
             if rfknm != fknm:
                 if fknm:
-                    table.append_constraint(schema.ForeignKeyConstraint(scols, [_gen_fkref(table, s, t, c) for s, t, c in rcols], fknm))
+                    table.append_constraint(schema.ForeignKeyConstraint(scols, [_gen_fkref(table, s, t, c) for s, t, c in rcols], fknm, link_to_name=True))
                 fknm, scols, rcols = (rfknm, [], [])
             if not scol in scols:
                 scols.append(scol)
@@ -707,23 +1257,20 @@ class MSSQLDialect(default.DefaultDialect):
                 rcols.append((rschema, rtbl, rcol))
 
         if fknm and scols:
-            table.append_constraint(schema.ForeignKeyConstraint(scols, [_gen_fkref(table, s, t, c) for s, t, c in rcols], fknm))
+            table.append_constraint(schema.ForeignKeyConstraint(scols, [_gen_fkref(table, s, t, c) for s, t, c in rcols], fknm, link_to_name=True))
 
 
 class MSSQLDialect_pymssql(MSSQLDialect):
     supports_sane_rowcount = False
     max_identifier_length = 30
 
+    @classmethod
     def import_dbapi(cls):
         import pymssql as module
         # pymmsql doesn't have a Binary method.  we use string
         # TODO: monkeypatching here is less than ideal
         module.Binary = lambda st: str(st)
         return module
-    import_dbapi = classmethod(import_dbapi)
-
-    ischema_names = MSSQLDialect.ischema_names.copy()
-
 
     def __init__(self, **params):
         super(MSSQLDialect_pymssql, self).__init__(**params)
@@ -731,15 +1278,15 @@ class MSSQLDialect_pymssql(MSSQLDialect):
 
         # pymssql understands only ascii
         if self.convert_unicode:
+            util.warn("pymssql does not support unicode")
             self.encoding = params.get('encoding', 'ascii')
 
-    def do_rollback(self, connection):
-        # pymssql throws an error on repeated rollbacks. Ignore it.
-        # TODO: this is normal behavior for most DBs.  are we sure we want to ignore it ?
-        try:
-            connection.rollback()
-        except:
-            pass
+        self.colspecs = MSSQLDialect.colspecs.copy()
+        self.ischema_names = MSSQLDialect.ischema_names.copy()
+        self.ischema_names['date'] = MSDateTimeAsDate
+        self.colspecs[sqltypes.Date] = MSDateTimeAsDate
+        self.ischema_names['time'] = MSDateTimeAsTime
+        self.colspecs[sqltypes.Time] = MSDateTimeAsTime
 
     def create_connect_args(self, url):
         r = super(MSSQLDialect_pymssql, self).create_connect_args(url)
@@ -747,7 +1294,7 @@ class MSSQLDialect_pymssql(MSSQLDialect):
             self.dbapi._mssql.set_query_timeout(self.query_timeout)
         return r
 
-    def make_connect_string(self, keys):
+    def make_connect_string(self, keys, query):
         if keys.get('port'):
             # pymssql expects port as host:port, not a separate arg
             keys['host'] = ''.join([keys.get('host', ''), ':', str(keys['port'])])
@@ -764,9 +1311,21 @@ class MSSQLDialect_pyodbc(MSSQLDialect):
     # PyODBC unicode is broken on UCS-4 builds
     supports_unicode = sys.maxunicode == 65535
     supports_unicode_statements = supports_unicode
+    execution_ctx_cls = MSSQLExecutionContext_pyodbc
 
-    def __init__(self, **params):
+    def __init__(self, description_encoding='latin-1', **params):
         super(MSSQLDialect_pyodbc, self).__init__(**params)
+        self.description_encoding = description_encoding
+
+        if self.server_version_info < (10,):
+            self.colspecs = MSSQLDialect.colspecs.copy()
+            self.ischema_names = MSSQLDialect.ischema_names.copy()
+            self.ischema_names['date'] = MSDateTimeAsDate
+            self.colspecs[sqltypes.Date] = MSDateTimeAsDate
+            self.ischema_names['time'] = MSDateTimeAsTime
+            self.colspecs[sqltypes.Time] = MSDateTimeAsTime
+
+        # FIXME: scope_identity sniff should look at server version, not the ODBC driver
         # whether use_scope_identity will work depends on the version of pyodbc
         try:
             import pyodbc
@@ -774,62 +1333,46 @@ class MSSQLDialect_pyodbc(MSSQLDialect):
         except:
             pass
 
+    @classmethod
     def import_dbapi(cls):
         import pyodbc as module
         return module
-    import_dbapi = classmethod(import_dbapi)
 
-    colspecs = MSSQLDialect.colspecs.copy()
-    if supports_unicode:
-        colspecs[sqltypes.Unicode] = AdoMSNVarchar
-    colspecs[sqltypes.Date] = MSDate_pyodbc
-    colspecs[sqltypes.DateTime] = MSDateTime_pyodbc
-
-    ischema_names = MSSQLDialect.ischema_names.copy()
-    if supports_unicode:
-        ischema_names['nvarchar'] = AdoMSNVarchar
-    ischema_names['smalldatetime'] = MSDate_pyodbc
-    ischema_names['datetime'] = MSDateTime_pyodbc
-
-    def make_connect_string(self, keys):
+    def make_connect_string(self, keys, query):
         if 'max_identifier_length' in keys:
             self.max_identifier_length = int(keys.pop('max_identifier_length'))
-        if 'dsn' in keys:
-            connectors = ['dsn=%s' % keys.pop('dsn')]
+
+        if 'odbc_connect' in keys:
+            connectors = [urllib.unquote_plus(keys.pop('odbc_connect'))]
         else:
-            port = ''
-            if 'port' in keys and (
-                keys.get('driver', 'SQL Server') == 'SQL Server'):
-                port = ',%d' % int(keys.pop('port'))
+            dsn_connection = 'dsn' in keys or ('host' in keys and 'database' not in keys)
+            if dsn_connection:
+                connectors= ['dsn=%s' % (keys.pop('host', '') or keys.pop('dsn', ''))]
+            else:
+                port = ''
+                if 'port' in keys and not 'port' in query:
+                    port = ',%d' % int(keys.pop('port'))
 
-            connectors = ["DRIVER={%s}" % keys.pop('driver', 'SQL Server'),
-                          'Server=%s%s' % (keys.pop('host', ''), port),
-                          'Database=%s' % keys.pop('database', '') ]
+                connectors = ["DRIVER={%s}" % keys.pop('driver', 'SQL Server'),
+                              'Server=%s%s' % (keys.pop('host', ''), port),
+                              'Database=%s' % keys.pop('database', '') ]
 
-            if 'port' in keys and not port:
-                connectors.append('Port=%d' % int(keys.pop('port')))
+            user = keys.pop("user", None)
+            if user:
+                connectors.append("UID=%s" % user)
+                connectors.append("PWD=%s" % keys.pop('password', ''))
+            else:
+                connectors.append("TrustedConnection=Yes")
 
-        user = keys.pop("user", None)
-        if user:
-            connectors.append("UID=%s" % user)
-            connectors.append("PWD=%s" % keys.pop('password', ''))
-        else:
-            connectors.append("TrustedConnection=Yes")
+            # if set to 'Yes', the ODBC layer will try to automagically convert 
+            # textual data from your database encoding to your client encoding 
+            # This should obviously be set to 'No' if you query a cp1253 encoded 
+            # database from a latin1 client... 
+            if 'odbc_autotranslate' in keys:
+                connectors.append("AutoTranslate=%s" % keys.pop("odbc_autotranslate"))
 
-        # if set to 'Yes', the ODBC layer will try to automagically convert 
-        # textual data from your database encoding to your client encoding 
-        # This should obviously be set to 'No' if you query a cp1253 encoded 
-        # database from a latin1 client... 
-        if 'odbc_autotranslate' in keys:
-            connectors.append("AutoTranslate=%s" % keys.pop("odbc_autotranslate"))
+            connectors.extend(['%s=%s' % (k,v) for k,v in keys.iteritems()])
 
-        # Allow specification of partial ODBC connect string
-        if 'odbc_options' in keys: 
-            odbc_options=keys.pop('odbc_options')
-            if odbc_options[0]=="'" and odbc_options[-1]=="'":
-                odbc_options=odbc_options[1:-1]
-            connectors.append(odbc_options)
-        connectors.extend(['%s=%s' % (k,v) for k,v in keys.iteritems()])
         return [[";".join (connectors)], {}]
 
     def is_disconnect(self, e):
@@ -840,26 +1383,9 @@ class MSSQLDialect_pyodbc(MSSQLDialect):
         else:
             return False
 
-    def create_execution_context(self, *args, **kwargs):
-        return MSSQLExecutionContext_pyodbc(self, *args, **kwargs)
-
-    def do_execute(self, cursor, statement, parameters, context=None, **kwargs):
-        super(MSSQLDialect_pyodbc, self).do_execute(cursor, statement, parameters, context=context, **kwargs)
-        if context and context.HASIDENT and (not context.IINSERT) and context.dialect.use_scope_identity:
-            import pyodbc
-            # Fetch the last inserted id from the manipulated statement
-            # We may have to skip over a number of result sets with no data (due to triggers, etc.)
-            while True:
-                try:
-                    row = cursor.fetchone()
-                    break
-                except pyodbc.Error, e:
-                    cursor.nextset()
-            context._last_inserted_ids = [int(row[0])]
 
     def _server_version_info(self, dbapi_con):
         """Convert a pyodbc SQL_DBMS_VER string into a tuple."""
-
         version = []
         r = re.compile('[.\-]')
         for n in r.split(dbapi_con.getinfo(self.dbapi.SQL_DBMS_VER)):
@@ -875,20 +1401,18 @@ class MSSQLDialect_adodbapi(MSSQLDialect):
     supports_unicode = sys.maxunicode == 65535
     supports_unicode_statements = True
 
+    @classmethod
     def import_dbapi(cls):
         import adodbapi as module
         return module
-    import_dbapi = classmethod(import_dbapi)
 
     colspecs = MSSQLDialect.colspecs.copy()
-    colspecs[sqltypes.Unicode] = AdoMSNVarchar
     colspecs[sqltypes.DateTime] = MSDateTime_adodbapi
 
     ischema_names = MSSQLDialect.ischema_names.copy()
-    ischema_names['nvarchar'] = AdoMSNVarchar
     ischema_names['datetime'] = MSDateTime_adodbapi
 
-    def make_connect_string(self, keys):
+    def make_connect_string(self, keys, query):
         connectors = ["Provider=SQLOLEDB"]
         if 'port' in keys:
             connectors.append ("Data Source=%s, %s" % (keys.get("host"), keys.get("port")))
@@ -925,7 +1449,8 @@ class MSSQLCompiler(compiler.DefaultCompiler):
         {
             sql_functions.now: 'CURRENT_TIMESTAMP',
             sql_functions.current_date: 'GETDATE()',
-            'length': lambda x: "LEN(%s)" % x
+            'length': lambda x: "LEN(%s)" % x,
+            sql_functions.char_length: lambda x: "LEN(%s)" % x
         }
     )
 
@@ -956,7 +1481,7 @@ class MSSQLCompiler(compiler.DefaultCompiler):
         so tries to wrap it in a subquery with ``row_number()`` criterion.
 
         """
-        if self.dialect.has_window_funcs and (not getattr(select, '_mssql_visit', None)) and select._offset:
+        if self.dialect.has_window_funcs and not getattr(select, '_mssql_visit', None) and select._offset:
             # to use ROW_NUMBER(), an ORDER BY is required.
             orderby = self.process(select._order_by_clause)
             if not orderby:
@@ -1000,6 +1525,16 @@ class MSSQLCompiler(compiler.DefaultCompiler):
         kwargs['mssql_aliased'] = True
         return super(MSSQLCompiler, self).visit_alias(alias, **kwargs)
 
+    def visit_savepoint(self, savepoint_stmt):
+        util.warn("Savepoint support in mssql is experimental and may lead to data loss.")
+        return "SAVE TRANSACTION %s" % self.preparer.format_savepoint(savepoint_stmt)
+
+    def visit_rollback_to_savepoint(self, savepoint_stmt):
+        return "ROLLBACK TRANSACTION %s" % self.preparer.format_savepoint(savepoint_stmt)
+
+    def visit_release_savepoint(self, savepoint_stmt):
+        pass
+
     def visit_column(self, column, result_map=None, **kwargs):
         if column.table is not None and \
             (not self.isupdate and not self.isdelete) or self.is_subquery():
@@ -1024,7 +1559,7 @@ class MSSQLCompiler(compiler.DefaultCompiler):
             and not isinstance(binary.right, expression._BindParamClause):
             return self.process(expression._BinaryExpression(binary.right, binary.left, binary.operator), **kwargs)
         else:
-            if (binary.operator in (operator.eq, operator.ne)) and (
+            if (binary.operator is operator.eq or binary.operator is operator.ne) and (
                 (isinstance(binary.left, expression._FromGrouping) and isinstance(binary.left.element, expression._ScalarSelect)) or \
                 (isinstance(binary.right, expression._FromGrouping) and isinstance(binary.right.element, expression._ScalarSelect)) or \
                  isinstance(binary.left, expression._ScalarSelect) or isinstance(binary.right, expression._ScalarSelect)):
@@ -1032,8 +1567,35 @@ class MSSQLCompiler(compiler.DefaultCompiler):
                 return self.process(expression._BinaryExpression(binary.left, binary.right, op), **kwargs)
             return super(MSSQLCompiler, self).visit_binary(binary, **kwargs)
 
+    def visit_insert(self, insert_stmt):
+        insert_select = False
+        if insert_stmt.parameters:
+            insert_select = [p for p in insert_stmt.parameters.values() if isinstance(p, sql.Select)]
+        if insert_select:
+            self.isinsert = True
+            colparams = self._get_colparams(insert_stmt)
+            preparer = self.preparer
+
+            insert = ' '.join(["INSERT"] +
+                              [self.process(x) for x in insert_stmt._prefixes])
+
+            if not colparams and not self.dialect.supports_default_values and not self.dialect.supports_empty_insert:
+                raise exc.NotSupportedError(
+                    "The version of %s you are using does not support empty inserts." % self.dialect.name)
+            elif not colparams and self.dialect.supports_default_values:
+                return (insert + " INTO %s DEFAULT VALUES" % (
+                    (preparer.format_table(insert_stmt.table),)))
+            else:
+                return (insert + " INTO %s (%s) SELECT %s" %
+                    (preparer.format_table(insert_stmt.table),
+                     ', '.join([preparer.format_column(c[0])
+                               for c in colparams]),
+                     ', '.join([c[1] for c in colparams])))
+        else:
+            return super(MSSQLCompiler, self).visit_insert(insert_stmt)
+
     def label_select_column(self, select, column, asfrom):
-        if isinstance(column, expression._Function):
+        if isinstance(column, expression.Function):
             return column.label(None)
         else:
             return super(MSSQLCompiler, self).label_select_column(select, column, asfrom)
@@ -1056,18 +1618,25 @@ class MSSQLSchemaGenerator(compiler.SchemaGenerator):
     def get_column_specification(self, column, **kwargs):
         colspec = self.preparer.format_column(column) + " " + column.type.dialect_impl(self.dialect).get_col_spec()
 
+        if column.nullable is not None:
+            if not column.nullable or column.primary_key:
+                colspec += " NOT NULL"
+            else:
+                colspec += " NULL"
+        
+        if not column.table:
+            raise exc.InvalidRequestError("mssql requires Table-bound columns in order to generate DDL")
+            
+        seq_col = _table_sequence_column(column.table)
+
         # install a IDENTITY Sequence if we have an implicit IDENTITY column
-        if (not getattr(column.table, 'has_sequence', False)) and column.primary_key and \
-                column.autoincrement and isinstance(column.type, sqltypes.Integer) and not column.foreign_keys:
-            if column.default is None or (isinstance(column.default, schema.Sequence) and column.default.optional):
-                column.sequence = schema.Sequence(column.name + '_seq')
-
-        if not column.nullable:
-            colspec += " NOT NULL"
-
-        if hasattr(column, 'sequence'):
-            column.table.has_sequence = column
-            colspec += " IDENTITY(%s,%s)" % (column.sequence.start or 1, column.sequence.increment or 1)
+        if seq_col is column:
+            sequence = getattr(column, 'sequence', None)
+            if sequence:
+                start, increment = sequence.start or 1, sequence.increment or 1
+            else:
+                start, increment = 1, 1
+            colspec += " IDENTITY(%s,%s)" % (start, increment)
         else:
             default = self.get_column_default_string(column)
             if default is not None:
@@ -1084,11 +1653,6 @@ class MSSQLSchemaDropper(compiler.SchemaDropper):
         self.execute()
 
 
-class MSSQLDefaultRunner(base.DefaultRunner):
-    # TODO: does ms-sql have standalone sequences ?
-    # A: No, only auto-incrementing IDENTITY property of a column
-    pass
-
 class MSSQLIdentifierPreparer(compiler.IdentifierPreparer):
     reserved_words = compiler.IdentifierPreparer.reserved_words.union(MSSQL_RESERVED_WORDS)
 
@@ -1096,7 +1660,7 @@ class MSSQLIdentifierPreparer(compiler.IdentifierPreparer):
         super(MSSQLIdentifierPreparer, self).__init__(dialect, initial_quote='[', final_quote=']')
 
     def _escape_identifier(self, value):
-        #TODO: determin MSSQL's escapeing rules
+        #TODO: determine MSSQL's escaping rules
         return value
 
 dialect = MSSQLDialect
@@ -1104,4 +1668,4 @@ dialect.statement_compiler = MSSQLCompiler
 dialect.schemagenerator = MSSQLSchemaGenerator
 dialect.schemadropper = MSSQLSchemaDropper
 dialect.preparer = MSSQLIdentifierPreparer
-dialect.defaultrunner = MSSQLDefaultRunner
+

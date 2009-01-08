@@ -233,6 +233,7 @@ class UnicodeSchemaTest(engine_base.AltEngineTest, _base.MappedTest):
         _base.MappedTest.tearDownAll(self)
         engine_base.AltEngineTest.tearDownAll(self)
 
+    @testing.fails_on('mssql', 'pyodbc returns a non unicode encoding of the results description.')
     @testing.resolve_artifact_names
     def test_mapping(self):
         class A(_base.ComparableEntity):
@@ -269,6 +270,7 @@ class UnicodeSchemaTest(engine_base.AltEngineTest, _base.MappedTest):
         assert new_a1.t2s[0].d == b1.d
         session.clear()
 
+    @testing.fails_on('mssql', 'pyodbc returns a non unicode encoding of the results description.')
     @testing.resolve_artifact_names
     def test_inheritance_mapping(self):
         class A(_base.ComparableEntity):
@@ -364,6 +366,7 @@ class MutableTypesTest(_base.MappedTest):
              "WHERE mutable_t.id = :mutable_t_id",
              {'mutable_t_id': f1.id, 'val': u'hi', 'data':f1.data})])
 
+    @testing.uses_deprecated()
     @testing.resolve_artifact_names
     def test_nocomparison(self):
         """Changes are detected on MutableTypes lacking an __eq__ method."""
@@ -517,7 +520,7 @@ class PKTest(_base.MappedTest):
 
     # not supported on sqlite since sqlite's auto-pk generation only works with
     # single column primary keys
-    @testing.fails_on('sqlite')
+    @testing.fails_on('sqlite', 'FIXME: unknown')
     @testing.resolve_artifact_names
     def test_primary_key(self):
         mapper(Entry, multipk1)
@@ -657,7 +660,6 @@ class ClauseAttributesTest(_base.MappedTest):
         eq_(u.name, 'test2')
         eq_(u.counter,  2)
 
-    @testing.crashes('mssql', 'FIXME: unknown, verify not fails_on()')
     @testing.resolve_artifact_names
     def test_insert(self):
         u = User(name='test', counter=sa.select([5]))
@@ -840,7 +842,7 @@ class DefaultTest(_base.MappedTest):
     """
 
     def define_tables(self, metadata):
-        use_string_defaults = testing.against('postgres', 'oracle', 'sqlite')
+        use_string_defaults = testing.against('postgres', 'oracle', 'sqlite', 'mssql')
 
         if use_string_defaults:
             hohotype = String(30)
@@ -873,6 +875,10 @@ class DefaultTest(_base.MappedTest):
             st.append_column(
                 Column('fk_val', Integer,
                        ForeignKey('default_t.secondary_id')))
+        elif testing.against('mssql'):
+            st.append_column(
+                Column('fk_val', Integer,
+                       ForeignKey('default_t.id')))
         else:
             st.append_column(
                 Column('hoho', hohotype, ForeignKey('default_t.hoho')))
@@ -883,7 +889,7 @@ class DefaultTest(_base.MappedTest):
         class Secondary(_base.ComparableEntity):
             pass
 
-    @testing.fails_on('firebird') # "Data type unknown" on the parameter
+    @testing.fails_on('firebird', 'Data type unknown on the parameter')
     @testing.resolve_artifact_names
     def test_insert(self):
         mapper(Hoho, default_t)
@@ -928,7 +934,7 @@ class DefaultTest(_base.MappedTest):
         self.assert_(h2.foober == h3.foober == h4.foober == 'im foober')
         eq_(h5.foober, 'im the new foober')
 
-    @testing.fails_on('firebird') # "Data type unknown" on the parameter
+    @testing.fails_on('firebird', 'Data type unknown on the parameter')
     @testing.resolve_artifact_names
     def test_eager_defaults(self):
         mapper(Hoho, default_t, eager_defaults=True)
@@ -958,7 +964,7 @@ class DefaultTest(_base.MappedTest):
             eq_(h1.foober, "im foober")
         self.sql_count_(0, go)
 
-    @testing.fails_on('firebird') # "Data type unknown" on the parameter
+    @testing.fails_on('firebird', 'Data type unknown on the parameter')
     @testing.resolve_artifact_names
     def test_update(self):
         mapper(Hoho, default_t)
@@ -973,7 +979,7 @@ class DefaultTest(_base.MappedTest):
         session.flush()
         eq_(h1.foober, 'im the update')
 
-    @testing.fails_on('firebird') # "Data type unknown" on the parameter
+    @testing.fails_on('firebird', 'Data type unknown on the parameter')
     @testing.resolve_artifact_names
     def test_used_in_relation(self):
         """A server-side default can be used as the target of a foreign key"""
@@ -1450,7 +1456,7 @@ class SaveTest(_fixtures.FixtureTest):
 
     # why no support on oracle ?  because oracle doesn't save
     # "blank" strings; it saves a single space character.
-    @testing.fails_on('oracle')
+    @testing.fails_on('oracle', 'FIXME: unknown')
     @testing.resolve_artifact_names
     def test_dont_update_blanks(self):
         mapper(User, users)

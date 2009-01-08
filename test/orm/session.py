@@ -162,7 +162,6 @@ class SessionTest(_fixtures.FixtureTest):
         assert len(session.query(User).filter_by(name='Johnny').all()) == 0
         session.close()
 
-    @testing.crashes('mssql', 'test causes mssql to hang')
     @testing.requires.independent_connections
     @engines.close_open_connections
     @testing.resolve_artifact_names
@@ -182,7 +181,6 @@ class SessionTest(_fixtures.FixtureTest):
         assert testing.db.connect().execute("select count(1) from users").scalar() == 1
         sess.close()
 
-    @testing.crashes('mssql', 'test causes mssql to hang')
     @testing.requires.independent_connections
     @engines.close_open_connections
     @testing.resolve_artifact_names
@@ -199,7 +197,7 @@ class SessionTest(_fixtures.FixtureTest):
         u2 = sess.query(User).filter_by(name='ed').one()
         assert u2 is u
         eq_(conn1.execute("select count(1) from users").scalar(), 1)
-        eq_(conn2.execute("select count(1) from users").scalar(),  0)
+        eq_(conn2.execute("select count(1) from users").scalar(), 0)
         sess.commit()
         eq_(conn1.execute("select count(1) from users").scalar(), 1)
         eq_(bind.connect().execute("select count(1) from users").scalar(), 1)
@@ -232,7 +230,6 @@ class SessionTest(_fixtures.FixtureTest):
         eq_(q.one(), Address(email_address='foo'))
 
 
-    @testing.crashes('mssql', 'test causes mssql to hang')
     @testing.requires.independent_connections
     @engines.close_open_connections
     @testing.resolve_artifact_names
@@ -391,8 +388,7 @@ class SessionTest(_fixtures.FixtureTest):
         session.commit()
         assert session.connection().execute("select count(1) from users").scalar() == 2
 
-    @testing.crashes('mssql', 'test causes mssql to hang')
-    @testing.fails_on('sqlite')
+    @testing.fails_on('sqlite', 'FIXME: unknown')
     @testing.resolve_artifact_names
     def test_transactions_isolated(self):
         mapper(User, users)
@@ -789,6 +785,14 @@ class SessionTest(_fixtures.FixtureTest):
         gc.collect()
         assert len(s.identity_map) == 1
 
+        user = s.query(User).one()
+        assert not s.identity_map.modified
+        user.name = 'u2'
+        assert s.identity_map.modified
+        s.flush()
+        eq_(users.select().execute().fetchall(), [(user.id, 'u2')])
+        
+        
     @testing.resolve_artifact_names
     def test_prune(self):
         s = create_session(weak_identity_map=False)

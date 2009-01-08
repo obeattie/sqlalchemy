@@ -4,12 +4,12 @@ from sqlalchemy import *
 from sqlalchemy import exc, sql
 from sqlalchemy.engine import default
 from testlib import *
-
+from testlib.testing import eq_
 
 class QueryTest(TestBase):
 
     def setUpAll(self):
-        global users, addresses, metadata
+        global users, users2, addresses, metadata
         metadata = MetaData(testing.db)
         users = Table('query_users', metadata,
             Column('user_id', INT, primary_key = True),
@@ -19,11 +19,17 @@ class QueryTest(TestBase):
             Column('address_id', Integer, primary_key=True),
             Column('user_id', Integer, ForeignKey('query_users.user_id')),
             Column('address', String(30)))
+            
+        users2 = Table('u2', metadata,
+            Column('user_id', INT, primary_key = True),
+            Column('user_name', VARCHAR(20)),
+        )
         metadata.create_all()
 
     def tearDown(self):
         addresses.delete().execute()
         users.delete().execute()
+        users2.delete().execute()
 
     def tearDownAll(self):
         metadata.drop_all()
@@ -59,7 +65,7 @@ class QueryTest(TestBase):
 
             result = table.insert().execute(**values)
             ret = values.copy()
-
+            
             for col, id in zip(table.primary_key, result.last_inserted_ids()):
                 ret[col.key] = id
 
@@ -140,7 +146,7 @@ class QueryTest(TestBase):
             l.append(row)
         self.assert_(len(l) == 3)
 
-    @testing.fails_on('firebird') # Data type unknown
+    @testing.fails_on('firebird', 'Data type unknown')
     @testing.requires.subqueries
     def test_anonymous_rows(self):
         users.insert().execute(
@@ -200,7 +206,8 @@ class QueryTest(TestBase):
         self.assert_(not (rp != equal))
         self.assert_(not (equal != equal))
 
-    @testing.fails_on('mssql', 'oracle')
+    @testing.fails_on('mssql', 'No support for boolean logic in column select.')
+    @testing.fails_on('oracle', 'FIXME: unknown')
     def test_or_and_as_columns(self):
         true, false = literal(True), literal(False)
         
@@ -228,6 +235,35 @@ class QueryTest(TestBase):
             l.append(row)
         self.assert_(len(l) == 2, "fetchmany(size=2) got %s rows" % len(l))
 
+    def test_like_ops(self):
+        users.insert().execute(
+            {'user_id':1, 'user_name':'apples'},
+            {'user_id':2, 'user_name':'oranges'},
+            {'user_id':3, 'user_name':'bananas'},
+            {'user_id':4, 'user_name':'legumes'},
+            {'user_id':5, 'user_name':'hi % there'},
+        )
+
+        for expr, result in (
+            (select([users.c.user_id]).where(users.c.user_name.startswith('apple')), [(1,)]),
+            (select([users.c.user_id]).where(users.c.user_name.contains('i % t')), [(5,)]),
+            (select([users.c.user_id]).where(users.c.user_name.endswith('anas')), [(3,)]),
+        ):
+            eq_(expr.execute().fetchall(), result)
+    
+
+    @testing.emits_warning('.*now automatically escapes.*')
+    def test_percents_in_text(self):
+        for expr, result in (
+            (text("select 6 % 10"), 6),
+            (text("select 17 % 10"), 7),
+            (text("select '%'"), '%'),
+            (text("select '%%'"), '%%'),
+            (text("select '%%%'"), '%%%'),
+            (text("select 'hello % world'"), "hello % world")
+        ):
+            eq_(testing.db.scalar(expr), result)
+        
     def test_ilike(self):
         users.insert().execute(
             {'user_id':1, 'user_name':'one'},
@@ -447,7 +483,24 @@ class QueryTest(TestBase):
         self.assert_(r['query_users.user_id']) == 1
         self.assert_(r['query_users.user_name']) == "john"
 
-
+    def test_row_as_args(self):
+        users.insert().execute(user_id=1, user_name='john')
+        r = users.select(users.c.user_id==1).execute().fetchone()
+        users.delete().execute()
+        users.insert().execute(r)
+        assert users.select().execute().fetchall() == [(1, 'john')]
+    
+    def test_result_as_args(self):
+        users.insert().execute([dict(user_id=1, user_name='john'), dict(user_id=2, user_name='ed')])
+        r = users.select().execute()
+        users2.insert().execute(list(r))
+        assert users2.select().execute().fetchall() == [(1, 'john'), (2, 'ed')]
+        
+        users2.delete().execute()
+        r = users.select().execute()
+        users2.insert().execute(*list(r))
+        assert users2.select().execute().fetchall() == [(1, 'john'), (2, 'ed')]
+        
     def test_ambiguous_column(self):
         users.insert().execute(user_id=1, user_name='john')
         r = users.outerjoin(addresses).select().execute().fetchone()
@@ -485,10 +538,10 @@ class QueryTest(TestBase):
         r = users.select().execute().fetchone()
         self.assertEqual(len(r), 2)
         r.close()
-        r = testing.db.execute('select user_name, user_id from query_users', {}).fetchone()
+        r = testing.db.execute('select user_name, user_id from query_users').fetchone()
         self.assertEqual(len(r), 2)
         r.close()
-        r = testing.db.execute('select user_name from query_users', {}).fetchone()
+        r = testing.db.execute('select user_name from query_users').fetchone()
         self.assertEqual(len(r), 1)
         r.close()
 
@@ -512,7 +565,7 @@ class QueryTest(TestBase):
     def test_column_order_with_text_query(self):
         # should return values in query order
         users.insert().execute(user_id=1, user_name='foo')
-        r = testing.db.execute('select user_name, user_id from query_users', {}).fetchone()
+        r = testing.db.execute('select user_name, user_id from query_users').fetchone()
         self.assertEqual(r[0], 'foo')
         self.assertEqual(r[1], 1)
         self.assertEqual([x.lower() for x in r.keys()], ['user_name', 'user_id'])
@@ -590,7 +643,10 @@ class QueryTest(TestBase):
         r = s.execute(search_key=None).fetchall()
         assert len(r) == 0
 
-    @testing.fails_on('firebird', 'maxdb', 'oracle', 'mssql')
+    @testing.fails_on('firebird', 'FIXME: unknown')
+    @testing.fails_on('maxdb', 'FIXME: unknown')
+    @testing.fails_on('oracle', 'FIXME: unknown')
+    @testing.fails_on('mssql', 'FIXME: unknown')
     def test_in_filtering_advanced(self):
         """test the behavior of the in_() function when comparing against an empty collection."""
 
@@ -648,7 +704,7 @@ class LimitTest(TestBase):
         r = users.select(limit=3, order_by=[users.c.user_id]).execute().fetchall()
         self.assert_(r == [(1, 'john'), (2, 'jack'), (3, 'ed')], repr(r))
 
-    @testing.fails_on('maxdb')
+    @testing.fails_on('maxdb', 'FIXME: unknown')
     def test_select_limit_offset(self):
         """Test the interaction between limit and offset"""
 
@@ -664,7 +720,7 @@ class LimitTest(TestBase):
         self.assert_(len(r) == 3, repr(r))
         self.assert_(r[0] != r[1] and r[1] != r[2], repr(r))
 
-    @testing.fails_on('mssql')
+    @testing.fails_on('mssql', 'FIXME: unknown')
     def test_select_distinct_offset(self):
         """Test the interaction between distinct and offset"""
 
@@ -756,7 +812,7 @@ class CompoundTest(TestBase):
                   ('ccc', 'aaa')]
         self.assertEquals(u.execute().fetchall(), wanted)
 
-    @testing.fails_on('maxdb')
+    @testing.fails_on('maxdb', 'FIXME: unknown')
     @testing.requires.subqueries
     def test_union_ordered_alias(self):
         (s1, s2) = (
@@ -772,8 +828,8 @@ class CompoundTest(TestBase):
         self.assertEquals(u.alias('bar').select().execute().fetchall(), wanted)
 
     @testing.crashes('oracle', 'FIXME: unknown, verify not fails_on')
-    @testing.fails_on('mysql')
-    @testing.fails_on('sqlite')
+    @testing.fails_on('mysql', 'FIXME: unknown')
+    @testing.fails_on('sqlite', 'FIXME: unknown')
     def test_union_all(self):
         e = union_all(
             select([t1.c.col3]),
@@ -792,7 +848,7 @@ class CompoundTest(TestBase):
 
     @testing.crashes('firebird', 'Does not support intersect')
     @testing.crashes('sybase', 'FIXME: unknown, verify not fails_on')
-    @testing.fails_on('mysql')
+    @testing.fails_on('mysql', 'FIXME: unknown')
     def test_intersect(self):
         i = intersect(
             select([t2.c.col3, t2.c.col4]),
@@ -810,7 +866,7 @@ class CompoundTest(TestBase):
     @testing.crashes('firebird', 'Does not support except')
     @testing.crashes('oracle', 'FIXME: unknown, verify not fails_on')
     @testing.crashes('sybase', 'FIXME: unknown, verify not fails_on')
-    @testing.fails_on('mysql')
+    @testing.fails_on('mysql', 'FIXME: unknown')
     def test_except_style1(self):
         e = except_(union(
             select([t1.c.col3, t1.c.col4]),
@@ -827,7 +883,7 @@ class CompoundTest(TestBase):
     @testing.crashes('firebird', 'Does not support except')
     @testing.crashes('oracle', 'FIXME: unknown, verify not fails_on')
     @testing.crashes('sybase', 'FIXME: unknown, verify not fails_on')
-    @testing.fails_on('mysql')
+    @testing.fails_on('mysql', 'FIXME: unknown')
     def test_except_style2(self):
         e = except_(union(
             select([t1.c.col3, t1.c.col4]),
@@ -847,8 +903,8 @@ class CompoundTest(TestBase):
     @testing.crashes('firebird', 'Does not support except')
     @testing.crashes('oracle', 'FIXME: unknown, verify not fails_on')
     @testing.crashes('sybase', 'FIXME: unknown, verify not fails_on')
-    @testing.fails_on('mysql')
-    @testing.fails_on('sqlite')
+    @testing.fails_on('mysql', 'FIXME: unknown')
+    @testing.fails_on('sqlite', 'FIXME: unknown')
     def test_except_style3(self):
         # aaa, bbb, ccc - (aaa, bbb, ccc - (ccc)) = ccc
         e = except_(
@@ -863,7 +919,7 @@ class CompoundTest(TestBase):
                           [('ccc',)])
 
     @testing.crashes('firebird', 'Does not support intersect')
-    @testing.fails_on('mysql')
+    @testing.fails_on('mysql', 'FIXME: unknown')
     def test_composite(self):
         u = intersect(
             select([t2.c.col3, t2.c.col4]),
@@ -879,7 +935,7 @@ class CompoundTest(TestBase):
         self.assertEquals(found, wanted)
 
     @testing.crashes('firebird', 'Does not support intersect')
-    @testing.fails_on('mysql')
+    @testing.fails_on('mysql', 'FIXME: unknown')
     def test_composite_alias(self):
         ua = intersect(
             select([t2.c.col3, t2.c.col4]),
@@ -1184,7 +1240,7 @@ class OperatorTest(TestBase):
     def tearDownAll(self):
         metadata.drop_all()
 
-    @testing.fails_on('maxdb')
+    @testing.fails_on('maxdb', 'FIXME: unknown')
     def test_modulo(self):
         self.assertEquals(
             select([flds.c.intcol % 3],

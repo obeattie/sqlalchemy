@@ -1,8 +1,10 @@
+
 from sqlalchemy.interfaces import ConnectionProxy
-import re
 from sqlalchemy.engine.default import DefaultDialect
 from sqlalchemy.engine.base import Connection
+from sqlalchemy import util
 import testing
+import re
 
 class AssertRule(object):
     def process_execute(self, clauseelement, *multiparams, **params):
@@ -71,7 +73,7 @@ class ExactSQL(SQLMatchRule):
         
         equivalent = _received_statement == sql
         if self.params:
-            if callable(self.params):
+            if util.callable(self.params):
                 params = self.params(context)
             else:
                 params = self.params
@@ -105,7 +107,7 @@ class RegexSQL(SQLMatchRule):
 
         equivalent = bool(self.regex.match(_received_statement))
         if self.params:
-            if callable(self.params):
+            if util.callable(self.params):
                 params = self.params(context)
             else:
                 params = self.params
@@ -147,7 +149,7 @@ class CompiledSQL(SQLMatchRule):
         
         equivalent = self.statement == _received_statement
         if self.params:
-            if callable(self.params):
+            if util.callable(self.params):
                 params = self.params(context)
             else:
                 params = self.params

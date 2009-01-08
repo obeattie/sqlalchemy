@@ -7,13 +7,12 @@ import operator
 import re
 import sys
 import types
-import unittest
+from testlib import sa_unittest as unittest
 import warnings
 from cStringIO import StringIO
 
 import testlib.config as config
-from testlib.compat import _function_named
-from testlib import assertsql
+from testlib.compat import _function_named, callable
 
 # Delayed imports
 MetaData = None
@@ -92,8 +91,9 @@ def future(fn):
                 "Unexpected success for future test '%s'" % fn_name)
     return _function_named(decorated, fn_name)
 
-def fails_on(*dbs):
-    """Mark a test as expected to fail on one or more database implementations.
+def fails_on(dbs, reason):
+    """Mark a test as expected to fail on the specified database 
+    implementation.
 
     Unlike ``crashes``, tests marked as ``fails_on`` will be run
     for the named databases.  The test is expected to fail and the unit test
@@ -104,7 +104,7 @@ def fails_on(*dbs):
     def decorate(fn):
         fn_name = fn.__name__
         def maybe(*args, **kw):
-            if config.db.name not in dbs:
+            if config.db.name != dbs:
                 return fn(*args, **kw)
             else:
                 try:
@@ -112,7 +112,7 @@ def fails_on(*dbs):
                 except Exception, ex:
                     print ("'%s' failed as expected on DB implementation "
                            "'%s': %s" % (
-                        fn_name, config.db.name, str(ex)))
+                        fn_name, config.db.name, reason))
                     return True
                 else:
                     raise AssertionError(
@@ -307,13 +307,13 @@ def emits_warning(*messages):
             filters = [dict(action='ignore',
                             category=sa_exc.SAPendingDeprecationWarning)]
             if not messages:
-                filters.append([dict(action='ignore',
-                                     category=sa_exc.SAWarning)])
+                filters.append(dict(action='ignore',
+                                     category=sa_exc.SAWarning))
             else:
-                filters.extend([dict(action='ignore',
+                filters.extend(dict(action='ignore',
                                      message=message,
                                      category=sa_exc.SAWarning)
-                                for message in messages])
+                                for message in messages)
             for f in filters:
                 warnings.filterwarnings(**f)
             try:
@@ -321,6 +321,30 @@ def emits_warning(*messages):
             finally:
                 resetwarnings()
         return _function_named(safe, fn.__name__)
+    return decorate
+
+def emits_warning_on(db, *warnings):
+    """Mark a test as emitting a warning on a specific dialect.
+
+    With no arguments, squelches all SAWarning failures.  Or pass one or more
+    strings; these will be matched to the root of the warning description by
+    warnings.filterwarnings().
+    """
+    def decorate(fn):
+        def maybe(*args, **kw):
+            if isinstance(db, basestring):
+                if config.db.name != db:
+                    return fn(*args, **kw)
+                else:
+                    wrapped = emits_warning(*warnings)(fn)
+                    return wrapped(*args, **kw)
+            else:
+                if not _is_excluded(*db):
+                    return fn(*args, **kw)
+                else:
+                    wrapped = emits_warning(*warnings)(fn)
+                    return wrapped(*args, **kw)
+        return _function_named(maybe, fn.__name__)
     return decorate
 
 def uses_deprecated(*messages):
@@ -725,6 +749,7 @@ class AssertsExecutionResults(object):
         return True
 
     def assert_sql_execution(self, db, callable_, *rules):
+        from testlib import assertsql
         assertsql.asserter.add_rules(rules)
         try:
             callable_()
@@ -733,6 +758,8 @@ class AssertsExecutionResults(object):
             assertsql.asserter.clear_rules()
             
     def assert_sql(self, db, callable_, list_, with_sequences=None):
+        from testlib import assertsql
+
         if with_sequences is not None and config.db.name in ('firebird', 'oracle', 'postgres'):
             rules = with_sequences
         else:
@@ -751,6 +778,7 @@ class AssertsExecutionResults(object):
         self.assert_sql_execution(db, callable_, *newrules)
 
     def assert_sql_count(self, db, callable_, count):
+        from testlib import assertsql
         self.assert_sql_execution(db, callable_, assertsql.CountStatements(count))
 
 
@@ -835,17 +863,39 @@ class TTestSuite(unittest.TestSuite):
                 break
         unittest.TestSuite.__init__(self, tests)
 
-    def do_run(self, result):
-        # nice job unittest !  you switched __call__ and run() between py2.3
-        # and 2.4 thereby making straight subclassing impossible !
-        for test in self._tests:
-            if result.shouldStop:
-                break
-            test(result)
-        return result
-
     def run(self, result):
-        return self(result)
+        init = getattr(self, '_initTest', None)
+        if init is not None:
+            if (hasattr(init, '__whitelist__') and
+                config.db.name in init.__whitelist__):
+                pass
+            else:
+                if self.__should_skip_for(init):
+                    return True
+            try:
+                resetwarnings()
+                init.setUpAll()
+            except:
+                # skip tests if global setup fails
+                ex = self.__exc_info()
+                for test in self._tests:
+                    result.addError(test, ex)
+                return False
+        try:
+            resetwarnings()
+            for test in self._tests:
+                if result.shouldStop:
+                    break
+                test(result)
+            return result
+        finally:
+            try:
+                resetwarnings()
+                if init is not None:
+                    init.tearDownAll()
+            except:
+                result.addError(init, self.__exc_info())
+                pass
 
     def __should_skip_for(self, cls):
         if hasattr(cls, '__requires__'):
@@ -881,35 +931,6 @@ class TTestSuite(unittest.TestSuite):
                 return True
         return False
 
-    def __call__(self, result):
-        init = getattr(self, '_initTest', None)
-        if init is not None:
-            if (hasattr(init, '__whitelist__') and
-                config.db.name in init.__whitelist__):
-                pass
-            else:
-                if self.__should_skip_for(init):
-                    return True
-            try:
-                resetwarnings()
-                init.setUpAll()
-            except:
-                # skip tests if global setup fails
-                ex = self.__exc_info()
-                for test in self._tests:
-                    result.addError(test, ex)
-                return False
-        try:
-            resetwarnings()
-            return self.do_run(result)
-        finally:
-            try:
-                resetwarnings()
-                if init is not None:
-                    init.tearDownAll()
-            except:
-                result.addError(init, self.__exc_info())
-                pass
 
     def __exc_info(self):
         """Return a version of sys.exc_info() with the traceback frame

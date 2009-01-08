@@ -514,9 +514,6 @@ class MaxDBDialect(default.DefaultDialect):
         else:
             return sqltypes.adapt_type(typeobj, colspecs)
 
-    def create_execution_context(self, connection, **kw):
-        return MaxDBExecutionContext(self, connection, **kw)
-
     def do_execute(self, cursor, statement, parameters, context=None):
         res = cursor.execute(statement, parameters)
         if isinstance(res, int) and context is not None:
@@ -704,7 +701,7 @@ class MaxDBDialect(default.DefaultDialect):
                              autoload=True, autoload_with=connection,
                              **table_kw)
 
-            constraint = schema.ForeignKeyConstraint(columns, referants,
+            constraint = schema.ForeignKeyConstraint(columns, referants, link_to_name=True,
                                                      **constraint_kw)
             table.append_constraint(constraint)
 
@@ -870,7 +867,7 @@ class MaxDBCompiler(compiler.DefaultCompiler):
 
         colparams = self._get_colparams(insert)
         for value in (insert.parameters or {}).itervalues():
-            if isinstance(value, sql_expr._Function):
+            if isinstance(value, sql_expr.Function):
                 self._safeserial = False
                 break
 
@@ -1099,3 +1096,4 @@ dialect.statement_compiler = MaxDBCompiler
 dialect.schemagenerator = MaxDBSchemaGenerator
 dialect.schemadropper = MaxDBSchemaDropper
 dialect.defaultrunner = MaxDBDefaultRunner
+dialect.execution_ctx_cls = MaxDBExecutionContext

@@ -4,10 +4,125 @@
 # This module is part of SQLAlchemy and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
+"""Support for the SQLite database.
+
+Driver
+------
+
+When using Python 2.5 and above, the built in ``sqlite3`` driver is 
+already installed and no additional installation is needed.  Otherwise,
+the ``pysqlite2`` driver needs to be present.  This is the same driver as
+``sqlite3``, just with a different name.
+
+The ``pysqlite2`` driver will be loaded first, and if not found, ``sqlite3``
+is loaded.  This allows an explicitly installed pysqlite driver to take
+precedence over the built in one.   As with all dialects, a specific 
+DBAPI module may be provided to :func:`~sqlalchemy.create_engine()` to control 
+this explicitly::
+
+    from sqlite3 import dbapi2 as sqlite
+    e = create_engine('sqlite:///file.db', module=sqlite)
+
+Full documentation on pysqlite is available at:
+`<http://www.initd.org/pub/software/pysqlite/doc/usage-guide.html>`_
+
+Connect Strings
+---------------
+
+The file specification for the SQLite database is taken as the "database" portion of
+the URL.  Note that the format of a url is::
+
+    driver://user:pass@host/database
+    
+This means that the actual filename to be used starts with the characters to the
+**right** of the third slash.   So connecting to a relative filepath looks like::
+
+    # relative path
+    e = create_engine('sqlite:///path/to/database.db')
+    
+An absolute path, which is denoted by starting with a slash, means you need **four**
+slashes::
+
+    # absolute path
+    e = create_engine('sqlite:////path/to/database.db')
+
+To use a Windows path, regular drive specifications and backslashes can be used.  
+Double backslashes are probably needed::
+
+    # absolute path on Windows
+    e = create_engine('sqlite:///C:\\\\path\\\\to\\\\database.db')
+
+The sqlite ``:memory:`` identifier is the default if no filepath is present.  Specify
+``sqlite://`` and nothing else::
+
+    # in-memory database
+    e = create_engine('sqlite://')
+
+Threading Behavior
+------------------
+
+Pysqlite connections do not support being moved between threads, unless
+the ``check_same_thread`` Pysqlite flag is set to ``False``.  In addition,
+when using an in-memory SQLite database, the full database exists only within 
+the scope of a single connection.  It is reported that an in-memory
+database does not support being shared between threads regardless of the 
+``check_same_thread`` flag - which means that a multithreaded
+application **cannot** share data from a ``:memory:`` database across threads
+unless access to the connection is limited to a single worker thread which communicates
+through a queueing mechanism to concurrent threads.
+
+To provide a default which accomodates SQLite's default threading capabilities
+somewhat reasonably, the SQLite dialect will specify that the :class:`~sqlalchemy.pool.SingletonThreadPool`
+be used by default.  This pool maintains a single SQLite connection per thread
+that is held open up to a count of five concurrent threads.  When more than five threads
+are used, a cleanup mechanism will dispose of excess unused connections.   
+
+Two optional pool implementations that may be appropriate for particular SQLite usage scenarios:
+
+ * the :class:`sqlalchemy.pool.StaticPool` might be appropriate for a multithreaded
+   application using an in-memory database, assuming the threading issues inherent in 
+   pysqlite are somehow accomodated for.  This pool holds persistently onto a single connection
+   which is never closed, and is returned for all requests.
+   
+ * the :class:`sqlalchemy.pool.NullPool` might be appropriate for an application that
+   makes use of a file-based sqlite database.  This pool disables any actual "pooling"
+   behavior, and simply opens and closes real connections corresonding to the :func:`connect()`
+   and :func:`close()` methods.  SQLite can "connect" to a particular file with very high 
+   efficiency, so this option may actually perform better without the extra overhead
+   of :class:`SingletonThreadPool`.  NullPool will of course render a ``:memory:`` connection
+   useless since the database would be lost as soon as the connection is "returned" to the pool.
+
+Date and Time Types
+-------------------
+
+SQLite does not have built-in DATE, TIME, or DATETIME types, and pysqlite does not provide 
+out of the box functionality for translating values between Python `datetime` objects
+and a SQLite-supported format.  SQLAlchemy's own :class:`~sqlalchemy.types.DateTime`
+and related types provide date formatting and parsing functionality when SQlite is used.
+The implementation classes are :class:`SLDateTime`, :class:`SLDate` and :class:`SLTime`.
+These types represent dates and times as ISO formatted strings, which also nicely
+support ordering.   There's no reliance on typical "libc" internals for these functions
+so historical dates are fully supported.
+
+Unicode
+-------
+
+In contrast to SQLAlchemy's active handling of date and time types for pysqlite, pysqlite's 
+default behavior regarding Unicode is that all strings are returned as Python unicode objects
+in all cases.  So even if the :class:`~sqlalchemy.types.Unicode` type is 
+*not* used, you will still always receive unicode data back from a result set.  It is 
+**strongly** recommended that you do use the :class:`~sqlalchemy.types.Unicode` type
+to represent strings, since it will raise a warning if a non-unicode Python string is 
+passed from the user application.  Mixing the usage of non-unicode objects with returned unicode objects can
+quickly create confusion, particularly when using the ORM as internal data is not 
+always represented by an actual database result string.
+
+"""
+
 
 import datetime, re, time
 
-from sqlalchemy import schema, exc, pool, DefaultClause
+from sqlalchemy import sql, schema, exc, pool, DefaultClause
 from sqlalchemy.engine import default
 import sqlalchemy.types as sqltypes
 import sqlalchemy.util as util
@@ -292,9 +407,6 @@ class SQLiteDialect(default.DefaultDialect):
     def type_descriptor(self, typeobj):
         return sqltypes.adapt_type(typeobj, colspecs)
 
-    def create_execution_context(self, connection, **kwargs):
-        return SQLiteExecutionContext(self, connection, **kwargs)
-
     def is_disconnect(self, e):
         return isinstance(e, self.dbapi.ProgrammingError) and "Cannot operate on a closed database." in str(e)
 
@@ -353,7 +465,7 @@ class SQLiteDialect(default.DefaultDialect):
                 break
 
             found_table = True
-            (name, type_, nullable, has_default, primary_key) = (row[1], row[2].upper(), not row[3], row[4] is not None, row[5])
+            (name, type_, nullable, default, has_default, primary_key) = (row[1], row[2].upper(), not row[3], row[4], row[4] is not None, row[5])
             name = re.sub(r'^\"|\"$', '', name)
             if include_columns and name not in include_columns:
                 continue
@@ -378,7 +490,7 @@ class SQLiteDialect(default.DefaultDialect):
 
             colargs = []
             if has_default:
-                colargs.append(DefaultClause('?'))
+                colargs.append(DefaultClause(sql.text(default)))
             table.append_column(schema.Column(name, coltype, primary_key = primary_key, nullable = nullable, *colargs))
 
         if not found_table:
@@ -410,7 +522,7 @@ class SQLiteDialect(default.DefaultDialect):
             if refspec not in fk[1]:
                 fk[1].append(refspec)
         for name, value in fks.iteritems():
-            table.append_constraint(schema.ForeignKeyConstraint(value[0], value[1]))
+            table.append_constraint(schema.ForeignKeyConstraint(value[0], value[1], link_to_name=True))
         # check for UNIQUE indexes
         c = connection.execute("%sindex_list(%s)" % (pragma, qtable))
         unique_indexes = []
@@ -475,19 +587,6 @@ class SQLiteSchemaGenerator(compiler.SchemaGenerator):
             colspec += " NOT NULL"
         return colspec
 
-    # this doesnt seem to be needed, although i suspect older versions of sqlite might still
-    # not directly support composite primary keys
-    #def visit_primary_key_constraint(self, constraint):
-    #    if len(constraint) > 1:
-    #        self.append(", \n")
-    #        # put all PRIMARY KEYS in a UNIQUE index
-    #        self.append("\tUNIQUE (%s)" % string.join([c.name for c in constraint],', '))
-    #    else:
-    #        super(SQLiteSchemaGenerator, self).visit_primary_key_constraint(constraint)
-
-class SQLiteSchemaDropper(compiler.SchemaDropper):
-    pass
-
 class SQLiteIdentifierPreparer(compiler.IdentifierPreparer):
     reserved_words = set([
         'add', 'after', 'all', 'alter', 'analyze', 'and', 'as', 'asc',
@@ -516,5 +615,5 @@ dialect = SQLiteDialect
 dialect.poolclass = pool.SingletonThreadPool
 dialect.statement_compiler = SQLiteCompiler
 dialect.schemagenerator = SQLiteSchemaGenerator
-dialect.schemadropper = SQLiteSchemaDropper
 dialect.preparer = SQLiteIdentifierPreparer
+dialect.execution_ctx_cls = SQLiteExecutionContext

@@ -677,6 +677,10 @@ class NullPool(Pool):
     Instead it literally opens and closes the underlying DB-API connection
     per each connection open/close.
 
+    Reconnect-related functions such as ``recycle`` and connection
+    invalidation are not supported by this Pool implementation, since
+    no connections are held persistently.
+
     """
 
     def status(self):
@@ -691,8 +695,27 @@ class NullPool(Pool):
     def do_get(self):
         return self.create_connection()
 
+    def recreate(self):
+        self.log("Pool recreating")
+
+        return NullPool(self._creator, 
+            recycle=self._recycle, 
+            echo=self._should_log_info, 
+            use_threadlocal=self._use_threadlocal, 
+            listeners=self.listeners)
+
+    def dispose(self):
+        pass
+        
 class StaticPool(Pool):
-    """A Pool of exactly one connection, used for all requests."""
+    """A Pool of exactly one connection, used for all requests.
+    
+    Reconnect-related functions such as ``recycle`` and connection
+    invalidation (which is also used to support auto-reconnect) are not
+    currently supported by this Pool implementation but may be implemented
+    in a future release.
+    
+    """
 
     def __init__(self, creator, **params):
         """
@@ -702,25 +725,11 @@ class StaticPool(Pool):
           connection object.  The function will be called with
           parameters.
 
-        :param recycle: If set to non -1, number of seconds between
-          connection recycling, which means upon checkout, if this
-          timeout is surpassed the connection will be closed and
-          replaced with a newly opened connection. Defaults to -1.
-
         :param echo: If True, connections being pulled and retrieved
           from the pool will be logged to the standard output, as well
           as pool sizing information.  Echoing can also be achieved by
           enabling logging for the "sqlalchemy.pool"
           namespace. Defaults to False.
-
-        :param use_threadlocal: If set to True, repeated calls to
-          :meth:`connect` within the same application thread will be
-          guaranteed to return the same connection object, if one has
-          already been retrieved from the pool and has not been
-          returned yet.  Offers a slight performance advantage at the
-          cost of individual transactions by default.  The
-          :meth:`unique_connection` method is provided to bypass the
-          threadlocal behavior installed into :meth:`connect`.
 
         :param reset_on_return: If true, reset the database state of
           connections returned to the pool.  This is typically a
@@ -817,14 +826,14 @@ class AssertionPool(Pool):
         return "AssertionPool"
 
     def create_connection(self):
-        raise "Invalid"
+        raise AssertionError("Invalid")
 
     def do_return_conn(self, conn):
         assert conn is self._conn and self.connection is None
         self.connection = conn
 
     def do_return_invalid(self, conn):
-        raise "Invalid"
+        raise AssertionError("Invalid")
 
     def do_get(self):
         assert self.connection is not None
@@ -856,7 +865,8 @@ class _DBProxy(object):
         self.params = params
         self.poolclass = poolclass
         self.pools = {}
-
+        self._create_pool_mutex = threading.Lock()
+        
     def close(self):
         for key in self.pools.keys():
             del self.pools[key]
@@ -872,10 +882,17 @@ class _DBProxy(object):
         try:
             return self.pools[key]
         except KeyError:
-            pool = self.poolclass(lambda: self.module.connect(*args, **params), **self.params)
-            self.pools[key] = pool
-            return pool
-
+            self._create_pool_mutex.acquire()
+            try:
+                if key not in self.pools:
+                    pool = self.poolclass(lambda: self.module.connect(*args, **params), **self.params)
+                    self.pools[key] = pool
+                    return pool
+                else:
+                    return self.pools[key]
+            finally:
+                self._create_pool_mutex.release()
+                
     def connect(self, *args, **params):
         """Activate a connection to the database.
 

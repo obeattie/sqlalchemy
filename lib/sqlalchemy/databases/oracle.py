@@ -202,6 +202,10 @@ class OracleString(sqltypes.String):
     def get_col_spec(self):
         return "VARCHAR(%(length)s)" % {'length' : self.length}
 
+class OracleNVarchar(sqltypes.Unicode, OracleString):
+    def get_col_spec(self):
+        return "NVARCHAR2(%(length)s)" % {'length' : self.length}
+
 class OracleText(sqltypes.Text):
     def get_dbapi_type(self, dbapi):
         return dbapi.CLOB
@@ -297,6 +301,7 @@ colspecs = {
 
 ischema_names = {
     'VARCHAR2' : OracleString,
+    'NVARCHAR2' : OracleNVarchar,
     'CHAR' : OracleString,
     'DATE' : OracleDateTime,
     'DATETIME' : OracleDateTime,
@@ -340,7 +345,11 @@ class OracleExecutionContext(default.DefaultExecutionContext):
                 for bind, name in self.compiled.bind_names.iteritems():
                     if name in self.out_parameters:
                         type = bind.type
-                        self.out_parameters[name] = type.dialect_impl(self.dialect).result_processor(self.dialect)(self.out_parameters[name].getvalue())
+                        result_processor = type.dialect_impl(self.dialect).result_processor(self.dialect)
+                        if result_processor is not None:
+                            self.out_parameters[name] = result_processor(self.out_parameters[name].getvalue())
+                        else:
+                            self.out_parameters[name] = self.out_parameters[name].getvalue()
             else:
                 for k in self.out_parameters:
                     self.out_parameters[k] = self.out_parameters[k].getvalue()
@@ -470,9 +479,6 @@ class OracleDialect(default.DefaultDialect):
 
     def do_recover_twophase(self, connection):
         pass
-
-    def create_execution_context(self, *args, **kwargs):
-        return OracleExecutionContext(self, *args, **kwargs)
 
     def has_table(self, connection, table_name, schema=None):
         if not schema:
@@ -683,7 +689,7 @@ class OracleDialect(default.DefaultDialect):
                     fk[1].append(refspec)
 
         for name, value in fks.iteritems():
-            table.append_constraint(schema.ForeignKeyConstraint(value[0], value[1], name=name))
+            table.append_constraint(schema.ForeignKeyConstraint(value[0], value[1], name=name, link_to_name=True))
 
 
 class _OuterJoinColumn(sql.ClauseElement):
@@ -891,3 +897,4 @@ dialect.schemagenerator = OracleSchemaGenerator
 dialect.schemadropper = OracleSchemaDropper
 dialect.preparer = OracleIdentifierPreparer
 dialect.defaultrunner = OracleDefaultRunner
+dialect.execution_ctx_cls = OracleExecutionContext

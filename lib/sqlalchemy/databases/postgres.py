@@ -18,7 +18,7 @@ Note that psycopg1 is **not** supported.
 Connecting
 ----------
 
-URLs are of the form `postgres://user@password@host:port/dbname[?key=value&key=value...]`.
+URLs are of the form `postgres://user:password@host:port/dbname[?key=value&key=value...]`.
 
 Postgres-specific keyword arguments which are accepted by :func:`~sqlalchemy.create_engine()` are:
 
@@ -340,7 +340,7 @@ class PGDialect(default.DefaultDialect):
     default_paramstyle = 'pyformat'
     supports_default_values = True
     supports_empty_insert = False
-
+    
     def __init__(self, server_side_cursors=False, **kwargs):
         default.DefaultDialect.__init__(self, **kwargs)
         self.server_side_cursors = server_side_cursors
@@ -356,9 +356,6 @@ class PGDialect(default.DefaultDialect):
             opts['port'] = int(opts['port'])
         opts.update(url.query)
         return ([], opts)
-
-    def create_execution_context(self, *args, **kwargs):
-        return PGExecutionContext(self, *args, **kwargs)
 
     def type_descriptor(self, typeobj):
         return sqltypes.adapt_type(typeobj, colspecs)
@@ -580,10 +577,11 @@ class PGDialect(default.DefaultDialect):
         c = connection.execute(t, table=table_oid)
         for row in c.fetchall():
             pk = row[0]
-            col = table.c[pk]
-            table.primary_key.add(col)
-            if col.default is None:
-                col.autoincrement = False
+            if pk in table.c:
+                col = table.c[pk]
+                table.primary_key.add(col)
+                if col.default is None:
+                    col.autoincrement = False
 
         # Foreign keys
         FK_SQL = """
@@ -620,7 +618,45 @@ class PGDialect(default.DefaultDialect):
                 for column in referred_columns:
                     refspec.append(".".join([referred_table, column]))
 
-            table.append_constraint(schema.ForeignKeyConstraint(constrained_columns, refspec, conname))
+            table.append_constraint(schema.ForeignKeyConstraint(constrained_columns, refspec, conname, link_to_name=True))
+
+        # Indexes 
+        IDX_SQL = """
+          SELECT c.relname, i.indisunique, i.indexprs, i.indpred,
+            a.attname
+          FROM pg_index i, pg_class c, pg_attribute a
+          WHERE i.indrelid = :table AND i.indexrelid = c.oid
+            AND a.attrelid = i.indexrelid AND i.indisprimary = 'f'
+          ORDER BY c.relname, a.attnum
+        """
+        t = sql.text(IDX_SQL, typemap={'attname':sqltypes.Unicode})
+        c = connection.execute(t, table=table_oid)
+        indexes = {}
+        sv_idx_name = None
+        for row in c.fetchall():
+            idx_name, unique, expr, prd, col = row
+
+            if expr and not idx_name == sv_idx_name:
+                util.warn(
+                  "Skipped unsupported reflection of expression-based index %s"
+                  % idx_name)
+                sv_idx_name = idx_name
+                continue
+            if prd and not idx_name == sv_idx_name:
+                util.warn(
+                   "Predicate of partial index %s ignored during reflection"
+                   % idx_name)
+                sv_idx_name = idx_name
+
+            if not indexes.has_key(idx_name):
+                indexes[idx_name] = [unique, []]
+            indexes[idx_name][1].append(col)
+
+        for name, (unique, columns) in indexes.items():
+            schema.Index(name, *[table.columns[c] for c in columns], 
+                         **dict(unique=unique))
+ 
+
 
     def _load_domains(self, connection):
         ## Load data types for domains:
@@ -682,6 +718,11 @@ class PGCompiler(compiler.DefaultCompiler):
             return None
         else:
             return "nextval('%s')" % self.preparer.format_sequence(seq)
+
+    def post_process_text(self, text):
+        if '%%' in text:
+            util.warn("The SQLAlchemy psycopg2 dialect now automatically escapes '%' in text() expressions to '%%'.")
+        return text.replace('%', '%%')
 
     def limit_clause(self, select):
         text = ""
@@ -828,3 +869,4 @@ dialect.schemagenerator = PGSchemaGenerator
 dialect.schemadropper = PGSchemaDropper
 dialect.preparer = PGIdentifierPreparer
 dialect.defaultrunner = PGDefaultRunner
+dialect.execution_ctx_cls = PGExecutionContext

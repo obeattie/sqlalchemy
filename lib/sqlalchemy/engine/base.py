@@ -107,6 +107,11 @@ class Dialect(object):
 
     supports_default_values
       Indicates if the construct ``INSERT INTO tablename DEFAULT VALUES`` is supported
+
+    description_encoding
+      type of encoding to use for unicode when working with metadata
+      descriptions. If set to ``None`` no encoding will be done.
+      This usually defaults to 'utf-8'.
     """
 
     def create_connect_args(self, url):
@@ -174,11 +179,6 @@ class Dialect(object):
 
     def get_default_schema_name(self, connection):
         """Return the string name of the currently selected schema given a :class:`~sqlalchemy.engine.Connection`."""
-
-        raise NotImplementedError()
-
-    def create_execution_context(self, connection, compiled=None, compiled_parameters=None, statement=None, parameters=None):
-        """Return a new :class:`~sqlalchemy.engine.ExecutionContext` object."""
 
         raise NotImplementedError()
 
@@ -314,9 +314,7 @@ class ExecutionContext(object):
      a list of Column objects for which a server-side default
      or inline SQL expression value was fired off.  applies to inserts and updates.
 
-    The Dialect should provide an ExecutionContext via the
-    create_execution_context() method.  The `pre_exec` and `post_exec`
-    methods will be called for compiled statements.
+
     """
 
     def create_cursor(self):
@@ -357,6 +355,11 @@ class ExecutionContext(object):
 
         raise NotImplementedError()
 
+    def handle_dbapi_exception(self, e):
+        """Receive a DBAPI exception which occured upon execute, result fetch, etc."""
+        
+        raise NotImplementedError()
+        
     def should_autocommit_text(self, statement):
         """Parse the given textual statement and return True if it refers to a "committable" statement"""
 
@@ -497,7 +500,7 @@ class Connectable(object):
     def execute(self, object, *multiparams, **params):
         raise NotImplementedError()
 
-    def execute_clauseelement(self, elem, multiparams=None, params=None):
+    def _execute_clauseelement(self, elem, multiparams=None, params=None):
         raise NotImplementedError()
 
 class Connection(Connectable):
@@ -507,8 +510,11 @@ class Connection(Connectable):
     as ClauseElement, Compiled and DefaultGenerator objects.  Provides
     a begin method to return Transaction objects.
 
-    The Connection object is **not** threadsafe.
-    
+    The Connection object is **not** thread-safe.
+
+    .. index::
+      single: thread safety; Connection
+
     """
 
     def __init__(self, engine, connection=None, close_with_result=False,
@@ -623,6 +629,8 @@ class Connection(Connectable):
         operations in a non-transactional state.
 
         """
+        if self.closed:
+            raise exc.InvalidRequestError("This Connection is closed")
 
         if self.__connection.is_valid:
             self.__connection.invalidate(exception)
@@ -716,7 +724,7 @@ class Connection(Connectable):
         try:
             self.engine.dialect.do_begin(self.connection)
         except Exception, e:
-            self._handle_dbapi_exception(e, None, None, None)
+            self._handle_dbapi_exception(e, None, None, None, None)
             raise
 
     def _rollback_impl(self):
@@ -727,7 +735,7 @@ class Connection(Connectable):
                 self.engine.dialect.do_rollback(self.connection)
                 self.__transaction = None
             except Exception, e:
-                self._handle_dbapi_exception(e, None, None, None)
+                self._handle_dbapi_exception(e, None, None, None, None)
                 raise
         else:
             self.__transaction = None
@@ -739,7 +747,7 @@ class Connection(Connectable):
             self.engine.dialect.do_commit(self.connection)
             self.__transaction = None
         except Exception, e:
-            self._handle_dbapi_exception(e, None, None, None)
+            self._handle_dbapi_exception(e, None, None, None, None)
             raise
 
     def _savepoint_impl(self, name=None):
@@ -828,36 +836,36 @@ class Connection(Connectable):
             if params:
                 return [params]
             else:
-                return [{}]
+                return []
         elif len(multiparams) == 1:
             zero = multiparams[0]
             if isinstance(zero, (list, tuple)):
-                if not zero or isinstance(zero[0], (list, tuple, dict)):
+                if not zero or hasattr(zero[0], '__iter__'):
                     return zero
                 else:
                     return [zero]
-            elif isinstance(zero, dict):
+            elif hasattr(zero, 'keys'):
                 return [zero]
             else:
                 return [[zero]]
         else:
-            if isinstance(multiparams[0], (list, tuple, dict)):
+            if hasattr(multiparams[0], '__iter__'):
                 return multiparams
             else:
                 return [multiparams]
 
     def _execute_function(self, func, multiparams, params):
-        return self.execute_clauseelement(func.select(), multiparams, params)
+        return self._execute_clauseelement(func.select(), multiparams, params)
 
-    def _execute_default(self, default, multiparams=None, params=None):
+    def _execute_default(self, default, multiparams, params):
         return self.engine.dialect.defaultrunner(self.__create_execution_context()).traverse_single(default)
 
-    def execute_clauseelement(self, elem, multiparams=None, params=None):
+    def _execute_clauseelement(self, elem, multiparams, params):
         params = self.__distill_params(multiparams, params)
         if params:
             keys = params[0].keys()
         else:
-            keys = None
+            keys = []
 
         context = self.__create_execution_context(
                         compiled=elem.compile(dialect=self.dialect, column_keys=keys, inline=len(params) > 1), 
@@ -865,7 +873,7 @@ class Connection(Connectable):
                     )
         return self.__execute_context(context)
 
-    def _execute_compiled(self, compiled, multiparams=None, params=None):
+    def _execute_compiled(self, compiled, multiparams, params):
         """Execute a sql.Compiled object."""
 
         context = self.__create_execution_context(
@@ -899,13 +907,17 @@ class Connection(Connectable):
             schema_item = None
         return ddl(None, schema_item, self, *params, **multiparams)
 
-    def _handle_dbapi_exception(self, e, statement, parameters, cursor):
+    def _handle_dbapi_exception(self, e, statement, parameters, cursor, context):
         if getattr(self, '_reentrant_error', False):
             raise exc.DBAPIError.instance(None, None, e)
         self._reentrant_error = True
         try:
             if not isinstance(e, self.dialect.dbapi.Error):
                 return
+                
+            if context:
+                context.handle_dbapi_exception(e)
+                
             is_disconnect = self.dialect.is_disconnect(e)
             if is_disconnect:
                 self.invalidate(e)
@@ -922,9 +934,10 @@ class Connection(Connectable):
 
     def __create_execution_context(self, **kwargs):
         try:
-            return self.engine.dialect.create_execution_context(connection=self, **kwargs)
+            dialect = self.engine.dialect
+            return dialect.execution_ctx_cls(dialect, connection=self, **kwargs)
         except Exception, e:
-            self._handle_dbapi_exception(e, kwargs.get('statement', None), kwargs.get('parameters', None), None)
+            self._handle_dbapi_exception(e, kwargs.get('statement', None), kwargs.get('parameters', None), None, None)
             raise
 
     def _cursor_execute(self, cursor, statement, parameters, context=None):
@@ -934,7 +947,7 @@ class Connection(Connectable):
         try:
             self.dialect.do_execute(cursor, statement, parameters, context=context)
         except Exception, e:
-            self._handle_dbapi_exception(e, statement, parameters, cursor)
+            self._handle_dbapi_exception(e, statement, parameters, cursor, context)
             raise
 
     def _cursor_executemany(self, cursor, statement, parameters, context=None):
@@ -944,13 +957,13 @@ class Connection(Connectable):
         try:
             self.dialect.do_executemany(cursor, statement, parameters, context=context)
         except Exception, e:
-            self._handle_dbapi_exception(e, statement, parameters, cursor)
+            self._handle_dbapi_exception(e, statement, parameters, cursor, context)
             raise
 
     # poor man's multimethod/generic function thingy
     executors = {
-        expression._Function: _execute_function,
-        expression.ClauseElement: execute_clauseelement,
+        expression.Function: _execute_function,
+        expression.ClauseElement: _execute_clauseelement,
         Compiled: _execute_compiled,
         schema.SchemaItem: _execute_default,
         schema.DDL: _execute_ddl,
@@ -982,6 +995,10 @@ class Transaction(object):
     """Represent a Transaction in progress.
 
     The Transaction object is **not** threadsafe.
+
+    .. index::
+      single: thread safety; Transaction
+
     """
 
     def __init__(self, connection, parent):
@@ -1119,7 +1136,7 @@ class Engine(Connectable):
     def _execute_default(self, default):
         connection = self.contextual_connect()
         try:
-            return connection._execute_default(default)
+            return connection._execute_default(default, (), {})
         finally:
             connection.close()
 
@@ -1187,9 +1204,9 @@ class Engine(Connectable):
     def scalar(self, statement, *multiparams, **params):
         return self.execute(statement, *multiparams, **params).scalar()
 
-    def execute_clauseelement(self, elem, multiparams=None, params=None):
+    def _execute_clauseelement(self, elem, multiparams=None, params=None):
         connection = self.contextual_connect(close_with_result=True)
-        return connection.execute_clauseelement(elem, multiparams, params)
+        return connection._execute_clauseelement(elem, multiparams, params)
 
     def _execute_compiled(self, compiled, multiparams, params):
         connection = self.contextual_connect(close_with_result=True)
@@ -1258,13 +1275,12 @@ class Engine(Connectable):
 
         return self.pool.unique_connection()
 
-
 def _proxy_connection_cls(cls, proxy):
     class ProxyConnection(cls):
         def execute(self, object, *multiparams, **params):
             return proxy.execute(self, super(ProxyConnection, self).execute, object, *multiparams, **params)
  
-        def execute_clauseelement(self, elem, multiparams=None, params=None):
+        def _execute_clauseelement(self, elem, multiparams=None, params=None):
             return proxy.execute(self, super(ProxyConnection, self).execute, elem, *(multiparams or []), **(params or {}))
             
         def _cursor_execute(self, cursor, statement, parameters, context=None):
@@ -1310,6 +1326,8 @@ class RowProxy(object):
         for i in xrange(len(self.__row)):
             yield self.__parent._get_col(self.__row, i)
 
+    __hash__ = None
+    
     def __eq__(self, other):
         return ((other is self) or
                 (other == tuple(self.__parent._get_col(self.__row, key)
@@ -1338,18 +1356,23 @@ class RowProxy(object):
     def items(self):
         """Return a list of tuples, each tuple containing a key/value pair."""
 
-        return [(key, getattr(self, key)) for key in self.keys()]
+        return [(key, getattr(self, key)) for key in self.iterkeys()]
 
     def keys(self):
         """Return the list of keys as strings represented by this RowProxy."""
 
         return self.__parent.keys
-
+    
+    def iterkeys(self):
+        return iter(self.__parent.keys)
+        
     def values(self):
         """Return the values represented by this RowProxy as a list."""
 
         return list(self)
-
+    
+    def itervalues(self):
+        return iter(self)
 
 class BufferedColumnRow(RowProxy):
     def __init__(self, parent, row):
@@ -1416,14 +1439,16 @@ class ResultProxy(object):
             return
             
         self._rowcount = None
-        self._props = util.PopulateDict(None)
+        self._props = util.populate_column_dict(None)
         self._props.creator = self.__key_fallback()
         self.keys = []
 
         typemap = self.dialect.dbapi_type_map
 
         for i, item in enumerate(metadata):
-            colname = item[0].decode(self.dialect.encoding)
+            colname = item[0]
+            if self.dialect.description_encoding:
+                colname = colname.decode(self.dialect.description_encoding)
 
             if '.' in colname:
                 # sqlite will in some circumstances prepend table name to colnames, so strip
@@ -1614,7 +1639,7 @@ class ResultProxy(object):
             self.close()
             return l
         except Exception, e:
-            self.connection._handle_dbapi_exception(e, None, None, self.cursor)
+            self.connection._handle_dbapi_exception(e, None, None, self.cursor, self.context)
             raise
 
     def fetchmany(self, size=None):
@@ -1627,7 +1652,7 @@ class ResultProxy(object):
                 self.close()
             return l
         except Exception, e:
-            self.connection._handle_dbapi_exception(e, None, None, self.cursor)
+            self.connection._handle_dbapi_exception(e, None, None, self.cursor, self.context)
             raise
 
     def fetchone(self):
@@ -1640,7 +1665,7 @@ class ResultProxy(object):
                 self.close()
                 return None
         except Exception, e:
-            self.connection._handle_dbapi_exception(e, None, None, self.cursor)
+            self.connection._handle_dbapi_exception(e, None, None, self.cursor, self.context)
             raise
 
     def scalar(self):
@@ -1648,7 +1673,7 @@ class ResultProxy(object):
         try:
             row = self._fetchone_impl()
         except Exception, e:
-            self.connection._handle_dbapi_exception(e, None, None, self.cursor)
+            self.connection._handle_dbapi_exception(e, None, None, self.cursor, self.context)
             raise
             
         try:
@@ -1825,7 +1850,7 @@ class DefaultRunner(schema.SchemaVisitor):
     def exec_default_sql(self, default):
         conn = self.context.connection
         c = expression.select([default.arg]).compile(bind=conn)
-        return conn._execute_compiled(c).scalar()
+        return conn._execute_compiled(c, (), {}).scalar()
 
     def execute_string(self, stmt, params=None):
         """execute a string statement, using the raw cursor, and return a scalar result."""
@@ -1839,7 +1864,7 @@ class DefaultRunner(schema.SchemaVisitor):
     def visit_column_onupdate(self, onupdate):
         if isinstance(onupdate.arg, expression.ClauseElement):
             return self.exec_default_sql(onupdate)
-        elif callable(onupdate.arg):
+        elif util.callable(onupdate.arg):
             return onupdate.arg(self.context)
         else:
             return onupdate.arg
@@ -1847,7 +1872,7 @@ class DefaultRunner(schema.SchemaVisitor):
     def visit_column_default(self, default):
         if isinstance(default.arg, expression.ClauseElement):
             return self.exec_default_sql(default)
-        elif callable(default.arg):
+        elif util.callable(default.arg):
             return default.arg(self.context)
         else:
             return default.arg

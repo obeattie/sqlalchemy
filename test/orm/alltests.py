@@ -1,12 +1,11 @@
 import testenv; testenv.configure_for_tests()
-import unittest
+from testlib import sa_unittest as unittest
 
 import inheritance.alltests as inheritance
 import sharding.alltests as sharding
 
 def suite():
     modules_to_test = (
-    'orm.memusage',
         'orm.attributes',
         'orm.bind',
         'orm.extendedattr',

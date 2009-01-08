@@ -1,7 +1,7 @@
 import sys, types, weakref
 from collections import deque
 from testlib import config
-from testlib.compat import _function_named
+from testlib.compat import _function_named, callable
 
 class ConnectionKiller(object):
     def __init__(self):

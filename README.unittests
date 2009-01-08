@@ -5,8 +5,7 @@ SQLALCHEMY UNIT TESTS
 SETUP
 -----
 SQLite support is required.  These instructions assume standard Python 2.4 or
-higher. See the section on alternate Python implementations for information on
-testing with 2.3 and other Pythons.
+higher. 
 
 The 'test' directory must be on the PYTHONPATH.
 
@@ -168,23 +167,6 @@ always possible.  If you hit a wall, join us on the mailing list or, better,
 IRC!
 
 
-ALTERNATE PYTHON IMPLEMENTATIONS
---------------------------------
-The test suite restricts itself to largely Python 2.3-level constructs and
-standard library features, with the notable exception of decorators, which are
-used extensively throughout the suite.
-
-A source transformation tool is included that allows testing on Python 2.3 or
-any other Python implementation that lacks @decorator support.
-
-To use it:
-
-  $ python test/clone.py -c --filter=py23 test23
-
-This will copy the test/ directory structure into test23/, with @decorators in
-the source code transformed into 2.3-friendly syntax.
-
-
 TIPS
 ----
 Postgres: The tests require an 'alt_schema' and 'alt_schema_2' to be present in
@@ -194,3 +176,14 @@ Postgres: When running the tests on postgres, postgres can get slower and
 slower each time you run the tests.  This seems to be related to the constant
 creation/dropping of tables.  Running a "VACUUM FULL" on the database will
 speed it up again.
+
+MSSQL: Tests that involve multiple connections require Snapshot Isolation
+ability implented on the test database in order to prevent deadlocks that will
+occur with record locking isolation. This feature is only available with
+MSSQL 2005 and greater. For example::
+
+    ALTER DATABASE MyDatabase
+    SET ALLOW_SNAPSHOT_ISOLATION ON
+    
+    ALTER DATABASE MyDatabase
+    SET READ_COMMITTED_SNAPSHOT ON

@@ -3,6 +3,7 @@ import datetime, re, operator
 from sqlalchemy import *
 from sqlalchemy import exc, sql, util
 from sqlalchemy.sql import table, column, label, compiler
+from sqlalchemy.sql.expression import ClauseList
 from sqlalchemy.engine import default
 from sqlalchemy.databases import sqlite, postgres, mysql, oracle, firebird, mssql
 from testlib import *
@@ -125,6 +126,11 @@ sq2.sq_myothertable_otherid, sq2.sq_myothertable_othername FROM \
 sq.mytable_description AS sq_mytable_description, sq.myothertable_otherid AS sq_myothertable_otherid, \
 sq.myothertable_othername AS sq_myothertable_othername FROM (" + sqstring + ") AS sq) AS sq2")
 
+    def test_select_from_clauselist(self):
+        self.assert_compile(
+            select([ClauseList(column('a'), column('b'))]).select_from('sometable'), 
+            'SELECT a, b FROM sometable'
+        )
     def test_nested_uselabels(self):
         """test nested anonymous label generation.  this
         essentially tests the ANONYMOUS_LABEL regex.
@@ -829,6 +835,20 @@ FROM mytable, myothertable WHERE foo.id = foofoo(lala) AND datetime(foo) = Today
                             "SELECT concat(:param_1, :param_2) "
                             "COLLATE somecol AS x")
 
+    def test_percent_chars(self):
+        t = table("table",
+            column("percent%"),
+            column("%(oneofthese)s"),
+            column("spaces % more spaces"),
+        )
+        self.assert_compile(
+            t.select(use_labels=True),
+            '''SELECT "table"."percent%" AS "table_percent%", '''\
+            '''"table"."%(oneofthese)s" AS "table_%(oneofthese)s", '''\
+            '''"table"."spaces % more spaces" AS "table_spaces % more spaces" FROM "table"'''
+        )
+        
+        
     def test_joins(self):
         self.assert_compile(
             join(table2, table1, table1.c.myid == table2.c.otherid).select(),

@@ -43,6 +43,7 @@ __all__.sort()
 class SchemaItem(visitors.Visitable):
     """Base class for items that define a database schema."""
 
+    __visit_name__ = 'schema_item'
     quote = None
 
     def _init_items(self, *args):
@@ -120,6 +121,8 @@ class Table(SchemaItem, expression.TableClause):
     """Represent a table in a database."""
 
     __metaclass__ = _TableSingleton
+
+    __visit_name__ = 'table'
 
     ddl_events = ('before-create', 'after-create', 'before-drop', 'after-drop')
 
@@ -408,6 +411,8 @@ class Table(SchemaItem, expression.TableClause):
 class Column(SchemaItem, expression.ColumnClause):
     """Represents a column in a database table."""
 
+    __visit_name__ = 'column'
+
     def __init__(self, *args, **kwargs):
         """
         Construct a new ``Column`` object.
@@ -569,7 +574,7 @@ class Column(SchemaItem, expression.ColumnClause):
             coltype = args[0]
             
             # adjust for partials
-            if callable(coltype):
+            if util.callable(coltype):
                 coltype = args[0]()
 
             if (isinstance(coltype, types.AbstractType) or
@@ -761,13 +766,18 @@ class ForeignKey(SchemaItem):
     Further examples of foreign key configuration are in :ref:`metadata_foreignkeys`.
 
     """
-    def __init__(self, column, constraint=None, use_alter=False, name=None, onupdate=None, ondelete=None, deferrable=None, initially=None):
+
+    __visit_name__ = 'foreign_key'
+
+    def __init__(self, column, constraint=None, use_alter=False, name=None, onupdate=None, ondelete=None, deferrable=None, initially=None, link_to_name=False):
         """
         Construct a column-level FOREIGN KEY.
 
         :param column: A single target column for the key relationship.  A :class:`Column`
-          object or a column name as a string: ``tablename.columnname`` or
-          ``schema.tablename.columnname``.
+          object or a column name as a string: ``tablename.columnkey`` or
+          ``schema.tablename.columnkey``.  ``columnkey`` is the ``key`` which has been assigned
+          to the column (defaults to the column name itself), unless ``link_to_name`` is ``True``
+          in which case the rendered name of the column is used.
 
         :param constraint: Optional.  A parent :class:`ForeignKeyConstraint` object.  If not
           supplied, a :class:`ForeignKeyConstraint` will be automatically created
@@ -789,7 +799,10 @@ class ForeignKey(SchemaItem):
 
         :param initially: Optional string.  If set, emit INITIALLY <value> when issuing DDL
           for this constraint.
-
+        
+        :param link_to_name: if True, the string name given in ``column`` is the rendered
+          name of the referenced column, not its locally assigned ``key``.
+          
         :param use_alter: If True, do not emit this key as part of the CREATE TABLE
           definition.  Instead, use ALTER TABLE after table creation to add
           the key.  Useful for circular dependencies.
@@ -804,6 +817,7 @@ class ForeignKey(SchemaItem):
         self.ondelete = ondelete
         self.deferrable = deferrable
         self.initially = initially
+        self.link_to_name = link_to_name
 
     def __repr__(self):
         return "ForeignKey(%r)" % self._get_colspec()
@@ -869,21 +883,29 @@ class ForeignKey(SchemaItem):
                     "foreign key" % tname)
             table = Table(tname, parenttable.metadata,
                           mustexist=True, schema=schema)
-            try:
-                if colname is None:
-                    # colname is None in the case that ForeignKey argument
-                    # was specified as table name only, in which case we
-                    # match the column name to the same column on the
-                    # parent.
-                    key = self.parent
-                    _column = table.c[self.parent.key]
-                else:
-                    _column = table.c[colname]
-            except KeyError, e:
+                          
+            _column = None
+            if colname is None:
+                # colname is None in the case that ForeignKey argument
+                # was specified as table name only, in which case we
+                # match the column name to the same column on the
+                # parent.
+                key = self.parent
+                _column = table.c.get(self.parent.key, None)
+            elif self.link_to_name:
+                key = colname
+                for c in table.c:
+                    if c.name == colname:
+                        _column = c
+            else:
+                key = colname
+                _column = table.c.get(colname, None)
+
+            if not _column:
                 raise exc.NoReferencedColumnError(
                     "Could not create ForeignKey '%s' on table '%s': "
                     "table '%s' has no column named '%s'" % (
-                    self._colspec, parenttable.name, table.name, str(e)))
+                    self._colspec, parenttable.name, table.name, key))
 
         elif hasattr(self._colspec, '__clause_element__'):
             _column = self._colspec.__clause_element__()
@@ -921,6 +943,8 @@ class ForeignKey(SchemaItem):
 class DefaultGenerator(SchemaItem):
     """Base class for column *default* values."""
 
+    __visit_name__ = 'default_generator'
+
     def __init__(self, for_update=False, metadata=None):
         self.for_update = for_update
         self.metadata = util.assert_arg_type(metadata, (MetaData, type(None)), 'metadata')
@@ -953,7 +977,7 @@ class ColumnDefault(DefaultGenerator):
         if isinstance(arg, FetchedValue):
             raise exc.ArgumentError(
                 "ColumnDefault may not be a server-side default type.")
-        if callable(arg):
+        if util.callable(arg):
             arg = self._maybe_wrap_callable(arg)
         self.arg = arg
 
@@ -1000,6 +1024,8 @@ class ColumnDefault(DefaultGenerator):
 
 class Sequence(DefaultGenerator):
     """Represents a named database sequence."""
+
+    __visit_name__ = 'sequence'
 
     def __init__(self, name, start=None, increment=None, schema=None,
                  optional=False, quote=None, **kwargs):
@@ -1077,6 +1103,8 @@ class Constraint(SchemaItem):
     Implements a hybrid of dict/setlike behavior with regards to the list of
     underying columns.
     """
+
+    __visit_name__ = 'constraint'
 
     def __init__(self, name=None, deferrable=None, initially=None):
         """Create a SQL constraint.
@@ -1175,51 +1203,49 @@ class ForeignKeyConstraint(Constraint):
     Examples of foreign key configuration are in :ref:`metadata_foreignkeys`.
     
     """
+    __visit_name__ = 'foreign_key_constraint'
 
-    def __init__(self, columns, refcolumns, name=None, onupdate=None, ondelete=None, use_alter=False, deferrable=None, initially=None):
+    def __init__(self, columns, refcolumns, name=None, onupdate=None, ondelete=None, use_alter=False, deferrable=None, initially=None, link_to_name=False):
         """Construct a composite-capable FOREIGN KEY.
 
-        columns
-          A sequence of local column names.  The named columns must be defined
-          and present in the parent Table.
+        :param columns: A sequence of local column names.  The named columns must be defined
+          and present in the parent Table.  The names should match the ``key`` given 
+          to each column (defaults to the name) unless ``link_to_name`` is True.
 
-        refcolumns
-          A sequence of foreign column names or Column objects.  The columns
+        :param refcolumns: A sequence of foreign column names or Column objects.  The columns
           must all be located within the same Table.
 
-        name
-          Optional, the in-database name of the key.
+        :param name: Optional, the in-database name of the key.
 
-        onupdate
-          Optional string.  If set, emit ON UPDATE <value> when issuing DDL
+        :param onupdate: Optional string.  If set, emit ON UPDATE <value> when issuing DDL
           for this constraint.  Typical values include CASCADE, DELETE and
           RESTRICT.
 
-        ondelete
-          Optional string.  If set, emit ON DELETE <value> when issuing DDL
+        :param ondelete: Optional string.  If set, emit ON DELETE <value> when issuing DDL
           for this constraint.  Typical values include CASCADE, DELETE and
           RESTRICT.
 
-        deferrable
-          Optional bool.  If set, emit DEFERRABLE or NOT DEFERRABLE when
+        :param deferrable: Optional bool.  If set, emit DEFERRABLE or NOT DEFERRABLE when
           issuing DDL for this constraint.
 
-        initially
-          Optional string.  If set, emit INITIALLY <value> when issuing DDL
+        :param initially: Optional string.  If set, emit INITIALLY <value> when issuing DDL
           for this constraint.
 
-        use_alter
-          If True, do not emit this key as part of the CREATE TABLE
+        :param link_to_name: if True, the string name given in ``column`` is the rendered
+          name of the referenced column, not its locally assigned ``key``.
+
+        :param use_alter: If True, do not emit this key as part of the CREATE TABLE
           definition.  Instead, use ALTER TABLE after table creation to add
           the key.  Useful for circular dependencies.
+          
         """
-
         super(ForeignKeyConstraint, self).__init__(name, deferrable, initially)
         self.__colnames = columns
         self.__refcolnames = refcolumns
         self.elements = util.OrderedSet()
         self.onupdate = onupdate
         self.ondelete = ondelete
+        self.link_to_name = link_to_name
         if self.name is None and use_alter:
             raise exc.ArgumentError("Alterable ForeignKey/ForeignKeyConstraint requires a name")
         self.use_alter = use_alter
@@ -1232,7 +1258,7 @@ class ForeignKeyConstraint(Constraint):
                 self.append_element(c, r)
 
     def append_element(self, col, refcol):
-        fk = ForeignKey(refcol, constraint=self, name=self.name, onupdate=self.onupdate, ondelete=self.ondelete, use_alter=self.use_alter)
+        fk = ForeignKey(refcol, constraint=self, name=self.name, onupdate=self.onupdate, ondelete=self.ondelete, use_alter=self.use_alter, link_to_name=self.link_to_name)
         fk._set_parent(self.table.c[col])
         self._append_fk(fk)
 
@@ -1251,6 +1277,8 @@ class PrimaryKeyConstraint(Constraint):
     ``Column`` definitions is a shorthand equivalent for an unnamed single- or
     multiple-column PrimaryKeyConstraint.
     """
+
+    __visit_name__ = 'primary_key_constraint'
 
     def __init__(self, *columns, **kwargs):
         """Construct a composite-capable PRIMARY KEY.
@@ -1303,6 +1331,8 @@ class PrimaryKeyConstraint(Constraint):
     def copy(self, **kw):
         return PrimaryKeyConstraint(name=self.name, *[c.key for c in self])
 
+    __hash__ = Constraint.__hash__
+    
     def __eq__(self, other):
         return self.columns == other
 
@@ -1314,6 +1344,8 @@ class UniqueConstraint(Constraint):
     definition is a shorthand equivalent for an unnamed, single column
     UniqueConstraint.
     """
+
+    __visit_name__ = 'unique_constraint'
 
     def __init__(self, *columns, **kwargs):
         """Construct a UNIQUE constraint.
@@ -1364,6 +1396,8 @@ class Index(SchemaItem):
     column index, adding ``index=True`` to the ``Column`` definition is
     a shorthand equivalent for an unnamed, single column Index.
     """
+
+    __visit_name__ = 'index'
 
     def __init__(self, name, *columns, **kwargs):
         """Construct an index object.
@@ -1443,12 +1477,13 @@ class MetaData(SchemaItem):
     """A collection of Tables and their associated schema constructs.
 
     Holds a collection of Tables and an optional binding to an ``Engine`` or
-    ``Connection``.  If bound, the :class:`~sqlalchemy.schema.Table` objects in the
-    collection and their columns may participate in implicit SQL execution.
+    ``Connection``.  If bound, the :class:`~sqlalchemy.schema.Table` objects
+    in the collection and their columns may participate in implicit SQL
+    execution.
 
-    The `Table` objects themselves are stored in the `metadata.tables` 
+    The `Table` objects themselves are stored in the `metadata.tables`
     dictionary.
-    
+
     The ``bind`` property may be assigned to dynamically.  A common pattern is
     to start unbound and then bind later when an engine is available::
 
@@ -1461,6 +1496,10 @@ class MetaData(SchemaItem):
 
     MetaData is a thread-safe object after tables have been explicitly defined
     or loaded via reflection.
+
+    .. index::
+      single: thread safety; MetaData
+
     """
 
     __visit_name__ = 'metadata'
@@ -1637,7 +1676,7 @@ class MetaData(SchemaItem):
 
         if only is None:
             load = [name for name in available if name not in current]
-        elif callable(only):
+        elif util.callable(only):
             load = [name for name in available
                     if name not in current and only(name, self)]
         else:
@@ -1914,7 +1953,7 @@ class DDL(object):
                 "Expected a string or unicode SQL statement, got '%r'" %
                 statement)
         if (on is not None and
-            (not isinstance(on, basestring) and not callable(on))):
+            (not isinstance(on, basestring) and not util.callable(on))):
             raise exc.ArgumentError(
                 "Expected the name of a database dialect or a callable for "
                 "'on' criteria, got type '%s'." % type(on).__name__)

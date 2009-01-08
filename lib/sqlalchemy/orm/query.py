@@ -653,12 +653,15 @@ class Query(object):
     def order_by(self, *criterion):
         """apply one or more ORDER BY criterion to the query and return the newly resulting ``Query``"""
 
-        criterion = [self._adapt_clause(expression._literal_as_text(o), True, True) for o in criterion]
-
-        if self._order_by is False:
-            self._order_by = criterion
+        if len(criterion) == 1 and criterion[0] is None:
+            self._order_by = None
         else:
-            self._order_by = self._order_by + criterion
+            criterion = [self._adapt_clause(expression._literal_as_text(o), True, True) for o in criterion]
+
+            if self._order_by is False or self._order_by is None:
+                self._order_by = criterion
+            else:
+                self._order_by = self._order_by + criterion
 
     @_generative(__no_statement_condition, __no_limit_offset)
     @util.accepts_a_list_as_starargs(list_deprecation='pending')
@@ -753,7 +756,7 @@ class Query(object):
         """
         aliased, from_joinpoint = kwargs.pop('aliased', False), kwargs.pop('from_joinpoint', False)
         if kwargs:
-            raise TypeError("unknown arguments: %s" % ','.join(kwargs.keys()))
+            raise TypeError("unknown arguments: %s" % ','.join(kwargs.iterkeys()))
         return self.__join(props, outerjoin=False, create_aliases=aliased, from_joinpoint=from_joinpoint)
 
     @util.accepts_a_list_as_starargs(list_deprecation='pending')
@@ -766,7 +769,7 @@ class Query(object):
         """
         aliased, from_joinpoint = kwargs.pop('aliased', False), kwargs.pop('from_joinpoint', False)
         if kwargs:
-            raise TypeError("unknown arguments: %s" % ','.join(kwargs.keys()))
+            raise TypeError("unknown arguments: %s" % ','.join(kwargs.iterkeys()))
         return self.__join(props, outerjoin=True, create_aliases=aliased, from_joinpoint=from_joinpoint)
 
     @_generative(__no_statement_condition, __no_limit_offset)
@@ -781,11 +784,10 @@ class Query(object):
         right_entity = None
 
         for arg1 in util.to_list(keys):
-            prop =  None
             aliased_entity = False
             alias_criterion = False
             left_entity = right_entity
-            right_entity = right_mapper = None
+            prop = of_type = right_entity = right_mapper = None
 
             if isinstance(arg1, tuple):
                 arg1, arg2 = arg1
@@ -824,6 +826,7 @@ class Query(object):
 
                 descriptor, prop = _entity_descriptor(left_entity, onclause)
                 right_mapper = prop.mapper
+
                 if not right_entity:
                     right_entity = right_mapper
             elif onclause is None:
@@ -846,7 +849,12 @@ class Query(object):
                 raise sa_exc.InvalidRequestError("Could not find a FROM clause to join from")
 
             mp, right_selectable, is_aliased_class = _entity_info(right_entity)
-
+            
+            if mp is not None and right_mapper is not None and not mp.common_parent(right_mapper):
+                raise sa_exc.InvalidRequestError(
+                    "Join target %s does not correspond to the right side of join condition %s" % (right_entity, onclause)
+                )
+            
             if not right_mapper and mp:
                 right_mapper = mp
 
@@ -883,8 +891,11 @@ class Query(object):
                     if prop.secondary:
                         self.__currenttables.add(prop.secondary)
                     self.__currenttables.add(prop.table)
-
-                    right_entity = prop.mapper
+                    
+                    if of_type:
+                        right_entity = of_type
+                    else:
+                        right_entity = prop.mapper
 
             if alias_criterion:
                 right_adapter = ORMAdapter(right_entity,
@@ -1035,13 +1046,13 @@ class Query(object):
 
         """
         if self._statement:
-            return list(self)[0]
+            ret = list(self)[0:1]
         else:
             ret = list(self[0:1])
-            if len(ret) > 0:
-                return ret[0]
-            else:
-                return None
+        if len(ret) > 0:
+            return ret[0]
+        else:
+            return None
 
     def one(self):
         """Return exactly one result or raise an exception.
@@ -1101,7 +1112,7 @@ class Query(object):
         return self._execute_and_instances(context)
 
     def _execute_and_instances(self, querycontext):
-        result = self.session.execute(querycontext.statement, params=self._params, mapper=self._mapper_zero_or_none(), _state=self._refresh_state)
+        result = self.session.execute(querycontext.statement, params=self._params, mapper=self._mapper_zero_or_none())
         return self.instances(result, querycontext)
 
     def instances(self, cursor, __context=None):
@@ -1324,10 +1335,11 @@ class Query(object):
         session. Valid values are:
 
         False
-          don't synchronize the session. Use this when you don't need to use the
-          session after the delete or you can be sure that none of the matched objects
-          are in the session. The behavior of deleted objects still in the session is
-          undefined.
+          don't synchronize the session. This option is the most efficient and is reliable
+          once the session is expired, which typically occurs after a commit().   Before
+          the expiration, objects may still remain in the session which were in fact deleted
+          which can lead to confusing results if they are accessed via get() or already
+          loaded collections.
 
         'fetch'
           performs a select query before the delete to find objects that are matched
@@ -1371,11 +1383,11 @@ class Query(object):
         if synchronize_session == 'fetch':
             #TODO: use RETURNING when available
             select_stmt = context.statement.with_only_columns(primary_table.primary_key)
-            matched_rows = session.execute(select_stmt).fetchall()
+            matched_rows = session.execute(select_stmt, params=self._params).fetchall()
 
         if self._autoflush:
             session._autoflush()
-        result = session.execute(delete_stmt)
+        result = session.execute(delete_stmt, params=self._params)
 
         if synchronize_session == 'evaluate':
             target_cls = self._mapper_zero().class_
@@ -1448,6 +1460,7 @@ class Query(object):
 
                 value_evaluators = {}
                 for key,value in values.items():
+                    key = expression._column_as_key(key)
                     value_evaluators[key] = evaluator_compiler.process(expression._literal_as_binds(value))
             except evaluator.UnevaluatableError:
                 synchronize_session = 'expire'
@@ -1456,11 +1469,11 @@ class Query(object):
 
         if synchronize_session == 'expire':
             select_stmt = context.statement.with_only_columns(primary_table.primary_key)
-            matched_rows = session.execute(select_stmt).fetchall()
+            matched_rows = session.execute(select_stmt, params=self._params).fetchall()
 
         if self._autoflush:
             session._autoflush()
-        result = session.execute(update_stmt)
+        result = session.execute(update_stmt, params=self._params)
 
         if synchronize_session == 'evaluate':
             target_cls = self._mapper_zero().class_
@@ -1614,14 +1627,12 @@ class Query(object):
 
         """
         for entity, (mapper, adapter, s, i, w) in self._mapper_adapter_map.iteritems():
-            if mapper.single and mapper.inherits and mapper.polymorphic_on and mapper.polymorphic_identity is not None:
-                crit = mapper.polymorphic_on.in_(
-                    m.polymorphic_identity
-                    for m in mapper.polymorphic_iterator())
+            single_crit = mapper._single_table_criterion
+            if single_crit:
                 if adapter:
-                    crit = adapter.traverse(crit)
-                crit = self._adapt_clause(crit, False, False)
-                context.whereclause = sql.and_(context.whereclause, crit)
+                    single_crit = adapter.traverse(single_crit)
+                single_crit = self._adapt_clause(single_crit, False, False)
+                context.whereclause = sql.and_(context.whereclause, single_crit)
 
     def __str__(self):
         return str(self._compile_context().statement)
@@ -1633,7 +1644,7 @@ class _QueryEntity(object):
     def __new__(cls, *args, **kwargs):
         if cls is _QueryEntity:
             entity = args[1]
-            if _is_mapped_class(entity):
+            if not isinstance(entity, basestring) and _is_mapped_class(entity):
                 cls = _MapperEntity
             else:
                 cls = _ColumnEntity
@@ -1755,6 +1766,7 @@ class _MapperEntity(_QueryEntity):
         if context.order_by is False and self.mapper.order_by:
             context.order_by = self.mapper.order_by
 
+            # apply adaptation to the mapper's order_by if needed.
             if adapter:
                 context.order_by = adapter.adapt_list(util.to_list(context.order_by))
                     
@@ -1785,26 +1797,31 @@ class _ColumnEntity(_QueryEntity):
     """Column/expression based entity."""
 
     def __init__(self, query, column):
-        if isinstance(column, expression.FromClause) and not isinstance(column, expression.ColumnElement):
-            for c in column.c:
-                _ColumnEntity(query, c)
-            return
-
-        query._entities.append(self)
-
         if isinstance(column, basestring):
             column = sql.literal_column(column)
             self._result_label = column.name
         elif isinstance(column, (attributes.QueryableAttribute, mapper.Mapper._CompileOnAttr)):
             self._result_label = column.impl.key
             column = column.__clause_element__()
-        elif not isinstance(column, sql.ColumnElement):
-            raise sa_exc.InvalidRequestError("Invalid column expression '%r'" % column)
         else:
             self._result_label = getattr(column, 'key', None)
+        
+        if not isinstance(column, expression.ColumnElement) and hasattr(column, '_select_iterable'):
+            for c in column._select_iterable:
+                if c is column:
+                    break
+                _ColumnEntity(query, c)
+            
+            if c is not column:
+                return
+
+        if not isinstance(column, sql.ColumnElement):
+            raise sa_exc.InvalidRequestError("Invalid column expression '%r'" % column)
 
         if not hasattr(column, '_label'):
             column = column.label(None)
+
+        query._entities.append(self)
 
         self.column = column
         self.froms = set()

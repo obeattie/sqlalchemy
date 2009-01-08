@@ -4,7 +4,7 @@ import testenv; testenv.configure_for_tests()
 from testlib import sa, testing
 from testlib.sa import MetaData, Table, Column, Integer, String, ForeignKey, func
 from testlib.sa.engine import default
-from testlib.sa.orm import mapper, relation, backref, create_session, class_mapper, reconstructor, validates, aliased
+from testlib.sa.orm import mapper, relation, backref, create_session, class_mapper, compile_mappers, reconstructor, validates, aliased
 from testlib.sa.orm import defer, deferred, synonym, attributes, column_property, composite, relation, dynamic_loader, comparable_property
 from testlib.testing import eq_, AssertsCompiledSQL
 import pickleable
@@ -25,6 +25,21 @@ class MapperTest(_fixtures.FixtureTest):
         self.assertRaises(sa.exc.ArgumentError, sa.orm.compile_mappers)
 
     @testing.resolve_artifact_names
+    def test_update_attr_keys(self):
+        """test that update()/insert() use the correct key when given InstrumentedAttributes."""
+        
+        mapper(User, users, properties={
+            'foobar':users.c.name
+        })
+
+        users.insert().values({User.foobar:'name1'}).execute()
+        eq_(sa.select([User.foobar]).where(User.foobar=='name1').execute().fetchall(), [('name1',)])
+
+        users.update().values({User.foobar:User.foobar + 'foo'}).execute()
+        eq_(sa.select([User.foobar]).where(User.foobar=='name1foo').execute().fetchall(), [('name1foo',)])
+        
+
+    @testing.resolve_artifact_names
     def test_prop_accessor(self):
         mapper(User, users)
         self.assertRaises(NotImplementedError,
@@ -37,6 +52,14 @@ class MapperTest(_fixtures.FixtureTest):
         self.assertRaises(sa.exc.ArgumentError,
                           relation, Address, cascade="fake, all, delete-orphan")
 
+    @testing.resolve_artifact_names
+    def test_exceptions_sticky(self):
+        mapper(Address, addresses, properties={
+            'user':relation(User)
+        })
+        hasattr(Address.id, 'in_')
+        self.assertRaisesMessage(sa.exc.InvalidRequestError, r"suppressed within a hasattr\(\)", compile_mappers)
+    
     @testing.resolve_artifact_names
     def test_column_prefix(self):
         mapper(User, users, column_prefix='_', properties={
@@ -222,6 +245,8 @@ class MapperTest(_fixtures.FixtureTest):
         mapper(Address, addresses)
 
         class UCComparator(sa.orm.PropComparator):
+            __hash__ = None
+            
             def __eq__(self, other):
                 cls = self.prop.parent.class_
                 col = getattr(cls, 'name')
@@ -494,22 +519,25 @@ class MapperTest(_fixtures.FixtureTest):
         eq_(l, [self.static.user_result[0]])
 
     @testing.resolve_artifact_names
-    def test_order_by(self):
-        """Ordering at the mapper and query level"""
+    def test_cancel_order_by(self):
+        mapper(User, users, order_by=users.c.name.desc())
 
-        # TODO: make a unit test out of these various combinations
-        #m = mapper(User, users, order_by=desc(users.c.name))
-        mapper(User, users, order_by=None)
-        #mapper(User, users)
+        assert "order by users.name desc" in str(create_session().query(User).statement).lower()
+        assert "order by" not in str(create_session().query(User).order_by(None).statement).lower()
+        assert "order by users.name asc" in str(create_session().query(User).order_by(User.name.asc()).statement).lower()
 
-        #l = create_session().query(User).select(order_by=[desc(users.c.name), asc(users.c.user_id)])
-        l = create_session().query(User).all()
-        #l = create_session().query(User).select(order_by=[])
-        #l = create_session().query(User).select(order_by=None)
+        eq_(
+            create_session().query(User).all(),
+            [User(id=7, name=u'jack'), User(id=9, name=u'fred'), User(id=8, name=u'ed'), User(id=10, name=u'chuck')]
+        )
 
-
+        eq_(
+            create_session().query(User).order_by(User.name).all(),
+            [User(id=10, name=u'chuck'), User(id=8, name=u'ed'), User(id=9, name=u'fred'), User(id=7, name=u'jack')]
+        )
+        
     # 'Raises a "expression evaluation not supported" error at prepare time
-    @testing.fails_on('firebird')
+    @testing.fails_on('firebird', 'FIXME: unknown')
     @testing.resolve_artifact_names
     def test_function(self):
         """Mapping to a SELECT statement that has functions in it."""
@@ -692,10 +720,22 @@ class MapperTest(_fixtures.FixtureTest):
     def test_comparable(self):
         class extendedproperty(property):
             attribute = 123
+            
+            def method1(self):
+                return "method1"
+            
             def __getitem__(self, key):
                 return 'value'
 
         class UCComparator(sa.orm.PropComparator):
+            __hash__ = None
+            
+            def method1(self):
+                return "uccmethod1"
+                
+            def method2(self, other):
+                return "method2"
+                
             def __eq__(self, other):
                 cls = self.prop.parent.class_
                 col = getattr(cls, 'name')
@@ -728,6 +768,14 @@ class MapperTest(_fixtures.FixtureTest):
             assert hasattr(User, 'name')
             assert hasattr(User, 'uc_name')
 
+            eq_(User.uc_name.method1(), "method1")
+            eq_(User.uc_name.method2('x'), "method2")
+
+            self.assertRaisesMessage(
+                AttributeError, 
+                "Neither 'extendedproperty' object nor 'UCComparator' object has an attribute 'nonexistent'", 
+                getattr, User.uc_name, 'nonexistent')
+            
             # test compile
             assert not isinstance(User.uc_name == 'jack', bool)
             u = q.filter(User.uc_name=='JACK').one()
@@ -752,6 +800,30 @@ class MapperTest(_fixtures.FixtureTest):
             eq_(User.uc_name.attribute, 123)
             eq_(User.uc_name['key'], 'value')
             sess.rollback()
+
+    @testing.resolve_artifact_names
+    def test_comparable_column(self):
+        class MyComparator(sa.orm.properties.ColumnProperty.Comparator):
+            def __eq__(self, other):
+                # lower case comparison
+                return func.lower(self.__clause_element__()) == func.lower(other)
+                
+            def intersects(self, other):
+                # non-standard comparator
+                return self.__clause_element__().op('&=')(other)
+                
+        mapper(User, users, properties={
+            'name':sa.orm.column_property(users.c.name, comparator_factory=MyComparator)
+        })
+        
+        self.assertRaisesMessage(
+            AttributeError, 
+            "Neither 'InstrumentedAttribute' object nor 'MyComparator' object has an attribute 'nonexistent'", 
+            getattr, User.name, "nonexistent")
+
+        eq_(str((User.name == 'ed').compile(dialect=sa.engine.default.DefaultDialect())) , "lower(users.name) = lower(:lower_1)")
+        eq_(str((User.name.intersects('ed')).compile(dialect=sa.engine.default.DefaultDialect())), "users.name &= :name_1")
+        
 
     @testing.resolve_artifact_names
     def test_reconstructor(self):
@@ -853,7 +925,7 @@ class MapperTest(_fixtures.FixtureTest):
 
 class OptionsTest(_fixtures.FixtureTest):
 
-    @testing.fails_on('maxdb')
+    @testing.fails_on('maxdb', 'FIXME: unknown')
     @testing.resolve_artifact_names
     def test_synonym_options(self):
         mapper(User, users, properties=dict(
@@ -888,7 +960,7 @@ class OptionsTest(_fixtures.FixtureTest):
             eq_(l, self.static.user_address_result)
         self.sql_count_(0, go)
 
-    @testing.fails_on('maxdb')
+    @testing.fails_on('maxdb', 'FIXME: unknown')
     @testing.resolve_artifact_names
     def test_eager_options_with_limit(self):
         mapper(User, users, properties=dict(
@@ -910,7 +982,7 @@ class OptionsTest(_fixtures.FixtureTest):
         eq_(u.id, 8)
         eq_(len(u.addresses), 3)
 
-    @testing.fails_on('maxdb')
+    @testing.fails_on('maxdb', 'FIXME: unknown')
     @testing.resolve_artifact_names
     def test_lazy_options_with_limit(self):
         mapper(User, users, properties=dict(
@@ -1158,6 +1230,7 @@ class ComparatorFactoryTest(_fixtures.FixtureTest, AssertsCompiledSQL):
         from sqlalchemy.orm.properties import ColumnProperty
         
         class MyFactory(ColumnProperty.Comparator):
+            __hash__ = None
             def __eq__(self, other):
                 return func.foobar(self.__clause_element__()) == func.foobar(other)
         mapper(User, users, properties={'name':column_property(users.c.name, comparator_factory=MyFactory)})
@@ -1168,6 +1241,7 @@ class ComparatorFactoryTest(_fixtures.FixtureTest, AssertsCompiledSQL):
     def test_synonym(self):
         from sqlalchemy.orm.properties import ColumnProperty
         class MyFactory(ColumnProperty.Comparator):
+            __hash__ = None
             def __eq__(self, other):
                 return func.foobar(self.__clause_element__()) == func.foobar(other)
         mapper(User, users, properties={'name':synonym('_name', map_column=True, comparator_factory=MyFactory)})
@@ -1179,10 +1253,12 @@ class ComparatorFactoryTest(_fixtures.FixtureTest, AssertsCompiledSQL):
         from sqlalchemy.orm.properties import PropertyLoader
 
         class MyFactory(PropertyLoader.Comparator):
+            __hash__ = None
             def __eq__(self, other):
                 return func.foobar(self.__clause_element__().c.user_id) == func.foobar(other.id)
 
         class MyFactory2(PropertyLoader.Comparator):
+            __hash__ = None
             def __eq__(self, other):
                 return func.foobar(self.__clause_element__().c.id) == func.foobar(other.user_id)
                 
@@ -1610,6 +1686,7 @@ class CompositeTypesTest(_base.MappedTest):
                 self.y = y
             def __composite_values__(self):
                 return [self.x, self.y]
+            __hash__ = None
             def __eq__(self, other):
                 return other.x == self.x and other.y == self.y
             def __ne__(self, other):
@@ -1676,6 +1753,9 @@ class CompositeTypesTest(_base.MappedTest):
 
         eq_(sess.query(Edge).filter(Edge.start==None).all(), [])
 
+        # query by columns
+        eq_(sess.query(Edge.start, Edge.end).all(), [(3, 4, 5, 6), (14, 5, 19, 5)])
+
     @testing.resolve_artifact_names
     def test_pk(self):
         """Using a composite type as a primary key"""
@@ -1686,6 +1766,7 @@ class CompositeTypesTest(_base.MappedTest):
                 self.version = version
             def __composite_values__(self):
                 return (self.id, self.version)
+            __hash__ = None
             def __eq__(self, other):
                 return other.id == self.id and other.version == self.version
             def __ne__(self, other):
@@ -1713,11 +1794,14 @@ class CompositeTypesTest(_base.MappedTest):
         eq_(g.version, g2.version)
 
         # test pk mutation
-        g2.version = Version(2, 1)
-        sess.flush()
-        g3 = sess.query(Graph).get(Version(2, 1))
-        eq_(g2.version, g3.version)
-        
+        @testing.fails_on('mssql', 'Cannot update identity columns.')
+        def update_pk():
+            g2.version = Version(2, 1)
+            sess.flush()
+            g3 = sess.query(Graph).get(Version(2, 1))
+            eq_(g2.version, g3.version)
+        update_pk()
+
         # test pk with one column NULL
         # TODO: can't seem to get NULL in for a PK value
         # in either mysql or postgres, autoincrement=False etc.
@@ -1745,6 +1829,7 @@ class CompositeTypesTest(_base.MappedTest):
                 self.x4 = x4
             def __composite_values__(self):
                 return self.x1, self.x2, self.x3, self.x4
+            __hash__ = None
             def __eq__(self, other):
                 return other.x1 == self.x1 and other.x2 == self.x2 and other.x3 == self.x3 and other.x4 == self.x4
             def __ne__(self, other):
@@ -1780,6 +1865,7 @@ class CompositeTypesTest(_base.MappedTest):
                 self.x2val = x2
                 self.x3 = x3
                 self.x4 = x4
+            __hash__ = None
             def __eq__(self, other):
                 return other.x1val == self.x1val and other.x2val == self.x2val and other.x3 == self.x3 and other.x4 == self.x4
             def __ne__(self, other):
@@ -1811,6 +1897,7 @@ class CompositeTypesTest(_base.MappedTest):
                 self.y = y
             def __composite_values__(self):
                 return [self.x, self.y]
+            __hash__ = None
             def __eq__(self, other):
                 return other.x == self.x and other.y == self.y
             def __ne__(self, other):
@@ -2063,7 +2150,22 @@ class MapperExtensionTest(_fixtures.FixtureTest):
              'create_instance', 'populate_instance', 'reconstruct_instance',
              'append_result', 'before_update', 'after_update', 'before_delete',
              'after_delete'])
-
+        
+    @testing.resolve_artifact_names
+    def test_create_instance(self):
+        class CreateUserExt(sa.orm.MapperExtension):
+            def create_instance(self, mapper, selectcontext, row, class_):
+                return User.__new__(User)
+                
+        mapper(User, users, extension=CreateUserExt())
+        sess = create_session()
+        u1 = User()
+        u1.name = 'ed'
+        sess.add(u1)
+        sess.flush()
+        sess.clear()
+        assert sess.query(User).first()
+        
 
 class RequirementsTest(_base.MappedTest):
     """Tests the contract for user classes."""
@@ -2283,44 +2385,6 @@ class MagicNamesTest(_base.MappedTest):
                 mapper, M, maps, properties={
                   reserved: maps.c.state})
 
-
-class ScalarRequirementsTest(_base.MappedTest):
-
-    # TODO: is this needed here?
-    # what does this suite excercise that unitofwork doesn't?
-
-    def define_tables(self, metadata):
-        Table('t1', metadata,
-              Column('id', Integer, primary_key=True,
-                     test_needs_autoincrement=True),
-              Column('data', sa.PickleType()))
-
-    def setup_classes(self):
-        class Foo(_base.ComparableEntity):
-            pass
-
-    @testing.resolve_artifact_names
-    def test_correct_comparison(self):
-        mapper(Foo, t1)
-
-        f1 = Foo(data=pickleable.NotComparable('12345'))
-
-        session = create_session()
-        session.add(f1)
-        session.flush()
-        session.clear()
-
-        f1 = session.query(Foo).get(f1.id)
-        eq_(f1.data.data, '12345')
-
-        f2 = Foo(data=pickleable.BrokenComparable('abc'))
-
-        session.add(f2)
-        session.flush()
-        session.clear()
-
-        f2 = session.query(Foo).get(f2.id)
-        eq_(f2.data.data, 'abc')
 
 
 if __name__ == "__main__":

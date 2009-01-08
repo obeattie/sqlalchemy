@@ -255,6 +255,10 @@ class ColumnsTest(TestBase, AssertsExecutionResults):
             expectedResults['numeric_column'] = (
                 expectedResults['numeric_column'].replace('NUMERIC', 'FIXED'))
 
+        if testing.against('mssql'):
+            for key, value in expectedResults.items():
+                expectedResults[key] = '%s NULL' % value
+
         print db.engine.__module__
         testTable = Table('testColumns', MetaData(db),
             Column('int_column', Integer),
@@ -292,6 +296,9 @@ class UnicodeTest(TestBase, AssertsExecutionResults):
         assert unicode_table.c.unicode_varchar.type.length == 250
         rawdata = 'Alors vous imaginez ma surprise, au lever du jour, quand une dr\xc3\xb4le de petit voix m\xe2\x80\x99a r\xc3\xa9veill\xc3\xa9. Elle disait: \xc2\xab S\xe2\x80\x99il vous pla\xc3\xaet\xe2\x80\xa6 dessine-moi un mouton! \xc2\xbb\n'
         unicodedata = rawdata.decode('utf-8')
+        if testing.against('sqlite'):
+            rawdata = "something"
+            
         unicode_table.insert().execute(unicode_varchar=unicodedata,
                                        unicode_text=unicodedata,
                                        plain_varchar=rawdata)
@@ -301,7 +308,8 @@ class UnicodeTest(TestBase, AssertsExecutionResults):
         if isinstance(x['plain_varchar'], unicode):
             # SQLLite and MSSQL return non-unicode data as unicode
             self.assert_(testing.against('sqlite', 'mssql'))
-            self.assert_(x['plain_varchar'] == unicodedata)
+            if not testing.against('sqlite'):
+                self.assert_(x['plain_varchar'] == unicodedata)
             print "it's %s!" % testing.db.name
         else:
             self.assert_(not isinstance(x['plain_varchar'], unicode) and x['plain_varchar'] == rawdata)
@@ -311,6 +319,8 @@ class UnicodeTest(TestBase, AssertsExecutionResults):
 
         rawdata = 'Alors vous imaginez ma surprise, au lever du jour, quand une dr\xc3\xb4le de petit voix m\xe2\x80\x99a r\xc3\xa9veill\xc3\xa9. Elle disait: \xc2\xab S\xe2\x80\x99il vous pla\xc3\xaet\xe2\x80\xa6 dessine-moi un mouton! \xc2\xbb\n'
         unicodedata = rawdata.decode('utf-8')
+        if testing.against('sqlite'):
+            rawdata = "something"
         unicode_table.insert().execute(unicode_varchar=unicodedata,
                                        unicode_text=unicodedata,
                                        plain_varchar=rawdata)
@@ -344,7 +354,7 @@ class UnicodeTest(TestBase, AssertsExecutionResults):
         finally:
             unicode_engine.dispose()
 
-    @testing.fails_on('oracle')
+    @testing.fails_on('oracle', 'FIXME: unknown')
     def test_blank_strings(self):
         unicode_table.insert().execute(unicode_varchar=u'')
         assert select([unicode_table.c.unicode_varchar]).scalar() == u''
@@ -358,6 +368,8 @@ class UnicodeTest(TestBase, AssertsExecutionResults):
             testing.db.engine.dialect.assert_unicode = False
             rawdata = 'Alors vous imaginez ma surprise, au lever du jour, quand une dr\xc3\xb4le de petit voix m\xe2\x80\x99a r\xc3\xa9veill\xc3\xa9. Elle disait: \xc2\xab S\xe2\x80\x99il vous pla\xc3\xaet\xe2\x80\xa6 dessine-moi un mouton! \xc2\xbb\n'
             unicodedata = rawdata.decode('utf-8')
+            if testing.against('sqlite', 'mssql'):
+                rawdata = "something"
             unicode_table.insert().execute(unicode_varchar=unicodedata,
                                            unicode_text=unicodedata,
                                            plain_varchar=rawdata)
@@ -368,13 +380,14 @@ class UnicodeTest(TestBase, AssertsExecutionResults):
             print 3, repr(x['plain_varchar'])
             self.assert_(isinstance(x['unicode_varchar'], unicode) and x['unicode_varchar'] == unicodedata)
             self.assert_(isinstance(x['unicode_text'], unicode) and x['unicode_text'] == unicodedata)
-            self.assert_(isinstance(x['plain_varchar'], unicode) and x['plain_varchar'] == unicodedata)
+            if not testing.against('sqlite', 'mssql'):
+                self.assert_(isinstance(x['plain_varchar'], unicode) and x['plain_varchar'] == unicodedata)
         finally:
             testing.db.engine.dialect.convert_unicode = prev_unicode
             testing.db.engine.dialect.convert_unicode = prev_assert
 
     @testing.crashes('oracle', 'FIXME: unknown, verify not fails_on')
-    @testing.fails_on('firebird') # "Data type unknown" on the parameter
+    @testing.fails_on('firebird', 'Data type unknown')
     def test_length_function(self):
         """checks the database correctly understands the length of a unicode string"""
         teststr = u'aaa\x1234'
@@ -420,6 +433,7 @@ class BinaryTest(TestBase, AssertsExecutionResults):
     def tearDownAll(self):
         binary_table.drop()
 
+    @testing.fails_on('mssql', 'MSSQl BINARY type right pads the fixed length with \x00')
     def testbinary(self):
         testobj1 = pickleable.Foo('im foo 1')
         testobj2 = pickleable.Foo('im foo 2')
@@ -498,7 +512,7 @@ class ExpressionTest(TestBase, AssertsExecutionResults):
         assert expr.right.type.__class__ == test_table.c.avalue.type.__class__
         assert testing.db.execute(test_table.select().where(expr), {"somevalue":25}).fetchall() == [(1, 'somedata', datetime.date(2007, 10, 15), 25)]
 
-    @testing.fails_on('firebird') # "Data type unknown" on the parameter
+    @testing.fails_on('firebird', 'Data type unknown on the parameter')
     def test_operator_adapt(self):
         """test type-based overloading of operators"""
 
@@ -657,7 +671,8 @@ class DateTest(TestBase, AssertsExecutionResults):
             t.drop(checkfirst=True)
 
 class StringTest(TestBase, AssertsExecutionResults):
-    @testing.fails_on('mysql', 'oracle')
+    @testing.fails_on('mysql', 'FIXME: unknown')
+    @testing.fails_on('oracle', 'FIXME: unknown')
     def test_nolength_string(self):
         metadata = MetaData(testing.db)
         foo = Table('foo', metadata, Column('one', String))
@@ -801,16 +816,53 @@ class BooleanTest(TestBase, AssertsExecutionResults):
         print res2
         assert(res2==[(2, False)])
 
-try:
-    from functools import partial
-except:
-    def partial(func, *args, **keywords):
-        def newfunc(*fargs, **fkeywords):
-            newkeywords = keywords.copy()
-            newkeywords.update(fkeywords)
-            return func(*(args + fargs), **newkeywords)
-        return newfunc
+class PickleTest(TestBase):
+    def test_noeq_deprecation(self):
+        p1 = PickleType()
+        
+        self.assertRaises(DeprecationWarning, 
+            p1.compare_values, pickleable.BarWithoutCompare(1, 2), pickleable.BarWithoutCompare(1, 2)
+        )
 
+        self.assertRaises(DeprecationWarning, 
+            p1.compare_values, pickleable.OldSchoolWithoutCompare(1, 2), pickleable.OldSchoolWithoutCompare(1, 2)
+        )
+        
+        @testing.uses_deprecated()
+        def go():
+            # test actual dumps comparison
+            assert p1.compare_values(pickleable.BarWithoutCompare(1, 2), pickleable.BarWithoutCompare(1, 2))
+            assert p1.compare_values(pickleable.OldSchoolWithoutCompare(1, 2), pickleable.OldSchoolWithoutCompare(1, 2))
+        go()
+        
+        assert p1.compare_values({1:2, 3:4}, {3:4, 1:2})
+        
+        p2 = PickleType(mutable=False)
+        assert not p2.compare_values(pickleable.BarWithoutCompare(1, 2), pickleable.BarWithoutCompare(1, 2))
+        assert not p2.compare_values(pickleable.OldSchoolWithoutCompare(1, 2), pickleable.OldSchoolWithoutCompare(1, 2))
+        
+    def test_eq_comparison(self):
+        p1 = PickleType()
+        
+        for obj in (
+            {'1':'2'},
+            pickleable.Bar(5, 6),
+            pickleable.OldSchool(10, 11)
+        ):
+            assert p1.compare_values(p1.copy_value(obj), obj)
+
+        self.assertRaises(NotImplementedError, p1.compare_values, pickleable.BrokenComparable('foo'),pickleable.BrokenComparable('foo'))
+        
+    def test_nonmutable_comparison(self):
+        p1 = PickleType()
+
+        for obj in (
+            {'1':'2'},
+            pickleable.Bar(5, 6),
+            pickleable.OldSchool(10, 11)
+        ):
+            assert p1.compare_values(p1.copy_value(obj), obj)
+    
 class CallableTest(TestBase):
     def setUpAll(self):
         global meta
@@ -820,7 +872,7 @@ class CallableTest(TestBase):
         meta.drop_all()
 
     def test_callable_as_arg(self):
-        ucode = partial(Unicode, assert_unicode=None)
+        ucode = util.partial(Unicode, assert_unicode=None)
 
         thing_table = Table('thing', meta,
             Column('name', ucode(20))
@@ -829,7 +881,7 @@ class CallableTest(TestBase):
         thing_table.create()
 
     def test_callable_as_kwarg(self):
-        ucode = partial(Unicode, assert_unicode=None)
+        ucode = util.partial(Unicode, assert_unicode=None)
 
         thang_table = Table('thang', meta,
             Column('name', type_=ucode(20), primary_key=True)

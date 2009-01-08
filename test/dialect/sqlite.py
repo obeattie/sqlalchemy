@@ -109,12 +109,63 @@ class TestTypes(TestBase, AssertsExecutionResults):
                 expected = [len(c) > 1 and c[1] or c[0] for c in specs]
                 for table in rt, rv:
                     for i, reflected in enumerate(table.c):
-                        print reflected.type, type(expected[i])
                         assert isinstance(reflected.type, type(expected[i])), type(expected[i])
             finally:
                 db.execute('DROP VIEW types_v')
         finally:
             m.drop_all()
+
+
+class TestDefaults(TestBase, AssertsExecutionResults):
+    __only_on__ = 'sqlite'
+
+    @testing.exclude('sqlite', '<', (3, 3, 8), 
+        "sqlite3 changesets 3353 and 3440 modified behavior of default displayed in pragma table_info()")
+    def test_default_reflection(self):
+        # (ask_for, roundtripped_as_if_different)
+        specs = [( String(3), '"foo"' ),
+                 ( NUMERIC(10,2), '100.50' ),
+                 ( Integer, '5' ),
+                 ( Boolean, 'False' ),
+                 ]
+        columns = [Column('c%i' % (i + 1), t[0], server_default=text(t[1])) for i, t in enumerate(specs)]
+
+        db = testing.db
+        m = MetaData(db)
+        t_table = Table('t_defaults', m, *columns)
+
+        try:
+            m.create_all()
+
+            m2 = MetaData(db)
+            rt = Table('t_defaults', m2, autoload=True)
+            expected = [c[1] for c in specs]
+            for i, reflected in enumerate(rt.c):
+                self.assertEquals(reflected.server_default.arg.text, expected[i])
+        finally:
+            m.drop_all()
+
+    @testing.exclude('sqlite', '<', (3, 3, 8), 
+        "sqlite3 changesets 3353 and 3440 modified behavior of default displayed in pragma table_info()")
+    def test_default_reflection_2(self):
+        db = testing.db
+        m = MetaData(db)
+
+        expected = ["'my_default'", '0']
+        table = """CREATE TABLE r_defaults (
+            data VARCHAR(40) DEFAULT 'my_default',
+            val INTEGER NOT NULL DEFAULT 0
+        )"""
+
+        try:
+            db.execute(table)
+
+            rt = Table('r_defaults', m, autoload=True)
+            for i, reflected in enumerate(rt.c):
+                self.assertEquals(reflected.server_default.arg.text, expected[i])
+        finally:
+            db.execute("DROP TABLE r_defaults")
+
 
 class DialectTest(TestBase, AssertsExecutionResults):
     __only_on__ = 'sqlite'
@@ -247,7 +298,6 @@ class InsertTest(TestBase, AssertsExecutionResults):
                 table.insert().execute()
 
                 rows = table.select().execute().fetchall()
-                print rows
                 self.assertEquals(len(rows), wanted)
         finally:
             table.drop()

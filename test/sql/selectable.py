@@ -1,6 +1,4 @@
-"""tests that various From objects properly export their columns, as well as
-useable primary keys and foreign keys.  Full relational algebra depends on
-every selectable unit behaving nicely with others.."""
+"""Test various algorithmic properties of selectables."""
 
 import testenv; testenv.configure_for_tests()
 from sqlalchemy import *
@@ -8,6 +6,7 @@ from testlib import *
 from sqlalchemy.sql import util as sql_util, visitors
 from sqlalchemy import exc
 from sqlalchemy.sql import table, column
+from sqlalchemy import util
 
 metadata = MetaData()
 table1 = Table('table1', metadata,
@@ -26,7 +25,7 @@ table2 = Table('table2', metadata,
 )
 
 class SelectableTest(TestBase, AssertsExecutionResults):
-    def test_distance(self):
+    def test_distance_on_labels(self):
         # same column three times
         s = select([table1.c.col1.label('c2'), table1.c.col1, table1.c.col1.label('c1')])
 
@@ -34,6 +33,17 @@ class SelectableTest(TestBase, AssertsExecutionResults):
         #assert s.corresponding_column(table1.c.col1) is s.c.col1
         assert s.corresponding_column(s.c.col1) is s.c.col1
         assert s.corresponding_column(s.c.c1) is s.c.c1
+
+    def test_distance_on_aliases(self):
+        a1 = table1.alias('a1')
+        
+        for s in (
+            select([a1, table1], use_labels=True),
+            select([table1, a1], use_labels=True)
+        ):
+            assert s.corresponding_column(table1.c.col1) is s.c.table1_col1
+            assert s.corresponding_column(a1.c.col1) is s.c.a1_col1
+        
 
     def test_join_against_self(self):
         jj = select([table1.c.col1.label('bar_col1')])
@@ -44,10 +54,7 @@ class SelectableTest(TestBase, AssertsExecutionResults):
 
         assert jjj.corresponding_column(jj.c.bar_col1) is jjj.c.bar_col1
 
-        # test alias of the join, targets the column with the least
-        # "distance" between the requested column and the returned column
-        # (i.e. there is less indirection between j2.c.table1_col1 and table1.c.col1, than
-        # there is from j2.c.bar_col1 to table1.c.col1)
+        # test alias of the join
         j2 = jjj.alias('foo')
         assert j2.corresponding_column(table1.c.col1) is j2.c.table1_col1
 
@@ -65,7 +72,6 @@ class SelectableTest(TestBase, AssertsExecutionResults):
         assert jjj.corresponding_column(jjj.c.table1_col1) is jjj.c.table1_col1
 
         j2 = jjj.alias('foo')
-        print j2.corresponding_column(jjj.c.table1_col1)
         assert j2.corresponding_column(jjj.c.table1_col1) is j2.c.table1_col1
 
         assert jjj.corresponding_column(jj.c.bar_col1) is jj.c.bar_col1
@@ -86,14 +92,29 @@ class SelectableTest(TestBase, AssertsExecutionResults):
             )
         s1 = table1.select(use_labels=True)
         s2 = table2.select(use_labels=True)
-        print ["%d %s" % (id(c),c.key) for c in u.c]
         c = u.corresponding_column(s1.c.table1_col2)
-        print "%d %s" % (id(c), c.key)
-        print id(u.corresponding_column(s1.c.table1_col2).table)
-        print id(u.c.col2.table)
         assert u.corresponding_column(s1.c.table1_col2) is u.c.col2
         assert u.corresponding_column(s2.c.table2_col2) is u.c.col2
 
+    def test_union_precedence(self):
+        # conflicting column correspondence should be resolved based on 
+        # the order of the select()s in the union
+        
+        s1 = select([table1.c.col1, table1.c.col2])
+        s2 = select([table1.c.col2, table1.c.col1])
+        s3 = select([table1.c.col3, table1.c.colx])
+        s4 = select([table1.c.colx, table1.c.col3])
+        
+        u1 = union(s1, s2)
+        assert u1.corresponding_column(table1.c.col1) is u1.c.col1
+        assert u1.corresponding_column(table1.c.col2) is u1.c.col2
+        
+        u1 = union(s1, s2, s3, s4)
+        assert u1.corresponding_column(table1.c.col1) is u1.c.col1
+        assert u1.corresponding_column(table1.c.col2) is u1.c.col2
+        assert u1.corresponding_column(table1.c.colx) is u1.c.col2
+        assert u1.corresponding_column(table1.c.col3) is u1.c.col1
+        
     def test_singular_union(self):
         u = union(select([table1.c.col1, table1.c.col2, table1.c.col3]), select([table1.c.col1, table1.c.col2, table1.c.col3]))
 
@@ -152,7 +173,6 @@ class SelectableTest(TestBase, AssertsExecutionResults):
 
     def test_select_labels(self):
         a = table1.select(use_labels=True)
-        print str(a.select())
         j = join(a, table2)
 
         criterion = a.c.table1_col1 == table2.c.col2
@@ -195,9 +215,6 @@ class SelectableTest(TestBase, AssertsExecutionResults):
         j3 = a.join(j2, j2.c.aid==a.c.id)
 
         j4 = select([j3]).alias('foo')
-        print j4
-        print j4.corresponding_column(j2.c.aid)
-        print j4.c.aid
         assert j4.corresponding_column(j2.c.aid) is j4.c.aid
         assert j4.corresponding_column(a.c.id) is j4.c.id
 
@@ -288,13 +305,13 @@ class PrimaryKeyTest(TestBase, AssertsExecutionResults):
         )
 
         self.assertEquals(
-            set(employee.join(engineer, employee.c.id==engineer.c.id).primary_key),
-            set([employee.c.id])
+            util.column_set(employee.join(engineer, employee.c.id==engineer.c.id).primary_key),
+            util.column_set([employee.c.id])
         )
 
         self.assertEquals(
-            set(employee.join(engineer, engineer.c.id==employee.c.id).primary_key),
-            set([employee.c.id])
+            util.column_set(employee.join(engineer, engineer.c.id==employee.c.id).primary_key),
+            util.column_set([employee.c.id])
         )
 
 
@@ -313,8 +330,8 @@ class ReduceTest(TestBase, AssertsExecutionResults):
         
         
         self.assertEquals(
-            set(sql_util.reduce_columns([t1.c.t1id, t1.c.t1data, t2.c.t2id, t2.c.t2data, t3.c.t3id, t3.c.t3data])),
-            set([t1.c.t1id, t1.c.t1data, t2.c.t2data, t3.c.t3data])
+            util.column_set(sql_util.reduce_columns([t1.c.t1id, t1.c.t1data, t2.c.t2id, t2.c.t2data, t3.c.t3id, t3.c.t3data])),
+            util.column_set([t1.c.t1id, t1.c.t1data, t2.c.t2data, t3.c.t3data])
         )
     
     def test_reduce_selectable(self):
@@ -332,8 +349,8 @@ class ReduceTest(TestBase, AssertsExecutionResults):
 
        s = select([engineers, managers]).where(engineers.c.engineer_name==managers.c.manager_name)
        
-       self.assertEquals(set(sql_util.reduce_columns(list(s.c), s)),
-        set([s.c.engineer_id, s.c.engineer_name, s.c.manager_id])
+       self.assertEquals(util.column_set(sql_util.reduce_columns(list(s.c), s)),
+        util.column_set([s.c.engineer_id, s.c.engineer_name, s.c.manager_id])
         )
        
     def test_reduce_aliased_join(self):
@@ -358,8 +375,8 @@ class ReduceTest(TestBase, AssertsExecutionResults):
         
         pjoin = people.outerjoin(engineers).outerjoin(managers).select(use_labels=True).alias('pjoin')
         self.assertEquals(
-            set(sql_util.reduce_columns([pjoin.c.people_person_id, pjoin.c.engineers_person_id, pjoin.c.managers_person_id])),
-            set([pjoin.c.people_person_id])
+            util.column_set(sql_util.reduce_columns([pjoin.c.people_person_id, pjoin.c.engineers_person_id, pjoin.c.managers_person_id])),
+            util.column_set([pjoin.c.people_person_id])
         )
         
     def test_reduce_aliased_union(self):
@@ -382,8 +399,8 @@ class ReduceTest(TestBase, AssertsExecutionResults):
             }, None, 'item_join')
             
         self.assertEquals(
-            set(sql_util.reduce_columns([item_join.c.id, item_join.c.dummy, item_join.c.child_name])),
-            set([item_join.c.id, item_join.c.dummy, item_join.c.child_name])
+            util.column_set(sql_util.reduce_columns([item_join.c.id, item_join.c.dummy, item_join.c.child_name])),
+            util.column_set([item_join.c.id, item_join.c.dummy, item_join.c.child_name])
         )    
     
     def test_reduce_aliased_union_2(self):
@@ -407,8 +424,8 @@ class ReduceTest(TestBase, AssertsExecutionResults):
             }, None, 'page_join')
             
         self.assertEquals(
-            set(sql_util.reduce_columns([pjoin.c.id, pjoin.c.page_id, pjoin.c.magazine_page_id])),
-            set([pjoin.c.id])
+            util.column_set(sql_util.reduce_columns([pjoin.c.id, pjoin.c.page_id, pjoin.c.magazine_page_id])),
+            util.column_set([pjoin.c.id])
         )    
     
             

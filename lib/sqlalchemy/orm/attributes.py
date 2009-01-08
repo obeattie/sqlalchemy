@@ -131,7 +131,17 @@ class QueryableAttribute(interfaces.PropComparator):
 
     def hasparent(self, state, optimistic=False):
         return self.impl.hasparent(state, optimistic=optimistic)
-
+    
+    def __getattr__(self, key):
+        try:
+            return getattr(self.comparator, key)
+        except AttributeError:
+            raise AttributeError('Neither %r object nor %r object has an attribute %r' % (
+                    type(self).__name__, 
+                    type(self.comparator).__name__, 
+                    key)
+            )
+        
     def __str__(self):
         return repr(self.parententity) + "." + self.property.key
 
@@ -175,7 +185,7 @@ def proxied_attribute_factory(descriptor):
 
         @property
         def comparator(self):
-            if callable(self._comparator):
+            if util.callable(self._comparator):
                 self._comparator = self._comparator()
             return self._comparator
 
@@ -195,8 +205,19 @@ def proxied_attribute_factory(descriptor):
             return descriptor.__delete__(instance)
 
         def __getattr__(self, attribute):
-            """Delegate __getattr__ to the original descriptor."""
-            return getattr(descriptor, attribute)
+            """Delegate __getattr__ to the original descriptor and/or comparator."""
+            
+            try:
+                return getattr(descriptor, attribute)
+            except AttributeError:
+                try:
+                    return getattr(self._comparator, attribute)
+                except AttributeError:
+                    raise AttributeError('Neither %r object nor %r object has an attribute %r' % (
+                            type(descriptor).__name__, 
+                            type(self._comparator).__name__, 
+                            attribute)
+                    )
 
         def _property(self):
             return self._parententity.get_property(self.key, resolve_synonyms=True)
@@ -838,7 +859,7 @@ class InstanceState(object):
     
     @property
     def sort_key(self):
-        return self.key and self.key[1] or self.insert_order
+        return self.key and self.key[1] or (self.insert_order, )
 
     def check_modified(self):
         if self.modified:
@@ -958,7 +979,7 @@ class InstanceState(object):
         """a set of keys which have no uncommitted changes"""
 
         return set(
-            key for key in self.manager.keys()
+            key for key in self.manager.iterkeys()
             if (key not in self.committed_state or
                 (key in self.manager.mutable_attributes and
                  not self.manager[key].impl.check_mutable_modified(self))))
@@ -972,7 +993,7 @@ class InstanceState(object):
 
         """
         return set(
-            key for key in self.manager.keys()
+            key for key in self.manager.iterkeys()
             if key not in self.committed_state and key not in self.dict)
 
     def expire_attributes(self, attribute_names):
@@ -1246,6 +1267,12 @@ class ClassManager(dict):
         setattr(instance, self.STATE_ATTR, state or self.instance_state_factory(instance, self))
         return instance
 
+    def setup_instance(self, instance, state=None):
+        setattr(instance, self.STATE_ATTR, state or self.instance_state_factory(instance, self))
+    
+    def teardown_instance(self, instance):
+        delattr(instance, self.STATE_ATTR)
+        
     def _new_state_if_none(self, instance):
         """Install a default InstanceState if none is present.
 
@@ -1333,7 +1360,7 @@ class _ClassInstrumentationAdapter(ClassManager):
 
     def new_instance(self, state=None):
         instance = self.class_.__new__(self.class_)
-        self._setup_instance(instance, state)
+        self.setup_instance(instance, state)
         return instance
 
     def _new_state_if_none(self, instance):
@@ -1344,9 +1371,9 @@ class _ClassInstrumentationAdapter(ClassManager):
         if self.has_state(instance):
             return False
         else:
-            return self._setup_instance(instance)
+            return self.setup_instance(instance)
 
-    def _setup_instance(self, instance, state=None):
+    def setup_instance(self, instance, state=None):
         self._adapted.initialize_instance_dict(self.class_, instance)
         
         if state is None:
@@ -1356,6 +1383,9 @@ class _ClassInstrumentationAdapter(ClassManager):
         self._adapted.install_state(self.class_, instance, state)
         state.dict = self._adapted.get_instance_dict(self.class_, instance)
         return state
+
+    def teardown_instance(self, instance):
+        self._adapted.remove_state(self.class_, instance)
 
     def state_of(self, instance):
         if hasattr(self._adapted, 'state_of'):

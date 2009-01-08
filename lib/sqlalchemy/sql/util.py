@@ -7,6 +7,7 @@ from itertools import chain
 def sort_tables(tables):
     """sort a collection of Table objects in order of their foreign-key dependency."""
     
+    tables = list(tables)
     tuples = []
     def visit_foreign_key(fkey):
         if fkey.use_alter:
@@ -60,7 +61,7 @@ def find_tables(clause, check_columns=False, include_aliases=False, include_join
 def find_columns(clause):
     """locate Column objects within the given expression."""
     
-    cols = set()
+    cols = util.column_set()
     def visit_column(col):
         cols.add(col)
     visitors.traverse(clause, {}, {'column':visit_column})
@@ -121,7 +122,7 @@ def join_condition(a, b, ignore_nonexistent_tables=False):
     else:
         return sql.and_(*crit)
 
-    
+
 class Annotated(object):
     """clones a ClauseElement and applies an 'annotations' dictionary.
     
@@ -146,7 +147,9 @@ class Annotated(object):
             try:
                 cls = annotated_classes[element.__class__]
             except KeyError:
-                raise KeyError("Class %s has not defined an Annotated subclass" % element.__class__)
+                cls = annotated_classes[element.__class__] = type.__new__(type, 
+                        "Annotated%s" % element.__class__.__name__, 
+                        (Annotated, element.__class__), {})
             return object.__new__(cls)
 
     def __init__(self, element, values):
@@ -180,7 +183,7 @@ class Annotated(object):
             # to this object's __dict__.
             clone.__dict__.update(self.__dict__)
             return Annotated(clone, self._annotations)
-        
+    
     def __hash__(self):
         return hash(self.__element)
 
@@ -277,9 +280,9 @@ def reduce_columns(columns, *clauses, **kw):
     """
     ignore_nonexistent_tables = kw.pop('ignore_nonexistent_tables', False)
     
-    columns = util.OrderedSet(columns)
+    columns = util.ordered_column_set(columns)
 
-    omit = set()
+    omit = util.column_set()
     for col in columns:
         for fk in col.foreign_keys:
             for c in columns:
@@ -299,7 +302,7 @@ def reduce_columns(columns, *clauses, **kw):
     if clauses:
         def visit_binary(binary):
             if binary.operator == operators.eq:
-                cols = set(chain(*[c.proxy_set for c in columns.difference(omit)]))
+                cols = util.column_set(chain(*[c.proxy_set for c in columns.difference(omit)]))
                 if binary.left in cols and binary.right in cols:
                     for c in columns:
                         if c.shares_lineage(binary.right):
@@ -343,7 +346,10 @@ def criterion_as_pairs(expression, consider_as_foreign_keys=None, consider_as_re
     return pairs
 
 def folded_equivalents(join, equivs=None):
-    """Returns the column list of the given Join with all equivalently-named,
+    """Return a list of uniquely named columns.
+    
+    The column list of the given Join will be narrowed 
+    down to a list of all equivalently-named,
     equated columns folded into one column, where 'equated' means they are
     equated to each other in the ON clause of this join.
 
@@ -442,7 +448,7 @@ class ClauseAdapter(visitors.ReplacingCloningVisitor):
         self.selectable = selectable
         self.include = include
         self.exclude = exclude
-        self.equivalents = equivalents or {}
+        self.equivalents = util.column_dict(equivalents or {})
         
     def _corresponding_column(self, col, require_embedded, _seen=util.EMPTY_SET):
         newcol = self.selectable.corresponding_column(col, require_embedded=require_embedded)
@@ -482,7 +488,7 @@ class ColumnAdapter(ClauseAdapter):
         ClauseAdapter.__init__(self, selectable, equivalents, include, exclude)
         if chain_to:
             self.chain(chain_to)
-        self.columns = util.PopulateDict(self._locate_col)
+        self.columns = util.populate_column_dict(self._locate_col)
 
     def wrap(self, adapter):
         ac = self.__class__.__new__(self.__class__)
@@ -490,7 +496,7 @@ class ColumnAdapter(ClauseAdapter):
         ac._locate_col = ac._wrap(ac._locate_col, adapter._locate_col)
         ac.adapt_clause = ac._wrap(ac.adapt_clause, adapter.adapt_clause)
         ac.adapt_list = ac._wrap(ac.adapt_list, adapter.adapt_list)
-        ac.columns = util.PopulateDict(ac._locate_col)
+        ac.columns = util.populate_column_dict(ac._locate_col)
         return ac
 
     adapt_clause = ClauseAdapter.traverse
