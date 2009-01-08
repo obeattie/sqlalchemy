@@ -633,7 +633,7 @@ class RelationProperty(StrategizedProperty):
         self._reverse_property.add(other)
         other._reverse_property.add(self)
         
-        if other._get_target() is not self.parent:
+        if not other._get_target().common_parent(self.parent):
             raise sa_exc.ArgumentError("reverse_property %r on relation %s references relation %s, which does not reference mapper %s" % (key, self, other, self.parent))
         
     def do_init(self):
