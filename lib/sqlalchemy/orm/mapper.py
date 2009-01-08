@@ -59,6 +59,7 @@ ColumnProperty = None
 SynonymProperty = None
 ComparableProperty = None
 RelationProperty = None
+ConcreteInheritedProperty = None
 _expire_state = None
 _state_session = None
 
@@ -88,7 +89,6 @@ class Mapper(object):
                  polymorphic_identity=None,
                  polymorphic_fetch=None,
                  concrete=False,
-                 abstract=False,
                  select_table=None,
                  with_polymorphic=None,
                  allow_null_pks=False,
@@ -116,7 +116,6 @@ class Mapper(object):
         else:
             self.order_by = order_by
         
-        self.abstract = abstract
         self.always_refresh = always_refresh
         self.version_id_col = version_id_col
         self.concrete = concrete
@@ -487,7 +486,7 @@ class Mapper(object):
         if self.inherits:
             for key, prop in self.inherits._props.iteritems():
                 if key not in self._props and not self._should_exclude(key, local=False):
-                    self._adapt_inherited_property(key, prop)
+                    self._adapt_inherited_property(key, prop, False)
 
         # create properties for each column in the mapped table,
         # for those columns which don't already map to a property
@@ -521,10 +520,12 @@ class Mapper(object):
                 raise sa_exc.InvalidRequestError("Cannot exclude or override the discriminator column %r" % col.key)
             self._compile_property(col.key, ColumnProperty(col, _no_instrument=dont_instrument), init=False, setparent=True)
 
-    def _adapt_inherited_property(self, key, prop):
+    def _adapt_inherited_property(self, key, prop, init):
         if not self.concrete:
             self._compile_property(key, prop, init=False, setparent=False)
-
+        elif key not in self._props:
+            self._compile_property(key, ConcreteInheritedProperty(), init=init, setparent=True)
+            
     class _CompileOnAttr(PropComparator):
         """A placeholder descriptor which triggers compilation on access."""
 
@@ -577,7 +578,7 @@ class Mapper(object):
                     prop = prop.copy()
                 prop.columns.append(column)
                 self._log("appending to existing ColumnProperty %s" % (key))
-            elif prop is None:
+            elif prop is None or isinstance(prop, ConcreteInheritedProperty):
                 mapped_column = []
                 for c in columns:
                     mc = self.mapped_table.corresponding_column(c)
@@ -653,7 +654,7 @@ class Mapper(object):
             prop.init(key, self)
 
         for mapper in self._inheriting_mappers:
-            mapper._adapt_inherited_property(key, prop)
+            mapper._adapt_inherited_property(key, prop, init)
 
     def compile(self):
         """Compile this mapper and all other non-compiled mappers.

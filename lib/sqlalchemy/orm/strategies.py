@@ -23,9 +23,6 @@ class DefaultColumnLoader(LoaderStrategy):
     def _register_attribute(self, compare_function, copy_function, mutable_scalars, 
             comparator_factory, callable_=None, proxy_property=None, active_history=False):
             
-        if self.parent.abstract or getattr(self.parent_property, '_dont_instrument', False):
-            return
-            
         self.logger.info("%s register managed attribute" % self)
 
         attribute_ext = util.to_list(self.parent_property.extension) or []
@@ -33,9 +30,6 @@ class DefaultColumnLoader(LoaderStrategy):
             attribute_ext.append(mapperutil.Validator(self.key, self.parent._validators[self.key]))
 
         for mapper in self.parent.polymorphic_iterator():
-            if mapper is not self.parent and mapper.concrete and not mapper.has_property(self.key):
-                util.warn("mapper %s does not provide attribute %s" % (mapper, self.key))
-                
             if (mapper is self.parent or not mapper.concrete) and mapper.has_property(self.key):
                 sessionlib.register_attribute(
                     mapper.class_, 
@@ -313,9 +307,6 @@ class AbstractRelationLoader(LoaderStrategy):
             state.initialize(self.key)
         
     def _register_attribute(self, class_, callable_=None, impl_class=None, **kwargs):
-        if self.parent.abstract:
-            return
-            
         self.logger.info("%s register managed %s attribute" % (self, (self.uselist and "collection" or "scalar")))
         
         attribute_ext = util.to_list(self.parent_property.extension) or []
@@ -326,10 +317,6 @@ class AbstractRelationLoader(LoaderStrategy):
         if self.key in self.parent._validators:
             attribute_ext.append(mapperutil.Validator(self.key, self.parent._validators[self.key]))
 
-        for mapper in self.parent.polymorphic_iterator():
-            if mapper is not self.parent and mapper.concrete and not mapper.has_property(self.key):
-                util.warn("mapper %s does not provide attribute %s" % (mapper, self.key))
-            
         sessionlib.register_attribute(
             class_, 
             self.key, 

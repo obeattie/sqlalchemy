@@ -179,6 +179,43 @@ class CompositeProperty(ColumnProperty):
     def __str__(self):
         return str(self.parent.class_.__name__) + "." + self.key
 
+class ConcreteInheritedProperty(MapperProperty):
+    extension = None
+
+    def setup(self, context, entity, path, adapter, **kwargs):
+        pass
+
+    def create_row_processor(self, selectcontext, path, mapper, row, adapter):
+        return (None, None)
+
+    def do_init(self):
+        class_ = self.parent.class_
+
+        self.logger.info("register class-only concrete attribute %s on class %s" % (self.key, class_.__name__))
+        
+        def warn():
+            raise sa_exc.InvalidRequestError("Concrete %s does not implement attribute %r at "
+                "the instance level.  Add this property explicitly to %s." % (self.parent, self.key, self.parent))
+            
+        class NoninheritedConcreteProp(object):
+            def __set__(s, obj, value):
+                warn()
+            def __delete__(s, obj):
+                warn()
+            def __get__(s, obj, owner):
+                warn()
+
+        comparator_callable = None
+        for m in self.parent.iterate_to_root():
+            p = m.get_property(self.key)
+            if not isinstance(p, ConcreteInheritedProperty):
+                comparator_callable = p.comparator_factory
+                break
+
+        strategies.DefaultColumnLoader(self)._register_attribute(
+            None, None, False, comparator_callable, proxy_property=NoninheritedConcreteProp())
+log.class_logger(ConcreteInheritedProperty)
+
 class SynonymProperty(MapperProperty):
 
     extension = None
@@ -261,7 +298,6 @@ class RelationProperty(StrategizedProperty):
     """
 
     def __init__(self, argument,
-<<<<<<< .working
         secondary=None, primaryjoin=None,
         secondaryjoin=None, 
         foreign_keys=None,
@@ -276,19 +312,8 @@ class RelationProperty(StrategizedProperty):
         passive_updates=True, remote_side=None,
         enable_typechecks=True, join_depth=None,
         comparator_factory=None,
-        strategy_class=None, _local_remote_pairs=None):
+        strategy_class=None, _local_remote_pairs=None, query_class=None):
 
-=======
-                 secondary=None, primaryjoin=None, secondaryjoin=None,
-                 foreign_keys=None, uselist=None, order_by=False, backref=None,
-                 _is_backref=False, post_update=False, cascade=False,
-                 extension=None, viewonly=False, lazy=True,
-                 collection_class=None, passive_deletes=False,
-                 passive_updates=True, remote_side=None,
-                 enable_typechecks=True, join_depth=None,
-                 comparator_factory=None, strategy_class=None,
-                 _local_remote_pairs=None, query_class=None):
->>>>>>> .merge-right.r5630
         self.uselist = uselist
         self.argument = argument
         self.secondary = secondary
@@ -608,35 +633,33 @@ class RelationProperty(StrategizedProperty):
         self._reverse_property.add(other)
         other._reverse_property.add(self)
         
-    def _get_target_class(self):
-        """Return the target class of the relation, even if the
-        property has not been initialized yet.
-
-        """
-        if isinstance(self.argument, type):
-            return self.argument
-        else:
-            return self.argument.class_
-
+        if other._get_target() is not self.parent:
+            raise sa_exc.ArgumentError("reverse_property %r on relation %s references relation %s, which does not reference mapper %s" % (key, self, other, self.parent))
+        
     def do_init(self):
-        self._determine_targets()
+        self._get_target()
+        self._process_dependent_arguments()
         self._determine_joins()
         self._determine_synchronize_pairs()
         self._determine_direction()
         self._determine_local_remote_pairs()
         self._post_init()
 
-    def _determine_targets(self):
-        if isinstance(self.argument, type):
-            self.mapper = mapper.class_mapper(self.argument, compile=False)
-        elif isinstance(self.argument, mapper.Mapper):
-            self.mapper = self.argument
-        elif util.callable(self.argument):
-            # accept a callable to suit various deferred-configurational schemes
-            self.mapper = mapper.class_mapper(self.argument(), compile=False)
-        else:
-            raise sa_exc.ArgumentError("relation '%s' expects a class or a mapper argument (received: %s)" % (self.key, type(self.argument)))
-        assert isinstance(self.mapper, mapper.Mapper), self.mapper
+    def _get_target(self):
+        if not hasattr(self, 'mapper'):
+            if isinstance(self.argument, type):
+                self.mapper = mapper.class_mapper(self.argument, compile=False)
+            elif isinstance(self.argument, mapper.Mapper):
+                self.mapper = self.argument
+            elif util.callable(self.argument):
+                # accept a callable to suit various deferred-configurational schemes
+                self.mapper = mapper.class_mapper(self.argument(), compile=False)
+            else:
+                raise sa_exc.ArgumentError("relation '%s' expects a class or a mapper argument (received: %s)" % (self.key, type(self.argument)))
+            assert isinstance(self.mapper, mapper.Mapper), self.mapper
+        return self.mapper
+        
+    def _process_dependent_arguments(self):
 
         # accept callables for other attributes which may require deferred initialization
         for attr in ('order_by', 'primaryjoin', 'secondaryjoin', 'secondary', '_foreign_keys', 'remote_side'):
@@ -901,7 +924,7 @@ class RelationProperty(StrategizedProperty):
                 "a non-primary mapper on class '%s'.  New relations can only be "
                 "added to the primary mapper, i.e. the very first "
                 "mapper created for class '%s' " % (self.key, self.parent.class_.__name__, self.parent.class_.__name__))
-
+        
         super(RelationProperty, self).do_init()
 
     def _refers_to_parent_table(self):
@@ -1059,3 +1082,4 @@ mapper.ColumnProperty = ColumnProperty
 mapper.SynonymProperty = SynonymProperty
 mapper.ComparableProperty = ComparableProperty
 mapper.RelationProperty = RelationProperty
+mapper.ConcreteInheritedProperty = ConcreteInheritedProperty
