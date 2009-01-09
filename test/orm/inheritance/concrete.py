@@ -350,7 +350,7 @@ class PropertyInheritanceTest(_base.MappedTest):
 
         b = B()
         c = C()
-        self.assertRaises(sa.exc.InvalidRequestError, setattr, b, 'some_c', c)
+        self.assertRaises(AttributeError, setattr, b, 'some_c', c)
 
         clear_mappers()
         mapper(A, a_table, properties={
@@ -359,7 +359,7 @@ class PropertyInheritanceTest(_base.MappedTest):
         mapper(B, b_table,inherits=A, concrete=True)
         mapper(C, c_table)
         b = B()
-        self.assertRaises(sa.exc.InvalidRequestError, setattr, b, 'a_id', 3)
+        self.assertRaises(AttributeError, setattr, b, 'a_id', 3)
 
         clear_mappers()
         mapper(A, a_table, properties={
@@ -390,7 +390,7 @@ class PropertyInheritanceTest(_base.MappedTest):
         b1 = B(some_c=c1, bname='b1')
         b2 = B(some_c=c1, bname='b2')
         
-        self.assertRaises(sa.exc.InvalidRequestError, setattr, b1, 'aname', 'foo')
+        self.assertRaises(AttributeError, setattr, b1, 'aname', 'foo')
         self.assertRaises(AttributeError, getattr, A, 'bname')
         
         assert c2.many_a == [a2]

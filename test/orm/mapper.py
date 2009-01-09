@@ -638,6 +638,11 @@ class MapperTest(_fixtures.FixtureTest):
             adlist = synonym('addresses', proxy=True),
             adname = synonym('addresses')
         ))
+        
+        # ensure the synonym can get at the proxied comparators without
+        # an explicit compile
+        User.name == 'ed'
+        User.adname.any()
 
         assert hasattr(User, 'adlist')
         # as of 0.4.2, synonyms always create a property

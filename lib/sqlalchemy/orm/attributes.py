@@ -103,13 +103,6 @@ class QueryableAttribute(interfaces.PropComparator):
         self.impl = impl
         self.comparator = comparator
         self.parententity = parententity
-        self.property = property_
-        if not property_:
-            if parententity:
-                mapper, selectable, is_aliased_class = _entity_info(parententity, compile=False)
-                self.property = mapper._get_property(key)
-            else:
-                self.property = None
 
     def get_history(self, instance, **kwargs):
         return self.impl.get_history(instance_state(instance), **kwargs)
@@ -145,6 +138,11 @@ class QueryableAttribute(interfaces.PropComparator):
         
     def __str__(self):
         return repr(self.parententity) + "." + self.property.key
+
+    @property
+    def property(self):
+        return self.comparator.property
+
 
 class InstrumentedAttribute(QueryableAttribute):
     """Public-facing descriptor, placed in the mapped class dictionary."""
@@ -1566,8 +1564,6 @@ def register_attribute_impl(class_, key, **kw):
 
 def register_descriptor(class_, key, proxy_property=None, comparator=None, parententity=None, property_=None):
     manager = manager_of_class(class_)
-    if manager.is_instrumented(key):
-        return
 
     if proxy_property:
         proxy_type = proxied_attribute_factory(proxy_property)

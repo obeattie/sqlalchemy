@@ -20,32 +20,6 @@ from sqlalchemy.orm import util as mapperutil
 
 
 class DefaultColumnLoader(LoaderStrategy):
-    def _old_register_attribute(self, compare_function, copy_function, mutable_scalars, 
-            comparator_factory, callable_=None, proxy_property=None, active_history=False):
-        self.logger.info("%s register managed attribute" % self)
-
-        attribute_ext = util.to_list(self.parent_property.extension) or []
-        if self.key in self.parent._validators:
-            attribute_ext.append(mapperutil.Validator(self.key, self.parent._validators[self.key]))
-
-        for mapper in self.parent.polymorphic_iterator():
-            if (mapper is self.parent or not mapper.concrete) and mapper.has_property(self.key):
-                sessionlib.register_attribute(
-                    mapper.class_, 
-                    self.key, 
-                    uselist=False, 
-                    useobject=False, 
-                    copy_function=copy_function, 
-                    compare_function=compare_function, 
-                    mutable_scalars=mutable_scalars, 
-                    comparator=comparator_factory(self.parent_property, mapper), 
-                    parententity=mapper,
-                    callable_=callable_,
-                    extension=attribute_ext,
-                    proxy_property=proxy_property,
-                    active_history=active_history
-                    )
-    
     def _register_attribute(self, compare_function, copy_function, mutable_scalars, 
             comparator_factory, callable_=None, proxy_property=None, active_history=False):
 
@@ -338,8 +312,15 @@ class AbstractRelationLoader(LoaderStrategy):
         
         if self.key in self.parent._validators:
             attribute_ext.append(mapperutil.Validator(self.key, self.parent._validators[self.key]))
+        
+        attribute_ext.append(sessionlib.UOWEventHandler(self.key))
 
-        sessionlib.register_attribute(
+#        print class_, self.key
+#        import pdb
+#        pdb.set_trace()
+#        for mapper in self.parent.polymorphic_iterator():
+#            if (mapper is self.parent or not mapper.concrete) and mapper.has_property(self.key):
+        attributes.register_attribute_impl(
             class_, 
             self.key, 
             uselist=self.uselist, 
@@ -349,7 +330,7 @@ class AbstractRelationLoader(LoaderStrategy):
             typecallable=self.parent_property.collection_class, 
             callable_=callable_, 
             comparator=self.parent_property.comparator, 
-            parententity=self.parent,
+            parententity=self.parent_property.parent,
             impl_class=impl_class,
             **kwargs
             )

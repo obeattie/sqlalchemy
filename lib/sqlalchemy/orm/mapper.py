@@ -526,36 +526,6 @@ class Mapper(object):
         elif key not in self._props:
             self._compile_property(key, ConcreteInheritedProperty(), init=init, setparent=True)
             
-    class _CompileOnAttr(PropComparator):
-        """A placeholder descriptor which triggers compilation on access."""
-
-        def __init__(self, class_, key):
-            self.class_ = class_
-            self.key = key
-            self.existing_prop = getattr(class_, key, None)
-
-        def __getattribute__(self, key):
-            cls = object.__getattribute__(self, 'class_')
-            clskey = object.__getattribute__(self, 'key')
-
-            # ugly hack
-            if key.startswith('__') and key != '__clause_element__':
-                return object.__getattribute__(self, key)
-
-            class_mapper(cls)
-                
-            if cls.__dict__.get(clskey) is self:
-                # if this warning occurs, it usually means mapper
-                # compilation has failed, but operations upon the mapped
-                # classes have proceeded.
-                util.warn(
-                    ("Attribute '%s' on class '%s' was not replaced during "
-                     "mapper compilation operation") % (clskey, cls.__name__))
-                # clean us up explicitly
-                delattr(cls, clskey)
-
-            return getattr(getattr(cls, clskey), key)
-
     def _compile_property(self, key, prop, init=True, setparent=True):
         self._log("_compile_property(%s, %s)" % (key, prop.__class__.__name__))
 
@@ -629,8 +599,6 @@ class Mapper(object):
         elif isinstance(prop, (ComparableProperty, SynonymProperty)) and setparent:
             if prop.descriptor is None:
                 desc = getattr(self.class_, key, None)
-                if isinstance(desc, Mapper._CompileOnAttr):
-                    desc = object.__getattribute__(desc, 'existing_prop')
                 if self._is_userland_descriptor(desc):
                     prop.descriptor = desc
             if getattr(prop, 'map_column', False):
