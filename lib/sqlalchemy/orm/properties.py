@@ -57,14 +57,13 @@ class ColumnProperty(StrategizedProperty):
         if self.no_instrument:
             return
         
-        if (mapper is self.parent or not mapper.concrete) and mapper.has_property(self.key) and mapper._get_property(self.key) is self:
-            attributes.register_descriptor(
-                mapper.class_, 
-                self.key, 
-                comparator=self.comparator_factory(self, mapper), 
-                parententity=mapper,
-                property_=self
-                )
+        attributes.register_descriptor(
+            mapper.class_, 
+            self.key, 
+            comparator=self.comparator_factory(self, mapper), 
+            parententity=mapper,
+            property_=self
+            )
         
     def do_init(self):
         super(ColumnProperty, self).do_init()
@@ -409,16 +408,13 @@ class RelationProperty(StrategizedProperty):
             self.backref = backref
 
     def instrument_class(self, mapper):
-        # TODO: figure out why relation-based props don't 
-        # repeat the impl all the way down for different parent entities
-        if mapper is self.parent:
-            attributes.register_descriptor(
-                mapper.class_, 
-                self.key, 
-                comparator=self.comparator_factory(self, mapper), 
-                parententity=mapper,
-                property_=self
-                )
+        attributes.register_descriptor(
+            mapper.class_, 
+            self.key, 
+            comparator=self.comparator_factory(self, mapper), 
+            parententity=mapper,
+            property_=self
+            )
 
     class Comparator(PropComparator):
         def __init__(self, prop, mapper, of_type=None, adapter=None):

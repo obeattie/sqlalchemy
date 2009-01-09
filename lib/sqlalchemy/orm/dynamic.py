@@ -35,10 +35,9 @@ class DynamicAttributeImpl(attributes.AttributeImpl):
     uses_objects = True
     accepts_scalar_loader = False
 
-    def __init__(self, class_, key, typecallable, class_manager,
-                 target_mapper, order_by, query_class=None, **kwargs):
-        super(DynamicAttributeImpl, self).__init__(
-            class_, key, typecallable, class_manager, **kwargs)
+    def __init__(self, key, typecallable, 
+                     target_mapper, order_by, query_class=None, **kwargs):
+        super(DynamicAttributeImpl, self).__init__(key, typecallable, **kwargs)
         self.target_mapper = target_mapper
         self.order_by = order_by
         if not query_class:

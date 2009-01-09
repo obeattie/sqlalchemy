@@ -617,11 +617,12 @@ class Mapper(object):
         if not self.non_primary:
             prop.instrument_class(self)
 
+        for mapper in self._inheriting_mappers:
+            mapper._adapt_inherited_property(key, prop, init)
+
         if init:
             prop.init()
 
-        for mapper in self._inheriting_mappers:
-            mapper._adapt_inherited_property(key, prop, init)
 
     def compile(self):
         """Compile this mapper and all other non-compiled mappers.

@@ -33,6 +33,7 @@ class DefaultColumnLoader(LoaderStrategy):
                 attributes.register_attribute_impl(
                     mapper.class_,
                     self.key,
+                    parent_token=self, 
                     uselist=False,
                     useobject=False,
                     extension=attribute_ext,
@@ -315,25 +316,23 @@ class AbstractRelationLoader(LoaderStrategy):
         
         attribute_ext.append(sessionlib.UOWEventHandler(self.key))
 
-#        print class_, self.key
-#        import pdb
-#        pdb.set_trace()
-#        for mapper in self.parent.polymorphic_iterator():
-#            if (mapper is self.parent or not mapper.concrete) and mapper.has_property(self.key):
-        attributes.register_attribute_impl(
-            class_, 
-            self.key, 
-            uselist=self.uselist, 
-            useobject=True, 
-            extension=attribute_ext, 
-            trackparent=True, 
-            typecallable=self.parent_property.collection_class, 
-            callable_=callable_, 
-            comparator=self.parent_property.comparator, 
-            parententity=self.parent_property.parent,
-            impl_class=impl_class,
-            **kwargs
-            )
+        for mapper in self.parent.polymorphic_iterator():
+            if (mapper is self.parent or not mapper.concrete) and mapper.has_property(self.key):
+                attributes.register_attribute_impl(
+                    mapper.class_, 
+                    self.key, 
+                    parent_token=self,
+                    uselist=self.uselist, 
+                    useobject=True, 
+                    extension=attribute_ext, 
+                    trackparent=True, 
+                    typecallable=self.parent_property.collection_class, 
+                    callable_=callable_, 
+                    comparator=self.parent_property.comparator, 
+                    parententity=self.parent_property.parent,
+                    impl_class=impl_class,
+                    **kwargs
+                    )
 
 class NoLoader(AbstractRelationLoader):
     def init_class_attribute(self):

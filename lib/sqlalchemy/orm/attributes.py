@@ -93,7 +93,7 @@ ClassManager instrumentation is used.
 
 class QueryableAttribute(interfaces.PropComparator):
 
-    def __init__(self, key, impl=None, comparator=None, parententity=None, property_=None):
+    def __init__(self, key, impl=None, comparator=None, parententity=None):
         """Construct an InstrumentedAttribute.
 
           comparator
@@ -232,13 +232,10 @@ def proxied_attribute_factory(descriptor):
 class AttributeImpl(object):
     """internal implementation for instrumented attributes."""
 
-    def __init__(self, class_, key,
-                    callable_, class_manager, trackparent=False, extension=None,
-                    compare_function=None, active_history=False, **kwargs):
+    def __init__(self, key,
+                    callable_, trackparent=False, extension=None,
+                    compare_function=None, active_history=False, parent_token=None, **kwargs):
         """Construct an AttributeImpl.
-
-        \class_
-          the class to be instrumented.
 
         key
           string name of the attribute
@@ -266,13 +263,18 @@ class AttributeImpl(object):
           even if it means executing a lazy callable upon attribute change.
           This flag is set to True if any extensions are present.
 
+        parent_token
+          Usually references the MapperProperty, used as a key for
+          the hasparent() function to identify an "owning" attribute.
+          Allows multiple AttributeImpls to all match a single 
+          owner attribute.
+          
         """
 
-        self.class_ = class_
         self.key = key
         self.callable_ = callable_
-        self.class_manager = class_manager
         self.trackparent = trackparent
+        self.parent_token = parent_token or self
         if compare_function is None:
             self.is_equal = operator.eq
         else:
@@ -295,7 +297,7 @@ class AttributeImpl(object):
         will also not have a `hasparent` flag.
 
         """
-        return state.parents.get(id(self), optimistic)
+        return state.parents.get(id(self.parent_token), optimistic)
 
     def sethasparent(self, state, value):
         """Set a boolean flag on the given item corresponding to
@@ -303,7 +305,7 @@ class AttributeImpl(object):
         attribute represented by this ``InstrumentedAttribute``.
 
         """
-        state.parents[id(self)] = value
+        state.parents[id(self.parent_token)] = value
 
     def set_callable(self, state, callable_):
         """Set a callable function for this attribute on the given object.
@@ -467,11 +469,11 @@ class MutableScalarAttributeImpl(ScalarAttributeImpl):
 
     uses_objects = False
 
-    def __init__(self, class_, key, callable_,
+    def __init__(self, key, callable_,
                     class_manager, copy_function=None,
                     compare_function=None, **kwargs):
-        super(ScalarAttributeImpl, self).__init__(class_, key, callable_,
-                                class_manager, compare_function=compare_function, **kwargs)
+        super(ScalarAttributeImpl, self).__init__(key, callable_,
+                                compare_function=compare_function, **kwargs)
         class_manager.mutable_attributes.add(key)
         if copy_function is None:
             raise sa_exc.ArgumentError("MutableScalarAttributeImpl requires a copy function")
@@ -511,11 +513,11 @@ class ScalarObjectAttributeImpl(ScalarAttributeImpl):
     accepts_scalar_loader = False
     uses_objects = True
 
-    def __init__(self, class_, key, callable_, class_manager,
+    def __init__(self, key, callable_, 
                     trackparent=False, extension=None, copy_function=None,
                     compare_function=None, **kwargs):
-        super(ScalarObjectAttributeImpl, self).__init__(class_, key,
-          callable_, class_manager, trackparent=trackparent, extension=extension,
+        super(ScalarObjectAttributeImpl, self).__init__(key,
+          callable_, trackparent=trackparent, extension=extension,
           compare_function=compare_function, **kwargs)
         if compare_function is None:
             self.is_equal = identity_equal
@@ -588,11 +590,10 @@ class CollectionAttributeImpl(AttributeImpl):
     accepts_scalar_loader = False
     uses_objects = True
 
-    def __init__(self, class_, key, callable_, class_manager,
+    def __init__(self, key, callable_, 
                     typecallable=None, trackparent=False, extension=None,
                     copy_function=None, compare_function=None, **kwargs):
-        super(CollectionAttributeImpl, self).__init__(class_,
-          key, callable_, class_manager, trackparent=trackparent,
+        super(CollectionAttributeImpl, self).__init__(key, callable_, trackparent=trackparent,
           extension=extension, compare_function=compare_function, **kwargs)
 
         if copy_function is None:
@@ -1569,7 +1570,7 @@ def register_descriptor(class_, key, proxy_property=None, comparator=None, paren
         proxy_type = proxied_attribute_factory(proxy_property)
         descriptor = proxy_type(key, proxy_property, comparator, parententity)
     else:
-        descriptor = InstrumentedAttribute(key, comparator=comparator, parententity=parententity, property_=property_)
+        descriptor = InstrumentedAttribute(key, comparator=comparator, parententity=parententity)
 
     manager.instrument_attribute(key, descriptor)
 
@@ -1741,22 +1742,24 @@ def collect_management_factories_for(cls):
     factories.discard(None)
     return factories
 
-def _create_prop(class_, key, class_manager, uselist=False, callable_=None, typecallable=None, useobject=False, mutable_scalars=False, impl_class=None, **kwargs):
+def _create_prop(class_, key, class_manager, 
+                    uselist=False, callable_=None, typecallable=None, 
+                    useobject=False, mutable_scalars=False, 
+                    impl_class=None, **kwargs):
     if impl_class:
-        return impl_class(class_, key, typecallable, class_manager=class_manager, **kwargs)
+        return impl_class(key, typecallable, **kwargs)
     elif uselist:
-        return CollectionAttributeImpl(class_, key, callable_,
+        return CollectionAttributeImpl(key, callable_,
                                        typecallable=typecallable,
-                                       class_manager=class_manager, **kwargs)
+                                       **kwargs)
     elif useobject:
-        return ScalarObjectAttributeImpl(class_, key, callable_,
-                                         class_manager=class_manager, **kwargs)
+        return ScalarObjectAttributeImpl(key, callable_,
+                                         **kwargs)
     elif mutable_scalars:
-        return MutableScalarAttributeImpl(class_, key, callable_,
+        return MutableScalarAttributeImpl(key, callable_,
                                           class_manager=class_manager, **kwargs)
     else:
-        return ScalarAttributeImpl(class_, key, callable_,
-                                   class_manager=class_manager, **kwargs)
+        return ScalarAttributeImpl(key, callable_, **kwargs)
 
 def _generate_init(class_, class_manager):
     """Build an __init__ decorator that triggers ClassManager events."""
