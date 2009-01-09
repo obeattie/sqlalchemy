@@ -93,7 +93,7 @@ ClassManager instrumentation is used.
 
 class QueryableAttribute(interfaces.PropComparator):
 
-    def __init__(self, impl, comparator=None, parententity=None):
+    def __init__(self, key, impl=None, comparator=None, parententity=None, property_=None):
         """Construct an InstrumentedAttribute.
 
           comparator
@@ -103,12 +103,13 @@ class QueryableAttribute(interfaces.PropComparator):
         self.impl = impl
         self.comparator = comparator
         self.parententity = parententity
-
-        if parententity:
-            mapper, selectable, is_aliased_class = _entity_info(parententity, compile=False)
-            self.property = mapper._get_property(self.impl.key)
-        else:
-            self.property = None
+        self.property = property_
+        if not property_:
+            if parententity:
+                mapper, selectable, is_aliased_class = _entity_info(parententity, compile=False)
+                self.property = mapper._get_property(key)
+            else:
+                self.property = None
 
     def get_history(self, instance, **kwargs):
         return self.impl.get_history(instance_state(instance), **kwargs)
@@ -1540,36 +1541,39 @@ def unregister_class(class_):
     manager.instantiable = False
     manager.unregister()
 
-def register_attribute(class_, key, uselist, useobject,
-                        callable_=None, proxy_property=None,
-                        mutable_scalars=False, impl_class=None, **kwargs):
-    manager = manager_of_class(class_)
-    if manager.is_instrumented(key):
-        return
+def register_attribute(class_, key, **kw):
 
+    proxy_property = kw.pop('proxy_property', None)
+    
+    comparator = kw.pop('comparator', None)
+    parententity = kw.pop('parententity', None)
+    register_descriptor(class_, key, proxy_property, comparator, parententity)
+    if not proxy_property:
+        register_attribute_impl(class_, key, **kw)
+    
+def register_attribute_impl(class_, key, **kw):
+    
+    manager = manager_of_class(class_)
+    uselist = kw.get('uselist', False)
     if uselist:
-        factory = kwargs.pop('typecallable', None)
+        factory = kw.pop('typecallable', None)
         typecallable = manager.instrument_collection_class(
             key, factory or list)
     else:
-        typecallable = kwargs.pop('typecallable', None)
+        typecallable = kw.pop('typecallable', None)
 
-    comparator = kwargs.pop('comparator', None)
-    parententity = kwargs.pop('parententity', None)
+    manager[key].impl = _create_prop(class_, key, manager, typecallable=typecallable, **kw)
+
+def register_descriptor(class_, key, proxy_property=None, comparator=None, parententity=None, property_=None):
+    manager = manager_of_class(class_)
+    if manager.is_instrumented(key):
+        return
 
     if proxy_property:
         proxy_type = proxied_attribute_factory(proxy_property)
         descriptor = proxy_type(key, proxy_property, comparator, parententity)
     else:
-        descriptor = InstrumentedAttribute(
-            _create_prop(class_, key, uselist, callable_,
-                    class_manager=manager,
-                    useobject=useobject,
-                    typecallable=typecallable,
-                    mutable_scalars=mutable_scalars,
-                    impl_class=impl_class,
-                    **kwargs),
-                comparator=comparator, parententity=parententity)
+        descriptor = InstrumentedAttribute(key, comparator=comparator, parententity=parententity, property_=property_)
 
     manager.instrument_attribute(key, descriptor)
 
@@ -1741,7 +1745,7 @@ def collect_management_factories_for(cls):
     factories.discard(None)
     return factories
 
-def _create_prop(class_, key, uselist, callable_, class_manager, typecallable, useobject, mutable_scalars, impl_class, **kwargs):
+def _create_prop(class_, key, class_manager, uselist=False, callable_=None, typecallable=None, useobject=False, mutable_scalars=False, impl_class=None, **kwargs):
     if impl_class:
         return impl_class(class_, key, typecallable, class_manager=class_manager, **kwargs)
     elif uselist:

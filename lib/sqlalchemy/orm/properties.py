@@ -52,7 +52,17 @@ class ColumnProperty(StrategizedProperty):
             self.strategy_class = strategies.DeferredColumnLoader
         else:
             self.strategy_class = strategies.ColumnLoader
-
+    
+    def instrument_class(self, mapper):
+        if (mapper is self.parent or not mapper.concrete) and mapper.has_property(self.key):
+            attributes.register_descriptor(
+                mapper.class_, 
+                self.key, 
+                comparator=self.comparator_factory(self, mapper), 
+                parententity=mapper,
+                property_=self
+                )
+        
     def do_init(self):
         super(ColumnProperty, self).do_init()
         if len(self.columns) > 1 and self.parent.primary_key.issuperset(self.columns):
@@ -212,7 +222,7 @@ class ConcreteInheritedProperty(MapperProperty):
                 comparator_callable = p.comparator_factory
                 break
 
-        strategies.DefaultColumnLoader(self)._register_attribute(
+        strategies.DefaultColumnLoader(self)._old_register_attribute(
             None, None, False, comparator_callable, proxy_property=NoninheritedConcreteProp())
 log.class_logger(ConcreteInheritedProperty)
 
@@ -259,7 +269,7 @@ class SynonymProperty(MapperProperty):
                     return prop.comparator_factory(prop, mapper)
             return comparator
 
-        strategies.DefaultColumnLoader(self)._register_attribute(
+        strategies.DefaultColumnLoader(self)._old_register_attribute(
             None, None, False, comparator_callable, proxy_property=self.descriptor)
 
     def merge(self, session, source, dest, dont_load, _recursive):
@@ -280,7 +290,7 @@ class ComparableProperty(MapperProperty):
     def do_init(self):
         """Set up a proxy to the unmanaged descriptor."""
 
-        strategies.DefaultColumnLoader(self)._register_attribute(None, None, False, self.comparator_factory, proxy_property=self.descriptor)
+        strategies.DefaultColumnLoader(self)._old_register_attribute(None, None, False, self.comparator_factory, proxy_property=self.descriptor)
 
     def setup(self, context, entity, path, adapter, **kwargs):
         pass

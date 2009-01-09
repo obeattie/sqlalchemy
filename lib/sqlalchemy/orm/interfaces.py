@@ -392,13 +392,17 @@ class MapperProperty(object):
     def set_parent(self, parent):
         self.parent = parent
 
-    def init(self, key, parent):
+    def instrument_class(self, mapper):
+        if self.parent is mapper:
+            self.parent.class_manager.install_descriptor(
+                self.key, self.parent._CompileOnAttr(self.parent.class_, self.key))
+        
+    def init(self):
         """Called after all mappers are compiled to assemble
         relationships between mappers, establish instrumented class
         attributes.
         """
 
-        self.key = key
         self._compiled = True
         self.do_init()
 

@@ -646,12 +646,11 @@ class Mapper(object):
         if setparent:
             prop.set_parent(self)
 
-            if not self.non_primary:
-                self.class_manager.install_descriptor(
-                    key, Mapper._CompileOnAttr(self.class_, key))
+        if not self.non_primary:
+            prop.instrument_class(self)
 
         if init:
-            prop.init(key, self)
+            prop.init()
 
         for mapper in self._inheriting_mappers:
             mapper._adapt_inherited_property(key, prop, init)
@@ -720,7 +719,7 @@ class Mapper(object):
         for key, prop in l:
             if not getattr(prop, '_compiled', False):
                 self._log("initialize prop " + key)
-                prop.init(key, self)
+                prop.init()
         self._log("_post_configure_properties() complete")
         self.compiled = True
             
@@ -838,6 +837,7 @@ class Mapper(object):
         construct an outerjoin amongst those mapper's mapped tables.
 
         """
+        
         from_obj = self.mapped_table
         for m in mappers:
             if m is self:
