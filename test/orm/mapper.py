@@ -653,7 +653,10 @@ class MapperTest(_fixtures.FixtureTest):
 
         # test compile
         assert not isinstance(User.uname == 'jack', bool)
-
+        
+        assert User.uname.property
+        assert User.adlist.property
+        
         sess = create_session()
         u = sess.query(User).filter(User.uname=='jack').one()
 
