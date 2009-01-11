@@ -72,8 +72,8 @@ class ColumnProperty(StrategizedProperty):
                 ("On mapper %s, primary key column '%s' is being combined "
                  "with distinct primary key column '%s' in attribute '%s'.  "
                  "Use explicit properties to give each column its own mapped "
-                 "attribute name.") % (str(self.parent), str(self.columns[1]),
-                                       str(self.columns[0]), self.key))
+                 "attribute name.") % (self.parent, self.columns[1],
+                                       self.columns[0], self.key))
 
     def copy(self):
         return ColumnProperty(deferred=self.deferred, group=self.group, *self.columns)
@@ -113,6 +113,7 @@ class ColumnProperty(StrategizedProperty):
             col = self.__clause_element__()
             return op(col._bind_param(other), col, **kwargs)
     
+    # TODO: legacy..do we need this ? (0.5)
     ColumnComparator = Comparator
     
     def __str__(self):
@@ -136,7 +137,8 @@ class CompositeProperty(ColumnProperty):
         return CompositeProperty(deferred=self.deferred, group=self.group, composite_class=self.composite_class, *self.columns)
 
     def do_init(self):
-        # skip over ColumnProperty's do_init()
+        # skip over ColumnProperty's do_init(),
+        # which issues assertions that do not apply to CompositeColumnProperty
         super(ColumnProperty, self).do_init()
 
     def getattr(self, state, column):
@@ -203,7 +205,8 @@ class ConcreteInheritedProperty(MapperProperty):
     def instrument_class(self, mapper):
         def warn():
             raise AttributeError("Concrete %s does not implement attribute %r at "
-                "the instance level.  Add this property explicitly to %s." % (self.parent, self.key, self.parent))
+                "the instance level.  Add this property explicitly to %s." % 
+                (self.parent, self.key, self.parent))
 
         class NoninheritedConcreteProp(object):
             def __set__(s, obj, value):
@@ -401,9 +404,11 @@ class RelationProperty(StrategizedProperty):
             # just a string was sent
             if secondary is not None:
                 # reverse primary/secondary in case of a many-to-many
-                self.backref = BackRef(backref, primaryjoin=secondaryjoin, secondaryjoin=primaryjoin, passive_updates=self.passive_updates)
+                self.backref = BackRef(backref, primaryjoin=secondaryjoin, 
+                                    secondaryjoin=primaryjoin, passive_updates=self.passive_updates)
             else:
-                self.backref = BackRef(backref, primaryjoin=primaryjoin, secondaryjoin=secondaryjoin, passive_updates=self.passive_updates)
+                self.backref = BackRef(backref, primaryjoin=primaryjoin, 
+                                    secondaryjoin=secondaryjoin, passive_updates=self.passive_updates)
         else:
             self.backref = backref
 
@@ -583,7 +588,6 @@ class RelationProperty(StrategizedProperty):
             self.prop.parent.compile()
             return self.prop
 
-
     def compare(self, op, value, value_is_parent=False):
         if op == operators.eq:
             if value is None:
@@ -607,6 +611,7 @@ class RelationProperty(StrategizedProperty):
 
     def merge(self, session, source, dest, dont_load, _recursive):
         if not dont_load:
+            # TODO: no test coverage for recursive check
             for r in self._reverse_property:
                 if (source, r) in _recursive:
                     return
@@ -626,7 +631,7 @@ class RelationProperty(StrategizedProperty):
         if self.uselist:
             dest_list = []
             for current in instances:
-                _recursive[(current, self.key)] = True
+                _recursive[(current, self)] = True
                 obj = session.merge(current, dont_load=dont_load, _recursive=_recursive)
                 if obj is not None:
                     dest_list.append(obj)
@@ -639,11 +644,11 @@ class RelationProperty(StrategizedProperty):
         else:
             current = instances[0]
             if current is not None:
-                _recursive[(current, self.key)] = True
+                _recursive[(current, self)] = True
                 obj = session.merge(current, dont_load=dont_load, _recursive=_recursive)
                 if obj is not None:
                     if dont_load:
-                        dest.__dict__[self.key] = obj
+                        dest_state.dict[self.key] = obj
                     else:
                         setattr(dest, self.key, obj)
 
@@ -663,7 +668,8 @@ class RelationProperty(StrategizedProperty):
             for c in instances:
                 if c is not None and c not in visited_instances and (halt_on is None or not halt_on(c)):
                     if not isinstance(c, self.mapper.class_):
-                        raise AssertionError("Attribute '%s' on class '%s' doesn't handle objects of type '%s'" % (self.key, str(self.parent.class_), str(c.__class__)))
+                        raise AssertionError("Attribute '%s' on class '%s' doesn't handle objects "
+                                    "of type '%s'" % (self.key, str(self.parent.class_), str(c.__class__)))
                     visited_instances.add(c)
 
                     # cascade using the mapper local to this object, so that its individual properties are located
@@ -676,7 +682,8 @@ class RelationProperty(StrategizedProperty):
         other._reverse_property.add(self)
         
         if not other._get_target().common_parent(self.parent):
-            raise sa_exc.ArgumentError("reverse_property %r on relation %s references relation %s, which does not reference mapper %s" % (key, self, other, self.parent))
+            raise sa_exc.ArgumentError("reverse_property %r on relation %s references "
+                    "relation %s, which does not reference mapper %s" % (key, self, other, self.parent))
         
     def do_init(self):
         self._get_target()
@@ -1077,7 +1084,12 @@ log.class_logger(RelationProperty)
 class BackRef(object):
     """Attached to a RelationProperty to indicate a complementary reverse relationship.
 
-    Can optionally create the complementing RelationProperty if one does not exist already."""
+    Handles the job of creating the opposite RelationProperty according to configuration.
+    
+    Alternatively, two explicit RelationProperty objects can be associated bidirectionally
+    using the back_populates keyword argument on each.
+    
+    """
 
     def __init__(self, key, _prop=None, **kwargs):
         self.key = key
@@ -1112,7 +1124,7 @@ class BackRef(object):
                                       backref=BackRef(prop.key, _prop=prop),
                                       **self.kwargs)
 
-            mapper._compile_property(self.key, relation);
+            mapper._configure_property(self.key, relation);
 
             prop._add_reverse_property(self.key)
 

@@ -458,7 +458,7 @@ class PropertyInheritanceTest(_base.MappedTest):
             )
         self.assert_sql_count(testing.db, go, 1)
         
-        
+    
 class ColKeysTest(_base.MappedTest):
     def define_tables(self, metadata):
         global offices_table, refugees_table

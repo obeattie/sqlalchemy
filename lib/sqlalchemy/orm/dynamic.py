@@ -24,7 +24,14 @@ from sqlalchemy.orm.util import _state_has_identity, has_identity
 class DynaLoader(strategies.AbstractRelationLoader):
     def init_class_attribute(self):
         self.is_class_level = True
-        self._register_attribute(self.parent.class_, impl_class=DynamicAttributeImpl, target_mapper=self.parent_property.mapper, order_by=self.parent_property.order_by, query_class=self.parent_property.query_class)
+
+        strategies._register_attribute(self,
+            useobject=True,
+            impl_class=DynamicAttributeImpl, 
+            target_mapper=self.parent_property.mapper, 
+            order_by=self.parent_property.order_by, 
+            query_class=self.parent_property.query_class
+        )
 
     def create_row_processor(self, selectcontext, path, mapper, row, adapter):
         return (None, None)

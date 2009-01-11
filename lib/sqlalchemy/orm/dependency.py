@@ -43,19 +43,21 @@ class DependencyProcessor(object):
         self.key = prop.key
         self.dependency_marker = MapperStub(self.parent, self.mapper, self.key)
         if not self.prop.synchronize_pairs:
-            raise sa_exc.ArgumentError("Can't build a DependencyProcessor for relation %s.  No target attributes to populate between parent and child are present" % self.prop)
+            raise sa_exc.ArgumentError("Can't build a DependencyProcessor for relation %s.  "
+                    "No target attributes to populate between parent and child are present" % self.prop)
 
     def _get_instrumented_attribute(self):
         """Return the ``InstrumentedAttribute`` handled by this
         ``DependencyProecssor``.
+        
         """
-
         return self.parent.class_manager.get_impl(self.key)
 
     def hasparent(self, state):
         """return True if the given object instance has a parent,
-        according to the ``InstrumentedAttribute`` handled by this ``DependencyProcessor``."""
-
+        according to the ``InstrumentedAttribute`` handled by this ``DependencyProcessor``.
+        
+        """
         # TODO: use correct API for this
         return self._get_instrumented_attribute().hasparent(state)
 
@@ -77,8 +79,8 @@ class DependencyProcessor(object):
         """Given an object pair assuming `obj2` is a child of `obj1`,
         return a tuple with the dependent object second, or None if
         there is no dependency.
-        """
 
+        """
         if state1 is state2:
             return None
         elif self.direction == ONETOMANY:
@@ -93,8 +95,8 @@ class DependencyProcessor(object):
         It is called within the context of the various mappers and
         sometimes individual objects sorted according to their
         insert/update/delete order (topological sort).
-        """
 
+        """
         raise NotImplementedError()
 
     def preprocess_dependencies(self, task, deplist, uowcommit, delete = False):
@@ -102,26 +104,51 @@ class DependencyProcessor(object):
         through related objects and ensure every instance which will
         require save/update/delete is properly added to the
         UOWTransaction.
-        """
 
+        """
         raise NotImplementedError()
 
     def _verify_canload(self, state):
         if state is not None and not self.mapper._canload(state, allow_subtypes=not self.enable_typechecks):
             if self.mapper._canload(state, allow_subtypes=True):
-                raise exc.FlushError("Attempting to flush an item of type %s on collection '%s', which is not the expected type %s.  Configure mapper '%s' to load this subtype polymorphically, or set enable_typechecks=False to allow subtypes.  Mismatched typeloading may cause bi-directional relationships (backrefs) to not function properly." % (state.class_, self.prop, self.mapper.class_, self.mapper))
+                raise exc.FlushError("Attempting to flush an item of type %s on collection '%s', "
+                                "which is not the expected type %s.  Configure mapper '%s' to load this "
+                                "subtype polymorphically, or set enable_typechecks=False to allow subtypes.  "
+                                "Mismatched typeloading may cause bi-directional relationships (backrefs) "
+                                "to not function properly." % (state.class_, self.prop, self.mapper.class_, self.mapper))
             else:
-                raise exc.FlushError("Attempting to flush an item of type %s on collection '%s', whose mapper does not inherit from that of %s." % (state.class_, self.prop, self.mapper.class_))
+                raise exc.FlushError("Attempting to flush an item of type %s on collection '%s', "
+                                "whose mapper does not inherit from that of %s." % (state.class_, self.prop, self.mapper.class_))
             
     def _synchronize(self, state, child, associationrow, clearkeys, uowcommit):
         """Called during a flush to synchronize primary key identifier
         values between a parent/child object, as well as to an
         associationrow in the case of many-to-many.
+        
         """
-
         raise NotImplementedError()
 
-
+    def _check_reverse_action(self, uowcommit, parent, child, action):
+        """Determine if an action has been performed by the 'reverse' property of this property.
+        
+        this is used to ensure that only one side of a bidirectional relation
+        issues a certain operation for a parent/child pair.
+        
+        """
+        for r in self.prop._reverse_property:
+            if (r._dependency_processor, action, parent, child) in uowcommit.attributes:
+                return True
+        return False
+    
+    def _performed_action(self, uowcommit, parent, child, action):
+        """Establish that an action has been performed for a certain parent/child pair.
+        
+        Used only for actions that are sensitive to bidirectional double-action,
+        i.e. manytomany, post_update.
+        
+        """
+        uowcommit.attributes[(self, action, parent, child)] = True
+        
     def _conditional_post_update(self, state, uowcommit, related):
         """Execute a post_update call.
 
@@ -134,33 +161,27 @@ class DependencyProcessor(object):
         particular relationship, and given a target object and list of
         one or more related objects, and execute the ``UPDATE`` if the
         given related object list contains ``INSERT``s or ``DELETE``s.
+        
         """
-
         if state is not None and self.post_update:
             for x in related:
-                if x is not None:
+                if x is not None and not self._check_reverse_action(uowcommit, x, state, "postupdate"):
                     uowcommit.register_object(state, postupdate=True, post_update_cols=[r for l, r in self.prop.synchronize_pairs])
+                    self._performed_action(uowcommit, x, state, "postupdate")
                     break
 
     def _pks_changed(self, uowcommit, state):
         raise NotImplementedError()
 
     def __repr__(self):
-        return "%s(%s)" % (self.__class__.__name__, str(self.prop))
+        return "%s(%s)" % (self.__class__.__name__, self.prop)
 
 class OneToManyDP(DependencyProcessor):
     def register_dependencies(self, uowcommit):
         if self.post_update:
-            for p in self.prop._reverse_property:
-                if (p._dependency_processor, "register") in uowcommit.attributes:
-                    return
-            
             uowcommit.register_dependency(self.mapper, self.dependency_marker)
             uowcommit.register_dependency(self.parent, self.dependency_marker)
             uowcommit.register_processor(self.dependency_marker, self, self.parent)
-            
-            uowcommit.attributes[(self, "register")] = True
-            
         else:
             uowcommit.register_dependency(self.parent, self.mapper)
             uowcommit.register_processor(self.parent, self, self.parent)
@@ -306,15 +327,9 @@ class ManyToOneDP(DependencyProcessor):
 
     def register_dependencies(self, uowcommit):
         if self.post_update:
-            for p in self.prop._reverse_property:
-                if (p._dependency_processor, "register") in uowcommit.attributes:
-                    return
-                
             uowcommit.register_dependency(self.mapper, self.dependency_marker)
             uowcommit.register_dependency(self.parent, self.dependency_marker)
             uowcommit.register_processor(self.dependency_marker, self, self.parent)
-            uowcommit.attributes[(self, "register")] = True
-            
         else:
             uowcommit.register_dependency(self.mapper, self.parent)
             uowcommit.register_processor(self.mapper, self, self.parent)
@@ -400,40 +415,34 @@ class ManyToManyDP(DependencyProcessor):
         secondary_insert = []
         secondary_update = []
 
-        def check_reverse_dep(child, state):
-            for r in self.prop._reverse_property:
-                if (r._dependency_processor, "manytomany", child, state) in uowcommit.attributes:
-                    return True
-            return False
-            
         if delete:
             for state in deplist:
                 history = uowcommit.get_attribute_history(state, self.key, passive=self.passive_deletes)
                 if history:
                     for child in history.non_added():
-                        if child is None or check_reverse_dep(child, state):
+                        if child is None or self._check_reverse_action(uowcommit, child, state, "manytomany"):
                             continue
                         associationrow = {}
                         self._synchronize(state, child, associationrow, False, uowcommit)
                         secondary_delete.append(associationrow)
-                        uowcommit.attributes[(self, "manytomany", state, child)] = True
+                        self._performed_action(uowcommit, state, child, "manytomany")
         else:
             for state in deplist:
                 history = uowcommit.get_attribute_history(state, self.key)
                 if history:
                     for child in history.added:
-                        if child is None or check_reverse_dep(child, state):
+                        if child is None or self._check_reverse_action(uowcommit, child, state, "manytomany"):
                             continue
                         associationrow = {}
                         self._synchronize(state, child, associationrow, False, uowcommit)
-                        uowcommit.attributes[(self, "manytomany", state, child)] = True
+                        self._performed_action(uowcommit, state, child, "manytomany")
                         secondary_insert.append(associationrow)
                     for child in history.deleted:
-                        if child is None or check_reverse_dep(child, state):
+                        if child is None or self._check_reverse_action(uowcommit, child, state, "manytomany"):
                             continue
                         associationrow = {}
                         self._synchronize(state, child, associationrow, False, uowcommit)
-                        uowcommit.attributes[(self, "manytomany", state, child)] = True
+                        self._performed_action(uowcommit, state, child, "manytomany")
                         secondary_delete.append(associationrow)
 
                 if not self.passive_updates and self._pks_changed(uowcommit, state):
@@ -449,17 +458,24 @@ class ManyToManyDP(DependencyProcessor):
                         secondary_update.append(associationrow)
 
         if secondary_delete:
-            # TODO: precompile the delete/insert queries?
-            statement = self.secondary.delete(sql.and_(*[c == sql.bindparam(c.key, type_=c.type) for c in self.secondary.c if c.key in associationrow]))
+            statement = self.secondary.delete(sql.and_(*[
+                                c == sql.bindparam(c.key, type_=c.type) for c in self.secondary.c if c.key in associationrow
+                            ]))
             result = connection.execute(statement, secondary_delete)
             if result.supports_sane_multi_rowcount() and result.rowcount != len(secondary_delete):
-                raise exc.ConcurrentModificationError("Deleted rowcount %d does not match number of secondary table rows deleted from table '%s': %d" % (result.rowcount, self.secondary.description, len(secondary_delete)))
+                raise exc.ConcurrentModificationError("Deleted rowcount %d does not match number of "
+                            "secondary table rows deleted from table '%s': %d" % 
+                            (result.rowcount, self.secondary.description, len(secondary_delete)))
 
         if secondary_update:
-            statement = self.secondary.update(sql.and_(*[c == sql.bindparam("old_" + c.key, type_=c.type) for c in self.secondary.c if c.key in associationrow]))
+            statement = self.secondary.update(sql.and_(*[
+                                c == sql.bindparam("old_" + c.key, type_=c.type) for c in self.secondary.c if c.key in associationrow
+                            ]))
             result = connection.execute(statement, secondary_update)
             if result.supports_sane_multi_rowcount() and result.rowcount != len(secondary_update):
-                raise exc.ConcurrentModificationError("Updated rowcount %d does not match number of secondary table rows updated from table '%s': %d" % (result.rowcount, self.secondary.description, len(secondary_update)))
+                raise exc.ConcurrentModificationError("Updated rowcount %d does not match number of "
+                            "secondary table rows updated from table '%s': %d" % 
+                            (result.rowcount, self.secondary.description, len(secondary_update)))
 
         if secondary_insert:
             statement = self.secondary.insert()

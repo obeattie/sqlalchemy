@@ -54,10 +54,13 @@ class MapperTest(_fixtures.FixtureTest):
 
     @testing.resolve_artifact_names
     def test_exceptions_sticky(self):
+        """test preservation of mapper compile errors raised during hasattr()."""
+        
         mapper(Address, addresses, properties={
             'user':relation(User)
         })
-        hasattr(Address.id, 'in_')
+        
+        hasattr(Address.user, 'property')
         self.assertRaisesMessage(sa.exc.InvalidRequestError, r"suppressed within a hasattr\(\)", compile_mappers)
     
     @testing.resolve_artifact_names

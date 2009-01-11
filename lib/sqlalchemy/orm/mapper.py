@@ -480,7 +480,7 @@ class Mapper(object):
         # load custom properties
         if self._init_properties:
             for key, prop in self._init_properties.iteritems():
-                self._compile_property(key, prop, False)
+                self._configure_property(key, prop, False)
 
         # pull properties from the inherited mapper if any.
         if self.inherits:
@@ -505,7 +505,7 @@ class Mapper(object):
                 if column in mapper._columntoproperty:
                     column_key = mapper._columntoproperty[column].key
 
-            self._compile_property(column_key, column, init=False, setparent=True)
+            self._configure_property(column_key, column, init=False, setparent=True)
 
         # do a special check for the "discriminiator" column, as it may only be present
         # in the 'with_polymorphic' selectable but we need it for the base mapper
@@ -518,16 +518,16 @@ class Mapper(object):
                 dont_instrument = False
             if self._should_exclude(col.key, local=False):
                 raise sa_exc.InvalidRequestError("Cannot exclude or override the discriminator column %r" % col.key)
-            self._compile_property(col.key, ColumnProperty(col, _no_instrument=dont_instrument), init=False, setparent=True)
+            self._configure_property(col.key, ColumnProperty(col, _no_instrument=dont_instrument), init=False, setparent=True)
 
     def _adapt_inherited_property(self, key, prop, init):
         if not self.concrete:
-            self._compile_property(key, prop, init=False, setparent=False)
+            self._configure_property(key, prop, init=False, setparent=False)
         elif key not in self._props:
-            self._compile_property(key, ConcreteInheritedProperty(), init=init, setparent=True)
+            self._configure_property(key, ConcreteInheritedProperty(), init=init, setparent=True)
             
-    def _compile_property(self, key, prop, init=True, setparent=True):
-        self._log("_compile_property(%s, %s)" % (key, prop.__class__.__name__))
+    def _configure_property(self, key, prop, init=True, setparent=True):
+        self._log("_configure_property(%s, %s)" % (key, prop.__class__.__name__))
 
         if not isinstance(prop, MapperProperty):
             # we were passed a Column or a list of Columns; generate a ColumnProperty
@@ -606,7 +606,7 @@ class Mapper(object):
                     raise sa_exc.ArgumentError(
                         "Can't compile synonym '%s': no column on table '%s' named '%s'" 
                          % (prop.name, self.mapped_table.description, key))
-                self._compile_property(prop.name, ColumnProperty(self.mapped_table.c[key]), init=init, setparent=setparent)
+                self._configure_property(prop.name, ColumnProperty(self.mapped_table.c[key]), init=init, setparent=setparent)
 
         self._props[key] = prop
         prop.key = key
@@ -710,7 +710,7 @@ class Mapper(object):
 
         """
         self._init_properties[key] = prop
-        self._compile_property(key, prop, init=self.compiled)
+        self._configure_property(key, prop, init=self.compiled)
 
 
     # class formatting / logging.
