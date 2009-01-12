@@ -623,7 +623,14 @@ class OracleDialect(default.DefaultDialect):
             colargs = []
             if default is not None:
                 colargs.append(DefaultClause(sql.text(default)))
-            columns.append((colname, coltype, nullable, colargs))
+            cdict = {
+                'name': colname,
+                'type': coltype,
+                'nullable': nullable,
+                'default': default,
+                'attrs': colargs
+            }
+            columns.append(cdict)
         return columns
 
     def _get_constraint_data(self, connection, table_name, schema=None,
@@ -736,7 +743,11 @@ class OracleDialect(default.DefaultDialect):
             owner = self._denormalize_name(table.schema or self.get_default_schema_name(connection))
         columns = self.get_columns(connection, actual_name, owner, info_cache,
                                    dblink)
-        for (colname, coltype, nullable, colargs) in columns:
+        for cdict in columns:
+            colname = cdict['name']
+            coltype = cdict['type']
+            nullable = cdict['nullable']
+            colargs = cdict['attrs']
             if include_columns and colname not in include_columns:
                 continue
             table.append_column(schema.Column(colname, coltype,
