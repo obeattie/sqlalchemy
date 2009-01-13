@@ -241,6 +241,7 @@ Known Issues
 """
 import datetime, decimal, inspect, operator, re, sys, urllib
 
+import sqlalchemy
 from sqlalchemy import sql, schema, exc, util
 from sqlalchemy.sql import compiler, expression, operators as sqlops, functions as sql_functions
 from sqlalchemy.sql import compiler, expression, operators as sql_operators, functions as sql_functions
@@ -1113,28 +1114,102 @@ class MSSQLDialect(default.DefaultDialect):
         row  = c.fetchone()
         return row is not None
 
-    def reflecttable(self, connection, table, include_columns):
+    def get_schema_names(self, connection, info_cache=None):
+        import sqlalchemy.databases.information_schema as ischema
+        s = sql.select([self.uppercase_table(ischema.schemata).c.schema_name],
+            order_by=[ischema.schemata.c.schema_name]
+        )
+        return [r[0] for r in connection.execute(s)]
+
+    def get_table_names(self, connection, schema, info_cache=None):
+        import sqlalchemy.databases.information_schema as ischema
+        if schema is not None:
+            current_schema = schema
+        else:
+            current_schema = self.get_default_schema_name(connection)
+        tables = self.uppercase_table(ischema.tables)
+        s = sql.select([tables.c.table_name],
+            sql.and_(
+                tables.c.table_schema == current_schema,
+                tables.c.table_type == 'BASE TABLE'
+            ),
+            order_by=[tables.c.table_name]
+        )
+        return [r[0] for r in connection.execute(s)]
+
+    def get_view_names(self, connection, schema, info_cache=None):
+        import sqlalchemy.databases.information_schema as ischema
+        if schema is not None:
+            current_schema = schema
+        else:
+            current_schema = self.get_default_schema_name(connection)
+        tables = self.uppercase_table(ischema.tables)
+        s = sql.select([tables.c.table_name],
+            sql.and_(
+                tables.c.table_schema == current_schema,
+                tables.c.table_type == 'VIEW'
+            ),
+            order_by=[tables.c.table_name]
+        )
+        return [r[0] for r in connection.execute(s)]
+
+    def get_indexes(self, connection, table_name, schema=None,
+                    info_cache=None):
+        if schema is not None:
+            current_schema = schema
+        else:
+            current_schema = self.get_default_schema_name(connection)
+        full_tname = "%s.%s" % (schema, table_name)
+        indexes = []
+        s = sql.text("exec sp_helpindex '%s'" % full_tname)
+        rp = connection.execute(s)
+        for row in rp:
+            if 'primary key' not in row['index_description']:
+                indexes.append({
+                    'name' : row['index_name'],
+                    'column_names' : row['index_keys'].split(','),
+                    'unique': 'unique' in row['index_description']
+                })
+        return indexes
+
+    def get_view_definition(self, connection, view_name, schema=None):
+        import sqlalchemy.databases.information_schema as ischema
+        if schema is not None:
+            current_schema = schema
+        else:
+            current_schema = self.get_default_schema_name(connection)
+        views = self.uppercase_table(ischema.views)
+        s = sql.select([views.c.view_definition],
+            sql.and_(
+                views.c.table_schema == current_schema,
+                views.c.table_name == view_name
+            ),
+        )
+        rp = connection.execute(s)
+        if rp:
+            return rp.scalar()
+
+    def get_columns(self, connection, table_name, schema=None, info_cache=None):
         import sqlalchemy.databases.information_schema as ischema
         # Get base columns
-        if table.schema is not None:
-            current_schema = table.schema
+        if schema is not None:
+            current_schema = schema
         else:
             current_schema = self.get_default_schema_name(connection)
 
         columns = self.uppercase_table(ischema.columns)
         s = sql.select([columns],
                    current_schema
-                       and sql.and_(columns.c.table_name==table.name, columns.c.table_schema==current_schema)
-                       or columns.c.table_name==table.name,
+                       and sql.and_(columns.c.table_name==table_name, columns.c.table_schema==current_schema)
+                       or columns.c.table_name==table_name,
                    order_by=[columns.c.ordinal_position])
 
         c = connection.execute(s)
-        found_table = False
+        cols = []
         while True:
             row = c.fetchone()
             if row is None:
                 break
-            found_table = True
             (name, type, nullable, charlen, numericprec, numericscale, default, collation) = (
                 row[columns.c.column_name],
                 row[columns.c.data_type],
@@ -1145,9 +1220,6 @@ class MSSQLDialect(default.DefaultDialect):
                 row[columns.c.column_default],
                 row[columns.c.collation_name]
             )
-            if include_columns and name not in include_columns:
-                continue
-
             args = []
             for a in (charlen, numericprec, numericscale):
                 if a is not None:
@@ -1172,10 +1244,120 @@ class MSSQLDialect(default.DefaultDialect):
                 coltype = coltype(*args, **kwargs)
             colargs = []
             if default is not None:
-                colargs.append(schema.DefaultClause(sql.text(default)))
+                colargs.append(sqlalchemy.schema.DefaultClause(sql.text(default)))
 
+            cdict = {
+                'name' : name,
+                'type' : coltype,
+                'nullable' : nullable,
+                'default' : default,
+                'attrs' : colargs
+            }
+            cols.append(cdict)
+        return cols
+
+    def get_primary_keys(self, connection, table_name, schema=None,
+                         info_cache=None):
+        import sqlalchemy.databases.information_schema as ischema
+        if schema is not None:
+            current_schema = schema
+        else:
+            current_schema = self.get_default_schema_name(connection)
+        pkeys = []
+        # Add constraints
+        RR = self.uppercase_table(ischema.ref_constraints)    #information_schema.referential_constraints
+        TC = self.uppercase_table(ischema.constraints)        #information_schema.table_constraints
+        C  = self.uppercase_table(ischema.pg_key_constraints).alias('C') #information_schema.constraint_column_usage: the constrained column
+        R  = self.uppercase_table(ischema.pg_key_constraints).alias('R') #information_schema.constraint_column_usage: the referenced column
+
+        # Primary key constraints
+        s = sql.select([C.c.column_name, TC.c.constraint_type],
+            sql.and_(TC.c.constraint_name == C.c.constraint_name,
+                     C.c.table_name == table_name,
+                     C.c.table_schema == current_schema)
+        )
+        c = connection.execute(s)
+        for row in c:
+            if 'PRIMARY' in row[TC.c.constraint_type.name]:
+                pkeys.append(row[0])
+        return pkeys
+
+    def get_foreign_keys(self, connection, table_name, schema=None,
+                         info_cache=None):
+        import sqlalchemy.databases.information_schema as ischema
+        if schema is not None:
+            current_schema = schema
+        else:
+            current_schema = self.get_default_schema_name(connection)
+        # Add constraints
+        RR = self.uppercase_table(ischema.ref_constraints)    #information_schema.referential_constraints
+        TC = self.uppercase_table(ischema.constraints)        #information_schema.table_constraints
+        C  = self.uppercase_table(ischema.pg_key_constraints).alias('C') #information_schema.constraint_column_usage: the constrained column
+        R  = self.uppercase_table(ischema.pg_key_constraints).alias('R') #information_schema.constraint_column_usage: the referenced column
+
+        # Foreign key constraints
+        s = sql.select([C.c.column_name,
+                        R.c.table_schema, R.c.table_name, R.c.column_name,
+                        RR.c.constraint_name, RR.c.match_option, RR.c.update_rule, RR.c.delete_rule],
+                       sql.and_(C.c.table_name == table_name,
+                                C.c.table_schema == current_schema,
+                                C.c.constraint_name == RR.c.constraint_name,
+                                R.c.constraint_name == RR.c.unique_constraint_name,
+                                C.c.ordinal_position == R.c.ordinal_position
+                                ),
+                       order_by = [RR.c.constraint_name, R.c.ordinal_position])
+        rows = connection.execute(s).fetchall()
+
+        # group rows by constraint ID, to handle multi-column FKs
+        fkeys = []
+        fknm, scols, rcols = (None, [], [])
+        for r in rows:
+            scol, rschema, rtbl, rcol, rfknm, fkmatch, fkuprule, fkdelrule = r
+            if rfknm != fknm:
+                if fknm:
+                    fkeys.append({
+                        'name' : fknm,
+                        'constrained_columns' : scols,
+                        'referred_schema' : rschema,
+                        'referred_table' : rtbl,
+                        'referred_columns' : rcols
+                    })
+                fknm, scols, rcols = (rfknm, [], [])
+            if not scol in scols:
+                scols.append(scol)
+            if not (rschema, rtbl, rcol) in rcols:
+                rcols.append((rschema, rtbl, rcol))
+        if fknm and scols:
+            fkeys.append({
+                'name' : fknm,
+                'constrained_columns' : scols,
+                'referred_schema' : rschema,
+                'referred_table' : rtbl,
+                'referred_columns' : rcols
+            })
+        return fkeys
+
+    def reflecttable(self, connection, table, include_columns):
+        import sqlalchemy.databases.information_schema as ischema
+        # Get base columns
+        if table.schema is not None:
+            current_schema = table.schema
+        else:
+            current_schema = self.get_default_schema_name(connection)
+        info_cache = {}
+        columns = self.get_columns(connection, table.name, current_schema,
+                                   info_cache)
+        found_table = False
+        for cdict in columns:
+            name = cdict['name']
+            coltype = cdict['type']
+            nullable = cdict['nullable']
+            default = cdict['default']
+            colargs = cdict['attrs']
+            found_table = True
+            if include_columns and name not in include_columns:
+                continue
             table.append_column(schema.Column(name, coltype, nullable=nullable, autoincrement=False, *colargs))
-
         if not found_table:
             raise exc.NoSuchTableError(table.name)
 
@@ -1207,62 +1389,37 @@ class MSSQLDialect(default.DefaultDialect):
                 # ignoring it, works just like before
                 pass
 
-        # Add constraints
-        RR = self.uppercase_table(ischema.ref_constraints)    #information_schema.referential_constraints
-        TC = self.uppercase_table(ischema.constraints)        #information_schema.table_constraints
-        C  = self.uppercase_table(ischema.pg_key_constraints).alias('C') #information_schema.constraint_column_usage: the constrained column
-        R  = self.uppercase_table(ischema.pg_key_constraints).alias('R') #information_schema.constraint_column_usage: the referenced column
-
         # Primary key constraints
-        s = sql.select([C.c.column_name, TC.c.constraint_type], sql.and_(TC.c.constraint_name == C.c.constraint_name,
-                                                                         C.c.table_name == table.name,
-                                                                         C.c.table_schema == (table.schema or current_schema)))
-        c = connection.execute(s)
-        for row in c:
-            if 'PRIMARY' in row[TC.c.constraint_type.name] and row[0] in table.c:
-                table.primary_key.add(table.c[row[0]])
+        pkeys = self.get_primary_keys(connection, table.name,
+                                      current_schema, info_cache)
+        for pkey in pkeys:
+            if pkey in table.c:
+                table.primary_key.add(table.c[pkey])
 
         # Foreign key constraints
-        s = sql.select([C.c.column_name,
-                        R.c.table_schema, R.c.table_name, R.c.column_name,
-                        RR.c.constraint_name, RR.c.match_option, RR.c.update_rule, RR.c.delete_rule],
-                       sql.and_(C.c.table_name == table.name,
-                                C.c.table_schema == (table.schema or current_schema),
-                                C.c.constraint_name == RR.c.constraint_name,
-                                R.c.constraint_name == RR.c.unique_constraint_name,
-                                C.c.ordinal_position == R.c.ordinal_position
-                                ),
-                       order_by = [RR.c.constraint_name, R.c.ordinal_position])
-        rows = connection.execute(s).fetchall()
-
         def _gen_fkref(table, rschema, rtbl, rcol):
             if rschema == current_schema and not table.schema:
                 return '.'.join([rtbl, rcol])
             else:
                 return '.'.join([rschema, rtbl, rcol])
 
-        # group rows by constraint ID, to handle multi-column FKs
-        fknm, scols, rcols = (None, [], [])
-        for r in rows:
-            scol, rschema, rtbl, rcol, rfknm, fkmatch, fkuprule, fkdelrule = r
+        fkeys = self.get_foreign_keys(connection, table.name, current_schema,
+                                      info_cache)
+        for fkey_d in fkeys:
+            fknm = fkey_d['name']
+            scols = fkey_d['constrained_columns']
+            rschema = fkey_d['referred_schema']
+            rtbl = fkey_d['referred_table']
+            rcols = fkey_d['referred_columns']
             # if the reflected schema is the default schema then don't set it because this will
             # play into the metadata key causing duplicates.
             if rschema == current_schema and not table.schema:
-                schema.Table(rtbl, table.metadata, autoload=True, autoload_with=connection)
+                schema.Table(rtbl, table.metadata, autoload=True,
+                             autoload_with=connection)
             else:
-                schema.Table(rtbl, table.metadata, schema=rschema, autoload=True, autoload_with=connection)
-            if rfknm != fknm:
-                if fknm:
-                    table.append_constraint(schema.ForeignKeyConstraint(scols, [_gen_fkref(table, s, t, c) for s, t, c in rcols], fknm, link_to_name=True))
-                fknm, scols, rcols = (rfknm, [], [])
-            if not scol in scols:
-                scols.append(scol)
-            if not (rschema, rtbl, rcol) in rcols:
-                rcols.append((rschema, rtbl, rcol))
-
-        if fknm and scols:
+                schema.Table(rtbl, table.metadata, schema=rschema,
+                             autoload=True, autoload_with=connection)
             table.append_constraint(schema.ForeignKeyConstraint(scols, [_gen_fkref(table, s, t, c) for s, t, c in rcols], fknm, link_to_name=True))
-
 
 class MSSQLDialect_pymssql(MSSQLDialect):
     supports_sane_rowcount = False
