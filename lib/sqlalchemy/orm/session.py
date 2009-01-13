@@ -1,5 +1,5 @@
 # session.py
-# Copyright (C) 2005, 2006, 2007, 2008 Michael Bayer mike_mp@zzzcomputing.com
+# Copyright (C) 2005, 2006, 2007, 2008, 2009 Michael Bayer mike_mp@zzzcomputing.com
 #
 # This module is part of SQLAlchemy and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
@@ -1521,7 +1521,7 @@ class Session(object):
         return util.IdentitySet(self._new.values())
 
 _expire_state = attributes.InstanceState.expire_attributes
-register_attribute = unitofwork.register_attribute
+UOWEventHandler = unitofwork.UOWEventHandler
 
 _sessions = weakref.WeakValueDictionary()
 

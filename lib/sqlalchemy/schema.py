@@ -1,5 +1,5 @@
 # schema.py
-# Copyright (C) 2005, 2006, 2007, 2008 Michael Bayer mike_mp@zzzcomputing.com
+# Copyright (C) 2005, 2006, 2007, 2008, 2009 Michael Bayer mike_mp@zzzcomputing.com
 #
 # This module is part of SQLAlchemy and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
@@ -1431,7 +1431,7 @@ class Index(SchemaItem):
 
     def _init_items(self, *args):
         for column in args:
-            self.append_column(column)
+            self.append_column(_to_schema_column(column))
 
     def _set_parent(self, table):
         self.table = table
@@ -2107,7 +2107,13 @@ class DDL(object):
                        for key in ('on', 'context')
                        if getattr(self, key)]))
 
-
+def _to_schema_column(element):
+    if hasattr(element, '__clause_element__'):
+        element = element.__clause_element__()
+    if not isinstance(element, Column):
+        raise exc.ArgumentError("schema.Column object expected")
+    return element
+    
 def _bind_or_error(schemaitem):
     bind = schemaitem.bind
     if not bind:

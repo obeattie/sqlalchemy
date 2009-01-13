@@ -1,5 +1,5 @@
 # compiler.py
-# Copyright (C) 2005, 2006, 2007, 2008 Michael Bayer mike_mp@zzzcomputing.com
+# Copyright (C) 2005, 2006, 2007, 2008, 2009 Michael Bayer mike_mp@zzzcomputing.com
 #
 # This module is part of SQLAlchemy and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
@@ -599,7 +599,7 @@ class DefaultCompiler(engine.Compiled):
                           [self.process(x) for x in insert_stmt._prefixes])
 
         if not colparams and not self.dialect.supports_default_values and not self.dialect.supports_empty_insert:
-            raise exc.NotSupportedError(
+            raise exc.CompileError(
                 "The version of %s you are using does not support empty inserts." % self.dialect.name)
         elif not colparams and self.dialect.supports_default_values:
             return (insert + " INTO %s DEFAULT VALUES" % (

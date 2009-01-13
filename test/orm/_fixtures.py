@@ -10,9 +10,10 @@ fixture_metadata = MetaData()
 def fixture_table(table, columns, *rows):
     def load_fixture(bind=None):
         bind = bind or table.bind
-        bind.execute(
-            table.insert(),
-            [dict(zip(columns, column_values)) for column_values in rows])
+        if rows:
+            bind.execute(
+                table.insert(),
+                [dict(zip(columns, column_values)) for column_values in rows])
     table.info[('fixture', 'loader')] = load_fixture
     table.info[('fixture', 'columns')] = columns
     table.info[('fixture', 'rows')] = rows
@@ -151,6 +152,17 @@ item_keywords = fixture_table(
     (7, 2),
     (6, 3))
 
+nodes = fixture_table(
+    Table('nodes', fixture_metadata,
+        Column('id', Integer, primary_key=True, test_needs_autoincrement=True),
+        Column('parent_id', Integer, ForeignKey('nodes.id')),
+        Column('data', String(30)),
+        test_needs_acid=True,
+        test_needs_fk=True
+    ),
+    ('id', 'parent_id', 'data')
+)
+
 
 def _load_fixtures():
     for table in fixture_metadata.sorted_tables:
@@ -187,6 +199,9 @@ class Dingaling(Base):
     pass
 
 
+class Node(Base):
+    pass
+    
 class FixtureTest(_base.MappedTest):
     """A MappedTest pre-configured for fixtures.
 

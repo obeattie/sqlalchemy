@@ -1,5 +1,5 @@
 # orm/unitofwork.py
-# Copyright (C) 2005, 2006, 2007, 2008 Michael Bayer mike_mp@zzzcomputing.com
+# Copyright (C) 2005, 2006, 2007, 2008, 2009 Michael Bayer mike_mp@zzzcomputing.com
 #
 # This module is part of SQLAlchemy and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
@@ -68,23 +68,6 @@ class UOWEventHandler(interfaces.AttributeExtension):
             if prop.cascade.delete_orphan and oldvalue in sess.new:
                 sess.expunge(oldvalue)
         return newvalue
-
-def register_attribute(class_, key, *args, **kwargs):
-    """Register an attribute with the attributes module.
-    
-    Overrides attributes.register_attribute() to add 
-    unitofwork-specific event handlers.
-    
-    """
-    useobject = kwargs.get('useobject', False)
-    if useobject:
-        # for object-holding attributes, instrument UOWEventHandler
-        # to process per-attribute cascades
-        extension = util.to_list(kwargs.pop('extension', None) or [])
-        extension.append(UOWEventHandler(key))
-        
-        kwargs['extension'] = extension
-    return attributes.register_attribute(class_, key, *args, **kwargs)
 
 
 class UOWTransaction(object):

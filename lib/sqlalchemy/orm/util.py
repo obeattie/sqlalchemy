@@ -1,5 +1,5 @@
 # mapper/util.py
-# Copyright (C) 2005, 2006, 2007, 2008 Michael Bayer mike_mp@zzzcomputing.com
+# Copyright (C) 2005, 2006, 2007, 2008, 2009 Michael Bayer mike_mp@zzzcomputing.com
 #
 # This module is part of SQLAlchemy and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
@@ -78,7 +78,7 @@ class Validator(AttributeExtension):
 def polymorphic_union(table_map, typecolname, aliasname='p_union'):
     """Create a ``UNION`` statement used by a polymorphic mapper.
 
-    See the `SQLAlchemy` advanced mapping docs for an example of how
+    See  :ref:`concrete_inheritance` for an example of how
     this is used.
     """
 
@@ -304,8 +304,8 @@ class AliasedClass(object):
         existing = getattr(self.__target, prop.key)
         comparator = existing.comparator.adapted(self.__adapt_element)
 
-        queryattr = attributes.QueryableAttribute(
-            existing.impl, parententity=self, comparator=comparator)
+        queryattr = attributes.QueryableAttribute(prop.key,
+            impl=existing.impl, parententity=self, comparator=comparator)
         setattr(self, prop.key, queryattr)
         return queryattr
 

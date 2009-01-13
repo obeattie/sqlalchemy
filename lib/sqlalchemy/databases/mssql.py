@@ -209,6 +209,16 @@ render::
 If ``nullable`` is ``True`` or ``False`` then the column will be
 ``NULL` or ``NOT NULL`` respectively.
 
+Date / Time Handling
+--------------------
+For MSSQL versions that support the ``DATE`` and ``TIME`` types
+(MSSQL 2008+) the data type is used. For versions that do not
+support the ``DATE`` and ``TIME`` types a ``DATETIME`` type is used
+instead and the MSSQL dialect handles converting the results
+properly. This means ``Date()`` and ``Time()`` are fully supported
+on all versions of MSSQL. If you do not desire this behavior then
+do not use the ``Date()`` or ``Time()`` types.
+
 Compatibility Levels
 --------------------
 MSSQL supports the notion of setting compatibility levels at the
@@ -402,51 +412,98 @@ class MSSmallInteger(MSInteger):
         return "SMALLINT"
 
 
-class MSDateTime(sqltypes.DateTime):
-    def __init__(self, *a, **kw):
-        super(MSDateTime, self).__init__(False)
+class _DateTimeType(object):
+    """Base for MSSQL datetime types."""
 
-    def get_col_spec(self):
-        return "DATETIME"
-
-
-class MSSmallDate(sqltypes.Date):
-    def __init__(self, *a, **kw):
-        super(MSSmallDate, self).__init__(False)
-
-    def get_col_spec(self):
-        return "SMALLDATETIME"
-
-    def result_processor(self, dialect):
+    def bind_processor(self, dialect):
+        # if we receive just a date we can manipulate it
+        # into a datetime since the db-api may not do this.
         def process(value):
-            # If the DBAPI returns the value as datetime.datetime(), truncate it back to datetime.date()
-            if type(value) is datetime.datetime:
-                return value.date()
+            if type(value) is datetime.date:
+                return datetime.datetime(value.year, value.month, value.day)
             return value
         return process
+
+
+class MSDateTime(_DateTimeType, sqltypes.DateTime):
+    def get_col_spec(self):
+        return "DATETIME"
 
 
 class MSDate(sqltypes.Date):
-    def __init__(self, *a, **kw):
-        super(MSDate, self).__init__(False)
+    def get_col_spec(self):
+        return "DATE"
+
+
+class MSTime(sqltypes.Time):
+    def __init__(self, precision=None, **kwargs):
+        self.precision = precision
+        super(MSTime, self).__init__()
+
+    def get_col_spec(self):
+        if self.precision:
+            return "TIME(%s)" % self.precision
+        else:
+            return "TIME"
+
+
+class MSSmallDateTime(_DateTimeType, sqltypes.TypeEngine):
+    def get_col_spec(self):
+        return "SMALLDATETIME"
+
+
+class MSDateTime2(_DateTimeType, sqltypes.TypeEngine):
+    def __init__(self, precision=None, **kwargs):
+        self.precision = precision
+
+    def get_col_spec(self):
+        if self.precision:
+            return "DATETIME2(%s)" % self.precision
+        else:
+            return "DATETIME2"
+
+
+class MSDateTimeOffset(_DateTimeType, sqltypes.TypeEngine):
+    def __init__(self, precision=None, **kwargs):
+        self.precision = precision
+
+    def get_col_spec(self):
+        if self.precision:
+            return "DATETIMEOFFSET(%s)" % self.precision
+        else:
+            return "DATETIMEOFFSET"
+
+
+class MSDateTimeAsDate(_DateTimeType, MSDate):
+    """ This is an implementation of the Date type for versions of MSSQL that
+    do not support that specific type. In order to make it work a ``DATETIME``
+    column specification is used and the results get converted back to just
+    the date portion.
+
+    """
 
     def get_col_spec(self):
         return "DATETIME"
 
     def result_processor(self, dialect):
         def process(value):
-            # If the DBAPI returns the value as datetime.datetime(), truncate it back to datetime.date()
+            # If the DBAPI returns the value as datetime.datetime(), truncate
+            # it back to datetime.date()
             if type(value) is datetime.datetime:
                 return value.date()
             return value
         return process
 
 
-class MSTime(sqltypes.Time):
-    __zero_date = datetime.date(1900, 1, 1)
+class MSDateTimeAsTime(MSTime):
+    """ This is an implementation of the Time type for versions of MSSQL that
+    do not support that specific type. In order to make it work a ``DATETIME``
+    column specification is used and the results get converted back to just
+    the time portion.
 
-    def __init__(self, *a, **kw):
-        super(MSTime, self).__init__(False)
+    """
+
+    __zero_date = datetime.date(1900, 1, 1)
 
     def get_col_spec(self):
         return "DATETIME"
@@ -475,24 +532,6 @@ class MSDateTime_adodbapi(MSDateTime):
         def process(value):
             # adodbapi will return datetimes with empty time values as datetime.date() objects.
             # Promote them back to full datetime.datetime()
-            if type(value) is datetime.date:
-                return datetime.datetime(value.year, value.month, value.day)
-            return value
-        return process
-
-
-class MSDateTime_pyodbc(MSDateTime):
-    def bind_processor(self, dialect):
-        def process(value):
-            if type(value) is datetime.date:
-                return datetime.datetime(value.year, value.month, value.day)
-            return value
-        return process
-
-
-class MSDate_pyodbc(MSDate):
-    def bind_processor(self, dialect):
-        def process(value):
             if type(value) is datetime.date:
                 return datetime.datetime(value.year, value.month, value.day)
             return value
@@ -915,8 +954,11 @@ class MSSQLDialect(default.DefaultDialect):
         'numeric' : MSNumeric,
         'float' : MSFloat,
         'datetime' : MSDateTime,
+        'datetime2' : MSDateTime2,
+        'datetimeoffset' : MSDateTimeOffset,
         'date': MSDate,
-        'smalldatetime' : MSSmallDate,
+        'time': MSTime,
+        'smalldatetime' : MSSmallDateTime,
         'binary' : MSBinary,
         'varbinary' : MSVarBinary,
         'bit': MSBoolean,
@@ -1014,8 +1056,12 @@ class MSSQLDialect(default.DefaultDialect):
         return newobj
 
     def do_begin(self, connection):
-        connection.execute("SET IMPLICIT_TRANSACTIONS OFF")
-        connection.execute("BEGIN TRANSACTION")
+        cursor = connection.cursor()
+        cursor.execute("SET IMPLICIT_TRANSACTIONS OFF")
+        cursor.execute("BEGIN TRANSACTION")
+
+    def do_release_savepoint(self, connection, name):
+        pass
 
     @base.connection_memoize(('dialect', 'default_schema_name'))
     def get_default_schema_name(self, connection):
@@ -1239,6 +1285,13 @@ class MSSQLDialect_pymssql(MSSQLDialect):
             util.warn("pymssql does not support unicode")
             self.encoding = params.get('encoding', 'ascii')
 
+        self.colspecs = MSSQLDialect.colspecs.copy()
+        self.ischema_names = MSSQLDialect.ischema_names.copy()
+        self.ischema_names['date'] = MSDateTimeAsDate
+        self.colspecs[sqltypes.Date] = MSDateTimeAsDate
+        self.ischema_names['time'] = MSDateTimeAsTime
+        self.colspecs[sqltypes.Time] = MSDateTimeAsTime
+
     def create_connect_args(self, url):
         r = super(MSSQLDialect_pymssql, self).create_connect_args(url)
         if hasattr(self, 'query_timeout'):
@@ -1255,6 +1308,9 @@ class MSSQLDialect_pymssql(MSSQLDialect):
     def is_disconnect(self, e):
         return isinstance(e, self.dbapi.DatabaseError) and "Error 10054" in str(e)
 
+    def do_begin(self, connection):
+        pass
+
 
 class MSSQLDialect_pyodbc(MSSQLDialect):
     supports_sane_rowcount = False
@@ -1267,6 +1323,15 @@ class MSSQLDialect_pyodbc(MSSQLDialect):
     def __init__(self, description_encoding='latin-1', **params):
         super(MSSQLDialect_pyodbc, self).__init__(**params)
         self.description_encoding = description_encoding
+
+        if self.server_version_info < (10,):
+            self.colspecs = MSSQLDialect.colspecs.copy()
+            self.ischema_names = MSSQLDialect.ischema_names.copy()
+            self.ischema_names['date'] = MSDateTimeAsDate
+            self.colspecs[sqltypes.Date] = MSDateTimeAsDate
+            self.ischema_names['time'] = MSDateTimeAsTime
+            self.colspecs[sqltypes.Time] = MSDateTimeAsTime
+
         # FIXME: scope_identity sniff should look at server version, not the ODBC driver
         # whether use_scope_identity will work depends on the version of pyodbc
         try:
@@ -1279,13 +1344,6 @@ class MSSQLDialect_pyodbc(MSSQLDialect):
     def import_dbapi(cls):
         import pyodbc as module
         return module
-
-    colspecs = MSSQLDialect.colspecs.copy()
-    colspecs[sqltypes.Date] = MSDate_pyodbc
-    colspecs[sqltypes.DateTime] = MSDateTime_pyodbc
-    ischema_names = MSSQLDialect.ischema_names.copy()
-    ischema_names['smalldatetime'] = MSDate_pyodbc
-    ischema_names['datetime'] = MSDateTime_pyodbc
 
     def make_connect_string(self, keys, query):
         if 'max_identifier_length' in keys:
@@ -1378,6 +1436,7 @@ class MSSQLDialect_adodbapi(MSSQLDialect):
 
     def is_disconnect(self, e):
         return isinstance(e, self.dbapi.adodbapi.DatabaseError) and "'connection failure'" in str(e)
+
 
 dialect_mapping = {
     'pymssql':  MSSQLDialect_pymssql,
@@ -1481,9 +1540,6 @@ class MSSQLCompiler(compiler.DefaultCompiler):
     def visit_rollback_to_savepoint(self, savepoint_stmt):
         return "ROLLBACK TRANSACTION %s" % self.preparer.format_savepoint(savepoint_stmt)
 
-    def visit_release_savepoint(self, savepoint_stmt):
-        pass
-
     def visit_column(self, column, result_map=None, **kwargs):
         if column.table is not None and \
             (not self.isupdate and not self.isdelete) or self.is_subquery():
@@ -1529,7 +1585,7 @@ class MSSQLCompiler(compiler.DefaultCompiler):
                               [self.process(x) for x in insert_stmt._prefixes])
 
             if not colparams and not self.dialect.supports_default_values and not self.dialect.supports_empty_insert:
-                raise exc.NotSupportedError(
+                raise exc.CompileError(
                     "The version of %s you are using does not support empty inserts." % self.dialect.name)
             elif not colparams and self.dialect.supports_default_values:
                 return (insert + " INTO %s DEFAULT VALUES" % (

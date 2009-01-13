@@ -1,5 +1,5 @@
 # sqlalchemy/orm/__init__.py
-# Copyright (C) 2005, 2006, 2007, 2008 Michael Bayer mike_mp@zzzcomputing.com
+# Copyright (C) 2005, 2006, 2007, 2008, 2009 Michael Bayer mike_mp@zzzcomputing.com
 #
 # This module is part of SQLAlchemy and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
@@ -201,11 +201,19 @@ def relation(argument, secondary=None, **kwargs):
       keyword argument.
 
     :param backref:
-      indicates the name of a property to be placed on the related
+      indicates the string name of a property to be placed on the related
       mapper's class that will handle this relationship in the other
-      direction, including synchronizing the object attributes on both
-      sides of the relation. Can also point to a :func:`backref` for
-      more configurability.
+      direction. The other property will be created automatically 
+      when the mappers are configured.  Can also be passed as a
+      :func:`backref` object to control the configuration of the
+      new relation.
+      
+    :param back_populates:
+      Takes a string name and has the same meaning as ``backref``, 
+      except the complementing property is **not** created automatically, 
+      and instead must be configured explicitly on the other mapper.  The 
+      complementing property should also indicate ``back_populates`` 
+      to this relation to ensure proper functioning.
 
     :param cascade:
       a comma-separated list of cascade rules which determines how
