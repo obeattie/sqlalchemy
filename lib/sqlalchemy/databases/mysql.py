@@ -1687,6 +1687,16 @@ class MySQLDialect(default.DefaultDialect):
         f = getattr(self.reflector, reflector_attr)
         return f(table_def, charset)
 
+    def get_schema_names(self, connection):
+        rp = connection.execute("SHOW schemas")
+        return [r[0] for r in rp]
+
+    def get_table_names(self, connection, schema=None):
+        return self.table_names(connection, schema)
+
+    def get_view_names(self, connection, schema=None):
+        return []
+
     def get_columns(self, connection, table_name, schema=None, info_cache=None):
         """Return column information for table_name and schema."""
         return self._reflect('get_columns', connection, table_name, schema,
@@ -2174,8 +2184,16 @@ class MySQLSchemaReflector(object):
         """Return column info formatted for the reflection API."""
         parsed_info = self._parse_show_create(show_create, charset)
         col_info = parsed_info['columns']
-        return [(c[0], c[1], c[3].get('nullable', True), c[2]) \
-                                                            for c in col_info]
+        cols = []
+        for c in col_info:
+            d = {
+                'name' : c[0],
+                'type' : c[1],
+                'nullable' : c[3].get('nullable', True),
+                'default' : c[2]
+            }
+            cols.append(d)
+        return cols
 
     def get_primary_keys(self, show_create, charset):
         """Return primary key info formatted for the reflection API."""
@@ -2185,7 +2203,7 @@ class MySQLSchemaReflector(object):
             if key['type'] == 'PRIMARY':
                 for col in key['columns']:
                     column_name = col[0]
-                    pkeys.append((column_name, ))
+                    pkeys.append(column_name)
         return pkeys
 
     def get_foreign_keys(self, show_create, charset):
@@ -2201,8 +2219,14 @@ class MySQLSchemaReflector(object):
                                                                         or None
             constrained_columns = spec['local']
             referred_columns = spec['foreign']
-            fkeys.append((constraint_name, constrained_columns,
-                          referred_schema, referred_table, referred_columns))
+            fkey_d = {
+                'name' : constraint_name,
+                'constrained_columns' : constrained_columns,
+                'referred_schema' : referred_schema,
+                'referred_table' : referred_table,
+                'referred_columns' : referred_columns
+            }
+            fkeys.append(fkey_d)
         return fkeys
 
     def _parse_show_create(self, show_create, charset):
