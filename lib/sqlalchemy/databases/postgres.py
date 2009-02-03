@@ -785,7 +785,7 @@ class PGDialect(default.DefaultDialect):
         indexes = self.get_indexes(connection, table.name, table.schema)
         for index_d in indexes:
             name = index_d['name']
-            columns = index_d['columns']
+            columns = index_d['column_names']
             unique = index_d['unique']
         for name, (unique, columns) in indexes.items():
             schema.Index(name, *[table.columns[c] for c in columns], 
