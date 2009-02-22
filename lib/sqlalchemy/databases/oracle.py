@@ -684,7 +684,6 @@ class OracleDialect(default.DefaultDialect):
 
     def get_foreign_keys(self, connection, table_name, schema=None,
                          info_cache=None, dblink='', resolve_synonyms=False):
-        print table_name, schema, info_cache, dblink, resolve_synonyms
         constraint_data = self._get_constraint_data(connection, table_name,
                                         schema, info_cache, dblink)
         fkeys = []
