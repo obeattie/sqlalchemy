@@ -1,0 +1,18 @@
+We've moved the source repository to Mercurial !   Now
+everyone can clone and develop at will.   
+
+To get at the latest tip, go to:
+
+hg clone http://hg.sqlalchemy.org/sqlalchemy
+
+The above URL has a nice source browser too, or
+you can use trac as always.
+
+The current plan is that the SVN source tree here 
+will be switched off at some point.  Mercurial
+commits aren't being mirrored here.
+
+Background on Mercurial is at:
+
+http://mercurial.selenic.com/
+
